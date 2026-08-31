@@ -61,7 +61,7 @@ Pour le mobile : `npm run dev:ios` ou `npm run dev:android`.
 
 ## Structure
 
-```
+```md
 jean-claude/
 ├── apps/
 │   ├── api/          NestJS — API commune aux quatre plateformes (§5.3)
@@ -84,14 +84,14 @@ quatre décisions qui conditionnent tout le reste.
 
 ## Commandes
 
-| Commande | Effet |
-|---|---|
-| `npm run dev:api` | API en mode watch |
-| `npm run dev:web` | Application web |
-| `npm run dev:ios` / `dev:android` | Application mobile |
-| `npm run typecheck` | Vérification des types sur tout le monorepo |
-| `npm test` | Tests unitaires |
-| `npm run db:types` | Régénère les types de la base depuis le schéma |
+| Commande                          | Effet                                          |
+| --------------------------------- | ---------------------------------------------- |
+| `npm run dev:api`                 | API en mode watch                              |
+| `npm run dev:web`                 | Application web                                |
+| `npm run dev:ios` / `dev:android` | Application mobile                             |
+| `npm run typecheck`               | Vérification des types sur tout le monorepo    |
+| `npm test`                        | Tests unitaires                                |
+| `npm run db:types`                | Régénère les types de la base depuis le schéma |
 
 ---
 
@@ -99,7 +99,7 @@ quatre décisions qui conditionnent tout le reste.
 
 - **Français** pour les commentaires, les messages d'erreur et la documentation.
 - **Anglais** pour les identifiants de code.
-- Les commentaires expliquent *pourquoi*, pas *quoi*.
+- Les commentaires expliquent _pourquoi_, pas _quoi_.
 - Toute règle métier vit dans `apps/api` ou `packages/domain`, jamais dans un
   écran.
 - Aucun appel direct à un SDK de modèle IA hors de `core/llm/providers/`.

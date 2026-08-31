@@ -74,7 +74,7 @@ livrable de fin de stage (§10), à tenir à jour.
 
 ## Structure
 
-```
+```md
 apps/api/     NestJS — API commune  ·  core/ → domain/ → feature/
 apps/app/     Expo Router — web + iOS + Android
 packages/     domain (Zod) · api-client · design — partagés des deux côtés
