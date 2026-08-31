@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Jean-Claude",
+    "slug": "jean-claude",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "jeanclaude",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "fr.prodeef.jeanclaude",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Jean-Claude utilise le micro pour la dictée vocale de vos messages.",
+        "NSSpeechRecognitionUsageDescription": "La reconnaissance vocale transcrit ce que vous dictez à Jean-Claude."
+      }
+    },
+    "android": {
+      "package": "fr.prodeef.jeanclaude",
+      "edgeToEdgeEnabled": true,
+      "permissions": ["RECORD_AUDIO"]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
