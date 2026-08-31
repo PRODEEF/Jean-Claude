@@ -23,7 +23,11 @@ export function useConversationThread(conversationId: string) {
   const send = useMutation({
     mutationFn: (content: string) =>
       api.conversations.send(conversationId, { content, inputMode: "text" }),
-    onSuccess: async () => {
+    // `onSettled` et non `onSuccess` : le serveur écrit le message de
+    // l'utilisateur avant d'interroger le modèle. Si le moteur échoue, le
+    // message existe malgré tout en base — ne pas rafraîchir le fil le ferait
+    // disparaître de l'écran alors qu'il sera bien là au rechargement.
+    onSettled: async () => {
       await queryClient.invalidateQueries({
         queryKey: ["conversation", conversationId, "messages"],
       });

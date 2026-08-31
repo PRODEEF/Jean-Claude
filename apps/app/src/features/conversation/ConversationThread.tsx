@@ -116,12 +116,17 @@ export function ConversationThread({ conversationId }: ConversationThreadProps) 
           <Text style={[styles.errorText, { color: palette.danger }]}>
             {errorMessage(messages.error ?? send.error)}
           </Text>
+          {/* Un échec de chargement se rejoue ; un échec d'envoi, non — le
+              message est déjà enregistré et l'API n'offre pas de relancer le
+              modèle seul. Proposer « Réessayer » dans ce cas mentirait. */}
           <Pressable
             onPress={() => (messages.error ? void messages.refetch() : send.reset())}
             accessibilityRole="button"
             style={styles.retry}
           >
-            <Text style={[styles.retryText, { color: palette.accent }]}>Réessayer</Text>
+            <Text style={[styles.retryText, { color: palette.accent }]}>
+              {messages.error ? "Réessayer" : "Fermer"}
+            </Text>
           </Pressable>
         </View>
       ) : null}
