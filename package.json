@@ -1,0 +1,31 @@
+{
+  "name": "jean-claude",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Jean-Claude — assistant IA conversationnel personnel (web, mobile, desktop)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run build:packages && npm run start:dev --workspace @jc/api",
+    "dev:web": "npm run build:packages && npm run web --workspace @jc/app",
+    "dev:ios": "npm run build:packages && npm run ios --workspace @jc/app",
+    "dev:android": "npm run build:packages && npm run android --workspace @jc/app",
+    "dev:packages": "tsc -b packages/domain packages/design packages/api-client --watch",
+    "build:packages": "tsc -b packages/domain packages/design packages/api-client",
+    "build": "npm run build:packages && npm run build --workspace @jc/api && npm run build:web --workspace @jc/app",
+    "typecheck": "npm run build:packages && npm run typecheck --workspace @jc/api && npm run typecheck --workspace @jc/app",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspace @jc/api",
+    "db:types": "supabase gen types typescript --local > apps/api/src/core/supabase/database.types.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
