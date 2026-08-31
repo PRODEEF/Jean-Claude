@@ -102,12 +102,15 @@ LLM_MODEL=mistral/mistral-large
 ```
 
 C'est tout. Aucun fichier n'est touché, aucune seconde clé d'API à obtenir.
+`LLM_MODEL` est le modèle **par défaut** du serveur : à terme, l'utilisateur
+choisira le sien dans ses préférences, et cette valeur deviendra le repli.
 
-**Pourquoi conserver le `switch` de `llm.module.ts`, alors ?** Pour le seul cas
-qu'il reste à couvrir : un moteur _hors_ Gateway — modèle auto-hébergé, Ollama
-en local, ou un fournisseur qu'on voudrait appeler en direct pour des raisons
-contractuelles. Écrire `providers/<nom>.provider.ts`, ajouter un `case`, poser
-`LLM_PROVIDER=<nom>`.
+**Pourquoi garder le port, alors, s'il n'a qu'une implémentation ?** Parce que
+c'est lui qui tient l'invariant : aucun service métier n'importe un SDK de
+modèle, tous injectent `LLM_PROVIDER` et parlent à l'interface. C'est aussi ce
+qui rend `ConversationService` testable sans réseau. Un second adaptateur ne
+sera écrit que le jour où un moteur devra être appelé hors Gateway — ce qui
+n'est pas prévu.
 
 **Souveraineté.** L'interface porte `isSovereign`, exposé par `/api/health`,
 pour signaler à l'utilisateur si le modèle qui traite ses données est hébergé

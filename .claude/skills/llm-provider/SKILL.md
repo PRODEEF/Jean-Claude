@@ -42,74 +42,18 @@ constructor(@Inject(LLM_PROVIDER) private readonly llm: LlmProvider) {}
 Si un `import ... from "ai"` ou le SDK d'un éditeur apparaît hors de
 `core/llm/providers/`, la contrainte du §5.1 est cassée.
 
-## Ajouter un fournisseur hors Gateway — 3 étapes
+## Contrat à respecter
 
-⚠️ **À ne faire que si le modèle visé n'est pas routable par le Gateway** :
-modèle auto-hébergé, Ollama en local, ou appel direct imposé par contrat.
-Sinon, voir la section précédente.
-
-### 1. L'adaptateur
-
-```ts
-// core/llm/providers/mistral.provider.ts
-@Injectable()
-export class MistralProvider implements LlmProvider {
-  readonly name = "mistral";
-  /** Mistral héberge en UE — à signaler à l'utilisateur (§5.1, §13.4.6). */
-  readonly isSovereign = true;
-
-  private readonly logger = new Logger(MistralProvider.name);
-
-  constructor(config: ConfigService) {
-    const apiKey = config.get<string>("mistralApiKey");
-    if (!apiKey) throw new Error("MISTRAL_API_KEY est requis lorsque LLM_PROVIDER=mistral.");
-    // …
-  }
-
-  async complete(request: LlmCompletionRequest): Promise<LlmCompletionResponse> {
-    /* … */
-  }
-  async *stream(request: LlmCompletionRequest): AsyncIterable<LlmStreamChunk> {
-    /* … */
-  }
-}
-```
-
-### 2. La fabrique
-
-```ts
-// core/llm/llm.module.ts
-switch (name) {
-  case "gateway":
-    return new GatewayProvider(config);
-  case "mistral":
-    return new MistralProvider(config); // ← ajout
-  default:
-    throw new Error(`LLM_PROVIDER inconnu : "${name}".`);
-}
-```
-
-Le `default` lève au démarrage plutôt que de replier silencieusement : un
-`LLM_PROVIDER` mal orthographié en production doit se voir immédiatement, pas
-se traduire par une facturation inattendue chez un autre fournisseur.
-
-### 3. La configuration
-
-```ts
-// core/config/configuration.ts
-mistralApiKey: optional("MISTRAL_API_KEY", ""),
-```
-
-Puis `LLM_PROVIDER=mistral` dans `.env`, et documenter la variable dans
-`.env.example`.
-
-**Aucun fichier métier n'est touché.**
+Il n'y a qu'un adaptateur, `GatewayProvider`. En écrire un second n'a de sens
+que le jour où un moteur devra être appelé **hors** Gateway — auto-hébergé, ou
+Ollama en local. Ce jour-là, il implémente ce contrat et remplace l'adaptateur
+dans `llm.module.ts`.
 
 ## Contrat à respecter
 
 | Membre        | Obligation                                                                                                                              |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`        | Identifiant court, même valeur que `LLM_PROVIDER`                                                                                       |
+| `name`        | Identifiant court de l'adaptateur                                                                                                       |
 | `isSovereign` | `true` si hébergement **et** opérateur en France/UE. Mistral oui, Claude non. Se lit sur l'**éditeur** du modèle, jamais sur le routeur |
 | `complete()`  | Réponse complète, avec `toolCalls` extraits                                                                                             |
 | `stream()`    | Flux de texte, puis les `tool_call`, puis un chunk `done`                                                                               |

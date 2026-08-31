@@ -14,18 +14,19 @@ Dernière mise à jour : **31 août 2026** — abstraction IA via Vercel AI Gate
 
 ## Exigences transverses
 
-| Réf. | Exigence                                               | Statut | Note                                                                                          |
-| ---- | ------------------------------------------------------ | :----: | --------------------------------------------------------------------------------------------- |
-| §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                               |
-| §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code |
-| §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                         |
-| §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                  |
-| §5.3 | API commune web + mobile                               |   ✅   | NestJS ; l'app ne touche jamais la base directement                                           |
-| §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre           |
-| §4.4 | React Native                                           |   ✅   | Expo SDK 57, Expo Router, React 19                                                            |
-| §8   | Postgres portable, migration UE possible               |   ✅   | Aucune extension propriétaire                                                                 |
-| §8   | **Créer le projet Supabase en région UE**              |   ⬜   | **À faire avant tout remplissage de données**                                                 |
-| §10  | Repo structuré et documenté                            |   ✅   | `README.md`, `docs/ARCHITECTURE.md`, ce fichier                                               |
+| Réf. | Exigence                                               | Statut | Note                                                                                                    |
+| ---- | ------------------------------------------------------ | :----: | ------------------------------------------------------------------------------------------------------- |
+| §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                                         |
+| §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code |
+| §5.1 | Choix du modèle par l'utilisateur                      |   ⬜   | `LLM_MODEL` est le défaut serveur. À porter dans `userPreferences` + panneau de réglages                |
+| §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                                   |
+| §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                            |
+| §5.3 | API commune web + mobile                               |   ✅   | NestJS ; l'app ne touche jamais la base directement                                                     |
+| §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre                     |
+| §4.4 | React Native                                           |   ✅   | Expo SDK 57, Expo Router, React 19                                                                      |
+| §8   | Postgres portable, migration UE possible               |   ✅   | Aucune extension propriétaire                                                                           |
+| §8   | **Créer le projet Supabase en région UE**              |   ⬜   | **À faire avant tout remplissage de données**                                                           |
+| §10  | Repo structuré et documenté                            |   ✅   | `README.md`, `docs/ARCHITECTURE.md`, ce fichier                                                         |
 
 ---
 

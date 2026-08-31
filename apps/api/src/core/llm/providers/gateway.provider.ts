@@ -46,7 +46,7 @@ export class GatewayProvider implements LlmProvider {
   constructor(config: ConfigService) {
     const apiKey = config.get<string>("aiGatewayApiKey");
     if (!apiKey) {
-      throw new Error("AI_GATEWAY_API_KEY est requis lorsque LLM_PROVIDER=gateway.");
+      throw new Error("AI_GATEWAY_API_KEY est requis pour joindre le moteur IA.");
     }
 
     this.modelId = config.get<string>("llmModel") ?? "anthropic/claude-opus-5";

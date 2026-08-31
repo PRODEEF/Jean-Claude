@@ -4,11 +4,11 @@
  * ─────────────────────────────────────────────────────────────────────────
  * C'EST LA SEULE FAÇON D'APPELER UN MODÈLE DANS CETTE APPLICATION.
  *
- * Aucun service métier ne doit importer `@anthropic-ai/sdk` ni le SDK d'un
- * autre fournisseur : ils injectent `LLM_PROVIDER` et parlent à cette
- * interface. Ajouter Mistral, DeepSeek ou Qwen consiste alors à écrire un
- * adaptateur dans `providers/` et à l'enregistrer dans `llm.module.ts` —
- * sans toucher une ligne de code métier, comme l'exige le §5.1.
+ * Aucun service métier ne doit importer le SDK d'un moteur IA : ils injectent
+ * `LLM_PROVIDER` et parlent à cette interface. Passer à Mistral, DeepSeek ou
+ * Qwen ne demande alors pas une ligne de code métier — c'est ce qu'exige le
+ * §5.1 — et pas même un adaptateur, l'unique implémentation passant par
+ * Vercel AI Gateway qui les route tous.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
