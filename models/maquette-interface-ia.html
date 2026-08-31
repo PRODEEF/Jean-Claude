@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Maquette - Interface IA conversationnelle</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.44.0/iconfont/tabler-icons.min.css" />
+<style>
+  :root {
+    --surface-0: #e8f2fa;
+    --surface-1: #f3f9fd;
+    --surface-2: #ffffff;
+    --text-primary: #16232e;
+    --text-secondary: #52616b;
+    --text-muted: #8598a3;
+    --border: rgba(12,73,127,0.12);
+    --border-strong: rgba(12,73,127,0.26);
+    --accent-bg: #dbeefd;
+    --accent-text: #0c497f;
+    --brand: #d85a30;
+    --success: #3b6d11;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+  }
+  body {
+    font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--surface-0);
+    color: var(--text-primary);
+    overflow: hidden;
+  }
+  .app-wrap { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+  .toolbar {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: #0059f4;
+    flex-shrink: 0;
+  }
+  .toolbar-left { justify-self: start; display: flex; align-items: center; gap: 6px; }
+  .toolbar-right { justify-self: end; display: flex; align-items: center; gap: 8px; }
+  .toolbar-title {
+    justify-self: center; color: #ffffff; font-size: 14px; white-space: nowrap;
+    background: transparent; border: none; padding: 4px 10px; border-radius: var(--radius);
+    cursor: pointer; font-family: inherit;
+  }
+  .toolbar-title:hover { background: rgba(255,255,255,0.15); }
+  .toolbar-title .name { font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; text-decoration: underline; text-underline-offset: 2px; }
+  .toolbar-title .tagline { font-weight: 400; opacity: 0.85; margin-left: 2px; }
+  .toolbar button {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; font-size: 13px;
+    background: transparent; border: 1px solid transparent;
+    border-radius: var(--radius); cursor: pointer; color: #ffffff;
+  }
+  .toolbar button:hover { border-color: rgba(255,255,255,0.55); }
+  .toolbar button.on { background: #ffffff; color: #0059f4; border-color: transparent; }
+
+  #account-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 10px 4px 4px; border-radius: 999px; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  #account-btn:hover { border-color: rgba(255,255,255,0.55); }
+  #account-label { color: #ffffff; }
+  #status-dot { border-color: #0059f4 !important; }
+
+  #calendar-toolbar-btn {
+    width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; background: transparent; border: 1px solid rgba(255,255,255,0.55); border-radius: var(--radius);
+    cursor: pointer; color: #ffffff;
+  }
+  #calendar-toolbar-btn:hover { background: rgba(255,255,255,0.15); }
+  #calendar-toolbar-btn.on { background: #ffffff; color: #0059f4; border-color: transparent; }
+  .avatar-wrap { position: relative; width: 28px; height: 28px; flex-shrink: 0; }
+  .avatar-circle {
+    width: 28px; height: 28px; border-radius: 50%; background: var(--surface-0);
+    border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 500; color: var(--text-secondary);
+  }
+  #status-dot {
+    position: absolute; bottom: -1px; right: -1px; width: 9px; height: 9px;
+    border-radius: 50%; border: 2px solid var(--surface-1);
+  }
+  #account-label { font-size: 13px; color: #ffffff; white-space: nowrap; }
+
+  .main-row {
+    display: flex; flex: 1; min-height: 0;
+    overflow: hidden;
+    background: var(--surface-2);
+  }
+
+  #folder-col {
+    flex-shrink: 0; background: var(--surface-1);
+    overflow-y: auto; overflow-x: hidden;
+  }
+  #folder-col-full { padding: 1rem 0.75rem; }
+  #folder-col-mini { display: none; padding: 1rem 0; flex-direction: column; align-items: center; }
+  #mini-add-btn {
+    width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; border: 1px solid var(--border-strong); background: transparent; cursor: pointer;
+  }
+  #mini-add-btn:hover { background: var(--surface-2); }
+
+  .brand-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .brand-left { display: flex; align-items: center; gap: 8px; }
+  #brand-pixel-avatar {
+    width: 32px; height: 32px; border-radius: 6px; flex-shrink: 0;
+    background: #0059f4; color: #ffffff; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; letter-spacing: 0.02em;
+  }
+  #brand-name { font-size: 15px; font-weight: 500; white-space: nowrap; }
+  #settings-toggle {
+    width: 26px; height: 26px; padding: 0; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; background: transparent; border: 1px solid var(--border-strong); border-radius: var(--radius);
+    cursor: pointer; color: var(--text-secondary);
+  }
+  #settings-toggle:hover { background: var(--surface-1); }
+
+  #settings-panel {
+    display: none; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px; margin-bottom: 14px;
+  }
+  #settings-panel label { font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px; }
+  #assistant-name-input {
+    width: 100%; height: 32px; padding: 0 8px; margin-bottom: 10px;
+    border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px;
+  }
+  #color-swatches, #theme-swatches { display: flex; gap: 8px; margin-bottom: 10px; }
+  #color-swatches button, #theme-swatches button { width: 22px; height: 22px; padding: 0; border-radius: 50%; cursor: pointer; flex-shrink: 0; }
+  #jc-style-options { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  #jc-style-options button {
+    text-align: left; padding: 5px 8px; font-size: 12px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: transparent; cursor: pointer; color: var(--text-primary);
+  }
+  #jc-style-options button.active { border-color: var(--border-accent, #0059ff); background: var(--accent-bg); color: var(--accent-text); font-weight: 500; }
+  #assistant-scope-options { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .scope-option { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; cursor: pointer; }
+  .scope-option input { margin-top: 2px; accent-color: var(--accent-text); cursor: pointer; flex-shrink: 0; }
+  .scope-option .scope-label { color: var(--text-primary); }
+  .scope-option .scope-desc { display: block; font-size: 11px; color: var(--text-muted); }
+
+  .jc-suggestion-chip {
+    display: inline-flex; align-items: center; gap: 4px; background: var(--accent-bg); color: var(--accent-text);
+    padding: 4px 10px; border-radius: 999px; font-size: 12px; cursor: pointer; margin: 4px 6px 0 0; border: none;
+  }
+  .jc-suggestion-chip:hover { background: #cfe4fb; }
+  .jc-suggestions-row { margin-top: 6px; }
+  #settings-save {
+    width: 100%; justify-content: center; padding: 6px 10px; border: 1px solid var(--border-strong);
+    border-radius: var(--radius); background: transparent; cursor: pointer; font-size: 13px;
+  }
+  #settings-save:hover { background: var(--surface-1); }
+
+  #jc-entry { margin-bottom: 10px; cursor: pointer; }
+  .jc-entry-pin, .jc-entry-avatar {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius);
+    font-size: 13px; color: var(--text-primary);
+  }
+  .jc-entry-pin:hover, .jc-entry-avatar:hover { background: var(--surface-2); }
+  .jc-entry-pin.on, .jc-entry-avatar.on { background: var(--accent-bg); color: var(--accent-text); }
+  .jc-entry-blue {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius);
+    font-size: 13px; font-weight: 700; text-transform: uppercase; color: #ffffff; background: #0059ff;
+  }
+  .jc-entry-blue.on { background: #003fb0; }
+  .jc-avatar-dot {
+    width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0;
+    background: linear-gradient(180deg, #f0996a, #d85a30);
+  }
+
+  #new-chat-btn {
+    width: 100%; justify-content: center; gap: 6px; margin-bottom: 8px;
+    display: flex; align-items: center; white-space: nowrap;
+    padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: transparent; cursor: pointer; font-size: 14px; color: var(--text-primary);
+  }
+  #new-chat-btn:hover { background: var(--surface-2); }
+
+  #support-btn, #calendar-nav-btn, #all-view-btn {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius);
+    cursor: pointer; font-size: 13px; white-space: nowrap; color: var(--text-primary);
+  }
+  #support-btn, #calendar-nav-btn { margin-bottom: 4px; }
+  #all-view-btn { margin-bottom: 14px; }
+  #all-view-btn.active { background: var(--accent-bg); color: var(--accent-text); }
+  #support-btn:hover, #calendar-nav-btn:hover, #all-view-btn:hover:not(.active) { background: var(--surface-2); }
+
+  .calendar-toolbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-bottom: 18px; gap: 8px; }
+  .calendar-month-label { font-size: 20px; font-weight: 600; justify-self: start; white-space: nowrap; }
+  .calendar-view-switch { justify-self: center; display: flex; background: var(--surface-1); border-radius: 999px; padding: 3px; gap: 2px; }
+  .calendar-view-switch button {
+    border: none; background: transparent; padding: 5px 12px; border-radius: 999px; font-size: 12px;
+    color: var(--text-secondary); cursor: default;
+  }
+  .calendar-view-switch button.active { background: var(--surface-2); color: var(--text-primary); font-weight: 500; border: 1px solid var(--border); }
+  .calendar-view-switch button:disabled { opacity: 0.55; }
+  .calendar-nav-controls { justify-self: end; display: flex; align-items: center; gap: 6px; }
+  .calendar-nav-controls .icon-btn {
+    width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border-strong); background: transparent;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 15px; color: var(--text-secondary);
+  }
+  .calendar-nav-controls .icon-btn:hover { background: var(--surface-1); }
+  .calendar-today-btn {
+    padding: 5px 14px; border-radius: 999px; border: 1px solid var(--border-strong); background: transparent;
+    font-size: 12px; cursor: pointer; color: var(--text-primary); white-space: nowrap;
+  }
+  .calendar-today-btn:hover { background: var(--surface-1); }
+
+  .calendar-grid-wrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .calendar-weekdays-row { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border); }
+  .calendar-weekday { font-size: 11px; color: var(--text-muted); padding: 8px 10px; }
+  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 84px; }
+  .calendar-day-cell {
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    padding: 6px 7px; display: flex; flex-direction: column; gap: 3px; overflow: hidden;
+  }
+  .calendar-day-cell:nth-child(7n) { border-right: none; }
+  .calendar-day-cell:nth-last-child(-n+7) { border-bottom: none; }
+  .calendar-day-number { font-size: 12px; align-self: flex-end; color: var(--text-primary); }
+  .calendar-day-cell.muted .calendar-day-number { color: var(--text-muted); }
+  .calendar-day-number.today {
+    background: var(--brand); color: #fff; width: 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-weight: 500;
+  }
+  .calendar-event-pill {
+    background: var(--accent-bg); color: var(--accent-text); font-size: 10px; padding: 2px 6px;
+    border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  }
+  #calendar-event-detail { font-size: 13px; color: var(--text-secondary); margin-top: 14px; }
+
+  .todo-week { display: flex; flex-direction: column; gap: 4px; }
+  .todo-day-block { margin-bottom: 20px; }
+  .todo-day-title {
+    font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em;
+    padding-bottom: 6px; margin-bottom: 10px; border-bottom: 1px solid var(--border); color: var(--text-primary);
+  }
+  .todo-period { margin-bottom: 12px; }
+  .todo-period-label {
+    font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.03em; margin-bottom: 6px;
+  }
+  .todo-items { display: flex; flex-direction: column; gap: 3px; }
+  .todo-item {
+    display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; padding: 2px 0;
+  }
+  .todo-item input[type="checkbox"] {
+    margin-top: 2px; width: 15px; height: 15px; accent-color: var(--accent-text); cursor: pointer; flex-shrink: 0;
+  }
+  .todo-subitem { margin-left: 23px; }
+  .todo-children { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; }
+  .todo-empty { font-size: 12px; color: var(--text-muted); font-style: italic; margin-left: 2px; }
+
+  .group-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
+  }
+  .group-label { font-size: 12px; color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+  .add-folder-btn {
+    width: 20px; height: 20px; padding: 0; border: none; background: transparent;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer;
+    color: var(--text-muted); border-radius: 4px;
+  }
+  .add-folder-btn:hover { background: rgba(255,255,255,0.2); }
+
+  .folder-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--radius);
+    cursor: pointer; font-size: 13px; margin-bottom: 2px; white-space: nowrap; color: var(--text-primary);
+    text-transform: uppercase; letter-spacing: 0.01em;
+  }
+  .folder-item.active { background: var(--accent-bg); color: var(--accent-text); }
+  .folder-item:hover:not(.active) { background: var(--surface-2); }
+
+  #resizer-1 { width: 2px; flex-shrink: 0; cursor: col-resize; background: transparent; }
+  #resizer-1:hover { background: var(--border); }
+
+  .folder-block { margin-bottom: 4px; }
+  .folder-header-row {
+    display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--radius);
+    cursor: pointer; font-size: 13px; white-space: nowrap; color: var(--text-primary);
+    text-transform: uppercase; letter-spacing: 0.01em;
+  }
+  .folder-header-row:hover { background: var(--surface-2); }
+  .folder-chevron {
+    font-size: 9px; color: var(--text-muted); width: 8px; flex-shrink: 0; display: inline-block;
+    transition: transform 0.15s; transform: rotate(0deg);
+  }
+  .folder-chevron.open { transform: rotate(90deg); }
+  .folder-conv-list { display: flex; flex-direction: column; gap: 1px; margin: 2px 0 6px 20px; }
+  .folder-conv-row {
+    padding: 6px 8px; border-radius: var(--radius); cursor: pointer; font-size: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary);
+  }
+  .folder-conv-row:hover { background: var(--surface-2); }
+  .folder-conv-row.active { background: var(--accent-bg); color: var(--accent-text); font-weight: 500; }
+  .folder-conv-empty { font-size: 12px; color: var(--text-muted); font-style: italic; margin: 2px 0 6px 20px; }
+
+  #search-toolbar-btn { padding: 6px 8px; }
+
+  #search-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(12,20,28,0.4);
+    align-items: flex-start; justify-content: center; padding-top: 90px; z-index: 50;
+  }
+  #search-overlay.open { display: flex; }
+  #search-panel {
+    background: var(--surface-2); width: 480px; max-width: 90vw; border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(12,20,28,0.25); overflow: hidden;
+  }
+  #search-panel-header {
+    display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--border);
+  }
+  #search-input { flex: 1; height: auto; border: none; outline: none; font-size: 14px; padding: 0; }
+  #search-close-btn {
+    width: 26px; height: 26px; padding: 0; display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; cursor: pointer; color: var(--text-muted); border-radius: var(--radius); flex-shrink: 0;
+  }
+  #search-close-btn:hover { background: var(--surface-1); }
+  #search-results { max-height: 360px; overflow-y: auto; padding: 8px; }
+  .search-result-row { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .search-result-row:hover { background: var(--surface-1); }
+  .search-result-name { font-size: 13px; color: var(--text-primary); }
+  .search-result-folder { font-size: 11px; color: var(--text-muted); }
+  .search-empty { font-size: 13px; color: var(--text-muted); padding: 20px; text-align: center; }
+
+  .conv-link {
+    display: inline-block; color: var(--accent-text); background: var(--accent-bg);
+    padding: 2px 10px; border-radius: 999px; cursor: pointer; font-size: 13px; margin-top: 4px;
+  }
+  .conv-link:hover { text-decoration: underline; }
+
+  .chat-area { flex: 1; min-width: 120px; display: flex; flex-direction: column; background: var(--surface-2); }
+  .chat-header {
+    padding: 0.9rem 1.25rem; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .chat-title { font-size: 15px; font-weight: 500; }
+  .chat-body { flex: 1; padding: 1.5rem; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+  .bubble-user {
+    align-self: flex-end; max-width: 75%; background: var(--surface-0);
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; font-size: 14px;
+  }
+  .bubble-ai {
+    align-self: flex-start; max-width: 75%; font-size: 14px; line-height: 1.6; color: var(--text-primary);
+  }
+  .chat-welcome {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 10px;
+  }
+  .chat-welcome-icon {
+    width: 40px; height: 40px; border-radius: 10px; background: var(--fill-brand, #d85a30);
+    display: flex; align-items: center; justify-content: center; margin-bottom: 4px;
+  }
+  .chat-welcome-title { font-size: 20px; font-weight: 500; color: var(--text-primary); margin: 0; }
+  .chat-welcome-sub { font-size: 13px; color: var(--text-muted); margin: 0; }
+  .chat-input-row { padding: 1rem 1.25rem; border-top: 1px solid var(--border); }
+  .chat-input-row input {
+    width: 100%; height: 36px; padding: 0 12px; border: 1px solid var(--border);
+    border-radius: var(--radius); font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div class="app-wrap">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <button id="toggle-folders"><i class="ti ti-layout-sidebar"></i>Dossiers</button>
+      <button id="search-toolbar-btn" aria-label="Rechercher dans les conversations"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7"></circle><path d="M21 21l-6-6"></path></svg></button>
+    </div>
+    <button id="header-jc-btn" class="toolbar-title" aria-label="Ouvrir le fil permanent avec Jean-Claude"><span class="name" id="header-assistant-name">Jean-Claude</span><span class="tagline">, ton assistant perso</span></button>
+    <div class="toolbar-right">
+      <button id="calendar-toolbar-btn" aria-label="Calendrier"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="16" rx="2"></rect><path d="M16 3v4"></path><path d="M8 3v4"></path><path d="M4 11h16"></path><path d="M11 15h1"></path><path d="M12 15v3"></path></svg></button>
+      <div id="account-btn">
+        <div class="avatar-wrap">
+          <div class="avatar-circle">YL</div>
+          <div id="status-dot"></div>
+        </div>
+        <span id="account-label">Connecté</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="main-row" class="main-row">
+    <div id="folder-col">
+      <div id="folder-col-full">
+        <div class="brand-row">
+          <div class="brand-left">
+            <div id="brand-pixel-avatar">JC</div>
+            <span id="brand-name">Jean-Claude</span>
+          </div>
+          <button id="settings-toggle" aria-label="Paramètres de l'assistant"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"></path><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"></path></svg></button>
+        </div>
+
+        <div id="settings-panel">
+          <label>Prénom de l'assistant</label>
+          <input id="assistant-name-input" value="Jean-Claude" />
+          <label>Couleur de Jean-Claude</label>
+          <div id="color-swatches"></div>
+          <label style="margin-top:4px;">Couleur du site</label>
+          <div id="theme-swatches"></div>
+          <label style="margin-top:4px;">Entrée Jean-Claude (colonne)</label>
+          <div id="jc-style-options"></div>
+          <label style="margin-top:4px;">Périmètre du mode assistant</label>
+          <div id="assistant-scope-options"></div>
+          <button id="settings-save">Enregistrer</button>
+        </div>
+
+        <div id="jc-entry"></div>
+
+        <button id="new-chat-btn"><i class="ti ti-plus"></i>Nouvelle conversation</button>
+
+        <div id="support-btn"><i class="ti ti-lifebuoy" style="font-size:15px;flex-shrink:0;"></i><span>Aide et suggestions</span></div>
+
+        <div id="groups-container"></div>
+      </div>
+      <div id="folder-col-mini">
+        <button id="mini-add-btn" aria-label="Nouvelle conversation"><i class="ti ti-plus" style="font-size:16px;"></i></button>
+      </div>
+    </div>
+
+    <div id="resizer-1" role="separator" aria-label="Redimensionner la colonne des dossiers"></div>
+
+    <div class="chat-area">
+      <div class="chat-header">
+        <span id="chat-title" class="chat-title">Nouvelle conversation</span>
+        <i class="ti ti-dots" style="color: var(--text-muted);"></i>
+      </div>
+      <div class="chat-body" id="chat-body"></div>
+      <div class="chat-input-row" id="chat-input-row">
+        <input type="text" id="chat-message-input" placeholder="Écris un message" />
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="search-overlay">
+  <div id="search-panel">
+    <div id="search-panel-header">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted);flex-shrink:0;"><circle cx="10" cy="10" r="7"></circle><path d="M21 21l-6-6"></path></svg>
+      <input type="text" id="search-input" placeholder="Rechercher une conversation..." />
+      <button id="search-close-btn" aria-label="Fermer la recherche"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"></path><path d="M6 6l12 12"></path></svg></button>
+    </div>
+    <div id="search-results"></div>
+  </div>
+</div>
+
+<script>
+const state = {
+  folders: [
+    { id: 'vie-perso', name: 'Vie perso', convs: ['Vacances août', 'Suivi santé', 'Déménagement'], expanded: true },
+    { id: 'finance', name: 'Finance', convs: ['Budget T3', 'Relance factures'], expanded: true },
+    { id: 'marketing', name: 'Marketing', convs: ['Campagne rentrée', 'Idées posts LinkedIn'], expanded: true },
+    { id: 'rh', name: 'RH', convs: ['Entretien annuel'], expanded: true }
+  ],
+  activeFolder: 'vie-perso',
+  activeConv: null,
+  folderWidth: 220,
+  folderOpen: true,
+  connected: true,
+  assistantName: 'Jean-Claude',
+  brandColor: '#d85a30',
+  siteTheme: 'bleu',
+  calYear: 2026,
+  calMonth: 7,
+  calViewMode: 'mois',
+  calendarOpen: false,
+  jcEntryStyle: 'pin',
+  jcChannelOpen: false,
+  assistantScope: { rappels: true, organisation: true, structure: true }
+};
+
+const JC_STYLE_LABELS = { pin: 'Dossier épinglé', avatar: 'Avatar dédié', blue: 'Dossier bleu plein' };
+
+const SCOPE_OPTIONS = [
+  { key: 'rappels', label: 'Rappels du matin', desc: 'Te prévenir des choses importantes du jour ou de la semaine.' },
+  { key: 'organisation', label: 'Organisation des dossiers', desc: 'Répondre aux questions sur le rangement et l\'organisation interne.' },
+  { key: 'structure', label: 'Suggestions de structure', desc: 'Proposer ou faire évoluer la structure du projet.' }
+];
+
+function renderScopeOptions() {
+  const wrap = document.getElementById('assistant-scope-options');
+  wrap.innerHTML = '';
+  SCOPE_OPTIONS.forEach(opt => {
+    const label = document.createElement('label');
+    label.className = 'scope-option';
+    const checked = state.assistantScope[opt.key] ? 'checked' : '';
+    label.innerHTML = '<input type="checkbox" ' + checked + ' /><span><span class="scope-label">' + opt.label + '</span><span class="scope-desc">' + opt.desc + '</span></span>';
+    label.querySelector('input').onchange = (e) => {
+      state.assistantScope[opt.key] = e.target.checked;
+    };
+    wrap.appendChild(label);
+  });
+}
+
+const EXAMPLE_CONV_BODY_HTML =
+  '<div class="bubble-user">Propose-moi un itinéraire de 5 jours en Bretagne.</div>' +
+  '<div class="bubble-ai">Voici une trame simple : jour 1 Saint-Malo, jour 2 Mont-Saint-Michel, jour 3 Dinan, jour 4 Cap Fréhel, jour 5 retour via Rennes. Je peux détailler chaque étape si tu veux.<br/>' +
+  'Au fait, j\'ai retrouvé une conversation liée à ce sujet : <span class="conv-link" onclick="goToConversation(\'Vie perso\', \'Suivi santé\')">→ Ouvrir "Suivi santé"</span></div>';
+
+function welcomeChatBodyHtml() {
+  return '<div class="chat-welcome">' +
+    '<div class="chat-welcome-icon"><i class="ti ti-sparkles" style="color:#fff;font-size:18px;"></i></div>' +
+    '<p class="chat-welcome-title">Bonjour Yann, qu\'est-ce qu\'on fait aujourd\'hui ?</p>' +
+    '<p class="chat-welcome-sub">Écris un message pour commencer.</p>' +
+    '</div>';
+}
+
+function renderJcEntry() {
+  const el = document.getElementById('jc-entry');
+  const on = state.jcChannelOpen ? ' on' : '';
+  if (state.jcEntryStyle === 'avatar') {
+    el.innerHTML = '<div class="jc-entry-avatar' + on + '"><div class="jc-avatar-dot"></div><span>' + state.assistantName + '</span></div>';
+  } else if (state.jcEntryStyle === 'blue') {
+    el.innerHTML = '<div class="jc-entry-blue' + on + '"><i class="ti ti-sparkles" style="font-size:14px;" aria-hidden="true"></i><span>' + state.assistantName + '</span></div>';
+  } else {
+    el.innerHTML = '<div class="jc-entry-pin' + on + '"><i class="ti ti-pin" style="font-size:14px;flex-shrink:0;" aria-hidden="true"></i><span style="text-transform:uppercase;">' + state.assistantName + '</span></div>';
+  }
+  el.onclick = openJeanClaudeChannel;
+}
+
+function renderJcStyleOptions() {
+  const wrap = document.getElementById('jc-style-options');
+  wrap.innerHTML = '';
+  Object.keys(JC_STYLE_LABELS).forEach(key => {
+    const btn = document.createElement('button');
+    btn.textContent = JC_STYLE_LABELS[key];
+    btn.className = state.jcEntryStyle === key ? 'active' : '';
+    btn.onclick = () => {
+      state.jcEntryStyle = key;
+      renderJcEntry();
+      renderJcStyleOptions();
+    };
+    wrap.appendChild(btn);
+  });
+}
+
+const JC_SUGGESTION_REPLIES = {
+  relation: "Parfait. Je peux par exemple m'adapter à ton rythme, te relancer plus ou moins souvent selon les périodes, ou simplement rester plus en retrait. Dis-moi ce qui te conviendrait le mieux et j'ajuste.",
+  matin: "Noté. Chaque matin, je regarderai ta semaine (rendez-vous, todos datées, échéances) et je te ferai un point rapide des choses importantes, surtout si on est en tout début de semaine. Tu peux désactiver ça à tout moment dans les réglages, section \"Périmètre du mode assistant\"."
+};
+
+function jcSuggestionClick(key) {
+  const wrap = document.getElementById('chat-body');
+  const userText = key === 'relation'
+    ? 'Oui, je veux bien que notre relation évolue.'
+    : 'Oui, préviens-moi le matin des choses importantes.';
+  wrap.insertAdjacentHTML('beforeend',
+    '<div class="bubble-user">' + userText + '</div>' +
+    '<div class="bubble-ai">' + JC_SUGGESTION_REPLIES[key] + '</div>');
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function openJeanClaudeChannel() {
+  state.activeConv = '__jc__';
+  state.calendarOpen = false;
+  state.jcChannelOpen = true;
+  const calBtn = document.getElementById('calendar-toolbar-btn');
+  if (calBtn) calBtn.classList.remove('on');
+  document.getElementById('chat-title').textContent = state.assistantName;
+  document.getElementById('chat-input-row').style.display = 'flex';
+  document.getElementById('chat-body').innerHTML =
+    '<div class="bubble-ai">Bonjour Yann. Ici c\'est notre fil permanent : organisation, structure des dossiers, rappels de ce que tu as à faire.' +
+    '<div class="jc-suggestions-row">' +
+      '<button class="jc-suggestion-chip" onclick="jcSuggestionClick(\'relation\')">Veux-tu que notre relation évolue ?</button>' +
+      '<button class="jc-suggestion-chip" onclick="jcSuggestionClick(\'matin\')">Veux-tu que je te préviennes le matin ?</button>' +
+    '</div>' +
+    '</div>';
+  renderJcEntry();
+}
+
+const MIN_W = 120, MAX_W = 360, MINI_W = 56;
+const COLORS = ['#d85a30', '#534ab7', '#0f6e56', '#185fa5', '#993556'];
+
+const SITE_THEMES = [
+  { key: 'bleu', swatch: '#0c497f', vars: {
+    '--surface-0': '#e8f2fa', '--surface-1': '#f3f9fd', '--accent-bg': '#dbeefd', '--accent-text': '#0c497f',
+    '--border': 'rgba(12,73,127,0.12)', '--border-strong': 'rgba(12,73,127,0.26)'
+  }},
+  { key: 'vert-deau', swatch: '#0f6e56', vars: {
+    '--surface-0': '#e9f7f1', '--surface-1': '#f3fbf8', '--accent-bg': '#d9f2e6', '--accent-text': '#0f6e56',
+    '--border': 'rgba(15,110,86,0.12)', '--border-strong': 'rgba(15,110,86,0.26)'
+  }},
+  { key: 'lavande', swatch: '#4a3f96', vars: {
+    '--surface-0': '#f0eefb', '--surface-1': '#f8f6fd', '--accent-bg': '#e6e1fa', '--accent-text': '#4a3f96',
+    '--border': 'rgba(74,63,150,0.12)', '--border-strong': 'rgba(74,63,150,0.26)'
+  }},
+  { key: 'neutre', swatch: '#5f5e5a', vars: {
+    '--surface-0': '#eeece4', '--surface-1': '#f7f6f0', '--accent-bg': '#e6f1fb', '--accent-text': '#0c447c',
+    '--border': 'rgba(0,0,0,0.1)', '--border-strong': 'rgba(0,0,0,0.22)'
+  }}
+];
+
+const FONT5X7 = {
+  A: ['01110','10001','10001','11111','10001','10001','10001'],
+  B: ['11110','10001','10001','11110','10001','10001','11110'],
+  C: ['01111','10000','10000','10000','10000','10000','01111'],
+  D: ['11110','10001','10001','10001','10001','10001','11110'],
+  E: ['11111','10000','10000','11110','10000','10000','11111'],
+  F: ['11111','10000','10000','11110','10000','10000','10000'],
+  G: ['01111','10000','10000','10011','10001','10001','01111'],
+  H: ['10001','10001','10001','11111','10001','10001','10001'],
+  I: ['01110','00100','00100','00100','00100','00100','01110'],
+  J: ['00111','00010','00010','00010','00010','10010','01100'],
+  K: ['10001','10010','10100','11000','10100','10010','10001'],
+  L: ['10000','10000','10000','10000','10000','10000','11111'],
+  M: ['10001','11011','10101','10101','10001','10001','10001'],
+  N: ['10001','11001','10101','10101','10011','10001','10001'],
+  O: ['01110','10001','10001','10001','10001','10001','01110'],
+  P: ['11110','10001','10001','11110','10000','10000','10000'],
+  Q: ['01110','10001','10001','10001','10101','10010','01101'],
+  R: ['11110','10001','10001','11110','10100','10010','10001'],
+  S: ['01111','10000','10000','01110','00001','00001','11110'],
+  T: ['11111','00100','00100','00100','00100','00100','00100'],
+  U: ['10001','10001','10001','10001','10001','10001','01110'],
+  V: ['10001','10001','10001','10001','10001','01010','00100'],
+  W: ['10001','10001','10001','10101','10101','10101','01010'],
+  X: ['10001','10001','01010','00100','01010','10001','10001'],
+  Y: ['10001','10001','01010','00100','00100','00100','00100'],
+  Z: ['11111','00001','00010','00100','01000','10000','11111']
+};
+
+const FONT3X5 = {
+  A: ['010','101','111','101','101'],
+  B: ['110','101','110','101','110'],
+  C: ['011','100','100','100','011'],
+  D: ['110','101','101','101','110'],
+  E: ['111','100','110','100','111'],
+  F: ['111','100','110','100','100'],
+  G: ['011','100','101','101','011'],
+  H: ['101','101','111','101','101'],
+  I: ['111','010','010','010','111'],
+  J: ['001','001','001','101','010'],
+  K: ['101','101','110','101','101'],
+  L: ['100','100','100','100','111'],
+  M: ['101','111','111','101','101'],
+  N: ['101','111','111','111','101'],
+  O: ['010','101','101','101','010'],
+  P: ['110','101','110','100','100'],
+  Q: ['010','101','101','011','001'],
+  R: ['110','101','110','101','101'],
+  S: ['011','100','010','001','110'],
+  T: ['111','010','010','010','010'],
+  U: ['101','101','101','101','011'],
+  V: ['101','101','101','101','010'],
+  W: ['101','101','111','111','101'],
+  X: ['101','101','010','101','101'],
+  Y: ['101','101','010','010','010'],
+  Z: ['111','001','010','100','111']
+};
+
+function findFolder(id) {
+  return state.folders.find(f => f.id === id) || null;
+}
+
+function allConvs() {
+  const rows = [];
+  state.folders.forEach(f => f.convs.forEach(c => rows.push({ conv: c, folder: f.name })));
+  return rows;
+}
+
+function applyAccountStyles() {
+  const dot = document.getElementById('status-dot');
+  const label = document.getElementById('account-label');
+  dot.style.background = state.connected ? 'var(--success)' : 'var(--text-muted)';
+  label.textContent = state.connected ? 'Connecté' : 'Non connecté';
+}
+
+function applyColumnStyles() {
+  const folderCol = document.getElementById('folder-col');
+  const r1 = document.getElementById('resizer-1');
+  const full = document.getElementById('folder-col-full');
+  const mini = document.getElementById('folder-col-mini');
+  const btnFolders = document.getElementById('toggle-folders');
+
+  if (state.folderOpen) {
+    folderCol.style.width = state.folderWidth + 'px';
+    full.style.display = 'block';
+    mini.style.display = 'none';
+    r1.style.display = 'block';
+    btnFolders.classList.add('on');
+  } else {
+    folderCol.style.width = MINI_W + 'px';
+    full.style.display = 'none';
+    mini.style.display = 'flex';
+    r1.style.display = 'none';
+    btnFolders.classList.remove('on');
+  }
+}
+
+function stripAccents(s) {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function getInitials(name) {
+  const parts = stripAccents((name || '').trim()).split(/[\s-]+/).filter(Boolean);
+  if (parts.length === 0) return 'A';
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+function shadeColor(hex, percent) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  let r = (num >> 16) + Math.round(255 * percent);
+  let g = ((num >> 8) & 0x00ff) + Math.round(255 * percent);
+  let b = (num & 0x0000ff) + Math.round(255 * percent);
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+  return '#' + (0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).slice(1);
+}
+
+function drawPixelAvatar() {
+  const el = document.getElementById('brand-pixel-avatar');
+  el.textContent = getInitials(state.assistantName);
+}
+
+function renderSwatches() {
+  const wrap = document.getElementById('color-swatches');
+  wrap.innerHTML = '';
+  COLORS.forEach(c => {
+    const btn = document.createElement('button');
+    btn.style.background = c;
+    btn.style.border = '2px solid ' + (state.brandColor === c ? '#1f1e1c' : 'transparent');
+    btn.setAttribute('aria-label', 'Choisir cette couleur pour Jean-Claude');
+    btn.onclick = () => {
+      state.brandColor = c;
+      drawPixelAvatar();
+      renderSwatches();
+    };
+    wrap.appendChild(btn);
+  });
+}
+
+function applySiteTheme(themeKey) {
+  const theme = SITE_THEMES.find(t => t.key === themeKey) || SITE_THEMES[0];
+  Object.entries(theme.vars).forEach(([prop, val]) => {
+    document.documentElement.style.setProperty(prop, val);
+  });
+  state.siteTheme = theme.key;
+}
+
+function renderThemeSwatches() {
+  const wrap = document.getElementById('theme-swatches');
+  wrap.innerHTML = '';
+  SITE_THEMES.forEach(theme => {
+    const btn = document.createElement('button');
+    btn.style.background = theme.swatch;
+    btn.style.border = '2px solid ' + (state.siteTheme === theme.key ? '#1f1e1c' : 'transparent');
+    btn.setAttribute('aria-label', 'Choisir ce thème de site');
+    btn.onclick = () => {
+      applySiteTheme(theme.key);
+      renderThemeSwatches();
+    };
+    wrap.appendChild(btn);
+  });
+}
+
+function openSupportChat() {
+  state.activeConv = 'Aide et suggestions';
+  state.calendarOpen = false;
+  state.jcChannelOpen = false;
+  renderJcEntry();
+  const calBtn = document.getElementById('calendar-toolbar-btn');
+  if (calBtn) calBtn.classList.remove('on');
+  document.getElementById('chat-title').textContent = 'Aide et suggestions';
+  document.getElementById('chat-input-row').style.display = 'flex';
+  document.getElementById('chat-body').innerHTML =
+    '<div class="bubble-ai">Bonjour, je suis ' + state.assistantName +
+    ". Décris-moi une question, un bug, un souci ou une suggestion d'amélioration, et je m'en occupe.</div>";
+}
+
+const MONTH_NAMES = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+const CAL_TODAY = { year: 2026, month: 7, day: 3 };
+const CAL_EVENTS = {
+  '2026-7': {
+    10: ['RDV médecin - 14h30'],
+    18: ['Anniversaire : réserver le lieu'],
+    24: ['Relance factures clients']
+  }
+};
+
+function showCalendarEvent(label) {
+  const detail = document.getElementById('calendar-event-detail');
+  if (detail) detail.textContent = label;
+}
+
+function changeCalMonth(delta) {
+  state.calMonth += delta;
+  if (state.calMonth < 0) { state.calMonth = 11; state.calYear--; }
+  if (state.calMonth > 11) { state.calMonth = 0; state.calYear++; }
+  renderCalendarBody();
+}
+
+function goToCalToday() {
+  state.calYear = CAL_TODAY.year;
+  state.calMonth = CAL_TODAY.month;
+  renderCalendarBody();
+}
+
+function renderCalendarBody() {
+  const year = state.calYear, month = state.calMonth;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrevMonth = new Date(year, month, 0).getDate();
+  let startWeekday = new Date(year, month, 1).getDay();
+  startWeekday = (startWeekday + 6) % 7;
+  const totalCells = 42;
+  const weekdays = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+  const events = CAL_EVENTS[year + '-' + month] || {};
+
+  let cellsHtml = '';
+  for (let i = 0; i < totalCells; i++) {
+    let dayNum, muted = false;
+    if (i < startWeekday) {
+      dayNum = daysInPrevMonth - startWeekday + i + 1;
+      muted = true;
+    } else if (i >= startWeekday + daysInMonth) {
+      dayNum = i - (startWeekday + daysInMonth) + 1;
+      muted = true;
+    } else {
+      dayNum = i - startWeekday + 1;
+    }
+    const isToday = !muted && year === CAL_TODAY.year && month === CAL_TODAY.month && dayNum === CAL_TODAY.day;
+    const dayEvents = !muted ? (events[dayNum] || []) : [];
+    const numberClass = 'calendar-day-number' + (isToday ? ' today' : '');
+    const pills = dayEvents.map(label =>
+      '<div class="calendar-event-pill" onclick="showCalendarEvent(\'' + label.replace(/'/g, "\\'") + '\')">' + label + '</div>'
+    ).join('');
+    cellsHtml += '<div class="calendar-day-cell' + (muted ? ' muted' : '') + '"><span class="' + numberClass + '">' + dayNum + '</span>' + pills + '</div>';
+  }
+
+  const weekdayHtml = weekdays.map(d => '<div class="calendar-weekday">' + d + '</div>').join('');
+  const label = MONTH_NAMES[month] + ' ' + year;
+
+  document.getElementById('chat-body').innerHTML =
+    '<div class="calendar-toolbar">' +
+      '<span class="calendar-month-label">' + label + '</span>' +
+      '<div class="calendar-view-switch">' +
+        '<button class="active" onclick="setCalView(\'mois\')">Mois</button><button disabled>Jour</button><button disabled>Semaine</button><button disabled>Année</button><button onclick="setCalView(\'todo\')">Todo</button>' +
+      '</div>' +
+      '<div class="calendar-nav-controls">' +
+        '<button class="icon-btn" onclick="changeCalMonth(-1)" aria-label="Mois précédent">&lsaquo;</button>' +
+        '<button class="calendar-today-btn" onclick="goToCalToday()">Aujourd\'hui</button>' +
+        '<button class="icon-btn" onclick="changeCalMonth(1)" aria-label="Mois suivant">&rsaquo;</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="calendar-grid-wrap">' +
+      '<div class="calendar-weekdays-row">' + weekdayHtml + '</div>' +
+      '<div class="calendar-grid">' + cellsHtml + '</div>' +
+    '</div>' +
+    '<div id="calendar-event-detail">Clique sur un événement pour voir le détail.</div>';
+}
+
+const WEEK_TODO = {
+  'LUNDI 03': {
+    'MATIN': [
+      { checked: true, text: 'PRO :', children: [
+        { checked: true, text: 'DEV : Point Clarisse' },
+        { checked: true, text: 'RH : Paiement Clarisse Patrick' }
+      ]}
+    ],
+    'APRÈM': [
+      { checked: true, text: '1335 RDV APPLE GENIUS BAR ODYSSEUM' },
+      { checked: false, text: 'PRO :', children: [
+        { checked: false, text: 'GITLAB : Achat Minute pour Scrapp Serveur' },
+        { checked: false, text: 'B2B : Message de Standby Vacances à mes clients' }
+      ]}
+    ],
+    'SOIRÉE': [
+      { checked: false, text: 'TODO :', children: [
+        { checked: false, text: 'CAMION : Regarder histoire des diamètres de câble, entre bloc fusible et batterie' }
+      ]}
+    ],
+    'SOIR': [
+      { checked: false, text: 'Repo' }
+    ]
+  },
+  'MARDI 04': {
+    'MATIN': [
+      { checked: false, text: 'PRO : 1000 TEST FICHE PRODUIT :', children: [
+        { checked: false, text: 'Arborescence plate ?' },
+        { checked: false, text: 'Import des marques nécessaire ?' }
+      ]},
+      { checked: false, text: 'PERSO :', children: [
+        { checked: false, text: 'CAMION : Clim Feu Vert' }
+      ]}
+    ],
+    'APRÈM': [
+      { checked: false, text: 'PERSO :', children: [
+        { checked: false, text: '1715 CAMION : Contrôle Technique' },
+        { checked: false, text: 'GARAGE SUD : WING : PCALL OLIVIER POUR WING :' },
+        { checked: false, text: 'GARAGE SUD : WING : Point matos pompe aile de wing' },
+        { checked: false, text: "GARAGE SUD : WING : Récupérer matos pour compatibilité Foil sur board d'Olivier → Aller chez Olivier" }
+      ]}
+    ],
+    'SOIRÉE': [
+      { checked: false, text: 'COMMANDE VIS : Commande vis 6 pans creux INOX : Vis Express', children: [
+        { checked: false, text: '6 Pans creux / BTR A4 Partiellement fileté : M6 25 mm' },
+        { checked: false, text: '6 Pans creux / BTR A4 Partiellement fileté : M6 30 mm' },
+        { checked: false, text: '6 Pans creux / BTR A4 Partiellement fileté : M6 35 mm' },
+        { checked: false, text: '6 Pans creux / BTR A4 Partiellement fileté : M6 40 mm' },
+        { checked: false, text: '6 Pans creux / BTR A4 Partiellement fileté : M6 60 mm' }
+      ]}
+    ],
+    'SOIR': []
+  },
+  'MERCREDI 05': {
+    'MATIN': [],
+    'APRÈM': [ { checked: false, text: 'GO GRUISSAN : Diner papa et maman' } ],
+    'SOIRÉE': [],
+    'SOIR': []
+  },
+  'JEUDI 06': {
+    'MATIN': [
+      { checked: false, text: 'CUISINE : Faire cookie' },
+      { checked: false, text: '1230 DEJ STEPH : Rue des martyrs au petit Lila' }
+    ],
+    'APRÈM': [
+      { checked: false, text: 'TODO PERSO :', children: [
+        { checked: false, text: 'Divers' },
+        { checked: false, text: 'Autre' },
+        { checked: false, text: 'Papiers' }
+      ]}
+    ],
+    'SOIRÉE': [],
+    'SOIR': []
+  },
+  'VENDREDI 07': { 'MATIN': [], 'APRÈM': [], 'SOIRÉE': [], 'SOIR': [] },
+  'SAMEDI 08': { 'MATIN': [], 'APRÈM': [], 'SOIRÉE': [], 'SOIR': [] },
+  'DIMANCHE 09': { 'MATIN': [], 'APRÈM': [], 'SOIRÉE': [], 'SOIR': [] }
+};
+
+function renderTodoItem(day, period, idx, item, childIdx) {
+  const checkedAttr = item.checked ? 'checked' : '';
+  const idPath = childIdx === undefined ? (day + '|' + period + '|' + idx) : (day + '|' + period + '|' + idx + '|' + childIdx);
+  const textStyle = item.checked ? ' style="text-decoration:line-through;color:var(--text-muted);"' : '';
+  let html = '<label class="todo-item' + (childIdx !== undefined ? ' todo-subitem' : '') + '">' +
+    '<input type="checkbox" ' + checkedAttr + ' onchange="toggleTodoItem(\'' + idPath + '\')" />' +
+    '<span' + textStyle + '>' + item.text + '</span>' +
+    '</label>';
+  if (item.children && item.children.length) {
+    html += '<div class="todo-children">';
+    item.children.forEach((child, cIdx) => {
+      html += renderTodoItem(day, period, idx, child, cIdx);
+    });
+    html += '</div>';
+  }
+  return html;
+}
+
+function buildTodoListHtml() {
+  let html = '<div class="todo-week">';
+  Object.keys(WEEK_TODO).forEach(day => {
+    html += '<div class="todo-day-block"><div class="todo-day-title">' + day + '</div>';
+    const periods = WEEK_TODO[day];
+    Object.keys(periods).forEach(period => {
+      html += '<div class="todo-period"><div class="todo-period-label">' + period + '</div>';
+      const items = periods[period];
+      if (!items.length) {
+        html += '<div class="todo-empty">Rien de prévu</div>';
+      } else {
+        html += '<div class="todo-items">';
+        items.forEach((item, idx) => { html += renderTodoItem(day, period, idx, item); });
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function toggleTodoItem(idPath) {
+  const parts = idPath.split('|');
+  const day = parts[0], period = parts[1], idx = parseInt(parts[2], 10);
+  const item = WEEK_TODO[day][period][idx];
+  if (parts.length === 4) {
+    const cIdx = parseInt(parts[3], 10);
+    item.children[cIdx].checked = !item.children[cIdx].checked;
+  } else {
+    item.checked = !item.checked;
+  }
+  const el = document.querySelector('.todo-week');
+  if (el) el.outerHTML = buildTodoListHtml();
+}
+
+function renderTodoUI() {
+  document.getElementById('chat-body').innerHTML =
+    '<div class="calendar-toolbar">' +
+      '<span class="calendar-month-label">Semaine du 3 au 9 août 2026</span>' +
+      '<div class="calendar-view-switch">' +
+        '<button onclick="setCalView(\'mois\')">Mois</button><button disabled>Jour</button><button disabled>Semaine</button><button disabled>Année</button><button class="active" onclick="setCalView(\'todo\')">Todo</button>' +
+      '</div>' +
+      '<div class="calendar-nav-controls"></div>' +
+    '</div>' +
+    buildTodoListHtml();
+}
+
+function setCalView(mode) {
+  state.calViewMode = mode;
+  if (mode === 'todo') renderTodoUI(); else renderCalendarBody();
+}
+
+function openCalendar() {
+  state.activeConv = null;
+  state.jcChannelOpen = false;
+  renderJcEntry();
+  document.getElementById('chat-title').textContent = 'Calendrier';
+  document.getElementById('chat-input-row').style.display = 'none';
+  if (state.calViewMode === 'todo') renderTodoUI(); else renderCalendarBody();
+}
+
+function render() {
+  const container = document.getElementById('groups-container');
+  container.innerHTML = '';
+
+  const header = document.createElement('div');
+  header.className = 'group-header';
+  header.style.cssText = 'background:#0059ff;border-radius:var(--radius);padding:6px 8px;';
+  header.innerHTML = '<span style="color:#ffffff;font-weight:700;text-transform:uppercase;letter-spacing:0.02em;font-size:12px;">Personnel</span>';
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-folder-btn';
+  addBtn.setAttribute('aria-label', 'Ajouter un dossier');
+  addBtn.innerHTML = '<i class="ti ti-plus" style="font-size:14px;color:#ffffff;"></i>';
+  addBtn.onclick = () => {
+    const name = prompt('Nom du nouveau dossier :');
+    if (name && name.trim()) {
+      const id = name.trim().toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
+      state.folders.push({ id, name: name.trim(), convs: [] });
+      state.activeFolder = id;
+      state.activeConv = null;
+      render();
+    }
+  };
+  header.appendChild(addBtn);
+  container.appendChild(header);
+
+  state.folders.forEach(folder => {
+    const block = document.createElement('div');
+    block.className = 'folder-block';
+
+    const isOpen = folder.expanded !== false;
+    const headerRow = document.createElement('div');
+    headerRow.className = 'folder-header-row';
+    headerRow.innerHTML = '<span class="folder-chevron' + (isOpen ? ' open' : '') + '">▸</span><span>' + folder.name + '</span>';
+    headerRow.onclick = () => {
+      folder.expanded = !isOpen;
+      render();
+    };
+    block.appendChild(headerRow);
+
+    if (isOpen) {
+      if (folder.convs.length) {
+        const list = document.createElement('div');
+        list.className = 'folder-conv-list';
+        folder.convs.forEach(name => {
+          const row = document.createElement('div');
+          const active = name === state.activeConv && folder.id === state.activeFolder;
+          row.className = 'folder-conv-row' + (active ? ' active' : '');
+          row.textContent = name;
+          row.onclick = (e) => {
+            e.stopPropagation();
+            state.activeFolder = folder.id;
+            state.activeConv = name;
+            render();
+          };
+          list.appendChild(row);
+        });
+        block.appendChild(list);
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'folder-conv-empty';
+        empty.textContent = "Aucune conversation.";
+        block.appendChild(empty);
+      }
+    }
+
+    container.appendChild(block);
+  });
+
+  document.getElementById('chat-title').textContent = state.activeConv || 'Nouvelle conversation';
+  document.getElementById('chat-input-row').style.display = 'flex';
+  const isFreshConv = !state.activeConv || state.activeConv === 'Nouvelle conversation';
+  document.getElementById('chat-body').innerHTML = isFreshConv ? welcomeChatBodyHtml() : EXAMPLE_CONV_BODY_HTML;
+  state.calendarOpen = false;
+  state.jcChannelOpen = false;
+  renderJcEntry();
+  const calBtn = document.getElementById('calendar-toolbar-btn');
+  if (calBtn) calBtn.classList.remove('on');
+  applyColumnStyles();
+}
+
+document.getElementById('new-chat-btn').onclick = () => {
+  const folder = findFolder(state.activeFolder) || findFolder('vie-perso');
+  if (folder) {
+    const name = 'Nouvelle conversation';
+    folder.convs.unshift(name);
+    folder.expanded = true;
+    state.activeFolder = folder.id;
+    state.activeConv = name;
+    render();
+  }
+};
+
+document.getElementById('mini-add-btn').onclick = () => {
+  const folder = findFolder(state.activeFolder) || findFolder('vie-perso');
+  if (folder) {
+    const name = 'Nouvelle conversation';
+    folder.convs.unshift(name);
+    folder.expanded = true;
+    state.activeFolder = folder.id;
+    state.activeConv = name;
+    render();
+  }
+};
+
+function goToConversation(folderName, convName) {
+  const folder = state.folders.find(f => f.name === folderName);
+  if (folder) {
+    folder.expanded = true;
+    state.activeFolder = folder.id;
+    state.activeConv = convName;
+  }
+  closeSearch();
+  render();
+}
+
+function openSearch() {
+  document.getElementById('search-overlay').classList.add('open');
+  const input = document.getElementById('search-input');
+  input.value = '';
+  renderSearchResults('');
+  input.focus();
+}
+
+function closeSearch() {
+  document.getElementById('search-overlay').classList.remove('open');
+}
+
+function renderSearchResults(query) {
+  const wrap = document.getElementById('search-results');
+  const q = query.trim().toLowerCase();
+  const rows = allConvs().filter(r => !q || r.conv.toLowerCase().includes(q) || r.folder.toLowerCase().includes(q));
+  wrap.innerHTML = '';
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="search-empty">Aucun résultat.</div>';
+    return;
+  }
+  rows.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'search-result-row';
+    row.innerHTML = '<span class="search-result-name">' + r.conv + '</span><span class="search-result-folder">' + r.folder + '</span>';
+    row.onclick = () => goToConversation(r.folder, r.conv);
+    wrap.appendChild(row);
+  });
+}
+
+document.getElementById('search-toolbar-btn').onclick = openSearch;
+document.getElementById('search-close-btn').onclick = closeSearch;
+document.getElementById('search-input').addEventListener('input', (e) => renderSearchResults(e.target.value));
+document.getElementById('search-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'search-overlay') closeSearch();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSearch();
+});
+
+document.getElementById('support-btn').onclick = openSupportChat;
+document.getElementById('header-jc-btn').onclick = openJeanClaudeChannel;
+document.getElementById('calendar-toolbar-btn').onclick = () => {
+  const btn = document.getElementById('calendar-toolbar-btn');
+  if (state.calendarOpen) {
+    state.calendarOpen = false;
+    btn.classList.remove('on');
+    render();
+  } else {
+    state.calendarOpen = true;
+    btn.classList.add('on');
+    openCalendar();
+  }
+};
+
+document.getElementById('toggle-folders').onclick = () => {
+  state.folderOpen = !state.folderOpen;
+  applyColumnStyles();
+};
+
+document.getElementById('account-btn').onclick = () => {
+  state.connected = !state.connected;
+  applyAccountStyles();
+};
+
+document.getElementById('settings-toggle').onclick = () => {
+  const panel = document.getElementById('settings-panel');
+  panel.style.display = panel.style.display === 'none' || !panel.style.display ? 'block' : 'none';
+};
+
+document.getElementById('assistant-name-input').addEventListener('input', (e) => {
+  state.assistantName = e.target.value || 'Assistant';
+  document.getElementById('brand-name').textContent = state.assistantName;
+  document.getElementById('header-assistant-name').textContent = state.assistantName;
+  drawPixelAvatar();
+  renderJcEntry();
+});
+
+document.getElementById('settings-save').onclick = () => {
+  document.getElementById('settings-panel').style.display = 'none';
+};
+
+function setupResizer(resizerId, widthKey) {
+  const resizer = document.getElementById(resizerId);
+  resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = state[widthKey];
+    resizer.style.background = 'var(--border-strong)';
+
+    function onMove(ev) {
+      const delta = ev.clientX - startX;
+      let newWidth = startWidth + delta;
+      newWidth = Math.max(MIN_W, Math.min(MAX_W, newWidth));
+      state[widthKey] = newWidth;
+      applyColumnStyles();
+    }
+    function onUp() {
+      resizer.style.background = 'transparent';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+setupResizer('resizer-1', 'folderWidth');
+
+renderSwatches();
+renderThemeSwatches();
+renderJcStyleOptions();
+renderScopeOptions();
+applyAccountStyles();
+drawPixelAvatar();
+render();
+const chatMessageInput = document.getElementById('chat-message-input');
+if (chatMessageInput) chatMessageInput.focus();
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "@jc/domain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Types, schémas Zod et règles métier partagés entre l'API et les clients",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "react-native": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "typecheck": "tsc -b --dry"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  }
+}

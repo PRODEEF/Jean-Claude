@@ -1,0 +1,38 @@
+---
+description: Renvoi vers les rules et skills du dépôt Jean-Claude, hébergés dans .claude/
+globs: ["**/*"]
+alwaysApply: true
+---
+
+# Jean-Claude — configuration d'agent
+
+Les règles et procédures de ce dépôt sont dans **`.claude/`**, source unique
+partagée entre Claude Code et Cursor. Ce fichier n'est qu'un renvoi : ne rien
+dupliquer ici.
+
+## À lire systématiquement
+
+- [.claude/README.md](../../.claude/README.md) — catalogue et 6 invariants
+- [.claude/rules/000-general.md](../../.claude/rules/000-general.md) — langue, TypeScript, secrets, git
+- [.claude/rules/400-produit.md](../../.claude/rules/400-produit.md) — règles de conception du cahier des charges
+
+## Selon la tâche
+
+| Tâche | Fichier |
+|---|---|
+| API NestJS | [rules/100-api.md](../../.claude/rules/100-api.md) · [skills/api-module](../../.claude/skills/api-module/SKILL.md) |
+| App Expo | [rules/200-app.md](../../.claude/rules/200-app.md) · [skills/app-feature](../../.claude/skills/app-feature/SKILL.md) |
+| Moteur IA | [skills/llm-provider](../../.claude/skills/llm-provider/SKILL.md) |
+| Schéma de base | [skills/supabase-migration](../../.claude/skills/supabase-migration/SKILL.md) |
+| Choix d'interface | [skills/ui-decision](../../.claude/skills/ui-decision/SKILL.md) |
+| Tests | [rules/300-tests.md](../../.claude/rules/300-tests.md) |
+
+## Plan avant code
+
+Pour toute tâche non triviale — feature, bug multi-fichiers, refactor, ou zone
+inconnue (`core/`, auth, llm) — passer en **mode Plan** et faire valider avant
+d'implémenter. Le plan indique : fichiers touchés, skills à suivre, étapes,
+risques, critères d'acceptation.
+
+Exceptions : typo, one-liner dans un fichier déjà identifié, demande explicite
+d'implémentation directe, ou suite d'un plan déjà validé dans la conversation.

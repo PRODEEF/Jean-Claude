@@ -1,0 +1,42 @@
+# Dépendances
+node_modules/
+.pnp/
+.pnp.js
+
+# Builds
+dist/
+build/
+.expo/
+.expo-shared/
+*.tsbuildinfo
+web-build/
+
+# Environnement — ne JAMAIS committer de clés
+.env
+.env.*
+!.env.example
+
+# Natif
+apps/app/ios/
+apps/app/android/
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+
+# Supabase local
+supabase/.temp/
+supabase/.branches/
+
+# Outils
+.vercel/
+.turbo/
+coverage/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+
+# Éditeurs
+.idea/
+*.swp

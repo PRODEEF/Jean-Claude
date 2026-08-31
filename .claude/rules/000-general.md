@@ -1,0 +1,88 @@
+# 000 — Règles générales
+
+S'appliquent à tout le dépôt.
+
+## Langue
+
+- Code (variables, fonctions, fichiers) en **anglais**
+- Commentaires, TSDoc, messages d'erreur et documentation en **français**
+- Commits en **français**, format Conventional Commits
+
+## TypeScript — interdits
+
+- ❌ `any` explicite → utiliser `unknown` puis narrow, ou typer précisément
+- ❌ `@ts-ignore` / `@ts-expect-error` sans commentaire justifiant et datant la dette
+- ❌ `as SomeType` sauf garantie contextuelle → préférer un type guard
+- ❌ `!` (non-null assertion) sans vérification préalable
+- ✅ `type` pour les alias, `interface` pour les shapes destinés à être implémentés
+
+`strict` est actif, y compris `noUncheckedIndexedAccess` et
+`exactOptionalPropertyTypes`. Un accès indexé renvoie `T | undefined` : le
+gérer, ne pas le contourner.
+
+**Exception documentée** : `apps/api/src/core/supabase/database.types.ts` est un
+fichier généré. Son stub actuel utilise `any` volontairement — il sera remplacé
+par `npm run db:types`. Ne pas l'éditer à la main.
+
+## Secrets
+
+- ❌ Aucune clé d'API, token ou URL de base en dur dans le code
+- ❌ Aucun accès à `process.env` hors de `apps/api/src/core/config/configuration.ts`
+  et `apps/app/src/shared/lib/env.ts`
+- ❌ Aucun secret dans `apps/app` : les variables `EXPO_PUBLIC_*` sont embarquées
+  dans le bundle, donc publiques
+- ✅ Backend : passer par `ConfigService`
+
+## Erreurs
+
+- ❌ Jamais de `catch` vide
+- ❌ Jamais d'erreur avalée sans au minimum un `logger.warn()`
+- ✅ Dans un `catch`, vérifier `error instanceof Error` avant d'accéder à `.message`
+- ✅ Ne jamais renvoyer au client une erreur brute d'un fournisseur externe :
+  elle peut contenir des fragments de prompt, donc des données utilisateur
+
+## Logs
+
+- ❌ Pas de `console.log` en production
+- ✅ Backend : `new Logger(NomDuService.name)` de NestJS
+- ✅ App : retirer les logs avant de committer
+
+## Nommage
+
+| Élément | Convention |
+|---|---|
+| Fichiers | `kebab-case`, sauf composants React (`PascalCase.tsx`) |
+| Variables, fonctions | `camelCase` |
+| Types, classes | `PascalCase` |
+| Constantes exportées | `SCREAMING_SNAKE_CASE` |
+| Hooks | préfixe `use` |
+| Symboles d'injection | `SCREAMING_SNAKE_CASE`, ex. `FOLDER_REPOSITORY` |
+
+## Commentaires
+
+Un commentaire explique **pourquoi**, jamais **quoi**. Un commentaire qui
+paraphrase la ligne suivante est du bruit et doit être supprimé.
+
+```ts
+// ❌ Incrémente le compteur
+count += 1;
+
+// ✅ Le compteur du parent inclut les sous-dossiers : l'utilisateur raisonne
+// en « ce que contient Santé », pas en « ce qui est à sa racine ».
+count += childCount;
+```
+
+## Git
+
+- ❌ Pas de push direct sur `main` — passer par une branche
+- Branches : `feat/<description>`, `fix/<description>`, `chore/<description>`
+- Commits : `feat: ajouter la conversion conversation → todoliste`
+- ❌ Pas de message vague : `fix`, `wip`, `update`, `changes`
+- Un commit = une intention atomique
+
+## Ce qu'on ne fait pas ici
+
+- ❌ Pas de classe utilitaire statique `XxxUtils` / `XxxHelper` → fonctions exportées
+- ❌ Pas de singleton manuel → NestJS gère l'injection
+- ❌ Pas de logique métier dans un Controller ou un écran → Service / hook
+- ❌ Pas de `class-validator` → Zod uniquement, depuis `packages/domain`
