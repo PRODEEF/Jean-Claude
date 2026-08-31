@@ -1,76 +1,59 @@
-import { Tabs } from "expo-router";
-import { Platform, Text } from "react-native";
-import { fontSize } from "@jc/design";
+import { useState } from "react";
+import { Pressable, View } from "react-native";
+import { Slot } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AppBanner } from "@/features/navigation/AppBanner";
+import { AppSidebar } from "@/features/navigation/AppSidebar";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
-import { useTheme } from "@/shared/providers/theme-provider";
 
 /**
- * Navigation principale.
+ * Coquille de l'application authentifiée.
  *
- * Onglets en bas sur téléphone (pattern des apps de référence du §4.2), rail
- * latéral dès 768 pt de large — c'est-à-dire sur tablette, sur le web au format
- * fenêtre et sur desktop. Le même arbre de routes sert les deux : seule la
- * position de la barre change, ce qui évite d'entretenir deux navigations.
- *
- * Les libellés textuels tiennent lieu d'icônes tant qu'aucune police d'icônes
- * n'a été arbitrée. À remplacer une fois le jeu d'icônes choisi.
+ * Bannière fixe en haut, navigation par la gauche, contenu à droite. La même
+ * barre latérale sert les deux tailles d'écran : fixe au-delà de 768 pt,
+ * tiroir escamotable en deçà. C'est ce qui évite d'entretenir deux
+ * navigations — un navigateur en fenêtre étroite se comporte alors comme un
+ * téléphone, sans qu'on ait à tester la plateforme.
  */
 export default function AppLayout() {
-  const { palette } = useTheme();
   const breakpoint = useBreakpoint();
+  const insets = useSafeAreaInsets();
+  const expanded = breakpoint === "expanded";
+
+  // `null` = l'utilisateur n'a pas encore tranché : la barre suit alors la
+  // taille d'écran, ouverte sur desktop et fermée sur téléphone.
+  const [preference, setPreference] = useState<boolean | null>(null);
+  const visible = preference ?? expanded;
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: palette.accent,
-        tabBarInactiveTintColor: palette.textMuted,
-        tabBarStyle: {
-          backgroundColor: palette.surface,
-          borderTopColor: palette.border,
-        },
-        tabBarLabelStyle: { fontSize: fontSize.xs },
-        // `web` bascule la barre sur le côté au-delà du point de rupture.
-        ...(breakpoint === "expanded" && Platform.OS === "web"
-          ? { tabBarPosition: "left" as const }
-          : {}),
-      }}
-    >
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: "Conversations",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: fontSize.lg }}>💬</Text>,
-        }}
-      />
-      <Tabs.Screen
-        name="assistant"
-        options={{
-          title: "Jean-Claude",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: fontSize.lg }}>✨</Text>,
-        }}
-      />
-      <Tabs.Screen
-        name="todo"
-        options={{
-          title: "Todoliste",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: fontSize.lg }}>✓</Text>,
-        }}
-      />
-      <Tabs.Screen
-        name="calendar"
-        options={{
-          title: "Calendrier",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: fontSize.lg }}>📅</Text>,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Réglages",
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: fontSize.lg }}>⚙️</Text>,
-        }}
-      />
-    </Tabs>
+    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+      <AppBanner onToggleSidebar={() => setPreference(!visible)} />
+
+      <View className="flex-1 flex-row">
+        {expanded && visible ? <AppSidebar /> : null}
+        <View className="flex-1">
+          <Slot />
+        </View>
+      </View>
+
+      {/* En deçà du point de rupture, la barre passe au-dessus du contenu
+          plutôt que de le comprimer : à cette largeur, la partager laisserait
+          les deux illisibles. */}
+      {!expanded && visible ? (
+        <View className="absolute inset-0 flex-row" style={{ paddingTop: insets.top + 56 }}>
+          <AppSidebar onNavigate={() => setPreference(false)} />
+          {/* Noir littéral et non un jeton de la palette : le modificateur
+              d'opacité de Tailwind ne sait pas calculer d'alpha sur une
+              variable CSS, et un voile clair en thème sombre n'assombrirait
+              rien. C'est aussi ce qu'utilise le Sheet de shadcn. */}
+          <Pressable
+            className="flex-1 bg-black/50"
+            onPress={() => setPreference(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Fermer la navigation"
+          />
+        </View>
+      ) : null}
+    </View>
   );
 }

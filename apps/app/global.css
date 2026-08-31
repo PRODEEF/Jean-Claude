@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Valeurs de repli du thème clair.
+ *
+ * `ThemeProvider` réécrit ces variables à l'exécution depuis `@jc/design`.
+ * Elles ne servent donc qu'au premier rendu web, avant l'hydratation — sans
+ * elles, la page apparaîtrait un instant sans couleurs.
+ */
+:root {
+  --background: #ffffff;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #f7f7f8;
+  --secondary-foreground: #18181b;
+  --muted: #f7f7f8;
+  --muted-foreground: #71717a;
+  --accent: #f7f7f8;
+  --accent-foreground: #18181b;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #6366f1;
+}

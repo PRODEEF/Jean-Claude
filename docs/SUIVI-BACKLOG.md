@@ -9,7 +9,8 @@ schéma prêts, comportement à écrire)
 
 Dernière mise à jour : **31 août 2026** — issues #3 et #4 terminées : abstraction IA via
 Vercel AI Gateway, fil de conversation en flux, timeouts et quotas. Critère de recette
-§11 Phase A validé.
+§11 Phase A validé. API migrée de NestJS vers Hono dans la foulée, en vue du
+déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2,4 s à 0,7 s.
 
 ---
 
@@ -23,7 +24,7 @@ Vercel AI Gateway, fil de conversation en flux, timeouts et quotas. Critère de 
 | §5.1 | Choix du modèle par l'utilisateur                      |   ⬜   | `LLM_MODEL` est le défaut serveur. À porter dans `userPreferences` + panneau de réglages                |
 | §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                                   |
 | §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                            |
-| §5.3 | API commune web + mobile                               |   ✅   | NestJS ; l'app ne touche jamais la base directement                                                     |
+| §5.3 | API commune web + mobile                               |   ✅   | Hono ; l'app ne touche jamais la base directement                                                         |
 | §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre                     |
 | §4.4 | React Native                                           |   ✅   | Expo SDK 57, Expo Router, React 19                                                                      |
 | §8   | Postgres portable, migration UE possible               |   ✅   | Aucune extension propriétaire                                                                           |
@@ -86,7 +87,7 @@ Vercel AI Gateway, fil de conversation en flux, timeouts et quotas. Critère de 
 | Région d'hébergement Supabase (UE recommandé)     | §8    | Antonin                                                      |
 | Service de reconnaissance vocale (natif ou tiers) | §12.3 | Antonin — budget / latence                                   |
 | Date réelle du rendez-vous de cadrage             | §0    | Yann — le document signale l'incohérence du « 31 septembre » |
-| Jeu d'icônes de la navigation                     | §4.2  | — placeholders emoji actuellement                            |
+| Jeu d'icônes de la navigation                     | §4.2  | — lucide-react-native en place (défaut react-native-reusables) |
 
 ## Points nécessitant un A/B testing humain (§4.3)
 

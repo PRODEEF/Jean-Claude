@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fontSize, fontWeight, spacing } from "@jc/design";
 import { api } from "@/shared/lib/api";
 import { ConversationThread } from "@/features/conversation/ConversationThread";
@@ -17,7 +16,6 @@ import { useTheme } from "@/shared/providers/theme-provider";
  */
 export default function AssistantScreen() {
   const { palette } = useTheme();
-  const insets = useSafeAreaInsets();
 
   // Le canal est créé à la volée au premier accès, côté serveur.
   const channel = useQuery({
@@ -26,7 +24,7 @@ export default function AssistantScreen() {
   });
 
   return (
-    <View style={[styles.root, { backgroundColor: palette.background, paddingTop: insets.top }]}>
+    <View style={[styles.root, { backgroundColor: palette.background }]}>
       <View style={[styles.header, { borderBottomColor: palette.border }]}>
         <Text style={[styles.title, { color: palette.text }]}>Jean-Claude</Text>
         <Text style={[styles.subtitle, { color: palette.textMuted }]}>

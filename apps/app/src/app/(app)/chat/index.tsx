@@ -1,32 +1,26 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { View } from "react-native";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
-import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { Plus, Sparkles } from "lucide-react-native";
 import { api } from "@/shared/lib/api";
-import { useTheme } from "@/shared/providers/theme-provider";
-import { NotBuiltYet, ScreenScaffold } from "@/shared/ui/screen-scaffold";
+import { Button } from "@/shared/ui/button";
+import { Icon } from "@/shared/ui/icon";
+import { Text } from "@/shared/ui/text";
+import { useCurrentUser } from "@/shared/hooks/use-current-user";
 
 /**
- * Liste des conversations.
+ * Écran d'accueil : aucune conversation ouverte.
  *
- * Écran de vérification du socle : il traverse toute la chaîne — session
- * Supabase, client d'API partagé, guard JWT, RLS Postgres. S'il affiche une
- * liste (même vide) sans erreur, l'ensemble de l'architecture est câblé.
+ * La liste des conversations a rejoint la barre latérale, qui est visible en
+ * permanence sur desktop. La reproduire ici afficherait deux fois la même
+ * chose côte à côte ; l'espace sert donc à amorcer l'échange, comme le font
+ * ChatGPT, Claude et Perplexity (§4.2).
  */
-export default function ChatScreen() {
-  const { palette } = useTheme();
+export default function ChatHomeScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { firstName } = useCurrentUser();
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["conversations"],
-    queryFn: () => api.conversations.list({ limit: 30 }),
-  });
-
-  /**
-   * Capture sans friction (§13.4.1) : la conversation est créée sans demander
-   * dans quel dossier la ranger. Le classement vient après, jamais avant.
-   */
   const create = useMutation({
     mutationFn: () => api.conversations.create({ folderIds: [] }),
     onSuccess: async (conversation) => {
@@ -36,77 +30,35 @@ export default function ChatScreen() {
   });
 
   return (
-    <ScreenScaffold title="Conversations" subtitle="Vos échanges, rangés par dossier.">
-      <Pressable
+    <View className="flex-1 items-center justify-center gap-3 bg-background p-6">
+      <View className="size-10 items-center justify-center rounded-lg bg-primary">
+        <Icon as={Sparkles} size={20} className="text-primary-foreground" />
+      </View>
+
+      <Text className="text-center text-xl font-medium text-foreground">
+        {firstName ? `Bonjour ${firstName}, qu'est-ce qu'on fait aujourd'hui ?` : "Qu'est-ce qu'on fait aujourd'hui ?"}
+      </Text>
+      {/* Formulation neutre : la barre latérale est à gauche sur desktop mais
+          en tiroir sur téléphone. */}
+      <Text className="text-center text-sm text-muted-foreground">
+        Choisissez une conversation, ou démarrez-en une nouvelle.
+      </Text>
+
+      {create.error ? (
+        <Text className="text-center text-sm text-destructive">
+          La conversation n'a pas pu être créée. Réessayez dans un instant.
+        </Text>
+      ) : null}
+
+      <Button
         onPress={() => create.mutate()}
         disabled={create.isPending}
-        accessibilityRole="button"
         accessibilityLabel="Démarrer une nouvelle conversation"
-        style={[
-          styles.newButton,
-          { backgroundColor: palette.accent, opacity: create.isPending ? 0.4 : 1 },
-        ]}
+        className="mt-2 gap-2"
       >
-        <Text style={[styles.newLabel, { color: palette.accentText }]}>Nouvelle conversation</Text>
-      </Pressable>
-
-      {isLoading ? <ActivityIndicator color={palette.accent} /> : null}
-
-      {error || create.error ? (
-        <Text style={[styles.error, { color: palette.danger }]}>
-          {(error ?? create.error) instanceof Error
-            ? (error ?? create.error)?.message
-            : "Chargement impossible."}
-        </Text>
-      ) : null}
-
-      {data?.items.map((conversation) => (
-        <Pressable
-          key={conversation.id}
-          onPress={() => router.push(`/chat/${conversation.id}`)}
-          accessibilityRole="button"
-          style={[styles.row, { backgroundColor: palette.surface, borderColor: palette.border }]}
-        >
-          <Text style={[styles.rowTitle, { color: palette.text }]}>{conversation.title}</Text>
-          <Text style={[styles.rowMeta, { color: palette.textMuted }]}>
-            {conversation.folderIds.length === 0
-              ? "Non classée"
-              : `${conversation.folderIds.length} dossier${conversation.folderIds.length > 1 ? "s" : ""}`}
-          </Text>
-        </Pressable>
-      ))}
-
-      {data && data.items.length === 0 ? (
-        <Text style={[styles.empty, { color: palette.textMuted }]}>
-          Aucune conversation pour le moment.
-        </Text>
-      ) : null}
-
-      <NotBuiltYet
-        phase="Phase A / B"
-        items={[
-          "Titre de conversation généré depuis les premiers messages",
-          "Sidebar / tiroir des dossiers (2 niveaux)",
-          "Dictée vocale en entrée (§12.3)",
-          "Recherche par filtres (A.6)",
-        ]}
-      />
-    </ScreenScaffold>
+        <Icon as={Plus} size={16} className="text-primary-foreground" />
+        <Text>Nouvelle conversation</Text>
+      </Button>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  newButton: {
-    minHeight: MIN_TOUCH_TARGET,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.lg,
-  },
-  newLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  row: { padding: spacing.lg, borderRadius: radius.md, borderWidth: 1, gap: spacing.xs },
-  rowTitle: { fontSize: fontSize.md },
-  rowMeta: { fontSize: fontSize.xs },
-  error: { fontSize: fontSize.sm },
-  empty: { fontSize: fontSize.sm, fontStyle: "italic" },
-});

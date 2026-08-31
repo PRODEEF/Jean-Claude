@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { fontSize, fontWeight, radius, spacing } from "@jc/design";
 import { useTheme } from "@/shared/providers/theme-provider";
 
@@ -18,10 +17,9 @@ export type ScreenScaffoldProps = {
  */
 export function ScreenScaffold({ title, subtitle, children }: ScreenScaffoldProps) {
   const { palette } = useTheme();
-  const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.root, { backgroundColor: palette.background, paddingTop: insets.top }]}>
+    <View style={[styles.root, { backgroundColor: palette.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.title, { color: palette.text }]}>{title}</Text>
         {subtitle ? (

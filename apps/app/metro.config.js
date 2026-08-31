@@ -1,4 +1,5 @@
 const { getDefaultConfig } = require("expo/metro-config");
+const { withNativeWind } = require("nativewind/metro");
 const { loadProjectEnv } = require("@expo/env");
 const path = require("path");
 
@@ -28,4 +29,6 @@ config.resolver.nodeModulesPaths = [
 // se manifesterait par des erreurs de hooks difficiles à diagnostiquer.
 config.resolver.disableHierarchicalLookup = true;
 
-module.exports = config;
+// NativeWind compile `global.css` et injecte les classes utilitaires dans le
+// bundle. Le chemin est relatif à ce fichier, pas à la racine du monorepo.
+module.exports = withNativeWind(config, { input: "./global.css" });
