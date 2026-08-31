@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/shared/lib/api";
 
@@ -8,12 +9,18 @@ const THREAD_PAGE_SIZE = 50;
  * Fil d'une conversation : lecture de l'historique et envoi d'un message.
  *
  * L'envoi n'est pas optimiste. Le serveur écrit le message de l'utilisateur
- * *avant* d'interroger le modèle : si le moteur échoue, le message est bien
- * conservé côté base, et une insertion optimiste locale ferait apparaître un
- * doublon au rechargement.
+ * *avant* d'interroger le modèle, et le renvoie comme premier événement du
+ * flux : une insertion optimiste locale ferait un doublon.
  */
 export function useConversationThread(conversationId: string) {
   const queryClient = useQueryClient();
+
+  /**
+   * Réponse en cours de génération. Volontairement hors du cache React Query :
+   * ce n'est pas encore une donnée serveur, et l'y écrire la ferait survivre à
+   * une invalidation qui, elle, doit repartir de la base.
+   */
+  const [streamingText, setStreamingText] = useState<string | null>(null);
 
   const messages = useQuery({
     queryKey: ["conversation", conversationId, "messages"],
@@ -21,8 +28,22 @@ export function useConversationThread(conversationId: string) {
   });
 
   const send = useMutation({
-    mutationFn: (content: string) =>
-      api.conversations.send(conversationId, { content, inputMode: "text" }),
+    mutationFn: async (content: string) => {
+      setStreamingText("");
+
+      for await (const event of api.conversations.send(conversationId, {
+        content,
+        inputMode: "text",
+      })) {
+        if (event.type === "text") {
+          setStreamingText((current) => (current ?? "") + event.text);
+        } else if (event.type === "error") {
+          // L'échec survient après le premier octet : il ne peut plus prendre
+          // la forme d'un code HTTP, il arrive donc dans le flux.
+          throw new Error(event.message);
+        }
+      }
+    },
     // `onSettled` et non `onSuccess` : le serveur écrit le message de
     // l'utilisateur avant d'interroger le modèle. Si le moteur échoue, le
     // message existe malgré tout en base — ne pas rafraîchir le fil le ferait
@@ -34,8 +55,13 @@ export function useConversationThread(conversationId: string) {
       // Le tri de la liste des conversations dépend de `lastMessageAt`, que
       // ce tour vient de déplacer.
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      // Après l'invalidation seulement : plus tôt, la bulle en cours
+      // disparaîtrait avant que la version persistée n'ait pris sa place.
+      setStreamingText(null);
     },
   });
 
-  return { messages, send };
+  const submit = useCallback((content: string) => send.mutate(content), [send]);
+
+  return { messages, send, submit, streamingText };
 }

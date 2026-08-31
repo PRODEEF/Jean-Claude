@@ -5,15 +5,18 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  HttpException,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Put,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import type { FastifyReply } from "fastify";
 import {
   assignFoldersSchema,
   createConversationSchema,
@@ -24,6 +27,7 @@ import {
   type Conversation,
   type CreateConversation,
   type Message,
+  type MessageStreamEvent,
   type Paginated,
   type SendMessage,
   type UpdateConversation,
@@ -45,7 +49,8 @@ export class ConversationController {
   @ApiOperation({ summary: "Lister les conversations, de la plus récente à la plus ancienne" })
   list(
     @CurrentUser() user: AuthenticatedUser,
-    @Query(new ZodValidationPipe(cursorPaginationSchema)) pagination: { cursor?: string; limit: number },
+    @Query(new ZodValidationPipe(cursorPaginationSchema))
+    pagination: { cursor?: string; limit: number },
     @Query("includeArchived") includeArchived?: string,
   ): Promise<Paginated<Conversation>> {
     return this.service.list(user.accessToken, pagination, includeArchived === "true");
@@ -119,18 +124,67 @@ export class ConversationController {
   listMessages(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseUUIDPipe) id: string,
-    @Query(new ZodValidationPipe(cursorPaginationSchema)) pagination: { cursor?: string; limit: number },
+    @Query(new ZodValidationPipe(cursorPaginationSchema))
+    pagination: { cursor?: string; limit: number },
   ): Promise<Paginated<Message>> {
     return this.service.listMessages(id, user.accessToken, pagination);
   }
 
   @Post(":id/messages")
-  @ApiOperation({ summary: "Envoyer un message et obtenir la réponse de l'assistant" })
-  sendMessage(
+  @ApiOperation({
+    summary: "Envoyer un message et recevoir la réponse de l'assistant en flux",
+    description:
+      "Répond en Server-Sent Events. Chaque ligne `data:` porte un " +
+      "`MessageStreamEvent` : le message de l'utilisateur, puis les fragments " +
+      "de la réponse, puis le message assistant persisté.",
+  })
+  async sendMessage(
     @CurrentUser() user: AuthenticatedUser,
     @Param("id", ParseUUIDPipe) id: string,
     @Body(new ZodValidationPipe(sendMessageSchema)) body: SendMessage,
-  ): Promise<{ userMessage: Message; assistantMessage: Message }> {
-    return this.service.sendMessage(id, user.id, body, user.accessToken);
+    @Res() reply: FastifyReply,
+  ): Promise<void> {
+    // Les en-têtes ne partent qu'au premier événement : tant que rien n'est
+    // écrit, un échec reste une erreur HTTP classique, traitée par le filtre
+    // global. Une fois le flux commencé, il est trop tard pour un code.
+    let started = false;
+
+    const emit = (event: MessageStreamEvent): void => {
+      if (!started) {
+        // Fastify doit savoir qu'on prend la main sur la réponse, faute de quoi
+        // il considère la requête sans réponse.
+        reply.hijack();
+        reply.raw.writeHead(HttpStatus.OK, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          // Empêche un proxy de tamponner le flux, ce qui annulerait tout son
+          // intérêt : le texte arriverait d'un bloc à la fin.
+          "X-Accel-Buffering": "no",
+        });
+        started = true;
+      }
+      reply.raw.write(`data: ${JSON.stringify(event)}
+
+`);
+    };
+
+    try {
+      for await (const event of this.service.streamMessage(id, user.id, body, user.accessToken)) {
+        emit(event);
+      }
+    } catch (error) {
+      if (!started) throw error;
+
+      emit({
+        type: "error",
+        message:
+          error instanceof HttpException
+            ? error.message
+            : "La génération de la réponse a été interrompue.",
+      });
+    } finally {
+      if (started) reply.raw.end();
+    }
   }
 }

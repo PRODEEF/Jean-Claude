@@ -7,8 +7,9 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **31 août 2026** — abstraction IA via Vercel AI Gateway et
-écran de conversation terminés (issues #3 et #4). Critère de recette §11 Phase A atteint.
+Dernière mise à jour : **31 août 2026** — issues #3 et #4 terminées : abstraction IA via
+Vercel AI Gateway, fil de conversation en flux, timeouts et quotas. Critère de recette
+§11 Phase A validé.
 
 ---
 
@@ -18,6 +19,7 @@ Dernière mise à jour : **31 août 2026** — abstraction IA via Vercel AI Gate
 | ---- | ------------------------------------------------------ | :----: | ------------------------------------------------------------------------------------------------------- |
 | §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                                         |
 | §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code |
+| §5.1 | Timeouts, quotas et erreurs                            |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés             |
 | §5.1 | Choix du modèle par l'utilisateur                      |   ⬜   | `LLM_MODEL` est le défaut serveur. À porter dans `userPreferences` + panneau de réglages                |
 | §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                                   |
 | §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                            |
@@ -55,7 +57,7 @@ Dernière mise à jour : **31 août 2026** — abstraction IA via Vercel AI Gate
 | A.6  | Recherche avancée par filtres                         |   🔵   | Index plein texte français créés, `searchFiltersSchema` défini. `feature/search` à écrire                                              |
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison — la matière première est capturée                                                    |
 | A.8  | Assistant proactif                                    |   🔵   | Outils IA définis, table `assistant_suggestions` prête. `feature/assistant` à écrire                                                   |
-| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation compris. Desktop (Tauri) en Phase C                                        |
+| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                |
 | A.10 | Bornage du mode assistant                             |   🟡   | Canal unique en base, prompt de bornage testé, onglet Jean-Claude opérationnel. Bascule automatique hors périmètre et réglages à faire |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                   |
 | A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                      |
@@ -93,13 +95,12 @@ tranchée. À alimenter dès que les écrans réels seront construits.
 
 ## Dette technique connue
 
-| Point                                | Détail                                                                                                                                                                                                                                                                     |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Streaming des réponses non exposé    | `LlmProvider.stream()` est implémenté côté Gateway, mais aucune route HTTP ne le sert. Le fil attend donc la réponse complète. React Native n'ayant pas de `response.body` streamable, la consommation client passera par `XMLHttpRequest` — à traiter en une passe dédiée |
-| Pagination remontante du fil absente | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                                                                                                              |
-| Titre de conversation non généré     | Toute conversation créée s'appelle « Nouvelle conversation ». Le §5.2 prévoit un titre déduit des premiers messages                                                                                                                                                        |
-| `toolCalls` non exploités            | Le modèle produit bien des appels `suggest_task_list` / `suggest_folders`, le service les reçoit et ne les persiste pas. C'est `feature/assistant`, Phase B (§12.1)                                                                                                        |
-| Node ≥ 22.12 requis                  | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                                                                                                                        |
+| Point                                | Détail                                                                                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pagination remontante du fil absente | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                       |
+| Titre de conversation non généré     | Toute conversation créée s'appelle « Nouvelle conversation ». Le §5.2 prévoit un titre déduit des premiers messages                                                 |
+| `toolCalls` non exploités            | Le modèle produit bien des appels `suggest_task_list` / `suggest_folders`, le service les reçoit et ne les persiste pas. C'est `feature/assistant`, Phase B (§12.1) |
+| Node ≥ 22.12 requis                  | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                 |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo
 (`app.config.js` / `metro.config.js`).

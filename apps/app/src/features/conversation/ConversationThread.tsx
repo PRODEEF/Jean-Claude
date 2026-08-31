@@ -37,14 +37,14 @@ export function ConversationThread({ conversationId }: ConversationThreadProps) 
   const [draft, setDraft] = useState("");
   const listRef = useRef<FlatList<Message>>(null);
 
-  const { messages, send } = useConversationThread(conversationId);
+  const { messages, send, submit, streamingText } = useConversationThread(conversationId);
 
-  const submit = useCallback(() => {
+  const sendDraft = useCallback(() => {
     const content = draft.trim();
     if (!content || send.isPending) return;
     setDraft("");
-    send.mutate(content);
-  }, [draft, send]);
+    submit(content);
+  }, [draft, send.isPending, submit]);
 
   const renderMessage = useCallback(
     ({ item }: { item: Message }) => {
@@ -96,7 +96,7 @@ export function ConversationThread({ conversationId }: ConversationThreadProps) 
             </Text>
           }
           ListFooterComponent={
-            send.isPending ? (
+            streamingText === null ? null : (
               <View
                 style={[
                   styles.bubble,
@@ -104,9 +104,15 @@ export function ConversationThread({ conversationId }: ConversationThreadProps) 
                   { backgroundColor: palette.surface, borderColor: palette.border },
                 ]}
               >
-                <ActivityIndicator color={palette.textMuted} />
+                {/* Tant qu'aucun jeton n'est arrivé, la barre d'attente dit que
+                    la demande est partie ; ensuite le texte parle de lui-même. */}
+                {streamingText.length === 0 ? (
+                  <ActivityIndicator color={palette.textMuted} />
+                ) : (
+                  <Text style={[styles.bubbleText, { color: palette.text }]}>{streamingText}</Text>
+                )}
               </View>
-            ) : null
+            )
           }
         />
       )}
@@ -147,7 +153,7 @@ export function ConversationThread({ conversationId }: ConversationThreadProps) 
           placeholder="Votre message"
           placeholderTextColor={palette.textMuted}
           multiline
-          onSubmitEditing={submit}
+          onSubmitEditing={sendDraft}
           // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde
           // un retour à la ligne, la saisie multiligne y étant la norme.
           blurOnSubmit={Platform.OS === "web"}
@@ -158,7 +164,7 @@ export function ConversationThread({ conversationId }: ConversationThreadProps) 
           ]}
         />
         <Pressable
-          onPress={submit}
+          onPress={sendDraft}
           disabled={draft.trim().length === 0 || send.isPending}
           accessibilityRole="button"
           accessibilityLabel="Envoyer le message"
