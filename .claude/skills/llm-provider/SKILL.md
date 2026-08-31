@@ -33,10 +33,10 @@ ne concerne que le cas — encore hypothétique — d'un moteur _hors_ Gateway.
 **Un seul fichier de l'application importe le SDK d'un fournisseur :
 son adaptateur dans `core/llm/providers/`.**
 
-Partout ailleurs, on injecte le port :
+Partout ailleurs, on importe le port :
 
 ```ts
-constructor(@Inject(LLM_PROVIDER) private readonly llm: LlmProvider) {}
+import { llm } from "../../core/llm/providers/gateway.provider";
 ```
 
 Si un `import ... from "ai"` ou le SDK d'un éditeur apparaît hors de
@@ -46,8 +46,8 @@ Si un `import ... from "ai"` ou le SDK d'un éditeur apparaît hors de
 
 Il n'y a qu'un adaptateur, `GatewayProvider`. En écrire un second n'a de sens
 que le jour où un moteur devra être appelé **hors** Gateway — auto-hébergé, ou
-Ollama en local. Ce jour-là, il implémente ce contrat et remplace l'adaptateur
-dans `llm.module.ts`.
+Ollama en local. Ce jour-là, il implémente ce contrat et remplace l’instance exportée
+par `core/llm/providers/gateway.provider.ts`.
 
 ## Contrat à respecter
 

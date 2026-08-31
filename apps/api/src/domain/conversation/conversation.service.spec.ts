@@ -1,4 +1,3 @@
-import { NotFoundException } from "@nestjs/common";
 import type { Conversation, Message, MessageStreamEvent } from "@jc/domain";
 import type { LlmCompletionRequest, LlmProvider } from "../../core/llm/llm.port";
 import { ConversationService } from "./conversation.service";
@@ -107,7 +106,7 @@ describe("ConversationService", () => {
         makeLlm(),
       );
 
-      await expect(service.getById("absente", TOKEN)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getById("absente", TOKEN)).rejects.toMatchObject({ status: 404 });
     });
   });
 

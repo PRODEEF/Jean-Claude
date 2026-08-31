@@ -19,9 +19,9 @@ Ce document explique **pourquoi** le projet est structuré ainsi. Les référenc
                             │  @jc/domain     (types + Zod)
                             │  @jc/design     (jetons)
 ┌───────────────────────────▼─────────────────────────────────┐
-│  apps/api — NestJS + Fastify        API commune (§5.3)      │
+│  apps/api — Hono                    API commune (§5.3)      │
 │                                                              │
-│   core/     config · supabase · auth · llm · filters        │
+│   core/     config · supabase · auth · llm · http           │
 │   domain/   folder · conversation · task · calendar · user  │
 │   feature/  assistant · search · health                     │
 └───────────────────────────┬─────────────────────────────────┘
@@ -107,7 +107,7 @@ choisira le sien dans ses préférences, et cette valeur deviendra le repli.
 
 **Pourquoi garder le port, alors, s'il n'a qu'une implémentation ?** Parce que
 c'est lui qui tient l'invariant : aucun service métier n'importe un SDK de
-modèle, tous injectent `LLM_PROVIDER` et parlent à l'interface. C'est aussi ce
+modèle, tous importent `llm` et parlent à l’interface. C'est aussi ce
 qui rend `ConversationService` testable sans réseau. Un second adaptateur ne
 sera écrit que le jour où un moteur devra être appelé hors Gateway — ce qui
 n'est pas prévu.
@@ -152,7 +152,7 @@ d'apprentissage.
 
 | Package          | Contenu                             | Règle                                                           |
 | ---------------- | ----------------------------------- | --------------------------------------------------------------- |
-| `@jc/domain`     | Types + schémas Zod + règles métier | Aucune dépendance à NestJS, React, Supabase                     |
+| `@jc/domain`     | Types + schémas Zod + règles métier | Aucune dépendance à Hono, React, Supabase                       |
 | `@jc/api-client` | Client HTTP typé                    | `fetch` seul — pas d'axios, pas d'API de plateforme             |
 | `@jc/design`     | Jetons de design                    | Valeurs numériques, consommables par `StyleSheet` et par le web |
 
@@ -175,15 +175,14 @@ interdit. C'est ce qui garde les modules `domain/` réutilisables.
 
 ```
 folder/
-  folder.controller.ts            HTTP — validation Zod, pas de logique
+  folder.routes.ts                HTTP — validation Zod, pas de logique
   folder.service.ts               Logique métier — testable sans base
-  folder.repository.interface.ts  Contrat + symbole d'injection
+  folder.repository.interface.ts  Contrat consommé par le service
   folder.repository.ts            Supabase — seul endroit avec du snake_case
-  folder.module.ts                Câblage
   folder.service.spec.ts          Tests unitaires sur doubles
 ```
 
-Le service dépend du **symbole** (`FOLDER_REPOSITORY`), jamais de la classe.
+Le service reçoit l’**interface** du Repository, jamais la classe concrète.
 C'est ce qui permet de tester la logique métier avec un double, sans base.
 
 ---

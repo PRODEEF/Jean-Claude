@@ -1,4 +1,3 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type {
   AssignFolders,
   Conversation,
@@ -10,21 +9,18 @@ import type {
   SendMessage,
   UpdateConversation,
 } from "@jc/domain";
-import { LLM_PROVIDER, type LlmProvider } from "../../core/llm/llm.port";
+import { httpError } from "../../core/http";
+import type { LlmProvider } from "../../core/llm/llm.port";
 import { CHAT_TOOLS } from "../../core/llm/llm.tools";
-import {
-  CONVERSATION_REPOSITORY,
-  type IConversationRepository,
-} from "./conversation.repository.interface";
+import type { IConversationRepository } from "./conversation.repository.interface";
 
 /** Nombre de messages de contexte envoyés au modèle à chaque tour. */
 const CONTEXT_WINDOW_MESSAGES = 40;
 
-@Injectable()
 export class ConversationService {
   constructor(
-    @Inject(CONVERSATION_REPOSITORY) private readonly conversations: IConversationRepository,
-    @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
+    private readonly conversations: IConversationRepository,
+    private readonly llm: LlmProvider,
   ) {}
 
   list(
@@ -41,7 +37,7 @@ export class ConversationService {
 
   async getById(id: string, accessToken: string): Promise<Conversation> {
     const conversation = await this.conversations.findById(id, accessToken);
-    if (!conversation) throw new NotFoundException("Conversation introuvable.");
+    if (!conversation) throw httpError(404, "Conversation introuvable.");
     return conversation;
   }
 

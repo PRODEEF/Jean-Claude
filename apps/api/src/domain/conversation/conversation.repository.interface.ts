@@ -55,5 +55,3 @@ export interface IConversationRepository {
     accessToken: string,
   ): Promise<Message>;
 }
-
-export const CONVERSATION_REPOSITORY = Symbol("IConversationRepository");

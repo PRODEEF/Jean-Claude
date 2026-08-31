@@ -12,10 +12,10 @@ desktop.
 
 ### Prérequis
 
-- Node.js ≥ 20
+- Node.js ≥ 22.12
 - Un projet [Supabase](https://supabase.com) — **créer en région UE**
   (`eu-west-3` Paris ou `eu-central-1` Francfort), voir `docs/ARCHITECTURE.md` §4
-- Une clé d'API Anthropic
+- Une clé [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) (`vck_…`)
 
 ### Installation
 
@@ -67,10 +67,75 @@ npm run dev:api
 npm run dev:web
 ```
 
-L'API écoute sur `http://localhost:3000`, sa documentation sur
-`http://localhost:3000/api/docs`. L'application web démarre sur le port 8081.
+L’API écoute sur `http://localhost:3000`, l’application web sur le port 8081.
 
 Pour le mobile : `npm run dev:ios` ou `npm run dev:android`.
+
+---
+
+## Déployer
+
+Deux projets Vercel sur le même dépôt. L'API et le web se déploient
+indépendamment : un build cassé d'un côté ne bloque pas la démonstration de
+l'autre, et l'URL de l'API reste stable pour iOS et Android, qui ne passent pas
+par Vercel. Les fichiers de configuration sont déjà versionnés
+(`apps/api/vercel.json`, `apps/app/vercel.json`).
+
+### 1. Projet API
+
+| Réglage          | Valeur                               |
+| ---------------- | ------------------------------------ |
+| Root Directory   | `apps/api`                           |
+| Framework Preset | Other                                |
+| Build Command    | `cd ../.. && npm run build:packages` |
+| Output Directory | `public`                             |
+| Node.js Version  | 22.x                                 |
+| Region           | Paris (`cdg1`)                       |
+
+La région n'est pas cosmétique : elle évite un aller-retour Washington ↔
+Supabase UE à chaque requête, et prépare la migration du §8.
+
+Variables : `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+`AI_GATEWAY_API_KEY`, `LLM_MODEL`, `CORS_ORIGIN`. Toutes sont exigées au
+démarrage — une seule manquante fait échouer le boot plutôt que de produire une
+erreur 500 au premier appel.
+
+### 2. Projet web
+
+| Réglage          | Valeur                                                                        |
+| ---------------- | ----------------------------------------------------------------------------- |
+| Root Directory   | `apps/app`                                                                    |
+| Framework Preset | Other                                                                         |
+| Build Command    | `cd ../.. && npm run build:packages && npm run build:web --workspace @jc/app` |
+| Output Directory | `dist`                                                                        |
+| Node.js Version  | 22.x                                                                          |
+
+Variables, à cocher sur **Production et Preview** — les `EXPO_PUBLIC_*` sont
+figées dans le bundle au moment du build, les changer impose un redéploiement :
+
+| Variable                        | Valeur              |
+| ------------------------------- | ------------------- |
+| `EXPO_PUBLIC_API_URL`           | l'URL du projet API |
+| `EXPO_PUBLIC_SUPABASE_URL`      | idem `.env`         |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | idem `.env`         |
+
+### 3. Boucler
+
+`CORS_ORIGIN`, sur le projet API, doit lister l'URL du web **et** le motif de
+ses previews, dont l'URL est tirée au sort à chaque déploiement :
+
+```
+https://<projet-web>.vercel.app,https://<projet-web>-*.vercel.app
+```
+
+Le joker ne remplace qu'un segment, sans point — voir
+`apps/api/src/core/allowed-origin.ts`. Redéployer l'API après l'avoir renseigné.
+
+Ajouter enfin l'URL du web dans Supabase → Authentication → URL Configuration →
+_Redirect URLs_, faute de quoi la connexion par code renvoie vers `localhost`.
+
+Vérification : `https://<projet-api>.vercel.app/api/health` doit rendre
+`{"status":"ok","llm":{…}}`.
 
 ---
 
@@ -79,7 +144,7 @@ Pour le mobile : `npm run dev:ios` ou `npm run dev:android`.
 ```md
 jean-claude/
 ├── apps/
-│ ├── api/ NestJS — API commune aux quatre plateformes (§5.3)
+│ ├── api/ Hono — API commune aux quatre plateformes (§5.3)
 │ └── app/ Expo Router — web, iOS, Android depuis un codebase
 ├── packages/
 │ ├── domain/ Types, schémas Zod, règles métier — partagés

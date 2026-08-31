@@ -1,12 +1,12 @@
 ---
 name: api-module
 description: >
-  Créer ou modifier un module domain/ dans l'API NestJS de Jean-Claude
+  Créer ou modifier un module domain/ dans l'API Hono de Jean-Claude
   (apps/api). Utilise ce skill dès qu'on ajoute une entité métier — task,
-  calendar, user, suggestion — ou qu'on écrit un Controller, un Service, un
-  Repository, une interface de Repository ou un module NestJS. Couvre le
-  découpage en 6 fichiers, le pattern Repository avec Supabase, les mappers
-  toEntity, la validation Zod et l'injection par symbole.
+  calendar, user, suggestion — ou qu'on écrit un fichier de routes, un Service,
+  un Repository ou une interface de Repository. Couvre le découpage en 5
+  fichiers, le pattern Repository avec Supabase, les mappers toEntity, la
+  validation Zod et la construction du service.
 ---
 
 # Créer un module `domain/` — API Jean-Claude
@@ -19,19 +19,19 @@ proactif), c'est un module `feature/`, pas `domain/`.
 
 Module de référence à copier : `apps/api/src/domain/folder/`.
 
-## Les 6 fichiers
+## Les 5 fichiers
 
 ```
 apps/api/src/domain/<entité>/
-  <entité>.controller.ts            HTTP — validation Zod, zéro logique
+  <entité>.routes.ts                HTTP — validation Zod, zéro logique
   <entité>.service.ts               Logique métier — testable sans base
-  <entité>.repository.interface.ts  Contrat + symbole d'injection
+  <entité>.repository.interface.ts  Contrat consommé par le service
   <entité>.repository.ts            Supabase — seul fichier en snake_case
-  <entité>.module.ts                Câblage
   <entité>.service.spec.ts          Tests sur doubles
 ```
 
-Aucun de ces fichiers n'est optionnel, y compris le `.spec.ts`.
+Aucun de ces fichiers n'est optionnel, y compris le `.spec.ts`. Il n'y a **pas**
+de sixième fichier de câblage : le service se construit en tête des routes.
 
 ## Ordre de travail
 
@@ -69,12 +69,13 @@ export interface ITaskRepository {
   update(id: string, patch: UpdateTask, accessToken: string): Promise<Task>;
   delete(id: string, accessToken: string): Promise<void>;
 }
-
-export const TASK_REPOSITORY = Symbol("ITaskRepository");
 ```
 
 `accessToken` est **toujours** le dernier paramètre. Il sert à ouvrir un client
 Supabase sous l'identité de l'utilisateur, pour que les RLS s'appliquent.
+
+C'est cette interface — pas la classe concrète — que le service reçoit. C'est
+elle qui le rend testable sans base.
 
 ### 3. Le Repository
 
@@ -107,24 +108,30 @@ const COLUMNS = "id, list_id, title, done, due_at, created_at";
 
 **Aucune forme `*_id` ne sort d'ici.** C'est la frontière du snake_case.
 
-```ts
-@Injectable()
-export class TaskRepository implements ITaskRepository {
-  constructor(private readonly supabase: SupabaseService) {}
+Le Repository est un objet, pas une classe : il n'a pas d'état, seulement des
+méthodes.
 
-  async findByList(listId: string, accessToken: string): Promise<Task[]> {
-    const { data, error } = await this.supabase
-      .forUser(accessToken) // ← RLS actives
+```ts
+import { httpError } from "../../core/http";
+import { forUser } from "../../core/supabase/supabase";
+
+export const taskRepository: ITaskRepository = {
+  async findByList(listId, accessToken) {
+    const { data, error } = await forUser(accessToken) // ← RLS actives
       .from("tasks")
       .select(COLUMNS)
       .eq("list_id", listId)
       .order("position", { ascending: true });
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new Error(error.message);
     return (data as unknown as TaskRow[]).map(toEntity);
-  }
-}
+  },
+};
 ```
+
+Une panne Supabase se jette en `Error` nu : le gestionnaire global la consigne
+et rend un 500 générique. Ne jamais renvoyer `error.message` au client — il peut
+contenir une requête SQL.
 
 Pour un `update`, construire le payload **clé par clé** — un `undefined` doit
 laisser la colonne intacte, un `null` explicite doit l'effacer :
@@ -135,71 +142,67 @@ if (patch.title !== undefined) payload["title"] = patch.title;
 if (patch.dueAt !== undefined) payload["due_at"] = patch.dueAt;
 ```
 
-Utiliser `.maybeSingle()` puis lever `NotFoundException` si `null` — `.single()`
-lève une erreur Supabase brute, moins lisible.
+Utiliser `.maybeSingle()` puis `throw httpError(404, "Tâche introuvable.")` si
+`null` — `.single()` lève une erreur Supabase brute, moins lisible.
 
 ### 4. Le Service
 
-Il porte la logique. Il dépend du **symbole**, jamais de la classe.
+Il porte la logique. Il reçoit l'interface, jamais l'implémentation.
 
 ```ts
-@Injectable()
 export class TaskService {
-  constructor(@Inject(TASK_REPOSITORY) private readonly tasks: ITaskRepository) {}
+  constructor(private readonly tasks: ITaskRepository) {}
 
   async complete(id: string, accessToken: string): Promise<Task> {
-    // Les règles métier vivent ici, pas dans le Controller ni dans le Repository.
+    // Les règles métier vivent ici, pas dans les routes ni dans le Repository.
     return this.tasks.update(id, { done: true }, accessToken);
   }
 }
 ```
 
-### 5. Le Controller
+### 5. Les routes
 
-Validation et délégation, rien d'autre.
-
-```ts
-@ApiTags("tasks")
-@ApiBearerAuth()
-@UseGuards(JwtGuard)
-@Controller("tasks")
-export class TaskController {
-  constructor(private readonly service: TaskService) {}
-
-  @Post()
-  @ApiOperation({ summary: "Créer une tâche" })
-  create(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body(new ZodValidationPipe(createTaskSchema)) body: CreateTask,
-  ): Promise<Task> {
-    return this.service.create(user.id, body, user.accessToken);
-  }
-}
-```
-
-⚠️ **Routes littérales avant routes paramétrées.** `@Get("today")` doit précéder
-`@Get(":id")`, sinon `today` est capté comme un identifiant.
-
-### 6. Le Module
+Validation et délégation, rien d'autre. Le service est construit en tête.
 
 ```ts
-@Module({
-  controllers: [TaskController],
-  providers: [TaskService, { provide: TASK_REPOSITORY, useClass: TaskRepository }],
-  exports: [TaskService],
-})
-export class TaskModule {}
+const service = new TaskService(taskRepository);
+
+const idParam = validate("param", z.object({ id: uuidSchema }));
+
+export const taskRoutes = new Hono<AuthEnv>()
+  .use(auth)
+
+  .post("/", validate("json", createTaskSchema), async (c) => {
+    const user = c.get("user");
+    return c.json(await service.create(user.id, c.req.valid("json"), user.accessToken), 201);
+  })
+
+  .patch("/:id", idParam, validate("json", updateTaskSchema), async (c) =>
+    c.json(await service.update(c.req.valid("param").id, c.req.valid("json"), c.get("user").accessToken)),
+  );
 ```
 
-Puis l'enregistrer dans `apps/api/src/app.module.ts`, dans le bloc des modules
-`domain/`.
+Puis monter le groupe dans `apps/api/src/app.ts` :
 
-### 7. Les tests
+```ts
+.route("/api/tasks", taskRoutes)
+```
+
+⚠️ **Routes littérales avant routes paramétrées.** `.get("/today")` doit précéder
+`.get("/:id")`, sinon `today` risque d'être capté comme un identifiant.
+
+### 6. Les tests
 
 Voir rule [300-tests](../../rules/300-tests.md) et
 `apps/api/src/domain/folder/folder.service.spec.ts`.
 
-### 8. Le client
+Une erreur attendue se vérifie sur son statut, pas sur une classe :
+
+```ts
+await expect(service.delete("inconnu", TOKEN)).rejects.toMatchObject({ status: 404 });
+```
+
+### 7. Le client
 
 Ajouter la section correspondante dans `packages/api-client/src/client.ts` :
 
@@ -225,10 +228,12 @@ complet quand une seule lecture était réclamée déborde du périmètre — ru
 
 ## Pièges connus
 
-| Piège                                   | Conséquence                                                    |
-| --------------------------------------- | -------------------------------------------------------------- |
-| `supabase.admin` dans un Repository     | Contourne les RLS — fuite de données entre utilisateurs        |
-| Oublier `accessToken`                   | Requête anonyme, RLS bloque, erreur incompréhensible           |
-| `@Get(":id")` avant `@Get("assistant")` | La route littérale n'est jamais atteinte                       |
-| Payload d'`update` construit par spread | Écrase les colonnes non fournies avec `undefined`              |
-| Type `Row` en camelCase                 | Le mapping paraît fonctionner puis renvoie `undefined` partout |
+| Piège                                    | Conséquence                                                    |
+| ---------------------------------------- | -------------------------------------------------------------- |
+| `admin` dans un Repository               | Contourne les RLS — fuite de données entre utilisateurs        |
+| Oublier `accessToken`                    | Requête anonyme, RLS bloque, erreur incompréhensible           |
+| `:id` non validé en UUID                 | L'identifiant part jusqu'à Postgres et ressort en 500          |
+| `.get("/:id")` avant `.get("/assistant")` | La route littérale risque de n'être jamais atteinte            |
+| `throw new Error(error.message)` renvoyé au client | Fuite d'une requête SQL dans la réponse HTTP         |
+| Payload d'`update` construit par spread  | Écrase les colonnes non fournies avec `undefined`              |
+| Type `Row` en camelCase                  | Le mapping paraît fonctionner puis renvoie `undefined` partout |

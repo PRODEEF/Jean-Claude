@@ -1,12 +1,13 @@
-import { HttpException, HttpStatus, ServiceUnavailableException } from "@nestjs/common";
+import type { HTTPException } from "hono/http-exception";
+import { httpError } from "../http";
 
 /**
  * Traduction des échecs du moteur IA en erreurs HTTP présentables.
  *
  * Fichier séparé de l'adaptateur pour une raison concrète et non de découpage :
- * `gateway.provider.ts` importe le SDK `ai`, qui est ESM seul. Un test qui
- * passerait par lui entraînerait tout l'arbre ESM dans Jest, qui compile en
- * CommonJS. Ici, aucune dépendance — la règle reste couverte par des tests.
+ * `gateway.provider.ts` importe le SDK `ai`. Un test qui passerait par lui
+ * entraînerait tout son arbre de dépendances dans Jest. Ici, la règle reste
+ * couverte par des tests sans rien charger du SDK.
  */
 
 /** Statut HTTP renvoyé par le fournisseur, quand l'erreur en porte un. */
@@ -26,18 +27,15 @@ function upstreamStatus(error: unknown): number | undefined {
  * cas, recharger son compte dans l'autre. Les confondre sous un même « moteur
  * indisponible » le laisse attendre une panne qui ne se résoudra pas seule.
  */
-export function toHttpException(error: unknown): HttpException {
+export function toHttpException(error: unknown): HTTPException {
   switch (upstreamStatus(error)) {
-    case HttpStatus.TOO_MANY_REQUESTS:
-      return new HttpException(
-        "Trop de requêtes d'affilée. Réessayez dans un instant.",
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+    case 429:
+      return httpError(429, "Trop de requêtes d'affilée. Réessayez dans un instant.");
 
-    case HttpStatus.PAYMENT_REQUIRED:
-      return new HttpException("Le crédit du moteur IA est épuisé.", HttpStatus.PAYMENT_REQUIRED);
+    case 402:
+      return httpError(402, "Le crédit du moteur IA est épuisé.");
 
     default:
-      return new ServiceUnavailableException("Le moteur IA est momentanément indisponible.");
+      return httpError(503, "Le moteur IA est momentanément indisponible.");
   }
 }

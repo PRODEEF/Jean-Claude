@@ -1,14 +1,13 @@
-import { Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import type {
   Conversation,
   CreateConversation,
   FolderAssignmentSource,
   Message,
-  Paginated,
   SendMessage,
   UpdateConversation,
 } from "@jc/domain";
-import { SupabaseService } from "../../core/supabase/supabase.service";
+import { httpError } from "../../core/http";
+import { forUser } from "../../core/supabase/supabase";
 import type { IConversationRepository } from "./conversation.repository.interface";
 
 type ConversationRow = {
@@ -66,16 +65,9 @@ const CONVERSATION_COLUMNS =
 const MESSAGE_COLUMNS =
   "id, conversation_id, role, content, input_mode, provider, model, created_at";
 
-@Injectable()
-export class ConversationRepository implements IConversationRepository {
-  constructor(private readonly supabase: SupabaseService) {}
-
-  async findAll(
-    accessToken: string,
-    options: { cursor?: string; limit: number; includeArchived: boolean },
-  ): Promise<Paginated<Conversation>> {
-    let query = this.supabase
-      .forUser(accessToken)
+export const conversationRepository: IConversationRepository = {
+  async findAll(accessToken, options) {
+    let query = forUser(accessToken)
       .from("conversations")
       .select(CONVERSATION_COLUMNS)
       .eq("kind", "chat")
@@ -88,7 +80,7 @@ export class ConversationRepository implements IConversationRepository {
     if (options.cursor) query = query.lt("last_message_at", options.cursor);
 
     const { data, error } = await query;
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new Error(error.message);
 
     const rows = data as unknown as ConversationRow[];
     const hasMore = rows.length > options.limit;
@@ -98,40 +90,32 @@ export class ConversationRepository implements IConversationRepository {
       items: page.map(toConversation),
       nextCursor: hasMore ? (page[page.length - 1]?.last_message_at ?? null) : null,
     };
-  }
+  },
 
-  async findById(id: string, accessToken: string): Promise<Conversation | null> {
-    const { data, error } = await this.supabase
-      .forUser(accessToken)
+  async findById(id, accessToken) {
+    const { data, error } = await forUser(accessToken)
       .from("conversations")
       .select(CONVERSATION_COLUMNS)
       .eq("id", id)
       .maybeSingle();
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new Error(error.message);
     return data ? toConversation(data as unknown as ConversationRow) : null;
-  }
+  },
 
-  async findAssistantChannel(accessToken: string): Promise<Conversation | null> {
-    const { data, error } = await this.supabase
-      .forUser(accessToken)
+  async findAssistantChannel(accessToken) {
+    const { data, error } = await forUser(accessToken)
       .from("conversations")
       .select(CONVERSATION_COLUMNS)
       .eq("kind", "assistant")
       .maybeSingle();
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new Error(error.message);
     return data ? toConversation(data as unknown as ConversationRow) : null;
-  }
+  },
 
-  async create(
-    userId: string,
-    input: CreateConversation,
-    kind: Conversation["kind"],
-    accessToken: string,
-  ): Promise<Conversation> {
-    const { data, error } = await this.supabase
-      .forUser(accessToken)
+  async create(userId, input: CreateConversation, kind, accessToken) {
+    const { data, error } = await forUser(accessToken)
       .from("conversations")
       .insert({
         user_id: userId,
@@ -141,7 +125,7 @@ export class ConversationRepository implements IConversationRepository {
       .select(CONVERSATION_COLUMNS)
       .single();
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new Error(error.message);
     const conversation = toConversation(data as unknown as ConversationRow);
 
     if (input.folderIds.length > 0) {
@@ -155,37 +139,32 @@ export class ConversationRepository implements IConversationRepository {
     }
 
     return conversation;
-  }
+  },
 
-  async update(id: string, patch: UpdateConversation, accessToken: string): Promise<Conversation> {
+  async update(id, patch: UpdateConversation, accessToken) {
     const payload: Record<string, unknown> = {};
     if (patch.title !== undefined) payload["title"] = patch.title;
     if (patch.archived !== undefined) {
       payload["archived_at"] = patch.archived ? new Date().toISOString() : null;
     }
 
-    const { data, error } = await this.supabase
-      .forUser(accessToken)
+    const { data, error } = await forUser(accessToken)
       .from("conversations")
       .update(payload)
       .eq("id", id)
       .select(CONVERSATION_COLUMNS)
       .maybeSingle();
 
-    if (error) throw new InternalServerErrorException(error.message);
-    if (!data) throw new NotFoundException("Conversation introuvable.");
+    if (error) throw new Error(error.message);
+    if (!data) throw httpError(404, "Conversation introuvable.");
     return toConversation(data as unknown as ConversationRow);
-  }
+  },
 
-  async delete(id: string, accessToken: string): Promise<void> {
-    const { error } = await this.supabase
-      .forUser(accessToken)
-      .from("conversations")
-      .delete()
-      .eq("id", id);
+  async delete(id, accessToken) {
+    const { error } = await forUser(accessToken).from("conversations").delete().eq("id", id);
 
-    if (error) throw new InternalServerErrorException(error.message);
-  }
+    if (error) throw new Error(error.message);
+  },
 
   /**
    * Aligne les rattachements de la conversation sur `folderIds` (§5.2, A.1).
@@ -196,13 +175,8 @@ export class ConversationRepository implements IConversationRepository {
    * rangement fait manuellement par l'utilisateur — signal dont l'assistant a
    * besoin pour apprendre sa logique d'organisation (A.7).
    */
-  async setFolders(
-    conversationId: string,
-    folderIds: string[],
-    source: FolderAssignmentSource,
-    accessToken: string,
-  ): Promise<string[]> {
-    const client = this.supabase.forUser(accessToken);
+  async setFolders(conversationId, folderIds, source: FolderAssignmentSource, accessToken) {
+    const client = forUser(accessToken);
     const target = [...new Set(folderIds)];
 
     const { data: existingRows, error: readError } = await client
@@ -210,9 +184,11 @@ export class ConversationRepository implements IConversationRepository {
       .select("folder_id")
       .eq("conversation_id", conversationId);
 
-    if (readError) throw new InternalServerErrorException(readError.message);
+    if (readError) throw new Error(readError.message);
 
-    const existing = new Set((existingRows as unknown as { folder_id: string }[]).map((r) => r.folder_id));
+    const existing = new Set(
+      (existingRows as unknown as { folder_id: string }[]).map((r) => r.folder_id),
+    );
     const toRemove = [...existing].filter((id) => !target.includes(id));
     const toAdd = target.filter((id) => !existing.has(id));
 
@@ -223,7 +199,7 @@ export class ConversationRepository implements IConversationRepository {
         .eq("conversation_id", conversationId)
         .in("folder_id", toRemove);
 
-      if (error) throw new InternalServerErrorException(error.message);
+      if (error) throw new Error(error.message);
     }
 
     if (toAdd.length > 0) {
@@ -235,19 +211,14 @@ export class ConversationRepository implements IConversationRepository {
         })),
       );
 
-      if (error) throw new InternalServerErrorException(error.message);
+      if (error) throw new Error(error.message);
     }
 
     return target;
-  }
+  },
 
-  async listMessages(
-    conversationId: string,
-    accessToken: string,
-    options: { cursor?: string; limit: number },
-  ): Promise<Paginated<Message>> {
-    let query = this.supabase
-      .forUser(accessToken)
+  async listMessages(conversationId, accessToken, options) {
+    let query = forUser(accessToken)
       .from("messages")
       .select(MESSAGE_COLUMNS)
       .eq("conversation_id", conversationId)
@@ -257,7 +228,7 @@ export class ConversationRepository implements IConversationRepository {
     if (options.cursor) query = query.lt("created_at", options.cursor);
 
     const { data, error } = await query;
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new Error(error.message);
 
     const rows = data as unknown as MessageRow[];
     const hasMore = rows.length > options.limit;
@@ -269,19 +240,19 @@ export class ConversationRepository implements IConversationRepository {
       items: page.map(toMessage).reverse(),
       nextCursor: hasMore ? (page[page.length - 1]?.created_at ?? null) : null,
     };
-  }
+  },
 
   async appendMessage(
-    conversationId: string,
-    userId: string,
+    conversationId,
+    userId,
     message: SendMessage & {
       role: Message["role"];
       provider?: string | null;
       model?: string | null;
     },
-    accessToken: string,
-  ): Promise<Message> {
-    const client = this.supabase.forUser(accessToken);
+    accessToken,
+  ) {
+    const client = forUser(accessToken);
 
     const { data, error } = await client
       .from("messages")
@@ -297,7 +268,7 @@ export class ConversationRepository implements IConversationRepository {
       .select(MESSAGE_COLUMNS)
       .single();
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new Error(error.message);
     const created = toMessage(data as unknown as MessageRow);
 
     // `last_message_at` pilote le tri de la liste des conversations : le tenir
@@ -307,8 +278,8 @@ export class ConversationRepository implements IConversationRepository {
       .update({ last_message_at: created.createdAt })
       .eq("id", conversationId);
 
-    if (touchError) throw new InternalServerErrorException(touchError.message);
+    if (touchError) throw new Error(touchError.message);
 
     return created;
-  }
-}
+  },
+};

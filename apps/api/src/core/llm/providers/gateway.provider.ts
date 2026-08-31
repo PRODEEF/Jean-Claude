@@ -1,6 +1,6 @@
-import { HttpException, Injectable, Logger } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { createGateway, generateText, jsonSchema, streamText, tool, type ToolSet } from "ai";
+import type { HTTPException } from "hono/http-exception";
+import { config } from "../../config";
 import { toHttpException } from "../llm-error";
 import type {
   LlmCompletionRequest,
@@ -47,28 +47,21 @@ const COMPLETION_TIMEOUT_MS = 60_000;
  */
 const FIRST_CHUNK_TIMEOUT_MS = 15_000;
 
-@Injectable()
-export class GatewayProvider implements LlmProvider {
+class GatewayProvider implements LlmProvider {
   readonly name = "gateway";
   readonly isSovereign: boolean;
 
-  private readonly logger = new Logger(GatewayProvider.name);
   private readonly model: ReturnType<ReturnType<typeof createGateway>>;
   private readonly modelId: string;
   /** Éditeur du modèle actif — `anthropic`, `mistral`, `deepseek`... */
   private readonly creator: string;
 
-  constructor(config: ConfigService) {
-    const apiKey = config.get<string>("aiGatewayApiKey");
-    if (!apiKey) {
-      throw new Error("AI_GATEWAY_API_KEY est requis pour joindre le moteur IA.");
-    }
-
-    this.modelId = config.get<string>("llmModel") ?? "anthropic/claude-opus-5";
+  constructor() {
+    this.modelId = config.llmModel;
     this.creator = this.modelId.split("/")[0] ?? "unknown";
     this.isSovereign = SOVEREIGN_CREATORS.has(this.creator);
 
-    this.model = createGateway({ apiKey })(this.modelId);
+    this.model = createGateway({ apiKey: config.aiGatewayApiKey })(this.modelId);
   }
 
   async complete(request: LlmCompletionRequest): Promise<LlmCompletionResponse> {
@@ -146,8 +139,8 @@ export class GatewayProvider implements LlmProvider {
     };
   }
 
-  private fail(context: string, error: unknown): HttpException {
-    this.logger.error(context, error instanceof Error ? error.stack : error);
+  private fail(context: string, error: unknown): HTTPException {
+    console.error(context, error instanceof Error ? error.stack : error);
     return toHttpException(error);
   }
 }
@@ -179,3 +172,12 @@ function toToolCall(call: { toolCallId: string; toolName: string; input: unknown
     input: (call.input ?? {}) as Record<string, unknown>,
   };
 }
+
+/**
+ * Moteur actif de l'application.
+ *
+ * Instance unique, construite à l'import : les appelants dépendent du type
+ * `LlmProvider`, jamais de la classe, ce qui garde le §5.1 intact — substituer
+ * un autre adaptateur ne touche que cette ligne.
+ */
+export const llm: LlmProvider = new GatewayProvider();

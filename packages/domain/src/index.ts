@@ -2,12 +2,12 @@
  * @jc/domain — contrat métier partagé.
  *
  * Ce package est le seul endroit où sont définis les types et les règles de
- * validation du produit. Il est importé tel quel par l'API NestJS et par
+ * validation du produit. Il est importé tel quel par l'API et par
  * l'application Expo (web / iOS / Android / desktop), ce qui garantit qu'un
  * changement de contrat casse la compilation des deux côtés plutôt que de
  * produire une divergence silencieuse.
  *
- * Règle : aucune dépendance à NestJS, à React, à Supabase ou à une API de
+ * Règle : aucune dépendance à Hono, à React, à Supabase ou à une API de
  * plateforme ici. Uniquement du TypeScript et Zod.
  */
 

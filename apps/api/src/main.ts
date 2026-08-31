@@ -1,15 +1,6 @@
-import "reflect-metadata";
-import { ConfigService } from "@nestjs/config";
-import { createNestApp } from "./core/http/create-nest-app";
+import { serve } from "@hono/node-server";
+import { app } from "./app";
+import { config } from "./core/config";
 
-async function bootstrap(): Promise<void> {
-  const isProduction = process.env.NODE_ENV === "production";
-  const app = await createNestApp(
-    isProduction ? { swagger: false, logger: ["error", "warn"] } : {},
-  );
-
-  const port = app.get(ConfigService).get<number>("port", 3000);
-  await app.listen(port, "0.0.0.0");
-}
-
-void bootstrap();
+serve({ fetch: app.fetch, port: config.port, hostname: "0.0.0.0" });
+console.log(`API à l'écoute sur le port ${config.port} — moteur ${config.llmModel}`);

@@ -16,7 +16,7 @@ La distinction : une _rule_ dit ce qui est interdit, un _skill_ dit comment fair
 | Fichier                                | Portée                                                    |
 | -------------------------------------- | --------------------------------------------------------- |
 | [000-general.md](rules/000-general.md) | Périmètre, code minimal, langue, TypeScript, secrets, git |
-| [100-api.md](rules/100-api.md)         | Couches NestJS, pattern Repository, Zod, routes           |
+| [100-api.md](rules/100-api.md)         | Couches Hono, pattern Repository, Zod, routes             |
 | [200-app.md](rules/200-app.md)         | Expo, multi-plateforme, composants, thème, React Query    |
 | [300-tests.md](rules/300-tests.md)     | Ce qui doit être testé et comment                         |
 | [400-produit.md](rules/400-produit.md) | Règles de conception issues du cahier des charges         |
