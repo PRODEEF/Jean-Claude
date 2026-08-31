@@ -1,0 +1,314 @@
+import { Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import type {
+  Conversation,
+  CreateConversation,
+  FolderAssignmentSource,
+  Message,
+  Paginated,
+  SendMessage,
+  UpdateConversation,
+} from "@jc/domain";
+import { SupabaseService } from "../../core/supabase/supabase.service";
+import type { IConversationRepository } from "./conversation.repository.interface";
+
+type ConversationRow = {
+  id: string;
+  kind: string;
+  title: string;
+  archived_at: string | null;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+  conversation_folders?: { folder_id: string }[] | null;
+};
+
+type MessageRow = {
+  id: string;
+  conversation_id: string;
+  role: string;
+  content: string;
+  input_mode: string;
+  provider: string | null;
+  model: string | null;
+  created_at: string;
+};
+
+function toConversation(row: ConversationRow): Conversation {
+  return {
+    id: row.id,
+    kind: row.kind as Conversation["kind"],
+    title: row.title,
+    // Le rangement matriciel remonte sous forme de tableau d'identifiants :
+    // les clients n'ont jamais à connaître la table de liaison (§5.2).
+    folderIds: (row.conversation_folders ?? []).map((link) => link.folder_id),
+    archivedAt: row.archived_at,
+    lastMessageAt: row.last_message_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toMessage(row: MessageRow): Message {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    role: row.role as Message["role"],
+    content: row.content,
+    inputMode: row.input_mode as Message["inputMode"],
+    provider: row.provider,
+    model: row.model,
+    createdAt: row.created_at,
+  };
+}
+
+const CONVERSATION_COLUMNS =
+  "id, kind, title, archived_at, last_message_at, created_at, updated_at, conversation_folders(folder_id)";
+const MESSAGE_COLUMNS =
+  "id, conversation_id, role, content, input_mode, provider, model, created_at";
+
+@Injectable()
+export class ConversationRepository implements IConversationRepository {
+  constructor(private readonly supabase: SupabaseService) {}
+
+  async findAll(
+    accessToken: string,
+    options: { cursor?: string; limit: number; includeArchived: boolean },
+  ): Promise<Paginated<Conversation>> {
+    let query = this.supabase
+      .forUser(accessToken)
+      .from("conversations")
+      .select(CONVERSATION_COLUMNS)
+      .eq("kind", "chat")
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      // Une ligne de plus que demandé : la présence du surplus indique qu'il
+      // reste des résultats, sans requête `count` supplémentaire.
+      .limit(options.limit + 1);
+
+    if (!options.includeArchived) query = query.is("archived_at", null);
+    if (options.cursor) query = query.lt("last_message_at", options.cursor);
+
+    const { data, error } = await query;
+    if (error) throw new InternalServerErrorException(error.message);
+
+    const rows = data as unknown as ConversationRow[];
+    const hasMore = rows.length > options.limit;
+    const page = hasMore ? rows.slice(0, options.limit) : rows;
+
+    return {
+      items: page.map(toConversation),
+      nextCursor: hasMore ? (page[page.length - 1]?.last_message_at ?? null) : null,
+    };
+  }
+
+  async findById(id: string, accessToken: string): Promise<Conversation | null> {
+    const { data, error } = await this.supabase
+      .forUser(accessToken)
+      .from("conversations")
+      .select(CONVERSATION_COLUMNS)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) throw new InternalServerErrorException(error.message);
+    return data ? toConversation(data as unknown as ConversationRow) : null;
+  }
+
+  async findAssistantChannel(accessToken: string): Promise<Conversation | null> {
+    const { data, error } = await this.supabase
+      .forUser(accessToken)
+      .from("conversations")
+      .select(CONVERSATION_COLUMNS)
+      .eq("kind", "assistant")
+      .maybeSingle();
+
+    if (error) throw new InternalServerErrorException(error.message);
+    return data ? toConversation(data as unknown as ConversationRow) : null;
+  }
+
+  async create(
+    userId: string,
+    input: CreateConversation,
+    kind: Conversation["kind"],
+    accessToken: string,
+  ): Promise<Conversation> {
+    const { data, error } = await this.supabase
+      .forUser(accessToken)
+      .from("conversations")
+      .insert({
+        user_id: userId,
+        kind,
+        ...(input.title ? { title: input.title } : {}),
+      })
+      .select(CONVERSATION_COLUMNS)
+      .single();
+
+    if (error) throw new InternalServerErrorException(error.message);
+    const conversation = toConversation(data as unknown as ConversationRow);
+
+    if (input.folderIds.length > 0) {
+      const folderIds = await this.setFolders(
+        conversation.id,
+        input.folderIds,
+        "user",
+        accessToken,
+      );
+      return { ...conversation, folderIds };
+    }
+
+    return conversation;
+  }
+
+  async update(id: string, patch: UpdateConversation, accessToken: string): Promise<Conversation> {
+    const payload: Record<string, unknown> = {};
+    if (patch.title !== undefined) payload["title"] = patch.title;
+    if (patch.archived !== undefined) {
+      payload["archived_at"] = patch.archived ? new Date().toISOString() : null;
+    }
+
+    const { data, error } = await this.supabase
+      .forUser(accessToken)
+      .from("conversations")
+      .update(payload)
+      .eq("id", id)
+      .select(CONVERSATION_COLUMNS)
+      .maybeSingle();
+
+    if (error) throw new InternalServerErrorException(error.message);
+    if (!data) throw new NotFoundException("Conversation introuvable.");
+    return toConversation(data as unknown as ConversationRow);
+  }
+
+  async delete(id: string, accessToken: string): Promise<void> {
+    const { error } = await this.supabase
+      .forUser(accessToken)
+      .from("conversations")
+      .delete()
+      .eq("id", id);
+
+    if (error) throw new InternalServerErrorException(error.message);
+  }
+
+  /**
+   * Aligne les rattachements de la conversation sur `folderIds` (§5.2, A.1).
+   *
+   * On calcule le différentiel plutôt que de tout effacer puis tout réinsérer :
+   * une liaison déjà présente doit conserver son `source` d'origine. Sans cela,
+   * un classement automatique proposé par l'assistant écraserait la trace d'un
+   * rangement fait manuellement par l'utilisateur — signal dont l'assistant a
+   * besoin pour apprendre sa logique d'organisation (A.7).
+   */
+  async setFolders(
+    conversationId: string,
+    folderIds: string[],
+    source: FolderAssignmentSource,
+    accessToken: string,
+  ): Promise<string[]> {
+    const client = this.supabase.forUser(accessToken);
+    const target = [...new Set(folderIds)];
+
+    const { data: existingRows, error: readError } = await client
+      .from("conversation_folders")
+      .select("folder_id")
+      .eq("conversation_id", conversationId);
+
+    if (readError) throw new InternalServerErrorException(readError.message);
+
+    const existing = new Set((existingRows as unknown as { folder_id: string }[]).map((r) => r.folder_id));
+    const toRemove = [...existing].filter((id) => !target.includes(id));
+    const toAdd = target.filter((id) => !existing.has(id));
+
+    if (toRemove.length > 0) {
+      const { error } = await client
+        .from("conversation_folders")
+        .delete()
+        .eq("conversation_id", conversationId)
+        .in("folder_id", toRemove);
+
+      if (error) throw new InternalServerErrorException(error.message);
+    }
+
+    if (toAdd.length > 0) {
+      const { error } = await client.from("conversation_folders").insert(
+        toAdd.map((folderId) => ({
+          conversation_id: conversationId,
+          folder_id: folderId,
+          source,
+        })),
+      );
+
+      if (error) throw new InternalServerErrorException(error.message);
+    }
+
+    return target;
+  }
+
+  async listMessages(
+    conversationId: string,
+    accessToken: string,
+    options: { cursor?: string; limit: number },
+  ): Promise<Paginated<Message>> {
+    let query = this.supabase
+      .forUser(accessToken)
+      .from("messages")
+      .select(MESSAGE_COLUMNS)
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(options.limit + 1);
+
+    if (options.cursor) query = query.lt("created_at", options.cursor);
+
+    const { data, error } = await query;
+    if (error) throw new InternalServerErrorException(error.message);
+
+    const rows = data as unknown as MessageRow[];
+    const hasMore = rows.length > options.limit;
+    const page = hasMore ? rows.slice(0, options.limit) : rows;
+
+    return {
+      // Requête en ordre décroissant pour paginer depuis le message le plus
+      // récent, puis remise en ordre chronologique pour l'affichage du fil.
+      items: page.map(toMessage).reverse(),
+      nextCursor: hasMore ? (page[page.length - 1]?.created_at ?? null) : null,
+    };
+  }
+
+  async appendMessage(
+    conversationId: string,
+    userId: string,
+    message: SendMessage & {
+      role: Message["role"];
+      provider?: string | null;
+      model?: string | null;
+    },
+    accessToken: string,
+  ): Promise<Message> {
+    const client = this.supabase.forUser(accessToken);
+
+    const { data, error } = await client
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        user_id: userId,
+        role: message.role,
+        content: message.content,
+        input_mode: message.inputMode,
+        provider: message.provider ?? null,
+        model: message.model ?? null,
+      })
+      .select(MESSAGE_COLUMNS)
+      .single();
+
+    if (error) throw new InternalServerErrorException(error.message);
+    const created = toMessage(data as unknown as MessageRow);
+
+    // `last_message_at` pilote le tri de la liste des conversations : le tenir
+    // à jour ici évite un agrégat sur `messages` à chaque chargement de liste.
+    const { error: touchError } = await client
+      .from("conversations")
+      .update({ last_message_at: created.createdAt })
+      .eq("id", conversationId);
+
+    if (touchError) throw new InternalServerErrorException(touchError.message);
+
+    return created;
+  }
+}
