@@ -1,10 +1,11 @@
 import { useEffect } from "react";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "@/shared/providers/auth-provider";
-import { ThemeProvider } from "@/shared/providers/theme-provider";
+import { ThemeProvider, useTheme } from "@/shared/providers/theme-provider";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,7 @@ const queryClient = new QueryClient({
  */
 function AuthGate() {
   const { session, isLoading } = useAuth();
+  const { palette } = useTheme();
   const segments = useSegments();
   const router = useRouter();
 
@@ -40,7 +42,24 @@ function AuthGate() {
     }
   }, [session, isLoading, segments, router]);
 
-  return <Slot />;
+  return (
+    <View style={styles.root}>
+      {/* `Slot` est monté en permanence, y compris pendant la relecture de la
+          session : le remplacer par un écran d'attente démonterait le
+          navigateur, et la redirection ci-dessus s'exécuterait avant qu'il ne
+          soit remonté. Le voile évite pour autant de laisser entrevoir un
+          écran dont on ignore encore s'il est autorisé. */}
+      <Slot />
+      {isLoading ? (
+        <View
+          style={[styles.splash, { backgroundColor: palette.background }]}
+          accessibilityLabel="Chargement de votre session"
+        >
+          <ActivityIndicator color={palette.accent} />
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 export default function RootLayout() {
@@ -57,3 +76,16 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  splash: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

@@ -13,6 +13,7 @@
 
 export * from "./shared/primitives";
 export * from "./shared/search.schema";
+export * from "./auth/auth.schema";
 export * from "./folder/folder.schema";
 export * from "./conversation/conversation.schema";
 export * from "./message/message.schema";

@@ -1,0 +1,76 @@
+<!--
+  Gabarit de l'e-mail de connexion (§6.1).
+
+  Il ne contient VOLONTAIREMENT aucun lien cliquable. Un lien ne fonctionne que
+  s'il est ouvert sur l'appareil qui a demandé la connexion ; or la boîte mail
+  est très souvent consultée depuis un autre appareil que celui qu'on veut
+  connecter. Un code se recopie, un lien non — c'est la raison même du choix
+  du code contre le lien magique.
+
+  `{{ .Token }}` est la variable Supabase qui porte le code à usage unique.
+  Ne pas y ajouter `{{ .ConfirmationURL }}` : ce serait rouvrir le chemin que
+  ce gabarit existe pour fermer.
+-->
+<table
+  role="presentation"
+  width="100%"
+  cellpadding="0"
+  cellspacing="0"
+  style="
+    background-color: #f5f5f7;
+    padding: 32px 16px;
+    font-family:
+      -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Helvetica, Arial, sans-serif;
+  "
+>
+  <tr>
+    <td align="center">
+      <table
+        role="presentation"
+        width="100%"
+        cellpadding="0"
+        cellspacing="0"
+        style="max-width: 440px; background-color: #ffffff; border-radius: 16px; padding: 32px"
+      >
+        <tr>
+          <td style="font-size: 20px; font-weight: 600; color: #111114; padding-bottom: 8px">
+            Jean-Claude
+          </td>
+        </tr>
+        <tr>
+          <td style="font-size: 15px; line-height: 22px; color: #55555f; padding-bottom: 24px">
+            Voici votre code de connexion. Saisissez-le dans l'application sur l'appareil que vous
+            souhaitez connecter.
+          </td>
+        </tr>
+        <tr>
+          <td
+            align="center"
+            style="
+              font-size: 32px;
+              font-weight: 700;
+              letter-spacing: 8px;
+              color: #111114;
+              background-color: #f5f5f7;
+              border-radius: 12px;
+              padding: 20px 0;
+            "
+          >
+            {{ .Token }}
+          </td>
+        </tr>
+        <tr>
+          <td style="font-size: 13px; line-height: 20px; color: #7a7a85; padding-top: 24px">
+            Ce code est valable 15&nbsp;minutes et ne fonctionne qu'une fois.
+          </td>
+        </tr>
+        <tr>
+          <td style="font-size: 13px; line-height: 20px; color: #7a7a85; padding-top: 12px">
+            Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail : sans le code,
+            personne ne peut accéder à votre compte.
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

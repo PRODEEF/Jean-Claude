@@ -2,6 +2,38 @@
 
 S'appliquent à tout le dépôt.
 
+## Périmètre
+
+**Faire ce qui est demandé, rien de plus.** Tout ce qui déborde de la demande —
+refactor opportuniste, abstraction « pour plus tard », option de configuration
+que personne n'a réclamée, fichier annexe créé au passage — se **demande
+d'abord**.
+
+- ✅ Repérer un problème hors périmètre → le signaler en une phrase, puis
+  poursuivre la tâche demandée
+- ❌ Le corriger sans avoir demandé, même si la correction tient en trois lignes
+
+Le sprint fait 10 jours et impose une démonstration quotidienne (§0.1). Chaque
+ligne écrite en dehors du besoin est une ligne à relire, tester et maintenir.
+
+## Le code minimal qui marche
+
+Écrire la plus petite implémentation qui satisfait le besoin **actuel**, pas
+celui qu'on anticipe.
+
+| ❌                                        | ✅                                 |
+| ----------------------------------------- | ---------------------------------- |
+| Une abstraction pour un seul appelant     | L'appel direct                     |
+| Un objet d'options « au cas où »          | Les arguments réellement utilisés  |
+| Un composant générique à 12 props         | Le composant du cas d'usage        |
+| Couvrir un cas d'usage non spécifié       | L'ignorer jusqu'à ce qu'il existe  |
+| Un fichier de plus pour « bien découper » | Le garder dans le fichier existant |
+
+**Les invariants d'architecture ne relèvent pas de cette règle.** Le port
+`LlmProvider` (§5.1) et la table `conversation_folders` (§5.2, A.1) paraissent
+surdimensionnés aujourd'hui : ils répondent à un besoin déjà inscrit au cahier
+des charges. Ils restent en place.
+
 ## Langue
 
 - Code (variables, fonctions, fichiers) en **anglais**
@@ -49,14 +81,14 @@ par `npm run db:types`. Ne pas l'éditer à la main.
 
 ## Nommage
 
-| Élément | Convention |
-|---|---|
-| Fichiers | `kebab-case`, sauf composants React (`PascalCase.tsx`) |
-| Variables, fonctions | `camelCase` |
-| Types, classes | `PascalCase` |
-| Constantes exportées | `SCREAMING_SNAKE_CASE` |
-| Hooks | préfixe `use` |
-| Symboles d'injection | `SCREAMING_SNAKE_CASE`, ex. `FOLDER_REPOSITORY` |
+| Élément              | Convention                                             |
+| -------------------- | ------------------------------------------------------ |
+| Fichiers             | `kebab-case`, sauf composants React (`PascalCase.tsx`) |
+| Variables, fonctions | `camelCase`                                            |
+| Types, classes       | `PascalCase`                                           |
+| Constantes exportées | `SCREAMING_SNAKE_CASE`                                 |
+| Hooks                | préfixe `use`                                          |
+| Symboles d'injection | `SCREAMING_SNAKE_CASE`, ex. `FOLDER_REPOSITORY`        |
 
 ## Commentaires
 
