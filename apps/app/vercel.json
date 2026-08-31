@@ -1,0 +1,5 @@
+{
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [{ "source": "/chat/:id", "destination": "/chat/[id]" }]
+}

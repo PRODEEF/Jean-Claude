@@ -1,4 +1,3 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type { Folder } from "@jc/domain";
 import { FolderService } from "./folder.service";
 import type { IFolderRepository } from "./folder.repository.interface";
@@ -35,11 +34,13 @@ describe("FolderService", () => {
   describe("getTree", () => {
     it("imbrique les sous-dossiers sous leur parent", async () => {
       const repo = makeRepository({
-        findAll: jest.fn().mockResolvedValue([
-          makeFolder({ id: "admin", name: "Administratif" }),
-          makeFolder({ id: "assur", name: "Assurances", parentId: "admin" }),
-          makeFolder({ id: "sante", name: "Santé" }),
-        ]),
+        findAll: jest
+          .fn()
+          .mockResolvedValue([
+            makeFolder({ id: "admin", name: "Administratif" }),
+            makeFolder({ id: "assur", name: "Assurances", parentId: "admin" }),
+            makeFolder({ id: "sante", name: "Santé" }),
+          ]),
       });
 
       const tree = await new FolderService(repo).getTree(TOKEN);
@@ -52,10 +53,12 @@ describe("FolderService", () => {
 
     it("agrège dans le compteur du parent les conversations de ses sous-dossiers", async () => {
       const repo = makeRepository({
-        findAll: jest.fn().mockResolvedValue([
-          makeFolder({ id: "admin", name: "Administratif" }),
-          makeFolder({ id: "assur", name: "Assurances", parentId: "admin" }),
-        ]),
+        findAll: jest
+          .fn()
+          .mockResolvedValue([
+            makeFolder({ id: "admin", name: "Administratif" }),
+            makeFolder({ id: "assur", name: "Assurances", parentId: "admin" }),
+          ]),
         countConversations: jest.fn().mockResolvedValue(
           new Map([
             ["admin", 2],
@@ -75,10 +78,12 @@ describe("FolderService", () => {
       // Le compteur du parent additionne les deux liaisons — c'est bien 2 entrées
       // distinctes du point de vue du rangement, pas un doublon à corriger.
       const repo = makeRepository({
-        findAll: jest.fn().mockResolvedValue([
-          makeFolder({ id: "admin", name: "Administratif" }),
-          makeFolder({ id: "assur", name: "Assurances", parentId: "admin" }),
-        ]),
+        findAll: jest
+          .fn()
+          .mockResolvedValue([
+            makeFolder({ id: "admin", name: "Administratif" }),
+            makeFolder({ id: "assur", name: "Assurances", parentId: "admin" }),
+          ]),
         countConversations: jest.fn().mockResolvedValue(
           new Map([
             ["admin", 1],
@@ -103,7 +108,7 @@ describe("FolderService", () => {
 
       await expect(
         new FolderService(repo).create("user-1", { name: "Auto", parentId: "assur" }, TOKEN),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toMatchObject({ status: 400 });
     });
 
     it("accepte un sous-dossier sous un dossier racine", async () => {
@@ -127,7 +132,7 @@ describe("FolderService", () => {
 
       await expect(
         new FolderService(repo).create("user-1", { name: "Auto", parentId: "inconnu" }, TOKEN),
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toMatchObject({ status: 404 });
     });
   });
 
@@ -135,9 +140,9 @@ describe("FolderService", () => {
     it("refuse de supprimer un dossier inexistant", async () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
 
-      await expect(new FolderService(repo).delete("inconnu", TOKEN)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(new FolderService(repo).delete("inconnu", TOKEN)).rejects.toMatchObject({
+        status: 404,
+      });
       expect(repo.delete).not.toHaveBeenCalled();
     });
   });

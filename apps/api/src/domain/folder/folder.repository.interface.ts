@@ -9,5 +9,3 @@ export interface IFolderRepository {
   /** Compte les conversations rattachées, par dossier — alimente la sidebar. */
   countConversations(accessToken: string): Promise<Map<string, number>>;
 }
-
-export const FOLDER_REPOSITORY = Symbol("IFolderRepository");

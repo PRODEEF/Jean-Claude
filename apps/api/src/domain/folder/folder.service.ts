@@ -1,12 +1,9 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { CreateFolder, Folder, FolderTreeNode, UpdateFolder } from "@jc/domain";
-import { FOLDER_REPOSITORY, type IFolderRepository } from "./folder.repository.interface";
+import { httpError } from "../../core/http";
+import type { IFolderRepository } from "./folder.repository.interface";
 
-@Injectable()
 export class FolderService {
-  constructor(
-    @Inject(FOLDER_REPOSITORY) private readonly folders: IFolderRepository,
-  ) {}
+  constructor(private readonly folders: IFolderRepository) {}
 
   /**
    * Arborescence complète, prête à l'affichage.
@@ -45,11 +42,12 @@ export class FolderService {
   async create(userId: string, input: CreateFolder, accessToken: string): Promise<Folder> {
     if (input.parentId) {
       const parent = await this.folders.findById(input.parentId, accessToken);
-      if (!parent) throw new NotFoundException("Dossier parent introuvable.");
+      if (!parent) throw httpError(404, "Dossier parent introuvable.");
       // Doublon volontaire du trigger SQL : la contrainte base reste le garde-fou
       // ultime, mais un message clair vaut mieux qu'une erreur Postgres brute.
       if (parent.parentId !== null) {
-        throw new BadRequestException(
+        throw httpError(
+          400,
           "L'arborescence est limitée à 2 niveaux : ce dossier ne peut pas accueillir de sous-dossier.",
         );
       }
@@ -71,7 +69,7 @@ export class FolderService {
    */
   async delete(id: string, accessToken: string): Promise<void> {
     const folder = await this.folders.findById(id, accessToken);
-    if (!folder) throw new NotFoundException("Dossier introuvable.");
+    if (!folder) throw httpError(404, "Dossier introuvable.");
     await this.folders.delete(id, accessToken);
   }
 }

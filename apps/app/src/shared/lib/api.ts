@@ -1,3 +1,4 @@
+import { fetch as streamingFetch } from "expo/fetch";
 import { JeanClaudeClient } from "@jc/api-client";
 import { env } from "./env";
 import { supabase } from "./supabase";
@@ -18,4 +19,11 @@ export const api = new JeanClaudeClient({
   onUnauthorized: () => {
     void supabase.auth.signOut();
   },
+  /**
+   * Le `fetch` global de React Native ne donne accès au corps qu'une fois la
+   * réponse entière reçue : la réponse de l'assistant arriverait d'un bloc.
+   * Celui d'`expo/fetch` expose un vrai `ReadableStream` sur iOS et Android,
+   * et délègue au navigateur sur web — même code pour les trois cibles.
+   */
+  fetchImpl: streamingFetch as unknown as typeof fetch,
 });

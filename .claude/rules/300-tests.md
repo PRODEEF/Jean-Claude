@@ -7,7 +7,7 @@
 | Service `domain/` | **Obligatoire** — un `.spec.ts` par service |
 | Fonction pure de `packages/domain` | **Obligatoire** dès qu'elle porte une règle |
 | Repository | Non testé unitairement — il ne contient que du mapping et des requêtes |
-| Controller | Non testé unitairement — il ne fait que valider et déléguer |
+| Fichier de routes | Non testé unitairement — il ne fait que valider et déléguer |
 | Écran | Non testé pour l'instant — priorité au sprint |
 
 La ligne de partage : **on teste ce qui décide**, pas ce qui transporte.
@@ -29,8 +29,8 @@ function makeRepository(overrides: Partial<IFolderRepository> = {}): IFolderRepo
 ```
 
 Chaque test ne surcharge que ce qui l'intéresse. Le service est instancié
-directement (`new FolderService(repo)`) — pas besoin du `TestingModule` NestJS
-tant qu'il n'y a pas de dépendance à résoudre.
+directement (`new FolderService(repo)`) — il n’y a pas de conteneur
+d’injection à monter.
 
 ## Nommage
 

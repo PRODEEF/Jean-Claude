@@ -37,3 +37,26 @@ export const sendMessageSchema = z.object({
 });
 
 export type SendMessage = z.infer<typeof sendMessageSchema>;
+
+/**
+ * Événements d'un tour de dialogue en flux.
+ *
+ * L'envoi d'un message ne renvoie pas une réponse mais une suite d'événements,
+ * pour que le texte s'affiche au fil de sa génération plutôt qu'après plusieurs
+ * secondes d'écran figé — comportement des trois apps de référence du §4.2.
+ *
+ * `error` voyage **dans** le flux et non en code HTTP : quand la génération
+ * échoue en cours de route, les en-têtes de la réponse sont déjà partis.
+ */
+export const messageStreamEventSchema = z.discriminatedUnion("type", [
+  /** Le message de l'utilisateur, tel que persisté — émis avant toute génération. */
+  z.object({ type: z.literal("message"), message: messageSchema }),
+  /** Un fragment de la réponse en cours. */
+  z.object({ type: z.literal("text"), text: z.string() }),
+  /** La réponse complète, persistée. Clôt le flux. */
+  z.object({ type: z.literal("done"), message: messageSchema }),
+  /** Échec après le premier octet. Clôt le flux. */
+  z.object({ type: z.literal("error"), message: z.string() }),
+]);
+
+export type MessageStreamEvent = z.infer<typeof messageStreamEventSchema>;

@@ -6,8 +6,6 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "baseUrl": ".",
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
     "isolatedModules": false,
     "paths": {}
   },

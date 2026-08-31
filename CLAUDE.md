@@ -2,7 +2,7 @@
 
 Assistant IA conversationnel et second cerveau personnel. Quatre plateformes
 (web, iOS, Android, desktop) depuis un codebase Expo unique, servies par une API
-NestJS commune.
+Hono commune.
 
 Les références `§x` et `A.x` renvoient au cahier des charges v1.8 (24 août 2026).
 
@@ -13,7 +13,7 @@ Les références `§x` et `A.x` renvoient au cahier des charges v1.8 (24 août 2
 Ne jamais les violer, quelle que soit la tâche.
 
 1. **Aucun SDK de modèle IA hors de `apps/api/src/core/llm/providers/`.**
-   Ailleurs, injecter `LLM_PROVIDER` et parler à l'interface `LlmProvider`.
+   Ailleurs, importer `llm` et parler à l’interface `LlmProvider`.
    C'est ce qui rend le multi-modèle du §5.1 possible sans réécriture.
 
 2. **Aucune logique métier dans un écran.**
@@ -75,7 +75,7 @@ livrable de fin de stage (§10), à tenir à jour.
 ## Structure
 
 ```md
-apps/api/     NestJS — API commune  ·  core/ → domain/ → feature/
+apps/api/     Hono — API commune  ·  core/ → domain/ → feature/
 apps/app/     Expo Router — web + iOS + Android
 packages/     domain (Zod) · api-client · design — partagés des deux côtés
 supabase/     Schéma Postgres + RLS

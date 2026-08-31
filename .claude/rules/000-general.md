@@ -76,7 +76,7 @@ par `npm run db:types`. Ne pas l'éditer à la main.
 ## Logs
 
 - ❌ Pas de `console.log` en production
-- ✅ Backend : `new Logger(NomDuService.name)` de NestJS
+- ✅ Backend : `console.error` sur un chemin d’erreur, jamais ailleurs
 - ✅ App : retirer les logs avant de committer
 
 ## Nommage
@@ -115,6 +115,6 @@ count += childCount;
 ## Ce qu'on ne fait pas ici
 
 - ❌ Pas de classe utilitaire statique `XxxUtils` / `XxxHelper` → fonctions exportées
-- ❌ Pas de singleton manuel → NestJS gère l'injection
-- ❌ Pas de logique métier dans un Controller ou un écran → Service / hook
+- ❌ Pas de classe à instancier pour un service sans état → module de fonctions
+- ❌ Pas de logique métier dans une route ou un écran → Service / hook
 - ❌ Pas de `class-validator` → Zod uniquement, depuis `packages/domain`

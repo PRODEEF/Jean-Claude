@@ -1,29 +1,26 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type {
   AssignFolders,
   Conversation,
   CreateConversation,
   CursorPagination,
   Message,
+  MessageStreamEvent,
   Paginated,
   SendMessage,
   UpdateConversation,
 } from "@jc/domain";
-import { LLM_PROVIDER, type LlmProvider } from "../../core/llm/llm.port";
+import { httpError } from "../../core/http";
+import type { LlmProvider } from "../../core/llm/llm.port";
 import { CHAT_TOOLS } from "../../core/llm/llm.tools";
-import {
-  CONVERSATION_REPOSITORY,
-  type IConversationRepository,
-} from "./conversation.repository.interface";
+import type { IConversationRepository } from "./conversation.repository.interface";
 
 /** Nombre de messages de contexte envoyés au modèle à chaque tour. */
 const CONTEXT_WINDOW_MESSAGES = 40;
 
-@Injectable()
 export class ConversationService {
   constructor(
-    @Inject(CONVERSATION_REPOSITORY) private readonly conversations: IConversationRepository,
-    @Inject(LLM_PROVIDER) private readonly llm: LlmProvider,
+    private readonly conversations: IConversationRepository,
+    private readonly llm: LlmProvider,
   ) {}
 
   list(
@@ -40,15 +37,11 @@ export class ConversationService {
 
   async getById(id: string, accessToken: string): Promise<Conversation> {
     const conversation = await this.conversations.findById(id, accessToken);
-    if (!conversation) throw new NotFoundException("Conversation introuvable.");
+    if (!conversation) throw httpError(404, "Conversation introuvable.");
     return conversation;
   }
 
-  create(
-    userId: string,
-    input: CreateConversation,
-    accessToken: string,
-  ): Promise<Conversation> {
+  create(userId: string, input: CreateConversation, accessToken: string): Promise<Conversation> {
     return this.conversations.create(userId, input, "chat", accessToken);
   }
 
@@ -107,22 +100,25 @@ export class ConversationService {
   }
 
   /**
-   * Enregistre le message de l'utilisateur, interroge le moteur IA, puis
-   * persiste la réponse.
+   * Déroule un tour de dialogue en flux : le message de l'utilisateur, puis la
+   * réponse du modèle au fil de sa génération, puis la réponse persistée.
+   *
+   * Il n'existe pas de variante bloquante. En maintenir une en parallèle ferait
+   * deux implémentations du même tour, à tenir cohérentes ; un appelant qui
+   * veut la réponse entière consomme le flux jusqu'au bout.
    *
    * Les appels d'outils renvoyés par le modèle (`suggest_task_list`,
    * `suggest_folders`...) ne sont volontairement PAS exécutés ici : ils
    * doivent devenir des suggestions en attente, que l'utilisateur accepte ou
    * ignore (§12.1 — « l'assistant propose, l'utilisateur valide »). Le module
-   * `feature/assistant` s'en chargera ; ils sont pour l'instant remontés bruts
-   * à l'appelant.
+   * `feature/assistant` s'en chargera.
    */
-  async sendMessage(
+  async *streamMessage(
     conversationId: string,
     userId: string,
     input: SendMessage,
     accessToken: string,
-  ): Promise<{ userMessage: Message; assistantMessage: Message }> {
+  ): AsyncGenerator<MessageStreamEvent> {
     const conversation = await this.getById(conversationId, accessToken);
 
     const userMessage = await this.conversations.appendMessage(
@@ -132,34 +128,52 @@ export class ConversationService {
       accessToken,
     );
 
+    yield { type: "message", message: userMessage };
+
     const history = await this.conversations.listMessages(conversationId, accessToken, {
       limit: CONTEXT_WINDOW_MESSAGES,
     });
 
-    const completion = await this.llm.complete({
-      system: buildSystemPrompt(conversation.kind),
-      messages: history.items
-        // Les messages `system` stockés ne sont pas rejouables comme des tours
-        // de dialogue : la consigne système est reconstruite à chaque appel.
-        .filter((m) => m.role !== "system")
-        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-      tools: CHAT_TOOLS,
-    });
+    let text = "";
+    let provider: string | null = null;
+    let model: string | null = null;
 
-    const assistantMessage = await this.conversations.appendMessage(
-      conversationId,
-      userId,
-      {
-        content: completion.text,
-        inputMode: "text",
-        role: "assistant",
-        provider: completion.provider,
-        model: completion.model,
-      },
-      accessToken,
-    );
+    try {
+      const stream = this.llm.stream({
+        system: buildSystemPrompt(conversation.kind),
+        messages: history.items
+          // Les messages `system` stockés ne sont pas rejouables comme des tours
+          // de dialogue : la consigne système est reconstruite à chaque appel.
+          .filter((m) => m.role !== "system")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+        tools: CHAT_TOOLS,
+      });
 
-    return { userMessage, assistantMessage };
+      for await (const chunk of stream) {
+        if (chunk.type === "text") {
+          text += chunk.text;
+          yield { type: "text", text: chunk.text };
+        } else if (chunk.type === "done") {
+          provider = chunk.response.provider;
+          model = chunk.response.model;
+        }
+      }
+    } finally {
+      // `finally` et non la sortie nominale : si le client se déconnecte en
+      // pleine génération, le texte déjà produit est déjà facturé. Le perdre
+      // priverait l'utilisateur d'une réponse qu'il retrouverait de toute façon
+      // au rechargement.
+      if (text.length > 0) {
+        const assistantMessage = await this.conversations.appendMessage(
+          conversationId,
+          userId,
+          { content: text, inputMode: "text", role: "assistant", provider, model },
+          accessToken,
+        );
+
+        yield { type: "done", message: assistantMessage };
+      }
+    }
   }
 }
 

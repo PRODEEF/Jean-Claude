@@ -19,9 +19,9 @@ Ce document explique **pourquoi** le projet est structuré ainsi. Les référenc
                             │  @jc/domain     (types + Zod)
                             │  @jc/design     (jetons)
 ┌───────────────────────────▼─────────────────────────────────┐
-│  apps/api — NestJS + Fastify        API commune (§5.3)      │
+│  apps/api — Hono                    API commune (§5.3)      │
 │                                                              │
-│   core/     config · supabase · auth · llm · filters        │
+│   core/     config · supabase · auth · llm · http           │
 │   domain/   folder · conversation · task · calendar · user  │
 │   feature/  assistant · search · health                     │
 └───────────────────────────┬─────────────────────────────────┘
@@ -54,10 +54,10 @@ recherche, réglages, auth, onboarding — n'était pas tenable dans ce temps.
 plutôt que recopier ») : la divergence entre plateformes se gère dans le même
 codebase, par deux mécanismes.
 
-| Mécanisme | Usage |
-|---|---|
-| `useBreakpoint()` | `compact` (< 768 pt) → onglets + tiroir ; `expanded` → sidebar permanente comme sur la maquette web |
-| `Fichier.web.tsx` / `Fichier.native.tsx` | Quand un composant doit être franchement différent (ex. le calendrier mois) |
+| Mécanisme                                | Usage                                                                                               |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `useBreakpoint()`                        | `compact` (< 768 pt) → onglets + tiroir ; `expanded` → sidebar permanente comme sur la maquette web |
+| `Fichier.web.tsx` / `Fichier.native.tsx` | Quand un composant doit être franchement différent (ex. le calendrier mois)                         |
 
 **Ce que ça coûte.** Les primitives sont celles de React Native (`View`,
 `Text`, `Pressable`), pas du HTML/CSS. Les vues denses de type calendrier
@@ -83,26 +83,45 @@ n'utilise Supabase que pour l'authentification ; tout le reste passe par
 
 ---
 
-### 2.3 Le moteur IA est derrière un port
+### 2.3 Le moteur IA est derrière un port, lui-même branché sur un routeur
 
 **Décision.** `core/llm/llm.port.ts` définit l'interface `LlmProvider`. Un seul
-fichier de l'application importe le SDK Anthropic : `providers/claude.provider.ts`.
+fichier de l'application importe un SDK de modèle IA :
+`providers/gateway.provider.ts`, adaptateur de **Vercel AI Gateway**.
 
 **Pourquoi.** Le §5.1 demande de pouvoir brancher Mistral, DeepSeek ou Qwen
-« sans réécriture majeure ».
+« sans réécriture majeure ». Le Gateway expose ces éditeurs — et des centaines
+d'autres — derrière une clé unique et un identifiant de la forme
+`éditeur/modèle`. La promesse du §5.1 se trouve donc dépassée : il n'y a pas
+de réécriture _du tout_.
 
-**Comment ajouter un fournisseur.**
+**Comment changer de moteur.**
 
-1. Écrire `core/llm/providers/mistral.provider.ts` implémentant `LlmProvider`.
-2. Ajouter un `case` dans la fabrique de `core/llm/llm.module.ts`.
-3. Poser `LLM_PROVIDER=mistral` dans l'environnement.
+```bash
+LLM_MODEL=mistral/mistral-large
+```
 
-Aucun fichier métier n'est touché. L'interface porte aussi `isSovereign`, pour
-signaler à l'utilisateur si le modèle qui traite ses données est hébergé en
-UE — exigence croisée du §5.1 et du §13.4.6.
+C'est tout. Aucun fichier n'est touché, aucune seconde clé d'API à obtenir.
+`LLM_MODEL` est le modèle **par défaut** du serveur : à terme, l'utilisateur
+choisira le sien dans ses préférences, et cette valeur deviendra le repli.
+
+**Pourquoi garder le port, alors, s'il n'a qu'une implémentation ?** Parce que
+c'est lui qui tient l'invariant : aucun service métier n'importe un SDK de
+modèle, tous importent `llm` et parlent à l’interface. C'est aussi ce
+qui rend `ConversationService` testable sans réseau. Un second adaptateur ne
+sera écrit que le jour où un moteur devra être appelé hors Gateway — ce qui
+n'est pas prévu.
+
+**Souveraineté.** L'interface porte `isSovereign`, exposé par `/api/health`,
+pour signaler à l'utilisateur si le modèle qui traite ses données est hébergé
+en UE — exigence croisée du §5.1 et du §13.4.6. La valeur se lit sur l'**éditeur**
+du modèle (le préfixe de `LLM_MODEL`), pas sur le Gateway : celui-ci n'est
+qu'un routeur, c'est bien Mistral ou Anthropic qui traite le contenu des
+conversations. Pour la même raison, chaque message persiste dans
+`messages.provider` l'éditeur qui l'a produit, et non `gateway`.
 
 **Le point le moins évident** : les suggestions proactives du §12.1 passent par
-le *tool use* du modèle (`core/llm/llm.tools.ts`), pas par une analyse du texte
+le _tool use_ du modèle (`core/llm/llm.tools.ts`), pas par une analyse du texte
 de la réponse. Demander au modèle d'appeler `suggest_task_list` donne une
 sortie structurée et vérifiable ; parser « on dirait qu'une liste se dessine »
 en langage naturel serait fragile.
@@ -131,14 +150,14 @@ d'apprentissage.
 
 ### `packages/` — partagé, sans dépendance de plateforme
 
-| Package | Contenu | Règle |
-|---|---|---|
-| `@jc/domain` | Types + schémas Zod + règles métier | Aucune dépendance à NestJS, React, Supabase |
-| `@jc/api-client` | Client HTTP typé | `fetch` seul — pas d'axios, pas d'API de plateforme |
-| `@jc/design` | Jetons de design | Valeurs numériques, consommables par `StyleSheet` et par le web |
+| Package          | Contenu                             | Règle                                                           |
+| ---------------- | ----------------------------------- | --------------------------------------------------------------- |
+| `@jc/domain`     | Types + schémas Zod + règles métier | Aucune dépendance à Hono, React, Supabase                       |
+| `@jc/api-client` | Client HTTP typé                    | `fetch` seul — pas d'axios, pas d'API de plateforme             |
+| `@jc/design`     | Jetons de design                    | Valeurs numériques, consommables par `StyleSheet` et par le web |
 
 `@jc/domain` est importé **par les deux côtés**. Un changement de contrat casse
-la compilation de l'API *et* de l'app, au lieu de produire une divergence
+la compilation de l'API _et_ de l'app, au lieu de produire une divergence
 silencieuse détectée à l'exécution.
 
 ### `apps/api/src/` — trois couches
@@ -156,28 +175,27 @@ interdit. C'est ce qui garde les modules `domain/` réutilisables.
 
 ```
 folder/
-  folder.controller.ts            HTTP — validation Zod, pas de logique
+  folder.routes.ts                HTTP — validation Zod, pas de logique
   folder.service.ts               Logique métier — testable sans base
-  folder.repository.interface.ts  Contrat + symbole d'injection
+  folder.repository.interface.ts  Contrat consommé par le service
   folder.repository.ts            Supabase — seul endroit avec du snake_case
-  folder.module.ts                Câblage
   folder.service.spec.ts          Tests unitaires sur doubles
 ```
 
-Le service dépend du **symbole** (`FOLDER_REPOSITORY`), jamais de la classe.
+Le service reçoit l’**interface** du Repository, jamais la classe concrète.
 C'est ce qui permet de tester la logique métier avec un double, sans base.
 
 ---
 
 ## 4. Sécurité et RGPD
 
-| Mesure | Où | Pourquoi |
-|---|---|---|
-| RLS activée sur toutes les tables | `supabase/migrations/` | Dernier rempart même en cas de bug applicatif |
+| Mesure                                           | Où                          | Pourquoi                                               |
+| ------------------------------------------------ | --------------------------- | ------------------------------------------------------ |
+| RLS activée sur toutes les tables                | `supabase/migrations/`      | Dernier rempart même en cas de bug applicatif          |
 | Requêtes métier sous l'identité de l'utilisateur | `SupabaseService.forUser()` | `admin` (bypass RLS) réservé aux traitements planifiés |
-| Jeton en Keychain / Keystore | `token-storage.ts` | §8 — données de santé et administratives |
-| Erreurs fournisseur jamais renvoyées au client | `claude.provider.ts` | Elles peuvent contenir des fragments de prompt |
-| Postgres standard, sans extension propriétaire | migration initiale | §8 — migration UE = `pg_dump` / `pg_restore` |
+| Jeton en Keychain / Keystore                     | `token-storage.ts`          | §8 — données de santé et administratives               |
+| Erreurs fournisseur jamais renvoyées au client   | `claude.provider.ts`        | Elles peuvent contenir des fragments de prompt         |
+| Postgres standard, sans extension propriétaire   | migration initiale          | §8 — migration UE = `pg_dump` / `pg_restore`           |
 
 **Pour la migration UE (§8)** : créer le projet Supabase en région
 `eu-west-3` (Paris) ou `eu-central-1` (Francfort) dès maintenant. C'est gratuit

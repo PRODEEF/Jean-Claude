@@ -1,15 +1,17 @@
-import type {
-  AssignFolders,
-  Conversation,
-  CreateConversation,
-  CreateFolder,
-  Folder,
-  FolderTreeNode,
-  Message,
-  Paginated,
-  SendMessage,
-  UpdateConversation,
-  UpdateFolder,
+import {
+  messageStreamEventSchema,
+  type AssignFolders,
+  type Conversation,
+  type CreateConversation,
+  type CreateFolder,
+  type Folder,
+  type FolderTreeNode,
+  type Message,
+  type MessageStreamEvent,
+  type Paginated,
+  type SendMessage,
+  type UpdateConversation,
+  type UpdateFolder,
 } from "@jc/domain";
 import { HttpClient, type ApiClientOptions } from "./http";
 
@@ -74,10 +76,35 @@ export class JeanClaudeClient {
     messages: (id: string, params: { cursor?: string; limit?: number } = {}) =>
       this.http.request<Paginated<Message>>(`/conversations/${id}/messages`, { query: params }),
 
-    send: (id: string, input: SendMessage) =>
-      this.http.request<{ userMessage: Message; assistantMessage: Message }>(
-        `/conversations/${id}/messages`,
-        { method: "POST", body: input },
-      ),
+    /**
+     * Envoie un message et rend la réponse de l'assistant au fil de sa
+     * génération.
+     *
+     * Un générateur ne pouvant pas s'écrire en fonction fléchée, il vit dans
+     * une méthode privée : c'est le seul moyen de garder `this` lié à
+     * l'instance comme le font les autres entrées de cet objet.
+     */
+    send: (id: string, input: SendMessage, signal?: AbortSignal) =>
+      this.streamMessage(id, input, signal),
   };
+  /**
+   * Les événements sont validés à l'arrivée par le schéma de `@jc/domain` :
+   * un flux tronqué, ou un contrat qui aurait divergé entre le serveur et le
+   * client, échoue ici plutôt que trois écrans plus loin.
+   */
+  private async *streamMessage(
+    id: string,
+    input: SendMessage,
+    signal?: AbortSignal,
+  ): AsyncGenerator<MessageStreamEvent> {
+    const blocks = this.http.stream(`/conversations/${id}/messages`, {
+      method: "POST",
+      body: input,
+      ...(signal ? { signal } : {}),
+    });
+
+    for await (const block of blocks) {
+      yield messageStreamEventSchema.parse(JSON.parse(block));
+    }
+  }
 }
