@@ -80,7 +80,9 @@ export function TodoScreen() {
           {error instanceof Error ? error.message : "Chargement impossible."}
         </Text>
       ) : null}
-      {data?.map((list) => <TaskListCard key={list.id} list={list} />)}
+      {data?.map((list) => (
+        <TaskListCard key={list.id} list={list} />
+      ))}
     </ScreenScaffold>
   );
 }
@@ -101,7 +103,7 @@ return breakpoint === "expanded" ? (
     <ConversationList />
   </View>
 ) : (
-  <ConversationList />   // le tiroir porte les dossiers
+  <ConversationList /> // le tiroir porte les dossiers
 );
 ```
 
@@ -120,7 +122,24 @@ month-calendar.tsx          Fallback partagé (facultatif)
 À réserver aux vraies divergences. Un écart de padding se règle avec un jeton,
 pas avec deux fichiers.
 
-## 4. Le style
+## 4. Les composants — les prendre, pas les refaire
+
+Avant d'écrire le moindre composant, chercher dans l'ordre :
+
+1. `shared/ui/` — ce que le dépôt porte déjà
+2. **react-native-reusables** — le portage de shadcn/ui pour React Native. La
+   CLI copie le composant dans le dépôt, il devient un fichier éditable comme
+   les autres.
+   ```bash
+   npx @react-native-reusables/cli@latest add button
+   ```
+3. Une primitive React Native (`Pressable`, `FlatList`, `Modal`)
+
+Écrire de zéro seulement si les trois échouent. Détail et pièges dans la rule
+[200-app § Composants](../../rules/200-app.md) — notamment : **shadcn/ui
+lui-même ne fonctionne pas en natif**, seul le portage React Native convient.
+
+## 5. Le style
 
 ```tsx
 const { palette } = useTheme();
@@ -143,15 +162,15 @@ const { palette } = useTheme();
   écran 27 pouces
 - Vérifier le rendu en clair **et** en sombre
 
-## 5. Ce qui ne va pas dans un écran
+## 6. Ce qui ne va pas dans un écran
 
-| ❌ | ✅ |
-|---|---|
-| Décider quelle conversation va dans quel dossier | L'API le décide |
-| Filtrer/trier une liste métier en JS | Le serveur renvoie déjà trié |
-| Appeler `fetch` | `@jc/api-client` |
-| Écrire dans Supabase | L'API |
-| Une règle produit (bornage, suggestion) | L'API — sinon web et mobile divergent |
+| ❌                                               | ✅                                    |
+| ------------------------------------------------ | ------------------------------------- |
+| Décider quelle conversation va dans quel dossier | L'API le décide                       |
+| Filtrer/trier une liste métier en JS             | Le serveur renvoie déjà trié          |
+| Appeler `fetch`                                  | `@jc/api-client`                      |
+| Écrire dans Supabase                             | L'API                                 |
+| Une règle produit (bornage, suggestion)          | L'API — sinon web et mobile divergent |
 
 ## Vérification
 
@@ -162,6 +181,10 @@ npm run typecheck --workspace @jc/app
 Puis tester réellement : `npm run dev:web`, et au moins un simulateur mobile.
 Le §0.1 demande une démonstration quotidienne, même partielle — voir skill
 [daily-report](../daily-report/SKILL.md).
+
+Enfin, relire le diff : **rien qui n'ait été demandé**, aucune props ni
+abstraction ajoutée « pour plus tard » — rule
+[000-general § Périmètre](../../rules/000-general.md).
 
 ## Avant de trancher un placement d'élément
 

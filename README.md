@@ -42,6 +42,21 @@ Supabase ne sont pas typées :
 npm run db:types
 ```
 
+### Configurer l'envoi du code de connexion
+
+Sans cette étape, Supabase enverrait son gabarit par défaut — un **lien
+cliquable** et non un code, ce que le §6.1 écarte explicitement. La
+configuration vit dans `supabase/config.toml` et `supabase/templates/` ;
+il reste à la pousser sur le projet hébergé :
+
+```bash
+npx supabase config push
+```
+
+À défaut, coller le contenu de `supabase/templates/otp-code.html` dans les
+gabarits **Confirm signup** et **Magic Link** du tableau de bord Supabase
+(Authentication → Email Templates), et régler la longueur du code sur 6.
+
 ### Lancer
 
 ```bash
@@ -64,17 +79,17 @@ Pour le mobile : `npm run dev:ios` ou `npm run dev:android`.
 ```md
 jean-claude/
 ├── apps/
-│   ├── api/          NestJS — API commune aux quatre plateformes (§5.3)
-│   └── app/          Expo Router — web, iOS, Android depuis un codebase
+│ ├── api/ NestJS — API commune aux quatre plateformes (§5.3)
+│ └── app/ Expo Router — web, iOS, Android depuis un codebase
 ├── packages/
-│   ├── domain/       Types, schémas Zod, règles métier — partagés
-│   ├── api-client/   Client HTTP typé
-│   └── design/       Jetons de design
+│ ├── domain/ Types, schémas Zod, règles métier — partagés
+│ ├── api-client/ Client HTTP typé
+│ └── design/ Jetons de design
 ├── supabase/
-│   └── migrations/   Schéma Postgres + RLS
+│ └── migrations/ Schéma Postgres + RLS
 └── docs/
-    ├── ARCHITECTURE.md    Décisions techniques et leur justification
-    └── SUIVI-BACKLOG.md   Statut de chaque point du backlog (livrable §10)
+├── ARCHITECTURE.md Décisions techniques et leur justification
+└── SUIVI-BACKLOG.md Statut de chaque point du backlog (livrable §10)
 ```
 
 **Commencer par [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — il explique les
@@ -84,14 +99,15 @@ quatre décisions qui conditionnent tout le reste.
 
 ## Commandes
 
-| Commande                          | Effet                                          |
-| --------------------------------- | ---------------------------------------------- |
-| `npm run dev:api`                 | API en mode watch                              |
-| `npm run dev:web`                 | Application web                                |
-| `npm run dev:ios` / `dev:android` | Application mobile                             |
-| `npm run typecheck`               | Vérification des types sur tout le monorepo    |
-| `npm test`                        | Tests unitaires                                |
-| `npm run db:types`                | Régénère les types de la base depuis le schéma |
+| Commande                          | Effet                                                               |
+| --------------------------------- | ------------------------------------------------------------------- |
+| `npm run dev:api`                 | API en mode watch                                                   |
+| `npm run dev:web`                 | Application web                                                     |
+| `npm run dev:ios` / `dev:android` | Application mobile                                                  |
+| `npm run typecheck`               | Vérification des types sur tout le monorepo                         |
+| `npm test`                        | Tests unitaires                                                     |
+| `npm run db:types`                | Régénère les types de la base depuis le schéma                      |
+| `npx supabase config push`        | Pousse la configuration d'authentification et les gabarits d'e-mail |
 
 ---
 
@@ -110,6 +126,7 @@ Détail dans [CLAUDE.md](CLAUDE.md).
 
 ## État
 
-Socle technique posé. Modules `folder` et `conversation` complets et servant de
+Socle technique posé. Authentification par e-mail et code à usage unique (§6.1)
+opérationnelle. Modules `folder` et `conversation` complets et servant de
 référence pour les suivants. Voir [docs/SUIVI-BACKLOG.md](docs/SUIVI-BACKLOG.md)
 pour le statut point par point.

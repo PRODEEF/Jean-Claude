@@ -1,8 +1,13 @@
 const { getDefaultConfig } = require("expo/metro-config");
+const { loadProjectEnv } = require("@expo/env");
 const path = require("path");
 
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, "../..");
+
+// Même raison que `app.config.js` : Metro inline `EXPO_PUBLIC_*` au bundle,
+// il doit voir le `.env` racine, pas seulement `apps/app/.env`.
+loadProjectEnv(workspaceRoot, { force: true });
 
 const config = getDefaultConfig(projectRoot);
 

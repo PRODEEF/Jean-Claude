@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import configuration from "./core/config/configuration";
@@ -22,7 +23,12 @@ import { HealthModule } from "./feature/health/health.module";
  */
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, load: [configuration], cache: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [join(__dirname, "../../../.env"), join(process.cwd(), ".env")],
+      load: [configuration],
+      cache: true,
+    }),
     SupabaseModule,
     AuthModule,
     LlmModule,

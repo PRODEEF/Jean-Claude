@@ -51,7 +51,7 @@ export const taskSchema = z.object({
 });
 export type Task = z.infer<typeof taskSchema>;
 
-export const createTaskSchema = z.object({ title: labelSchema, /* … */ });
+export const createTaskSchema = z.object({ title: labelSchema /* … */ });
 export type CreateTask = z.infer<typeof createTaskSchema>;
 ```
 
@@ -114,7 +114,7 @@ export class TaskRepository implements ITaskRepository {
 
   async findByList(listId: string, accessToken: string): Promise<Task[]> {
     const { data, error } = await this.supabase
-      .forUser(accessToken)          // ← RLS actives
+      .forUser(accessToken) // ← RLS actives
       .from("tasks")
       .select(COLUMNS)
       .eq("list_id", listId)
@@ -219,12 +219,16 @@ npm run build:packages && npm run typecheck && npm test
 
 Puis mettre à jour `docs/SUIVI-BACKLOG.md` si un point du backlog a avancé.
 
+Enfin, relire le diff : **seules les routes et les méthodes demandées**. Un CRUD
+complet quand une seule lecture était réclamée déborde du périmètre — rule
+[000-general § Périmètre](../../rules/000-general.md).
+
 ## Pièges connus
 
-| Piège | Conséquence |
-|---|---|
-| `supabase.admin` dans un Repository | Contourne les RLS — fuite de données entre utilisateurs |
-| Oublier `accessToken` | Requête anonyme, RLS bloque, erreur incompréhensible |
-| `@Get(":id")` avant `@Get("assistant")` | La route littérale n'est jamais atteinte |
-| Payload d'`update` construit par spread | Écrase les colonnes non fournies avec `undefined` |
-| Type `Row` en camelCase | Le mapping paraît fonctionner puis renvoie `undefined` partout |
+| Piège                                   | Conséquence                                                    |
+| --------------------------------------- | -------------------------------------------------------------- |
+| `supabase.admin` dans un Repository     | Contourne les RLS — fuite de données entre utilisateurs        |
+| Oublier `accessToken`                   | Requête anonyme, RLS bloque, erreur incompréhensible           |
+| `@Get(":id")` avant `@Get("assistant")` | La route littérale n'est jamais atteinte                       |
+| Payload d'`update` construit par spread | Écrase les colonnes non fournies avec `undefined`              |
+| Type `Row` en camelCase                 | Le mapping paraît fonctionner puis renvoie `undefined` partout |

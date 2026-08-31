@@ -1,0 +1,86 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Jean-Claude — configuration Supabase
+#
+# Ce fichier pilote l'instance locale (`npx supabase start`) et, via
+# `npx supabase config push`, la configuration du projet hébergé.
+#
+# La section [auth.email] est celle qui rend le §6.1 vrai : sans elle, Supabase
+# envoie son gabarit par défaut, qui contient un lien cliquable et non un code.
+# ═══════════════════════════════════════════════════════════════════════════
+
+project_id = "jean-claude"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+
+[studio]
+enabled = true
+port = 54323
+
+# Boîte de réception locale : c'est là qu'arrivent les codes en développement.
+# Permet de dérouler le parcours de connexion entier sans dépendre d'un vrai
+# service d'envoi, et donc de le démontrer (§0.1) dès le premier jour.
+[inbucket]
+enabled = true
+port = 54324
+
+[auth]
+enabled = true
+site_url = "http://localhost:8081"
+additional_redirect_urls = []
+enable_signup = true
+# Une heure d'access token, renouvelé en arrière-plan par le SDK client.
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+# Le code EST la preuve de possession de l'adresse : un compte n'existe
+# vraiment qu'une fois un code saisi. C'est ce qui autorise l'absence de mot
+# de passe en V1 (§6.1).
+enable_confirmations = true
+
+# Longueur du code. À garder alignée sur `OTP_CODE_LENGTH` dans
+# `packages/domain/src/auth/auth.schema.ts`.
+otp_length = 8
+
+# 15 minutes. Assez long pour absorber un e-mail lent, assez court pour qu'un
+# code intercepté ne serve pas le lendemain — le produit traite des données de
+# santé et administratives (§8).
+otp_expiry = 900
+
+# Un envoi par minute et par adresse. `OTP_RESEND_COOLDOWN_SECONDS` reprend
+# cette valeur côté client : au-delà, Supabase rejette la demande et
+# l'utilisateur reçoit une erreur au lieu d'un code.
+max_frequency = "60s"
+
+# ── Gabarits d'e-mail ──────────────────────────────────────────────────────
+# Les deux gabarits pointent délibérément vers le MÊME fichier.
+#
+# Supabase utilise `confirmation` pour une première connexion (le compte est
+# créé) et `magic_link` pour les suivantes. Les faire diverger ferait diverger
+# l'inscription et la reconnexion, que le §6.1 veut identiques. Un seul fichier
+# rend cette identité structurelle plutôt que déclarative.
+[auth.email.template.confirmation]
+subject = "Votre code de connexion Jean-Claude"
+content_path = "./supabase/templates/otp-code.html"
+
+[auth.email.template.magic_link]
+subject = "Votre code de connexion Jean-Claude"
+content_path = "./supabase/templates/otp-code.html"
+
+# 2FA par SMS — étape 2 (§6.2), pas activée dans ce sprint.
+[auth.sms]
+enable_signup = false
+enable_confirmations = false

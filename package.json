@@ -17,7 +17,7 @@
     "build": "npm run build:packages && npm run build --workspace @jc/api && npm run build:web --workspace @jc/app",
     "typecheck": "npm run build:packages && npm run typecheck --workspace @jc/api && npm run typecheck --workspace @jc/app",
     "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspace @jc/api",
+    "test": "npm run test --workspaces --if-present",
     "db:types": "supabase gen types typescript --local > apps/api/src/core/supabase/database.types.ts"
   },
   "devDependencies": {
