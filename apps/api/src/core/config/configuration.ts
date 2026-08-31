@@ -36,14 +36,13 @@ const configuration = () => {
     supabaseServiceRoleKey: required("SUPABASE_SERVICE_ROLE_KEY"),
 
     // ── Moteur IA (§5.1) ─────────────────────────────────────────────────
-    // `llmProvider` sélectionne l'implémentation de `LlmProvider` à injecter.
-    // Ajouter Mistral ou DeepSeek = ajouter une classe + une entrée dans la
-    // fabrique, sans toucher au code métier.
-    llmProvider: optional("LLM_PROVIDER", "claude"),
-    llmModel: optional("LLM_MODEL", "claude-opus-5"),
-    anthropicApiKey: optional("ANTHROPIC_API_KEY", ""),
-    mistralApiKey: optional("MISTRAL_API_KEY", ""),
-    deepseekApiKey: optional("DEEPSEEK_API_KEY", ""),
+    // Tout passe par Vercel AI Gateway : une seule clé, et `llmModel` de la
+    // forme `éditeur/modèle` désigne le moteur. Passer de Claude à Mistral ou
+    // à DeepSeek se fait en changeant `LLM_MODEL`, sans toucher au code.
+    // `llmProvider` ne sert plus qu'à brancher un jour un moteur hors Gateway.
+    llmProvider: optional("LLM_PROVIDER", "gateway"),
+    llmModel: optional("LLM_MODEL", "anthropic/claude-opus-5"),
+    aiGatewayApiKey: optional("AI_GATEWAY_API_KEY", ""),
   };
 };
 
