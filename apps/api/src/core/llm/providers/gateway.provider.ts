@@ -1,6 +1,7 @@
-import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { HttpException, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { createGateway, generateText, jsonSchema, streamText, tool, type ToolSet } from "ai";
+import { toHttpException } from "../llm-error";
 import type {
   LlmCompletionRequest,
   LlmCompletionResponse,
@@ -32,6 +33,20 @@ import type {
  */
 const SOVEREIGN_CREATORS = new Set(["mistral"]);
 
+/**
+ * Au-delà, on considère le moteur perdu plutôt que de laisser la requête HTTP
+ * pendre : sans borne, un Gateway qui ne répond pas immobilise une connexion
+ * et l'utilisateur reste devant un écran qui tourne indéfiniment.
+ */
+const COMPLETION_TIMEOUT_MS = 60_000;
+
+/**
+ * En flux, ce qui compte n'est pas la durée totale — une longue réponse est
+ * légitime — mais le délai avant le premier jeton : c'est lui qui prouve que
+ * la génération a démarré.
+ */
+const FIRST_CHUNK_TIMEOUT_MS = 15_000;
+
 @Injectable()
 export class GatewayProvider implements LlmProvider {
   readonly name = "gateway";
@@ -60,6 +75,7 @@ export class GatewayProvider implements LlmProvider {
     try {
       const result = await generateText({
         model: this.model,
+        timeout: COMPLETION_TIMEOUT_MS,
         ...this.callOptions(request),
       });
 
@@ -82,6 +98,7 @@ export class GatewayProvider implements LlmProvider {
     try {
       const result = streamText({
         model: this.model,
+        timeout: { totalMs: COMPLETION_TIMEOUT_MS, firstChunkMs: FIRST_CHUNK_TIMEOUT_MS },
         ...this.callOptions(request),
       });
 
@@ -129,13 +146,9 @@ export class GatewayProvider implements LlmProvider {
     };
   }
 
-  /**
-   * On ne laisse pas fuiter l'erreur du fournisseur vers le client : elle peut
-   * contenir des fragments de prompt, donc des données utilisateur.
-   */
-  private fail(context: string, error: unknown): ServiceUnavailableException {
+  private fail(context: string, error: unknown): HttpException {
     this.logger.error(context, error instanceof Error ? error.stack : error);
-    return new ServiceUnavailableException("Le moteur IA est momentanément indisponible.");
+    return toHttpException(error);
   }
 }
 
