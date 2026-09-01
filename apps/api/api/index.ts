@@ -3,9 +3,11 @@ import { app } from "../src/app.js";
 /**
  * Point d'entrée serverless.
  *
- * Le nom `[...path]` fait tomber `/api/health` directement sur cette fonction :
- * le préfixe `/api` de l'application coïncide avec la convention Vercel, il n'y
- * a donc aucune réécriture à configurer.
+ * Une seule fonction sert tout `/api`, et le `rewrites` de `vercel.json` y
+ * dirige les chemins imbriqués. Sans lui, la convention de dossier de Vercel ne
+ * fait tomber ici que `/api` et `/api/<un-segment>` : `/api/conversations/<id>`
+ * ressortait en 404 de la plateforme, donc sans en-tête CORS — ce que le
+ * navigateur signale comme un blocage CORS et non comme un 404.
  *
  * L'export est un **objet portant `fetch`**, et non une fonction. C'est ce qui
  * décide de la signature côté Vercel : une fonction exportée est traitée comme
