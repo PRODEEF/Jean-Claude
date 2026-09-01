@@ -136,6 +136,7 @@ function makeConversationRepository(
 /** Le tour de dialogue n'est jamais joué ici : seul `assignFolders` est appelé. */
 const IDLE_LLM: LlmProvider = {
   name: "gateway",
+  model: "anthropic/claude-sonnet-5",
   isSovereign: false,
   complete: jest.fn(),
   stream: jest.fn(),
