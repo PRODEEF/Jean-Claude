@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { isAllowedOrigin } from "./core/allowed-origin";
-import { config } from "./core/config";
-import { onError } from "./core/http";
-import { conversationRoutes } from "./domain/conversation/conversation.routes";
-import { folderRoutes } from "./domain/folder/folder.routes";
-import { healthRoutes } from "./feature/health/health.routes";
+import { isAllowedOrigin } from "./core/allowed-origin.js";
+import { config } from "./core/config.js";
+import { onError } from "./core/http.js";
+import { conversationRoutes } from "./domain/conversation/conversation.routes.js";
+import { folderRoutes } from "./domain/folder/folder.routes.js";
+import { healthRoutes } from "./feature/health/health.routes.js";
 
 const allowedOrigins = config.corsOrigin.split(",");
 

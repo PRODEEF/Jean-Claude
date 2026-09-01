@@ -1,6 +1,6 @@
 import type { Folder } from "@jc/domain";
-import { FolderService } from "./folder.service";
-import type { IFolderRepository } from "./folder.repository.interface";
+import { FolderService } from "./folder.service.js";
+import type { IFolderRepository } from "./folder.repository.interface.js";
 
 const TOKEN = "access-token";
 

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { llm } from "../../core/llm/providers/gateway.provider";
+import { llm } from "../../core/llm/providers/gateway.provider.js";
 
 export const healthRoutes = new Hono().get("/", (c) =>
   // Exposer la souveraineté du moteur permet aux clients de l'afficher à

@@ -1,5 +1,5 @@
 import { handle } from "hono/vercel";
-import { app } from "../src/app";
+import { app } from "../src/app.js";
 
 /**
  * Point d'entrée serverless.

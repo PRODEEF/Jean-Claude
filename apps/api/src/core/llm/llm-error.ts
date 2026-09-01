@@ -1,5 +1,5 @@
 import type { HTTPException } from "hono/http-exception";
-import { httpError } from "../http";
+import { httpError } from "../http.js";
 
 /**
  * Traduction des échecs du moteur IA en erreurs HTTP présentables.
