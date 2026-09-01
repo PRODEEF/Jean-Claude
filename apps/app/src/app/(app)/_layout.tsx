@@ -3,7 +3,7 @@ import { Pressable, View } from "react-native";
 import { Slot } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppBanner } from "@/features/navigation/AppBanner";
-import { AppSidebar } from "@/features/navigation/AppSidebar";
+import { AppSidebar, SIDEBAR_DEFAULT_WIDTH } from "@/features/navigation/AppSidebar";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 
 /**
@@ -25,12 +25,20 @@ export default function AppLayout() {
   const [preference, setPreference] = useState<boolean | null>(null);
   const visible = preference ?? expanded;
 
+  // La largeur vit ici et non dans la barre : celle-ci est démontée à chaque
+  // repli, et l'ajustement de l'utilisateur serait perdu au passage.
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
       <AppBanner onToggleSidebar={() => setPreference(!visible)} />
 
       <View className="flex-1 flex-row">
-        {expanded && visible ? <AppSidebar /> : null}
+        {/* Le tiroir ne reçoit pas `onResize` : superposé au contenu et refermé
+            à la première navigation, il n'a pas de largeur à négocier. */}
+        {expanded && visible ? (
+          <AppSidebar width={sidebarWidth} onResize={setSidebarWidth} />
+        ) : null}
         <View className="flex-1">
           <Slot />
         </View>
