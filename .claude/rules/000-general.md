@@ -106,11 +106,35 @@ count += childCount;
 
 ## Git
 
-- ❌ Pas de push direct sur `main` — passer par une branche
-- Branches : `feat/<description>`, `fix/<description>`, `chore/<description>`
+Deux branches permanentes :
+
+| Branche | Rôle                                                              |
+| ------- | ----------------------------------------------------------------- |
+| `main`  | Production — Vercel y déploie l'API et le web automatiquement      |
+| `dev`   | Intégration — branche par défaut, cible de **toutes** les PR       |
+
+Le flux, sans exception :
+
+```
+feat/<description>  →  PR vers dev  →  PR dev → main  →  déploiement Vercel
+```
+
+- ❌ Pas de push direct sur `dev` ni sur `main` : les deux sont protégés par un
+  ruleset GitHub — PR obligatoire, force-push et suppression refusés
+- La CI (job `verify`) doit être verte pour merger. Elle joue `npm ci`,
+  `npm run typecheck`, `npm test`, `npm run build` — donc jouer ces commandes
+  **en local avant d'ouvrir la PR**, pas après le rouge
+- Une PR vers `main` est une mise en production : ne la proposer que quand
+  `dev` est démontrable
+- Branches : `feat/<description>`, `fix/<description>`, `chore/<description>`,
+  créées depuis `dev` à jour
 - Commits : `feat: ajouter la conversion conversation → todoliste`
 - ❌ Pas de message vague : `fix`, `wip`, `update`, `changes`
 - Un commit = une intention atomique
+
+Le dépôt est **public** : secret scanning et push protection sont actifs. Un
+secret poussé par erreur fait échouer le push — et s'il passe malgré tout, il
+est compromis : le révoquer, ne pas se contenter de le retirer de l'historique.
 
 ## Ce qu'on ne fait pas ici
 
