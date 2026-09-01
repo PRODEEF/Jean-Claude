@@ -57,18 +57,60 @@ export const SUGGEST_TASK_LIST: LlmTool = {
 export const SUGGEST_FOLDERS: LlmTool = {
   name: "suggest_folders",
   description:
-    "À appeler pour proposer le rangement de la conversation dans un ou plusieurs dossiers. " +
+    "À appeler dès que l'échange en dit assez sur le sujet de la conversation pour " +
+    "savoir où la ranger. Ne pas attendre qu'on le demande. " +
     "Une conversation peut légitimement appartenir à plusieurs dossiers à la fois " +
     "(une conversation sur la mutuelle relève à la fois de « Santé » et de " +
     "« Administratif > Assurances ») : proposer tous les dossiers pertinents, pas seulement un. " +
+    "Réutiliser en priorité les dossiers existants listés dans la consigne, avec leur " +
+    "identifiant exact ; n'en proposer un nouveau que si aucun ne convient. " +
     "S'aligner sur la façon dont l'utilisateur nomme déjà ses dossiers plutôt que d'imposer " +
     "une nomenclature standard.",
   inputSchema: {
     type: "object",
     properties: {
-      existingFolderIds: { type: "array", items: { type: "string" } },
-      newFolderNames: { type: "array", items: { type: "string" } },
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « Je range ça dans Santé et j'ouvre un dossier Assurances ? ». " +
+          "Ne jamais présenter le rangement comme déjà fait. 500 caractères maximum.",
+      },
+      existingFolderIds: {
+        type: "array",
+        description: "Identifiants de dossiers existants, repris tels quels de la consigne.",
+        maxItems: 8,
+        items: { type: "string" },
+      },
+      newFolderNames: {
+        type: "array",
+        description: "Dossiers à créer, quand aucun dossier existant ne convient.",
+        maxItems: 8,
+        items: { type: "string" },
+      },
     },
+    required: ["message"],
+  },
+};
+
+export const NAME_CONVERSATION: LlmTool = {
+  name: "name_conversation",
+  description:
+    "À appeler une fois, dès que l'échange en dit assez pour nommer la conversation. " +
+    "Contrairement aux autres outils, celui-ci ne demande rien à l'utilisateur : le titre " +
+    "s'applique aussitôt, et l'utilisateur pourra le corriger. " +
+    "Ne pas y répondre en langage naturel, ne pas annoncer le renommage.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: {
+        type: "string",
+        description:
+          "Titre court et descriptif, tiré du sujet réel de l'échange — 60 caractères " +
+          "au plus, sans guillemets ni ponctuation finale. Ex. « Travaux du jardin ».",
+      },
+    },
+    required: ["title"],
   },
 };
 
@@ -90,5 +132,109 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
   },
 };
 
+const PURPOSE_VALUES = ["generic", "idea", "todo", "purchase", "appointment"];
+
+/**
+ * Un dossier proposé, à la racine ou en sous-dossier — même forme aux deux
+ * niveaux. Fabriqué à chaque appel plutôt que partagé : le schéma est remis
+ * au SDK du moteur, qui n'a pas à recevoir deux fois le même objet.
+ */
+function proposedFolderProperties(): Record<string, unknown> {
+  return {
+    name: { type: "string", description: "Nom du dossier, 120 caractères maximum" },
+    purpose: {
+      type: "string",
+      enum: PURPOSE_VALUES,
+      description:
+        "Rôle du dossier : idea = IDÉE, todo = TODO, purchase = ACHAT, " +
+        "appointment = PRENDRE RDV. Omettre pour un dossier ordinaire.",
+    },
+  };
+}
+
+export const SUGGEST_PROJECT_FOLDERS: LlmTool = {
+  name: "suggest_project_folders",
+  description:
+    "À appeler pour proposer la création de nouveaux dossiers de rangement. " +
+    "Ne pas confondre avec `suggest_folders`, qui range une conversation dans des " +
+    "dossiers : celui-ci construit l'arborescence elle-même. " +
+    "Un dossier peut porter des sous-dossiers, mais l'arborescence s'arrête là — " +
+    "un sous-dossier ne peut pas en contenir d'autres. " +
+    "Quand la conversation décrit un projet, les sous-dossiers types sont " +
+    "IDÉE, TODO, ACHAT et PRENDRE RDV : renseigner alors `purpose`. " +
+    "Reprendre les mots de l'utilisateur pour nommer les dossiers plutôt " +
+    "qu'imposer une nomenclature standard.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « Je te crée un dossier Jardin avec IDÉE, TODO et ACHAT " +
+          "dedans ? ». Ne jamais présenter les dossiers comme déjà créés. " +
+          "500 caractères maximum.",
+      },
+      folders: {
+        type: "array",
+        description: "Au moins un dossier — une proposition vide n'a rien à créer.",
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: "object",
+          properties: {
+            ...proposedFolderProperties(),
+            children: {
+              type: "array",
+              description: "Sous-dossiers de ce dossier. Eux-mêmes sans enfants.",
+              maxItems: 8,
+              items: {
+                type: "object",
+                properties: proposedFolderProperties(),
+                required: ["name"],
+              },
+            },
+          },
+          required: ["name"],
+        },
+      },
+    },
+    required: ["message", "folders"],
+  },
+};
+
+export const OPEN_NEW_CONVERSATION: LlmTool = {
+  name: "open_new_conversation",
+  description:
+    "À appeler dès que la demande sort du périmètre du canal permanent, " +
+    "c'est-à-dire tout ce qui n'est ni un rappel, ni l'organisation interne de " +
+    "l'outil (dossiers, rangement, structure), ni la structure du projet de " +
+    "l'utilisateur. Une recette, un itinéraire, une explication, une rédaction : " +
+    "tout cela relève d'une conversation classique. " +
+    "Ne pas traiter la demande soi-même : annoncer en une phrase l'ouverture de " +
+    "la conversation dédiée, où la réponse sera donnée.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: {
+        type: "string",
+        description:
+          "Titre de la conversation à ouvrir, tiré de la demande — court et " +
+          "descriptif, 120 caractères maximum. Ex. « Itinéraire de 5 jours en Bretagne ».",
+      },
+    },
+    required: ["title"],
+  },
+};
+
 /** Outils actifs sur une conversation classique. */
 export const CHAT_TOOLS: LlmTool[] = [SUGGEST_TASK_LIST, SUGGEST_FOLDERS, SUGGEST_RECURRING_EVENT];
+
+/**
+ * Outils actifs sur le canal permanent Jean-Claude (A.10).
+ *
+ * Jeu distinct de `CHAT_TOOLS` : le canal est borné aux rappels, à
+ * l'organisation de l'outil et à la structure du projet. Y exposer la détection
+ * de todolistes ou de rendez-vous récurrents le ferait déborder de ce périmètre.
+ */
+export const ASSISTANT_TOOLS: LlmTool[] = [SUGGEST_PROJECT_FOLDERS, OPEN_NEW_CONVERSATION];

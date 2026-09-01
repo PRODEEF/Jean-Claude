@@ -12,7 +12,7 @@ import { useTheme } from "@/shared/providers/theme-provider";
 
 /** Fil d'une conversation classique. */
 export default function ConversationScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, draft } = useLocalSearchParams<{ id: string; draft?: string }>();
   const { palette } = useTheme();
   const breakpoint = useBreakpoint();
   const router = useRouter();
@@ -61,7 +61,7 @@ export default function ConversationScreen() {
         </View>
       </View>
 
-      <ConversationThread conversationId={id} />
+      <ConversationThread conversationId={id} initialDraft={draft} />
 
       <ConversationDialog
         conversation={actionsOpen ? (conversation.data ?? null) : null}

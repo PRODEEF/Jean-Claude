@@ -11,6 +11,14 @@ import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives
  * Dès qu'un échange du canal permanent sort de ce périmètre, l'API crée une
  * conversation `chat` distincte plutôt que de poursuivre dans le canal.
  */
+/**
+ * Titre d'une conversation qui n'a pas encore été nommée.
+ *
+ * Doit rester aligné sur le `default` de la colonne `conversations.title` :
+ * c'est à cette valeur que le serveur reconnaît un fil encore à nommer.
+ */
+export const DEFAULT_CONVERSATION_TITLE = "Nouvelle conversation";
+
 export const conversationKindSchema = z.enum(["chat", "assistant"]);
 export type ConversationKind = z.infer<typeof conversationKindSchema>;
 
