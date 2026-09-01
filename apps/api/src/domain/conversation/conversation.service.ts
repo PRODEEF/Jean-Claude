@@ -172,7 +172,7 @@ export class ConversationService {
 
     try {
       const stream = this.llm.stream({
-        system: buildSystemPrompt(conversation.kind, todo.filing),
+        system: buildSystemPrompt(conversation.kind, todo),
         messages: history.items
           // Les messages `system` stockés ne sont pas rejouables comme des tours
           // de dialogue : la consigne système est reconstruite à chaque appel.
@@ -324,7 +324,7 @@ export class ConversationService {
  * l'UI : c'est une règle métier, elle doit valoir identiquement pour le web,
  * le mobile et le desktop (§5.3).
  */
-function buildSystemPrompt(kind: Conversation["kind"], filing: Housekeeping["filing"]): string {
+function buildSystemPrompt(kind: Conversation["kind"], todo: Housekeeping): string {
   if (kind === "assistant") {
     return [
       "Tu es Jean-Claude, l'assistant d'organisation personnelle de l'utilisateur.",
@@ -360,17 +360,29 @@ function buildSystemPrompt(kind: Conversation["kind"], filing: Housekeeping["fil
     "jamais présenter la chose comme déjà faite : c'est une proposition.",
   ];
 
-  if (filing) {
+  // Exposer l'outil ne suffit pas : sa description est lue au moment de choisir,
+  // pas au moment de décider s'il y a lieu de choisir. Les deux gestes
+  // d'entretien du fil sont donc demandés explicitement ici.
+  if (todo.tools.includes(NAME_CONVERSATION)) {
     lines.push(
       "",
-      "Cette conversation n'est rangée dans aucun dossier. Dès que l'échange en",
-      "dit assez sur son sujet, appelle `suggest_folders` pour proposer où la",
-      "ranger. N'attends pas qu'on te le demande, et ne le fais qu'une fois.",
+      "Cette conversation n'a pas encore de titre. Dès que l'échange en dit assez",
+      "sur son sujet, appelle `name_conversation`. N'attends pas qu'on te le",
+      "demande et n'en parle pas : le titre s'applique seul.",
+    );
+  }
+
+  if (todo.filing) {
+    lines.push(
       "",
-      filing.folders.length > 0
+      "Elle n'est rangée dans aucun dossier. Dès que son sujet est clair, appelle",
+      "`suggest_folders` pour proposer où la ranger — tous les dossiers pertinents,",
+      "pas seulement un. N'attends pas qu'on te le demande, et ne le fais qu'une fois.",
+      "",
+      todo.filing.folders.length > 0
         ? "Dossiers existants, à réutiliser en priorité avec leur identifiant exact :"
         : "L'utilisateur n'a encore aucun dossier : propose-en un nouveau, sobrement nommé.",
-      ...describeFolders(filing.folders),
+      ...describeFolders(todo.filing.folders),
     );
   }
 

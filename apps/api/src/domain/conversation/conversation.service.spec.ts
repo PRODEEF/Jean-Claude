@@ -562,6 +562,16 @@ describe("ConversationService", () => {
       expect(request.system ?? "").toContain("Santé > Assurances > Mutuelle (folder-3)");
     });
 
+    it("demande explicitement de nommer et de ranger, sans compter sur les seuls outils", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(untitled(), llm));
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("`name_conversation`");
+      expect(system).toContain("`suggest_folders`");
+    });
+
     it("n'offre pas de rangement à un fil déjà classé", async () => {
       const llm = makeLlm();
       const repo = makeRepository({
