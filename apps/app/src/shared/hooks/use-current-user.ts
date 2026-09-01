@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useAuth } from "@/shared/providers/auth-provider";
+import { useProfile } from "@/shared/hooks/use-profile";
 
 export type CurrentUser = {
   email: string;
@@ -20,6 +21,9 @@ export type CurrentUser = {
  */
 export function useCurrentUser(): CurrentUser {
   const { session } = useAuth();
+  const { data: profile } = useProfile();
+
+  const pseudo = profile?.displayName?.trim() ?? "";
 
   return useMemo(() => {
     const email = session?.user.email ?? "";
@@ -29,7 +33,9 @@ export function useCurrentUser(): CurrentUser {
     const metadata = session?.user.user_metadata as { full_name?: unknown } | undefined;
     const fullName = typeof metadata?.full_name === "string" ? metadata.full_name.trim() : "";
 
-    const displayName = fullName || email.split("@")[0] || "Mon compte";
+    // Le pseudo choisi dans les réglages passe devant : c'est le seul des
+    // trois que l'utilisateur a explicitement décidé.
+    const displayName = pseudo || fullName || email.split("@")[0] || "Mon compte";
     const parts = displayName.split(/[\s._-]+/).filter(Boolean);
 
     return {
@@ -43,5 +49,5 @@ export function useCurrentUser(): CurrentUser {
           .join("")
           .toUpperCase() || "?",
     };
-  }, [session]);
+  }, [session, pseudo]);
 }

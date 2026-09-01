@@ -51,23 +51,24 @@ class GatewayProvider implements LlmProvider {
   readonly name = "gateway";
   readonly isSovereign: boolean;
 
-  private readonly model: ReturnType<ReturnType<typeof createGateway>>;
-  private readonly modelId: string;
+  readonly model: string;
+
+  private readonly languageModel: ReturnType<ReturnType<typeof createGateway>>;
   /** Éditeur du modèle actif — `anthropic`, `mistral`, `deepseek`... */
   private readonly creator: string;
 
   constructor() {
-    this.modelId = config.llmModel;
-    this.creator = this.modelId.split("/")[0] ?? "unknown";
+    this.model = config.llmModel;
+    this.creator = this.model.split("/")[0] ?? "unknown";
     this.isSovereign = SOVEREIGN_CREATORS.has(this.creator);
 
-    this.model = createGateway({ apiKey: config.aiGatewayApiKey })(this.modelId);
+    this.languageModel = createGateway({ apiKey: config.aiGatewayApiKey })(this.model);
   }
 
   async complete(request: LlmCompletionRequest): Promise<LlmCompletionResponse> {
     try {
       const result = await generateText({
-        model: this.model,
+        model: this.languageModel,
         timeout: COMPLETION_TIMEOUT_MS,
         ...this.callOptions(request),
       });
@@ -90,7 +91,7 @@ class GatewayProvider implements LlmProvider {
   async *stream(request: LlmCompletionRequest): AsyncIterable<LlmStreamChunk> {
     try {
       const result = streamText({
-        model: this.model,
+        model: this.languageModel,
         timeout: { totalMs: COMPLETION_TIMEOUT_MS, firstChunkMs: FIRST_CHUNK_TIMEOUT_MS },
         ...this.callOptions(request),
       });

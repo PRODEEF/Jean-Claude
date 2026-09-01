@@ -88,7 +88,13 @@ function makeLlm(
     })(),
   );
 
-  return { name: "gateway", isSovereign: false, complete: jest.fn(), stream };
+  return {
+    name: "gateway",
+    model: "anthropic/claude-sonnet-5",
+    isSovereign: false,
+    complete: jest.fn(),
+    stream,
+  };
 }
 
 function makeSuggestionRepository(
