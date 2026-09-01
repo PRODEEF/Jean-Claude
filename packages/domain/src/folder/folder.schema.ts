@@ -21,7 +21,7 @@ export type FolderPurpose = z.infer<typeof folderPurposeSchema>;
 export const folderSchema = z.object({
   id: uuidSchema,
   name: labelSchema,
-  /** `null` = dossier racine. L'arborescence est limitée à 2 niveaux en V1 (§3 Phase A). */
+  /** `null` = dossier racine. L'imbrication est bornée par `MAX_FOLDER_DEPTH`. */
   parentId: uuidSchema.nullable(),
   category: folderCategorySchema.nullable(),
   purpose: folderPurposeSchema,
@@ -51,11 +51,24 @@ export const updateFolderSchema = createFolderSchema.partial().extend({
 
 export type UpdateFolder = z.infer<typeof updateFolderSchema>;
 
-/** Dossier enrichi de ses enfants — forme consommée par la sidebar (web) et le tiroir (mobile). */
+/**
+ * Dossier enrichi de ses descendants — forme consommée par la sidebar (web) et
+ * le tiroir (mobile). Récursif : l'arborescence descend jusqu'à
+ * `MAX_FOLDER_DEPTH` niveaux.
+ */
 export type FolderTreeNode = Folder & {
-  children: Folder[];
+  children: FolderTreeNode[];
+  /** Inclut les conversations de tous les descendants, à tous les niveaux. */
   conversationCount: number;
 };
 
-/** Profondeur maximale de l'arborescence en V1 : Dossier > Sous-dossier > Conversation. */
-export const MAX_FOLDER_DEPTH = 2;
+/**
+ * Profondeur maximale de l'arborescence : 5 dossiers imbriqués.
+ *
+ * Le §3 Phase A du cahier des charges en prévoyait 2 — écart assumé, consigné
+ * dans `docs/SUIVI-BACKLOG.md`. La valeur est répétée dans le trigger
+ * `enforce_folder_depth` (migration `20260901120000_folder_depth_5.sql`), qui
+ * doit tenir quel que soit le chemin d'écriture : les deux se modifient
+ * ensemble.
+ */
+export const MAX_FOLDER_DEPTH = 5;
