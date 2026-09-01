@@ -14,10 +14,16 @@ import {
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware";
 import { validate } from "../../core/http";
 import { llm } from "../../core/llm/providers/gateway.provider";
+import { suggestionRepository } from "../suggestion/suggestion.repository";
+import { SuggestionService } from "../suggestion/suggestion.service";
 import { conversationRepository } from "./conversation.repository";
 import { ConversationService } from "./conversation.service";
 
-const service = new ConversationService(conversationRepository, llm);
+const service = new ConversationService(
+  conversationRepository,
+  llm,
+  new SuggestionService(suggestionRepository),
+);
 
 const idParam = validate("param", z.object({ id: uuidSchema }));
 const pagination = validate("query", cursorPaginationSchema);

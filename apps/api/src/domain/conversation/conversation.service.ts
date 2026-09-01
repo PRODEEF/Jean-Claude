@@ -10,8 +10,9 @@ import type {
   UpdateConversation,
 } from "@jc/domain";
 import { httpError } from "../../core/http";
-import type { LlmProvider } from "../../core/llm/llm.port";
-import { CHAT_TOOLS } from "../../core/llm/llm.tools";
+import type { LlmProvider, LlmToolCall } from "../../core/llm/llm.port";
+import { ASSISTANT_TOOLS, CHAT_TOOLS } from "../../core/llm/llm.tools";
+import type { SuggestionService } from "../suggestion/suggestion.service";
 import type { IConversationRepository } from "./conversation.repository.interface";
 
 /** Nombre de messages de contexte envoyés au modèle à chaque tour. */
@@ -21,6 +22,7 @@ export class ConversationService {
   constructor(
     private readonly conversations: IConversationRepository,
     private readonly llm: LlmProvider,
+    private readonly suggestions: SuggestionService,
   ) {}
 
   list(
@@ -107,11 +109,9 @@ export class ConversationService {
    * deux implémentations du même tour, à tenir cohérentes ; un appelant qui
    * veut la réponse entière consomme le flux jusqu'au bout.
    *
-   * Les appels d'outils renvoyés par le modèle (`suggest_task_list`,
-   * `suggest_folders`...) ne sont volontairement PAS exécutés ici : ils
-   * doivent devenir des suggestions en attente, que l'utilisateur accepte ou
-   * ignore (§12.1 — « l'assistant propose, l'utilisateur valide »). Le module
-   * `feature/assistant` s'en chargera.
+   * Les appels d'outils renvoyés par le modèle ne sont jamais exécutés : ils
+   * deviennent des suggestions en attente, que l'utilisateur accepte ou ignore
+   * (§12.1 — « l'assistant propose, l'utilisateur valide »).
    */
   async *streamMessage(
     conversationId: string,
@@ -137,6 +137,7 @@ export class ConversationService {
     let text = "";
     let provider: string | null = null;
     let model: string | null = null;
+    const toolCalls: LlmToolCall[] = [];
 
     try {
       const stream = this.llm.stream({
@@ -146,13 +147,17 @@ export class ConversationService {
           // de dialogue : la consigne système est reconstruite à chaque appel.
           .filter((m) => m.role !== "system")
           .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-        tools: CHAT_TOOLS,
+        // Le canal permanent a son propre jeu d'outils : lui exposer ceux d'une
+        // conversation classique le ferait déborder de son périmètre (A.10).
+        tools: conversation.kind === "assistant" ? ASSISTANT_TOOLS : CHAT_TOOLS,
       });
 
       for await (const chunk of stream) {
         if (chunk.type === "text") {
           text += chunk.text;
           yield { type: "text", text: chunk.text };
+        } else if (chunk.type === "tool_call") {
+          toolCalls.push(chunk.toolCall);
         } else if (chunk.type === "done") {
           provider = chunk.response.provider;
           model = chunk.response.model;
@@ -163,16 +168,25 @@ export class ConversationService {
       // pleine génération, le texte déjà produit est déjà facturé. Le perdre
       // priverait l'utilisateur d'une réponse qu'il retrouverait de toute façon
       // au rechargement.
-      if (text.length > 0) {
-        const assistantMessage = await this.conversations.appendMessage(
-          conversationId,
-          userId,
-          { content: text, inputMode: "text", role: "assistant", provider, model },
-          accessToken,
-        );
+      const assistantMessage =
+        text.length > 0
+          ? await this.conversations.appendMessage(
+              conversationId,
+              userId,
+              { content: text, inputMode: "text", role: "assistant", provider, model },
+              accessToken,
+            )
+          : null;
 
-        yield { type: "done", message: assistantMessage };
+      // Écrites avant le dernier `yield`, et non après : rien n'oblige
+      // l'appelant à consommer cet événement, et le code qui le suivrait ne
+      // s'exécuterait alors jamais. Une proposition perdue ici le serait
+      // définitivement — le modèle ne sera pas rejoué.
+      for (const toolCall of toolCalls) {
+        await this.suggestions.capture(userId, conversationId, toolCall, accessToken);
       }
+
+      if (assistantMessage) yield { type: "done", message: assistantMessage };
     }
   }
 }
@@ -198,6 +212,12 @@ function buildSystemPrompt(kind: Conversation["kind"]): string {
       "Prends les devants : quand un échange laisse deviner une action à faire,",
       "propose-la plutôt que d'attendre qu'on te la demande. Reste suggestif —",
       "une proposition courte que l'utilisateur accepte ou ignore d'un geste.",
+      "",
+      "Quand l'échange fait apparaître un besoin de rangement — un projet qui",
+      "démarre, un sujet qui revient, un espace mal structuré — appelle",
+      "`suggest_project_folders` pour proposer les dossiers correspondants.",
+      "L'outil ne crée rien : il affiche une proposition que l'utilisateur",
+      "valide. Ne dis donc jamais que les dossiers sont créés, demande.",
     ].join("\n");
   }
 
