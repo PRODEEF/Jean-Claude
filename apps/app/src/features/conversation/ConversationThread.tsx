@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -11,7 +11,8 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { Message } from "@jc/domain";
+import { useRouter } from "expo-router";
+import type { Conversation, Message } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { useConversationThread } from "./hooks/use-conversation-thread";
@@ -20,6 +21,11 @@ import { SuggestionCard } from "./SuggestionCard";
 
 export type ConversationThreadProps = {
   conversationId: string;
+  /**
+   * Message à envoyer dès l'ouverture. Renseigné quand le canal permanent a
+   * basculé la demande ici (A.10) : l'utilisateur n'a pas à la retaper.
+   */
+  initialDraft?: string | undefined;
 };
 
 /**
@@ -33,17 +39,40 @@ export type ConversationThreadProps = {
  * `ScrollView`, et une `FlatList` imbriquée dans un `ScrollView` perd la
  * virtualisation.
  */
-export function ConversationThread({ conversationId }: ConversationThreadProps) {
+export function ConversationThread({ conversationId, initialDraft }: ConversationThreadProps) {
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [draft, setDraft] = useState("");
   const listRef = useRef<FlatList<Message>>(null);
 
-  const { messages, send, submit, streamingText } = useConversationThread(conversationId);
+  // La question voyage jusqu'au nouveau fil, qui s'en charge à l'ouverture :
+  // c'est ce qui permet de réutiliser le tour de dialogue ordinaire, réponse
+  // en flux comprise, plutôt que d'inventer un second chemin.
+  const goToNewConversation = useCallback(
+    (conversation: Conversation, content: string) => {
+      router.push({ pathname: "/chat/[id]", params: { id: conversation.id, draft: content } });
+    },
+    [router],
+  );
+
+  const { messages, send, submit, streamingText } = useConversationThread(
+    conversationId,
+    goToNewConversation,
+  );
   const { suggestions, resolve } = useSuggestions(conversationId);
 
   const pending = suggestions.data ?? [];
   const failure = messages.error ?? send.error ?? resolve.error;
+
+  // `useRef` et non l'état d'envoi : revenir sur ce fil ne doit pas renvoyer la
+  // question une seconde fois, alors que le paramètre de route est toujours là.
+  const autoSent = useRef(false);
+  useEffect(() => {
+    if (!initialDraft || autoSent.current) return;
+    autoSent.current = true;
+    submit(initialDraft);
+  }, [initialDraft, submit]);
 
   const sendDraft = useCallback(() => {
     const content = draft.trim();
