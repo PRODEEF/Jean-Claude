@@ -90,5 +90,85 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
   },
 };
 
+const PURPOSE_VALUES = ["generic", "idea", "todo", "purchase", "appointment"];
+
+/**
+ * Un dossier proposé, à la racine ou en sous-dossier — même forme aux deux
+ * niveaux. Fabriqué à chaque appel plutôt que partagé : le schéma est remis
+ * au SDK du moteur, qui n'a pas à recevoir deux fois le même objet.
+ */
+function proposedFolderProperties(): Record<string, unknown> {
+  return {
+    name: { type: "string", description: "Nom du dossier, 120 caractères maximum" },
+    purpose: {
+      type: "string",
+      enum: PURPOSE_VALUES,
+      description:
+        "Rôle du dossier : idea = IDÉE, todo = TODO, purchase = ACHAT, " +
+        "appointment = PRENDRE RDV. Omettre pour un dossier ordinaire.",
+    },
+  };
+}
+
+export const SUGGEST_PROJECT_FOLDERS: LlmTool = {
+  name: "suggest_project_folders",
+  description:
+    "À appeler pour proposer la création de nouveaux dossiers de rangement. " +
+    "Ne pas confondre avec `suggest_folders`, qui range une conversation dans des " +
+    "dossiers : celui-ci construit l'arborescence elle-même. " +
+    "Un dossier peut porter des sous-dossiers, mais l'arborescence s'arrête là — " +
+    "un sous-dossier ne peut pas en contenir d'autres. " +
+    "Quand la conversation décrit un projet, les sous-dossiers types sont " +
+    "IDÉE, TODO, ACHAT et PRENDRE RDV : renseigner alors `purpose`. " +
+    "Reprendre les mots de l'utilisateur pour nommer les dossiers plutôt " +
+    "qu'imposer une nomenclature standard.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « Je te crée un dossier Jardin avec IDÉE, TODO et ACHAT " +
+          "dedans ? ». Ne jamais présenter les dossiers comme déjà créés. " +
+          "500 caractères maximum.",
+      },
+      folders: {
+        type: "array",
+        description: "Au moins un dossier — une proposition vide n'a rien à créer.",
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: "object",
+          properties: {
+            ...proposedFolderProperties(),
+            children: {
+              type: "array",
+              description: "Sous-dossiers de ce dossier. Eux-mêmes sans enfants.",
+              maxItems: 8,
+              items: {
+                type: "object",
+                properties: proposedFolderProperties(),
+                required: ["name"],
+              },
+            },
+          },
+          required: ["name"],
+        },
+      },
+    },
+    required: ["message", "folders"],
+  },
+};
+
 /** Outils actifs sur une conversation classique. */
 export const CHAT_TOOLS: LlmTool[] = [SUGGEST_TASK_LIST, SUGGEST_FOLDERS, SUGGEST_RECURRING_EVENT];
+
+/**
+ * Outils actifs sur le canal permanent Jean-Claude (A.10).
+ *
+ * Jeu distinct de `CHAT_TOOLS` : le canal est borné aux rappels, à
+ * l'organisation de l'outil et à la structure du projet. Y exposer la détection
+ * de todolistes ou de rendez-vous récurrents le ferait déborder de ce périmètre.
+ */
+export const ASSISTANT_TOOLS: LlmTool[] = [SUGGEST_PROJECT_FOLDERS];
