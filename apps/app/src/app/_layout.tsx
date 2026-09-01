@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { PortalHost } from "@rn-primitives/portal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "@/shared/providers/auth-provider";
@@ -72,6 +73,11 @@ export default function RootLayout() {
           <ThemeProvider>
             <StatusBar style="auto" />
             <AuthGate />
+            {/* Point de sortie des fenêtres modales. Placé *dans*
+                `ThemeProvider` et non au-dessus : le fournisseur pose les
+                variables de couleur sur la vue qui enveloppe ses enfants, et
+                une fenêtre rendue en dehors s'afficherait sans palette. */}
+            <PortalHost />
           </ThemeProvider>
         </AuthProvider>
       </QueryClientProvider>
