@@ -51,7 +51,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
   const [searching, setSearching] = useState(false);
 
   return (
-    <View className="h-14 flex-row items-center gap-2 border-b border-border bg-primary px-3">
+    <View className="h-14 flex-row items-center gap-2 border-b border-border bg-accent-soft px-3">
       {/* `min-w-0` est indispensable : sans lui, une zone en `flex-1` refuse de
           passer sous la largeur de son contenu, et les trois zones se
           chevauchent dès que la fenêtre se resserre. */}
@@ -63,7 +63,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
             onPress={onToggleSidebar}
             accessibilityLabel="Afficher ou masquer les conversations"
           >
-            <Icon as={PanelLeft} size={18} className="text-primary-foreground" />
+            <Icon as={PanelLeft} size={18} className="text-accent-soft-foreground" />
           </Button>
         ) : null}
 
@@ -76,12 +76,12 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
           onPress={() => setSearching(true)}
           accessibilityLabel="Rechercher une conversation"
         >
-          <Icon as={Search} size={18} className="text-primary-foreground" />
+          <Icon as={Search} size={18} className="text-accent-soft-foreground" />
         </Button>
       </View>
 
-      <Text className="shrink text-center text-sm text-primary-foreground" numberOfLines={1}>
-        <Text className="text-sm font-bold uppercase text-primary-foreground">
+      <Text className="shrink text-center text-sm text-accent-soft-foreground" numberOfLines={1}>
+        <Text className="text-sm font-bold uppercase text-accent-soft-foreground">
           {ASSISTANT_NAME}
         </Text>
         , ton assistant perso
@@ -96,7 +96,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
             onPress={() => router.push(link.href)}
             accessibilityLabel={link.label}
           >
-            <Icon as={link.icon} size={18} className="text-primary-foreground" />
+            <Icon as={link.icon} size={18} className="text-accent-soft-foreground" />
           </Button>
         ))}
 
@@ -115,7 +115,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
               titre le rendrait illisible sans rien apprendre à l'utilisateur,
               qui sait qui il est. */}
           {breakpoint === "expanded" ? (
-            <Text className="shrink text-sm text-primary-foreground" numberOfLines={1}>
+            <Text className="shrink text-sm text-accent-soft-foreground" numberOfLines={1}>
               {displayName}
             </Text>
           ) : null}

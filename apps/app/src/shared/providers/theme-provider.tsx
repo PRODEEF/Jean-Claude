@@ -61,6 +61,10 @@ export function ThemeProvider({
         // survol. Le croisement se fait ici, une fois pour toutes.
         "--primary": value.palette.accent,
         "--primary-foreground": value.palette.accentText,
+        // Hors nomenclature shadcn, qui n'a pas d'équivalent : la teinte
+        // atténuée des larges aplats — bulle de l'utilisateur, bannière.
+        "--accent-soft": value.palette.accentSoft,
+        "--accent-soft-foreground": value.palette.accentSoftText,
         "--secondary": value.palette.surface,
         "--secondary-foreground": value.palette.text,
         "--muted": value.palette.surface,
