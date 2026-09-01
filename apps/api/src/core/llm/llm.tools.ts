@@ -161,6 +161,30 @@ export const SUGGEST_PROJECT_FOLDERS: LlmTool = {
   },
 };
 
+export const OPEN_NEW_CONVERSATION: LlmTool = {
+  name: "open_new_conversation",
+  description:
+    "À appeler dès que la demande sort du périmètre du canal permanent, " +
+    "c'est-à-dire tout ce qui n'est ni un rappel, ni l'organisation interne de " +
+    "l'outil (dossiers, rangement, structure), ni la structure du projet de " +
+    "l'utilisateur. Une recette, un itinéraire, une explication, une rédaction : " +
+    "tout cela relève d'une conversation classique. " +
+    "Ne pas traiter la demande soi-même : annoncer en une phrase l'ouverture de " +
+    "la conversation dédiée, où la réponse sera donnée.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: {
+        type: "string",
+        description:
+          "Titre de la conversation à ouvrir, tiré de la demande — court et " +
+          "descriptif, 120 caractères maximum. Ex. « Itinéraire de 5 jours en Bretagne ».",
+      },
+    },
+    required: ["title"],
+  },
+};
+
 /** Outils actifs sur une conversation classique. */
 export const CHAT_TOOLS: LlmTool[] = [SUGGEST_TASK_LIST, SUGGEST_FOLDERS, SUGGEST_RECURRING_EVENT];
 
@@ -171,4 +195,4 @@ export const CHAT_TOOLS: LlmTool[] = [SUGGEST_TASK_LIST, SUGGEST_FOLDERS, SUGGES
  * l'organisation de l'outil et à la structure du projet. Y exposer la détection
  * de todolistes ou de rendez-vous récurrents le ferait déborder de ce périmètre.
  */
-export const ASSISTANT_TOOLS: LlmTool[] = [SUGGEST_PROJECT_FOLDERS];
+export const ASSISTANT_TOOLS: LlmTool[] = [SUGGEST_PROJECT_FOLDERS, OPEN_NEW_CONVERSATION];

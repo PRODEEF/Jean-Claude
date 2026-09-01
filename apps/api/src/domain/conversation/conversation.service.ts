@@ -1,3 +1,4 @@
+import { labelSchema } from "@jc/domain";
 import type {
   AssignFolders,
   Conversation,
@@ -11,7 +12,7 @@ import type {
 } from "@jc/domain";
 import { httpError } from "../../core/http";
 import type { LlmProvider, LlmToolCall } from "../../core/llm/llm.port";
-import { ASSISTANT_TOOLS, CHAT_TOOLS } from "../../core/llm/llm.tools";
+import { ASSISTANT_TOOLS, CHAT_TOOLS, OPEN_NEW_CONVERSATION } from "../../core/llm/llm.tools";
 import type { SuggestionService } from "../suggestion/suggestion.service";
 import type { IConversationRepository } from "./conversation.repository.interface";
 
@@ -183,11 +184,48 @@ export class ConversationService {
       // s'exécuterait alors jamais. Une proposition perdue ici le serait
       // définitivement — le modèle ne sera pas rejoué.
       for (const toolCall of toolCalls) {
+        if (toolCall.name === OPEN_NEW_CONVERSATION.name) continue;
         await this.suggestions.capture(userId, conversationId, toolCall, accessToken);
       }
 
+      const redirect = await this.openRequestedConversation(userId, toolCalls, accessToken);
+
       if (assistantMessage) yield { type: "done", message: assistantMessage };
+      if (redirect) yield { type: "redirect", conversation: redirect };
     }
+  }
+
+  /**
+   * Bascule hors périmètre du canal permanent (A.10).
+   *
+   * Le modèle ne crée pas la conversation lui-même : il signale que la demande
+   * relève du registre conversationnel classique, et le serveur ouvre le fil
+   * qui l'accueillera. Ce n'est pas une exception au §12.1 — rien n'est écrit
+   * dans les données de l'utilisateur, on choisit seulement où la réponse doit
+   * être donnée, ce que le cahier des charges décrit comme automatique.
+   */
+  private async openRequestedConversation(
+    userId: string,
+    toolCalls: LlmToolCall[],
+    accessToken: string,
+  ): Promise<Conversation | null> {
+    const call = toolCalls.find((toolCall) => toolCall.name === OPEN_NEW_CONVERSATION.name);
+    if (!call) return null;
+
+    const title = labelSchema.safeParse(call.input["title"]);
+    if (!title.success) {
+      // Sans titre exploitable, on reste dans le canal : ouvrir un fil
+      // « Nouvelle conversation » vide serait plus déroutant que de ne rien faire.
+      console.warn("Appel `open_new_conversation` sans titre exploitable : bascule ignorée.");
+      return null;
+    }
+
+    return this.conversations.create(
+      userId,
+      { title: title.data, folderIds: [] },
+      "chat",
+      accessToken,
+    );
   }
 }
 
@@ -206,8 +244,10 @@ function buildSystemPrompt(kind: Conversation["kind"]): string {
       "aujourd'hui ou cette semaine), l'organisation interne de l'outil (dossiers,",
       "rangement, structure), et l'évolution de la structure du projet de l'utilisateur.",
       "",
-      "Si la demande sort de ce périmètre, ne la traite pas ici : indique brièvement",
-      "que tu ouvres une conversation dédiée, et propose un titre pour celle-ci.",
+      "Si la demande sort de ce périmètre, ne la traite pas ici : appelle",
+      "`open_new_conversation` avec un titre tiré de la demande, et annonce en une",
+      "phrase que tu ouvres cette conversation dédiée. N'y réponds pas toi-même —",
+      "la réponse sera donnée là-bas.",
       "",
       "Prends les devants : quand un échange laisse deviner une action à faire,",
       "propose-la plutôt que d'attendre qu'on te la demande. Reste suggestif —",

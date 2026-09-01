@@ -350,6 +350,7 @@ describe("ConversationService", () => {
 
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).toContain("suggest_project_folders");
+      expect(tools).toContain("open_new_conversation");
       expect(tools).not.toContain("suggest_task_list");
     });
 
@@ -390,6 +391,79 @@ describe("ConversationService", () => {
       // La proposition est écrite, les dossiers ne le sont pas : le tour n'a
       // produit que les deux messages du dialogue.
       expect(repo.appendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("ouvre une conversation classique quand la demande sort du périmètre (A.10)", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+        create: jest
+          .fn()
+          .mockResolvedValue(makeConversation({ id: "conv-2", title: "Itinéraire en Bretagne" })),
+      });
+      const llm = makeLlm(
+        ["Ça sort de notre fil, je t'ouvre une conversation dédiée."],
+        [
+          {
+            id: "call-1",
+            name: "open_new_conversation",
+            input: { title: "Itinéraire en Bretagne" },
+          },
+        ],
+      );
+
+      const events = await drain(makeService(repo, llm), {
+        content: "Propose-moi un itinéraire de 5 jours en Bretagne.",
+        inputMode: "text",
+      });
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        { title: "Itinéraire en Bretagne", folderIds: [] },
+        "chat",
+        TOKEN,
+      );
+      // Émise après le message de l'assistant : le canal garde la trace de ce
+      // qui a été demandé et de la bascule.
+      expect(events.at(-1)).toEqual({
+        type: "redirect",
+        conversation: expect.objectContaining({ id: "conv-2" }),
+      });
+    });
+
+    it("ne transforme pas la bascule en proposition à valider", async () => {
+      const suggestions = makeSuggestionRepository();
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+      const llm = makeLlm(
+        ["J'ouvre un fil dédié."],
+        [{ id: "call-1", name: "open_new_conversation", input: { title: "Recette de tarte" } }],
+      );
+
+      await drain(makeService(repo, llm, suggestions), {
+        content: "Une recette de tarte aux pommes ?",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).not.toHaveBeenCalled();
+    });
+
+    it("reste dans le canal quand le titre de bascule est inexploitable", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+      const llm = makeLlm(
+        ["Je regarde ça."],
+        [{ id: "call-1", name: "open_new_conversation", input: { title: "   " } }],
+      );
+
+      const events = await drain(makeService(repo, llm), { content: "?", inputMode: "text" });
+
+      // Ouvrir un fil sans titre serait plus déroutant que de ne pas basculer.
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(events.some((event) => event.type === "redirect")).toBe(false);
+      jest.restoreAllMocks();
     });
   });
 
