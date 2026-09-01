@@ -17,11 +17,17 @@ const THEMES: { value: Theme; label: string }[] = [
 ];
 
 /**
- * Réglages du compte.
+ * Réglages du compte — seule page de compte de l'application.
  *
- * Une liste de lignes « libellé / contrôle », dans le registre de l'écran de
- * profil : ChatGPT, Claude et Perplexity présentent tous leurs réglages ainsi
- * (§4.2), et une page de préférences n'a pas à attirer l'œil.
+ * Identité et préférences ont d'abord vécu sur deux écrans, en pariant qu'on
+ * ne vient jamais y faire les deux choses en même temps. À l'usage c'est
+ * faux : l'écran de profil ne portait qu'un nom, une adresse et un lien vers
+ * ici. Les deux sont donc fusionnés, et la pastille de la bannière ouvre
+ * directement cette page.
+ *
+ * Une liste de lignes « libellé / contrôle » : ChatGPT, Claude et Perplexity
+ * présentent tous leurs réglages ainsi (§4.2), et une page de préférences n'a
+ * pas à attirer l'œil.
  */
 export function SettingsScreen() {
   const { signOut } = useAuth();
