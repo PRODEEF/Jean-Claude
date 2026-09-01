@@ -202,7 +202,10 @@ function FolderCheck({
       variant="ghost"
       onPress={onToggle}
       disabled={disabled}
-      accessibilityRole="checkbox"
+      // `role` et non `accessibilityRole` : `Button` pose `role="button"` avant
+      // d'étaler ses props, et `role` l'emporte sur `accessibilityRole`. Une
+      // rangée annoncée « bouton » ne dirait pas qu'elle est cochable.
+      role="checkbox"
       accessibilityState={{ checked }}
       accessibilityLabel={folder.name}
       className={nested ? "h-11 justify-start gap-3 pl-8 pr-2" : "h-11 justify-start gap-3 px-2"}
