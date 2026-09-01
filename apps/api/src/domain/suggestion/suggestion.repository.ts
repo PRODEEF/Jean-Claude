@@ -1,7 +1,7 @@
 import type { Suggestion } from "@jc/domain";
-import { httpError } from "../../core/http";
-import { forUser } from "../../core/supabase/supabase";
-import type { ISuggestionRepository } from "./suggestion.repository.interface";
+import { httpError } from "../../core/http.js";
+import { forUser } from "../../core/supabase/supabase.js";
+import type { ISuggestionRepository } from "./suggestion.repository.interface.js";
 
 /** Ligne Postgres — snake_case, telle que renvoyée par Supabase. */
 type SuggestionRow = {

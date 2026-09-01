@@ -1,7 +1,7 @@
 import type { Suggestion } from "@jc/domain";
-import type { LlmToolCall } from "../../core/llm/llm.port";
-import type { ISuggestionRepository } from "./suggestion.repository.interface";
-import { SuggestionService } from "./suggestion.service";
+import type { LlmToolCall } from "../../core/llm/llm.port.js";
+import type { ISuggestionRepository } from "./suggestion.repository.interface.js";
+import { SuggestionService } from "./suggestion.service.js";
 
 const TOKEN = "access-token";
 const USER = "user-1";

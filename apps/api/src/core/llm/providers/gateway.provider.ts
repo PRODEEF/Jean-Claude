@@ -1,7 +1,7 @@
 import { createGateway, generateText, jsonSchema, streamText, tool, type ToolSet } from "ai";
 import type { HTTPException } from "hono/http-exception";
-import { config } from "../../config";
-import { toHttpException } from "../llm-error";
+import { config } from "../../config.js";
+import { toHttpException } from "../llm-error.js";
 import type {
   LlmCompletionRequest,
   LlmCompletionResponse,
@@ -9,7 +9,7 @@ import type {
   LlmStreamChunk,
   LlmTool,
   LlmToolCall,
-} from "../llm.port";
+} from "../llm.port.js";
 
 /**
  * Adaptateur Vercel AI Gateway — unique moteur branché en V1 (§5.1).

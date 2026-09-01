@@ -11,18 +11,18 @@ import type {
   SendMessage,
   UpdateConversation,
 } from "@jc/domain";
-import { httpError } from "../../core/http";
-import type { LlmProvider, LlmTool, LlmToolCall } from "../../core/llm/llm.port";
+import { httpError } from "../../core/http.js";
+import type { LlmProvider, LlmTool, LlmToolCall } from "../../core/llm/llm.port.js";
 import {
   ASSISTANT_TOOLS,
   CHAT_TOOLS,
   NAME_CONVERSATION,
   OPEN_NEW_CONVERSATION,
   SUGGEST_FOLDERS,
-} from "../../core/llm/llm.tools";
-import type { FolderService } from "../folder/folder.service";
-import type { SuggestionService } from "../suggestion/suggestion.service";
-import type { IConversationRepository } from "./conversation.repository.interface";
+} from "../../core/llm/llm.tools.js";
+import type { FolderService } from "../folder/folder.service.js";
+import type { SuggestionService } from "../suggestion/suggestion.service.js";
+import type { IConversationRepository } from "./conversation.repository.interface.js";
 
 /** Nombre de messages de contexte envoyés au modèle à chaque tour. */
 const CONTEXT_WINDOW_MESSAGES = 40;
@@ -366,9 +366,6 @@ function buildSystemPrompt(kind: Conversation["kind"], filing: Housekeeping["fil
       "Cette conversation n'est rangée dans aucun dossier. Dès que l'échange en",
       "dit assez sur son sujet, appelle `suggest_folders` pour proposer où la",
       "ranger. N'attends pas qu'on te le demande, et ne le fais qu'une fois.",
-    );
-
-    lines.push(
       "",
       filing.folders.length > 0
         ? "Dossiers existants, à réutiliser en priorité avec leur identifiant exact :"
@@ -380,10 +377,16 @@ function buildSystemPrompt(kind: Conversation["kind"], filing: Housekeeping["fil
   return lines.join("\n");
 }
 
-/** Arborescence mise à plat, un dossier par ligne, identifiant compris. */
-function describeFolders(folders: FolderTreeNode[]): string[] {
-  return folders.flatMap((folder) => [
-    `- ${folder.name} (${folder.id})`,
-    ...folder.children.map((child) => `- ${folder.name} > ${child.name} (${child.id})`),
-  ]);
+/**
+ * Arborescence mise à plat, un dossier par ligne, chemin complet et identifiant.
+ *
+ * Récursif : l'arborescence descend jusqu'à `MAX_FOLDER_DEPTH` niveaux, et un
+ * dossier absent de cette liste est un dossier que le modèle ne peut pas
+ * réutiliser — il en rouvrirait un homonyme.
+ */
+function describeFolders(folders: FolderTreeNode[], path = ""): string[] {
+  return folders.flatMap((folder) => {
+    const label = path ? `${path} > ${folder.name}` : folder.name;
+    return [`- ${label} (${folder.id})`, ...describeFolders(folder.children, label)];
+  });
 }

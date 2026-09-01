@@ -1,12 +1,12 @@
 import type { Conversation, Folder, Suggestion } from "@jc/domain";
-import type { LlmProvider } from "../../core/llm/llm.port";
-import type { IConversationRepository } from "../../domain/conversation/conversation.repository.interface";
-import { ConversationService } from "../../domain/conversation/conversation.service";
-import type { IFolderRepository } from "../../domain/folder/folder.repository.interface";
-import { FolderService } from "../../domain/folder/folder.service";
-import type { ISuggestionRepository } from "../../domain/suggestion/suggestion.repository.interface";
-import { SuggestionService } from "../../domain/suggestion/suggestion.service";
-import { AssistantService } from "./assistant.service";
+import type { LlmProvider } from "../../core/llm/llm.port.js";
+import type { IConversationRepository } from "../../domain/conversation/conversation.repository.interface.js";
+import { ConversationService } from "../../domain/conversation/conversation.service.js";
+import type { IFolderRepository } from "../../domain/folder/folder.repository.interface.js";
+import { FolderService } from "../../domain/folder/folder.service.js";
+import type { ISuggestionRepository } from "../../domain/suggestion/suggestion.repository.interface.js";
+import { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
+import { AssistantService } from "./assistant.service.js";
 
 const TOKEN = "access-token";
 const USER = "user-1";
@@ -332,6 +332,35 @@ describe("AssistantService", () => {
       );
 
       expect(folders.create).not.toHaveBeenCalled();
+      expect(assignedFolders(conversations)).toEqual([ASSURANCES]);
+    });
+
+    it("accepte un dossier situé profond dans l'arborescence", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [ASSURANCES], newFolderNames: [] }),
+          ),
+      });
+      const intermediaire = "a1b2c3d4-0004-4000-8000-000000000004";
+      const folders = makeFolderRepository([
+        makeFolder({ id: SANTE, name: "Santé" }),
+        makeFolder({ id: intermediaire, name: "Contrats", parentId: SANTE }),
+        // Troisième niveau : hors de portée d'un aplatissement à deux niveaux.
+        makeFolder({ id: ASSURANCES, name: "Assurances", parentId: intermediaire }),
+      ]);
+      const conversations = makeConversationRepository();
+
+      await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      // Un dossier oublié par l'aplatissement passerait pour un identifiant
+      // inventé et serait écarté du rangement.
       expect(assignedFolders(conversations)).toEqual([ASSURANCES]);
     });
 

@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { createFolderSchema, updateFolderSchema, uuidSchema } from "@jc/domain";
-import { auth, type AuthEnv } from "../../core/auth/auth.middleware";
-import { validate } from "../../core/http";
-import { folderRepository } from "./folder.repository";
-import { FolderService } from "./folder.service";
+import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
+import { validate } from "../../core/http.js";
+import { folderRepository } from "./folder.repository.js";
+import { FolderService } from "./folder.service.js";
 
 const service = new FolderService(folderRepository);
 

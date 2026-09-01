@@ -5,10 +5,10 @@ import {
   type SuggestionKind,
   type SuggestionStatus,
 } from "@jc/domain";
-import { httpError } from "../../core/http";
-import type { LlmToolCall } from "../../core/llm/llm.port";
-import { SUGGEST_FOLDERS, SUGGEST_PROJECT_FOLDERS } from "../../core/llm/llm.tools";
-import type { ISuggestionRepository } from "./suggestion.repository.interface";
+import { httpError } from "../../core/http.js";
+import type { LlmToolCall } from "../../core/llm/llm.port.js";
+import { SUGGEST_FOLDERS, SUGGEST_PROJECT_FOLDERS } from "../../core/llm/llm.tools.js";
+import type { ISuggestionRepository } from "./suggestion.repository.interface.js";
 
 /** Longueur maximale de `message`, alignée sur la contrainte CHECK de la table. */
 const MESSAGE_MAX_LENGTH = 500;

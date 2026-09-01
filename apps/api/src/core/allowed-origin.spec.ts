@@ -1,4 +1,4 @@
-import { isAllowedOrigin } from "./allowed-origin";
+import { isAllowedOrigin } from "./allowed-origin.js";
 
 /** Ce que porterait `CORS_ORIGIN` en production. */
 const PATTERNS = ["https://jean-claude-web.vercel.app", "https://jean-claude-web-*.vercel.app"];

@@ -6,10 +6,10 @@ import {
   type ResolveSuggestion,
   type Suggestion,
 } from "@jc/domain";
-import { httpError } from "../../core/http";
-import type { ConversationService } from "../../domain/conversation/conversation.service";
-import type { FolderService } from "../../domain/folder/folder.service";
-import type { SuggestionService } from "../../domain/suggestion/suggestion.service";
+import { httpError } from "../../core/http.js";
+import type { ConversationService } from "../../domain/conversation/conversation.service.js";
+import type { FolderService } from "../../domain/folder/folder.service.js";
+import type { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
 
 export type ResolvedSuggestion = {
   suggestion: Suggestion;
@@ -208,7 +208,13 @@ function sameName(a: string, b: string): boolean {
   return a.trim().toLocaleLowerCase("fr") === b.trim().toLocaleLowerCase("fr");
 }
 
-/** Racines et sous-dossiers sur un seul niveau — le modèle peut nommer les deux. */
+/**
+ * Tous les dossiers, à toutes les profondeurs.
+ *
+ * Récursif et non deux niveaux : l'arborescence en compte jusqu'à
+ * `MAX_FOLDER_DEPTH`, et un dossier oublié ici serait pris pour un identifiant
+ * inventé par le modèle, donc écarté du rangement.
+ */
 function flatten(tree: FolderTreeNode[]): Folder[] {
-  return tree.flatMap((node) => [node, ...node.children]);
+  return tree.flatMap((node) => [node, ...flatten(node.children)]);
 }

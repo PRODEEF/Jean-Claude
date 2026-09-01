@@ -1,12 +1,12 @@
 import { DEFAULT_CONVERSATION_TITLE } from "@jc/domain";
 import type { Conversation, Folder, Message, MessageStreamEvent, Suggestion } from "@jc/domain";
-import type { LlmCompletionRequest, LlmProvider, LlmToolCall } from "../../core/llm/llm.port";
-import type { IFolderRepository } from "../folder/folder.repository.interface";
-import { FolderService } from "../folder/folder.service";
-import type { ISuggestionRepository } from "../suggestion/suggestion.repository.interface";
-import { SuggestionService } from "../suggestion/suggestion.service";
-import { ConversationService } from "./conversation.service";
-import type { IConversationRepository } from "./conversation.repository.interface";
+import type { LlmCompletionRequest, LlmProvider, LlmToolCall } from "../../core/llm/llm.port.js";
+import type { IFolderRepository } from "../folder/folder.repository.interface.js";
+import { FolderService } from "../folder/folder.service.js";
+import type { ISuggestionRepository } from "../suggestion/suggestion.repository.interface.js";
+import { SuggestionService } from "../suggestion/suggestion.service.js";
+import { ConversationService } from "./conversation.service.js";
+import type { IConversationRepository } from "./conversation.repository.interface.js";
 
 const TOKEN = "access-token";
 const USER = "user-1";
@@ -546,6 +546,7 @@ describe("ConversationService", () => {
       const folders = makeFolderRepository([
         makeFolder({ id: "folder-1", name: "Santé" }),
         makeFolder({ id: "folder-2", name: "Assurances", parentId: "folder-1" }),
+        makeFolder({ id: "folder-3", name: "Mutuelle", parentId: "folder-2" }),
       ]);
 
       await drain(makeService(makeRepository(), llm, makeSuggestionRepository(), folders));
@@ -556,6 +557,9 @@ describe("ConversationService", () => {
       // neufs et rouvrirait « Santé » à chaque conversation.
       expect(request.system ?? "").toContain("Santé (folder-1)");
       expect(request.system ?? "").toContain("Santé > Assurances (folder-2)");
+      // L'arborescence descend jusqu'à MAX_FOLDER_DEPTH : s'arrêter au deuxième
+      // niveau rendrait les dossiers profonds inutilisables.
+      expect(request.system ?? "").toContain("Santé > Assurances > Mutuelle (folder-3)");
     });
 
     it("n'offre pas de rangement à un fil déjà classé", async () => {

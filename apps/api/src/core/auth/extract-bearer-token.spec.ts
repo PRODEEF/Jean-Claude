@@ -1,4 +1,4 @@
-import { extractBearerToken } from "./extract-bearer-token";
+import { extractBearerToken } from "./extract-bearer-token.js";
 
 describe("extraction du jeton d'authentification", () => {
   it("extrait le jeton d'un en-tête bien formé", () => {

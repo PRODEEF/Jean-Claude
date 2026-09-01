@@ -86,9 +86,10 @@ const proposedFolderSchema = z.object({
 /**
  * Charge utile d'une suggestion `create_project_folders` (A.4).
  *
- * Deux niveaux et pas trois : un sous-dossier ne porte pas d'enfants, la
- * profondeur étant bornée en V1 (§3 Phase A). La forme l'interdit donc avant
- * même que le trigger Postgres n'ait à le faire.
+ * Deux niveaux, là où l'arborescence en autorise `MAX_FOLDER_DEPTH` : le motif
+ * de l'A.4 est un projet et ses rubriques (IDÉE, TODO, ACHAT, PRENDRE RDV), pas
+ * une hiérarchie libre. Cette borne est un choix produit, pas une contrainte de
+ * schéma — l'utilisateur reste libre d'imbriquer davantage à la main.
  */
 export const createProjectFoldersPayloadSchema = z.object({
   folders: z

@@ -11,15 +11,15 @@ import {
   uuidSchema,
   type MessageStreamEvent,
 } from "@jc/domain";
-import { auth, type AuthEnv } from "../../core/auth/auth.middleware";
-import { validate } from "../../core/http";
-import { llm } from "../../core/llm/providers/gateway.provider";
-import { folderRepository } from "../folder/folder.repository";
-import { FolderService } from "../folder/folder.service";
-import { suggestionRepository } from "../suggestion/suggestion.repository";
-import { SuggestionService } from "../suggestion/suggestion.service";
-import { conversationRepository } from "./conversation.repository";
-import { ConversationService } from "./conversation.service";
+import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
+import { validate } from "../../core/http.js";
+import { llm } from "../../core/llm/providers/gateway.provider.js";
+import { folderRepository } from "../folder/folder.repository.js";
+import { FolderService } from "../folder/folder.service.js";
+import { suggestionRepository } from "../suggestion/suggestion.repository.js";
+import { SuggestionService } from "../suggestion/suggestion.service.js";
+import { conversationRepository } from "./conversation.repository.js";
+import { ConversationService } from "./conversation.service.js";
 
 const service = new ConversationService(
   conversationRepository,

@@ -1,16 +1,16 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { resolveSuggestionSchema, uuidSchema } from "@jc/domain";
-import { auth, type AuthEnv } from "../../core/auth/auth.middleware";
-import { validate } from "../../core/http";
-import { llm } from "../../core/llm/providers/gateway.provider";
-import { conversationRepository } from "../../domain/conversation/conversation.repository";
-import { ConversationService } from "../../domain/conversation/conversation.service";
-import { folderRepository } from "../../domain/folder/folder.repository";
-import { FolderService } from "../../domain/folder/folder.service";
-import { suggestionRepository } from "../../domain/suggestion/suggestion.repository";
-import { SuggestionService } from "../../domain/suggestion/suggestion.service";
-import { AssistantService } from "./assistant.service";
+import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
+import { validate } from "../../core/http.js";
+import { llm } from "../../core/llm/providers/gateway.provider.js";
+import { conversationRepository } from "../../domain/conversation/conversation.repository.js";
+import { ConversationService } from "../../domain/conversation/conversation.service.js";
+import { folderRepository } from "../../domain/folder/folder.repository.js";
+import { FolderService } from "../../domain/folder/folder.service.js";
+import { suggestionRepository } from "../../domain/suggestion/suggestion.repository.js";
+import { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
+import { AssistantService } from "./assistant.service.js";
 
 const suggestions = new SuggestionService(suggestionRepository);
 const folders = new FolderService(folderRepository);

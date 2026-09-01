@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
-import { config } from "../config";
-import type { Database } from "./database.types";
+import { config } from "../config.js";
+import type { Database } from "./database.types.js";
 
 /**
  * Accès Postgres via Supabase.
