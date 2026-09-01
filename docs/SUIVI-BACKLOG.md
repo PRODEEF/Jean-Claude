@@ -11,8 +11,13 @@ Dernière mise à jour : **1er septembre 2026** — issues #5 et #7 terminées. 
 couverte par le socle (table de liaison `conversation_folders`, colonne `source`, garde-fou
 de profondeur) : vérifiée point par point puis clôturée. #7 rend les dossiers manipulables :
 création, renommage et suppression, sous-dossiers visibles dans la barre latérale, et
-rangement d'une conversation dans **plusieurs** dossiers à la fois (A.1). Aucune ligne d'API
-n'a été nécessaire — les routes existaient, aucune interface ne les appelait.
+rangement d'une conversation dans **plusieurs** dossiers à la fois (A.1).
+
+Dans la foulée, la profondeur d'arborescence passe de 2 à **5 niveaux** — écart assumé au
+§3 Phase A, à valider avec Yann. Conséquence non évidente : à 2 niveaux aucune boucle
+n'était formable, à 5 un déplacement peut ranger un dossier sous l'un de ses propres
+sous-dossiers. Le garde-fou de profondeur vérifie donc désormais aussi l'acyclicité, en
+base comme dans le service.
 
 Avant cela, le 31 août : issues #3 et #4 — abstraction IA via Vercel AI Gateway, fil de
 conversation en flux, timeouts et quotas. API migrée de NestJS vers Hono en vue du
@@ -93,14 +98,15 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Région d'hébergement Supabase (UE recommandé)     | §8    | Antonin                                                        |
 | Service de reconnaissance vocale (natif ou tiers) | §12.3 | Antonin — budget / latence                                     |
 | Date réelle du rendez-vous de cadrage             | §0    | Yann — le document signale l'incohérence du « 31 septembre »   |
+| **Profondeur d'arborescence portée de 2 à 5**     | §3    | Yann — écart assumé au cahier des charges, à valider           |
 | Jeu d'icônes de la navigation                     | §4.2  | — lucide-react-native en place (défaut react-native-reusables) |
 
 ## Points nécessitant un A/B testing humain (§4.3)
 
-| Sujet                                             | Ce qui a été tranché, faute de mieux                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Actions d'un dossier et d'une conversation        | Une **fenêtre unique** portant toutes les actions, ouverte par un « … ». Les applications de référence ne convergent pas : ChatGPT et Claude posent un menu déroulant au survol, Notion et Apple Notes un menu contextuel — or ni le survol ni le clic droit n'existent au doigt (§4.2 non concluant) |
-| Sous-dossiers dépliés en permanence dans la barre | Seul le dossier racine se replie. Un second cran de repli a été écarté parce que l'arborescence est bornée à 2 niveaux, mais le point mérite d'être vu par un utilisateur avec un vrai volume de dossiers                                                                                             |
+| Sujet                                      | Ce qui a été tranché, faute de mieux                                                                                                                                                                                                                                                                  |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Actions d'un dossier et d'une conversation | Une **fenêtre unique** portant toutes les actions, ouverte par un « … ». Les applications de référence ne convergent pas : ChatGPT et Claude posent un menu déroulant au survol, Notion et Apple Notes un menu contextuel — or ni le survol ni le clic droit n'existent au doigt (§4.2 non concluant) |
+| Lisibilité de la barre au 5e niveau        | Chaque niveau ajoute un retrait et un filet vertical. Au 5e, la barre est très entamée à gauche et les libellés se tronquent. L'aplatissement a été écarté — il perdrait la filiation — mais le point demande à être vu avec un vrai volume de dossiers                                               |
 
 ## Dette technique connue
 
