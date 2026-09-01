@@ -81,6 +81,33 @@ n'utilise Supabase que pour l'authentification ; tout le reste passe par
    des règles produit : elles doivent valoir identiquement sur les quatre
    plateformes, sans réimplémentation.
 
+**REST plutôt que GraphQL.** Le §5.3 laisse le choix ouvert. L'API est REST :
+JSON sur HTTP, un chemin par ressource, pagination par curseur (jamais par
+offset), `201` à la création, `204` à la suppression, et une forme d'erreur
+unique portée par `core/http.ts`.
+
+**Pourquoi.**
+
+1. L'argument principal de GraphQL — un contrat typé partagé entre le serveur
+   et ses clients — est déjà obtenu autrement ici. `@jc/domain` porte les
+   schémas Zod, le backend valide avec, `@jc/api-client` renvoie les mêmes
+   types : une divergence de contrat casse la compilation **des deux côtés**,
+   sans schéma ni codegen à maintenir en plus.
+2. L'API n'a qu'un seul client — `apps/app`, dont le même codebase produit les
+   quatre plateformes. Le sur-fetch que GraphQL corrige suppose plusieurs
+   clients aux besoins divergents : ce n'est pas la situation.
+3. La réponse de l'assistant arrive au fil de sa génération. En REST c'est une
+   route qui répond en `text/event-stream` ; en GraphQL il aurait fallu des
+   subscriptions, donc un transport WebSocket de plus à faire tenir sur le web,
+   iOS et Android.
+4. Le §8 demande d'éviter les dépendances qui rendraient coûteuse une migration
+   UE ultérieure. Hono ne dépend d'aucun service tiers : l'API se redéploie
+   telle quelle sur n'importe quel hébergeur Node ou runtime edge.
+
+**Ce que ça coûte.** Une vue qui agrège plusieurs ressources demande plusieurs
+appels, ou un endpoint dédié dans `feature/` — c'est précisément le rôle de
+cette couche.
+
 ---
 
 ### 2.3 Le moteur IA est derrière un port, lui-même branché sur un routeur

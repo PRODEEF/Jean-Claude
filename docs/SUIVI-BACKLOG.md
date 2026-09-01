@@ -16,20 +16,20 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Exigences transverses
 
-| Réf. | Exigence                                               | Statut | Note                                                                                                    |
-| ---- | ------------------------------------------------------ | :----: | ------------------------------------------------------------------------------------------------------- |
-| §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                                         |
-| §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code |
-| §5.1 | Timeouts, quotas et erreurs                            |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés             |
-| §5.1 | Choix du modèle par l'utilisateur                      |   ⬜   | `LLM_MODEL` est le défaut serveur. À porter dans `userPreferences` + panneau de réglages                |
-| §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                                   |
-| §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                            |
-| §5.3 | API commune web + mobile                               |   ✅   | Hono ; l'app ne touche jamais la base directement                                                         |
-| §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre                     |
-| §4.4 | React Native                                           |   ✅   | Expo SDK 57, Expo Router, React 19                                                                      |
-| §8   | Postgres portable, migration UE possible               |   ✅   | Aucune extension propriétaire                                                                           |
-| §8   | **Créer le projet Supabase en région UE**              |   ⬜   | **À faire avant tout remplissage de données**                                                           |
-| §10  | Repo structuré et documenté                            |   ✅   | `README.md`, `docs/ARCHITECTURE.md`, ce fichier                                                         |
+| Réf. | Exigence                                               | Statut | Note                                                                                                                                        |
+| ---- | ------------------------------------------------------ | :----: | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                                                                             |
+| §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code                                     |
+| §5.1 | Timeouts, quotas et erreurs                            |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés                                                 |
+| §5.1 | Choix du modèle par l'utilisateur                      |   ⬜   | `LLM_MODEL` est le défaut serveur. À porter dans `userPreferences` + panneau de réglages                                                    |
+| §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                                                                       |
+| §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                                                                |
+| §5.3 | API commune web + mobile                               |   ✅   | REST sur Hono, arbitrage consigné dans `docs/ARCHITECTURE.md` ; client `@jc/api-client` partagé, l'app ne touche jamais la base directement |
+| §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre                                                         |
+| §4.4 | React Native                                           |   ✅   | Expo SDK 57, Expo Router, React 19                                                                                                          |
+| §8   | Postgres portable, migration UE possible               |   ✅   | Aucune extension propriétaire                                                                                                               |
+| §8   | **Créer le projet Supabase en région UE**              |   ⬜   | **À faire avant tout remplissage de données**                                                                                               |
+| §10  | Repo structuré et documenté                            |   ✅   | `README.md`, `docs/ARCHITECTURE.md`, ce fichier                                                                                             |
 
 ---
 
@@ -82,11 +82,11 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Points à arbitrer
 
-| Sujet                                             | Réf.  | Interlocuteur                                                |
-| ------------------------------------------------- | ----- | ------------------------------------------------------------ |
-| Région d'hébergement Supabase (UE recommandé)     | §8    | Antonin                                                      |
-| Service de reconnaissance vocale (natif ou tiers) | §12.3 | Antonin — budget / latence                                   |
-| Date réelle du rendez-vous de cadrage             | §0    | Yann — le document signale l'incohérence du « 31 septembre » |
+| Sujet                                             | Réf.  | Interlocuteur                                                  |
+| ------------------------------------------------- | ----- | -------------------------------------------------------------- |
+| Région d'hébergement Supabase (UE recommandé)     | §8    | Antonin                                                        |
+| Service de reconnaissance vocale (natif ou tiers) | §12.3 | Antonin — budget / latence                                     |
+| Date réelle du rendez-vous de cadrage             | §0    | Yann — le document signale l'incohérence du « 31 septembre »   |
 | Jeu d'icônes de la navigation                     | §4.2  | — lucide-react-native en place (défaut react-native-reusables) |
 
 ## Points nécessitant un A/B testing humain (§4.3)
