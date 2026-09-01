@@ -7,9 +7,15 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **31 août 2026** — issues #3 et #4 terminées : abstraction IA via
-Vercel AI Gateway, fil de conversation en flux, timeouts et quotas. Critère de recette
-§11 Phase A validé. API migrée de NestJS vers Hono dans la foulée, en vue du
+Dernière mise à jour : **1er septembre 2026** — issue #8, première tranche : depuis le
+canal permanent, Jean-Claude propose des dossiers et sous-dossiers, que l'utilisateur crée
+ou ignore d'un geste. Les appels d'outils du modèle deviennent des suggestions en attente
+(`feature/assistant`) au lieu d'être perdus — le §12.1 est appliqué de bout en bout pour
+la première fois.
+
+Rappel de la mise à jour précédente (31 août 2026) : issues #3 et #4 terminées —
+abstraction IA via Vercel AI Gateway, fil de conversation en flux, timeouts et quotas.
+Critère de recette §11 Phase A validé. API migrée de NestJS vers Hono dans la foulée, en vue du
 déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2,4 s à 0,7 s.
 
 ---
@@ -47,22 +53,22 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Annexe A — backlog fonctionnel
 
-| Réf. | Point                                                 | Statut | Note                                                                                                                                   |
-| ---- | ----------------------------------------------------- | :----: | -------------------------------------------------------------------------------------------------------------------------------------- |
-| A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                      |
-| A.1  | Conversations multi-dossiers, rangement matriciel     |   🔵   | Schéma, repository et `PUT /conversations/:id/folders` faits. UI à construire                                                          |
-| A.2  | Conversion conversation → todoliste                   |   🔵   | Tables `task_lists` / `tasks` prêtes, outil `suggest_task_list` défini. Module `domain/task` à écrire                                  |
-| A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                         |
-| A.4  | Sous-dossiers automatiques de projet                  |   🔵   | Colonne `purpose` (idea/todo/purchase/appointment) posée                                                                               |
-| A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                     |
-| A.6  | Recherche avancée par filtres                         |   🔵   | Index plein texte français créés, `searchFiltersSchema` défini. `feature/search` à écrire                                              |
-| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison — la matière première est capturée                                                    |
-| A.8  | Assistant proactif                                    |   🔵   | Outils IA définis, table `assistant_suggestions` prête. `feature/assistant` à écrire                                                   |
-| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                |
-| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique en base, prompt de bornage testé, onglet Jean-Claude opérationnel. Bascule automatique hors périmètre et réglages à faire |
-| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                   |
-| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                      |
-| A.13 | Onboarding conversationnel                            |   ⬜   | Voir §6.3                                                                                                                              |
+| Réf. | Point                                                 | Statut | Note                                                                                                                                                                          |
+| ---- | ----------------------------------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                             |
+| A.1  | Conversations multi-dossiers, rangement matriciel     |   🔵   | Schéma, repository et `PUT /conversations/:id/folders` faits. UI à construire                                                                                                 |
+| A.2  | Conversion conversation → todoliste                   |   🔵   | Tables `task_lists` / `tasks` prêtes, outil `suggest_task_list` défini. Module `domain/task` à écrire                                                                         |
+| A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                                                                |
+| A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                             |
+| A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                            |
+| A.6  | Recherche avancée par filtres                         |   🔵   | Index plein texte français créés, `searchFiltersSchema` défini. `feature/search` à écrire                                                                                     |
+| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison — la matière première est capturée                                                                                           |
+| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des suggestions en attente, acceptées ou ignorées d'un geste. Reste les suggestions de todoliste et de rendez-vous |
+| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                       |
+| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique en base, prompt de bornage testé, onglet Jean-Claude opérationnel, jeu d'outils propre au canal. Bascule automatique hors périmètre et réglages à faire          |
+| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                                                          |
+| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                             |
+| A.13 | Onboarding conversationnel                            |   ⬜   | Voir §6.3                                                                                                                                                                     |
 
 ---
 
@@ -96,12 +102,13 @@ tranchée. À alimenter dès que les écrans réels seront construits.
 
 ## Dette technique connue
 
-| Point                                | Détail                                                                                                                                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pagination remontante du fil absente | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                       |
-| Titre de conversation non généré     | Toute conversation créée s'appelle « Nouvelle conversation ». Le §5.2 prévoit un titre déduit des premiers messages                                                 |
-| `toolCalls` non exploités            | Le modèle produit bien des appels `suggest_task_list` / `suggest_folders`, le service les reçoit et ne les persiste pas. C'est `feature/assistant`, Phase B (§12.1) |
-| Node ≥ 22.12 requis                  | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                 |
+| Point                                                  | Détail                                                                                                                                                                                    |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pagination remontante du fil absente                   | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                             |
+| Titre de conversation non généré                       | Toute conversation créée s'appelle « Nouvelle conversation ». Le §5.2 prévoit un titre déduit des premiers messages                                                                       |
+| Périmètre assistant non appliqué                       | `profiles.assistant_scope` est stocké mais jamais lu : une capacité désactivée dans les réglages n'empêche pas encore le serveur de produire la suggestion (§12.1). Demande `domain/user` |
+| Suggestions de todoliste et de rendez-vous non captées | `feature/assistant` ne traduit que `suggest_project_folders` ; `suggest_task_list` et `suggest_recurring_event` sont encore ignorés, faute de `domain/task` et `domain/calendar`          |
+| Node ≥ 22.12 requis                                    | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                                       |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo
 (`app.config.js` / `metro.config.js`).
