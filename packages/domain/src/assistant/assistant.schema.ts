@@ -108,6 +108,26 @@ export const createProjectFoldersPayloadSchema = z.object({
 export type CreateProjectFoldersPayload = z.infer<typeof createProjectFoldersPayloadSchema>;
 
 /**
+ * Charge utile d'une suggestion `assign_folders` (A.1).
+ *
+ * Deux listes et non une : l'assistant peut ranger dans des dossiers qui
+ * existent déjà **et** en proposer de nouveaux dans le même geste. Une
+ * conversation appartient à plusieurs dossiers à la fois — ce n'est pas une
+ * duplication, c'est la même donnée vue de plusieurs endroits (§5.2).
+ */
+export const assignFoldersPayloadSchema = z
+  .object({
+    existingFolderIds: z.array(uuidSchema).max(8).default([]),
+    newFolderNames: z.array(labelSchema).max(8).default([]),
+  })
+  .refine(
+    (payload) => payload.existingFolderIds.length + payload.newFolderNames.length > 0,
+    "Un rangement sans dossier n'a rien à appliquer.",
+  );
+
+export type AssignFoldersPayload = z.infer<typeof assignFoldersPayloadSchema>;
+
+/**
  * Verdict de bornage du canal permanent (A.10).
  *
  * Quand un message adressé au canal permanent sort du périmètre assistant,
@@ -115,5 +135,4 @@ export type CreateProjectFoldersPayload = z.infer<typeof createProjectFoldersPay
  * conversation classique, rangée en dossier.
  */
 export type ScopeVerdict =
-  | { inScope: true }
-  | { inScope: false; reason: string; suggestedTitle: string };
+  { inScope: true } | { inScope: false; reason: string; suggestedTitle: string };
