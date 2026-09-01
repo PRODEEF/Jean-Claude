@@ -1,7 +1,7 @@
 import { createMiddleware } from "hono/factory";
-import { httpError } from "../http";
-import { getUser } from "../supabase/supabase";
-import { extractBearerToken } from "./extract-bearer-token";
+import { httpError } from "../http.js";
+import { getUser } from "../supabase/supabase.js";
+import { extractBearerToken } from "./extract-bearer-token.js";
 
 /** Utilisateur résolu par le middleware et posé sur le contexte. */
 export type AuthenticatedUser = {

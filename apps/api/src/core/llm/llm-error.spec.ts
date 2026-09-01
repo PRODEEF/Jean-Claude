@@ -1,4 +1,4 @@
-import { toHttpException } from "./llm-error";
+import { toHttpException } from "./llm-error.js";
 
 /**
  * Forme d'une erreur du SDK `ai` : un objet portant `statusCode` et un message

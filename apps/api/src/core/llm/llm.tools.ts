@@ -1,4 +1,4 @@
-import type { LlmTool } from "./llm.port";
+import type { LlmTool } from "./llm.port.js";
 
 /**
  * Outils exposés au modèle pour produire des suggestions structurées (§12.1).
