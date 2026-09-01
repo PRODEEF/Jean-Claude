@@ -11,7 +11,9 @@ Dernière mise à jour : **1er septembre 2026** — issue #8, première tranche 
 canal permanent, Jean-Claude propose des dossiers et sous-dossiers, que l'utilisateur crée
 ou ignore d'un geste. Les appels d'outils du modèle deviennent des suggestions en attente
 (`feature/assistant`) au lieu d'être perdus — le §12.1 est appliqué de bout en bout pour
-la première fois.
+la première fois. La bascule hors périmètre suit : une demande étrangère aux trois sujets
+du canal ouvre une conversation classique, où la question est reposée et la réponse
+donnée.
 
 Rappel de la mise à jour précédente (31 août 2026) : issues #3 et #4 terminées —
 abstraction IA via Vercel AI Gateway, fil de conversation en flux, timeouts et quotas.
@@ -65,7 +67,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison — la matière première est capturée                                                                                           |
 | A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des suggestions en attente, acceptées ou ignorées d'un geste. Reste les suggestions de todoliste et de rendez-vous |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                       |
-| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique en base, prompt de bornage testé, onglet Jean-Claude opérationnel, jeu d'outils propre au canal. Bascule automatique hors périmètre et réglages à faire          |
+| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre vers une conversation classique. Restent le rangement en dossier du fil ouvert et les réglages |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                                                          |
 | A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                             |
 | A.13 | Onboarding conversationnel                            |   ⬜   | Voir §6.3                                                                                                                                                                     |
