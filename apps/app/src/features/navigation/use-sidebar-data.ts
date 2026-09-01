@@ -1,18 +1,13 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Conversation, Folder, FolderTreeNode } from "@jc/domain";
+import type { Conversation, FolderTreeNode } from "@jc/domain";
 import { api } from "@/shared/lib/api";
-
-export type SidebarSubGroup = {
-  folder: Folder;
-  conversations: Conversation[];
-};
 
 export type SidebarGroup = {
   folder: FolderTreeNode;
-  /** Rattachées au dossier racine lui-même, pas à l'un de ses sous-dossiers. */
+  /** Rattachées à ce dossier précisément, pas à l'un de ses descendants. */
   conversations: Conversation[];
-  children: SidebarSubGroup[];
+  children: SidebarGroup[];
 };
 
 export type SidebarData = {
@@ -31,8 +26,8 @@ export type SidebarData = {
  * apparaît simplement sous chacun d'eux. Ce n'est pas une duplication, c'est
  * la même donnée vue depuis deux endroits.
  *
- * Deux niveaux, sans récursion : `MAX_FOLDER_DEPTH` vaut 2 et le serveur
- * refuse un 3e. Une descente récursive laisserait croire le contraire.
+ * La descente est récursive et suit celle du serveur, bornée par
+ * `MAX_FOLDER_DEPTH`.
  */
 export function useSidebarData(): SidebarData {
   const folders = useQuery({
@@ -49,22 +44,15 @@ export function useSidebarData(): SidebarData {
     // Le canal permanent a son entrée dédiée en haut de la barre (A.10) : le
     // laisser aussi dans la liste le ferait apparaître deux fois.
     const items = (conversations.data?.items ?? []).filter((item) => item.kind !== "assistant");
-    const roots = (folders.data ?? []).filter((node) => node.parentId === null);
 
-    const inFolder = (folderId: string) =>
-      items.filter((item) => item.folderIds.includes(folderId));
-
-    const groups = roots.map((folder) => ({
-      folder,
-      conversations: inFolder(folder.id),
-      children: folder.children.map((child) => ({
-        folder: child,
-        conversations: inFolder(child.id),
-      })),
-    }));
+    const build = (node: FolderTreeNode): SidebarGroup => ({
+      folder: node,
+      conversations: items.filter((item) => item.folderIds.includes(node.id)),
+      children: node.children.map(build),
+    });
 
     return {
-      groups,
+      groups: (folders.data ?? []).filter((node) => node.parentId === null).map(build),
       unfiled: items.filter((item) => item.folderIds.length === 0),
       isLoading: folders.isLoading || conversations.isLoading,
       error: (folders.error ?? conversations.error) as Error | null,

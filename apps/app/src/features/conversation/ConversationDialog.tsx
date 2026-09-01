@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ScrollView, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Trash2 } from "lucide-react-native";
-import type { Conversation, Folder } from "@jc/domain";
+import type { Conversation, Folder, FolderTreeNode } from "@jc/domain";
 import { api } from "@/shared/lib/api";
 import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
@@ -107,26 +107,12 @@ function ConversationForm({
           </Text>
         ) : (
           <ScrollView className="max-h-52">
-            {roots.map((root) => (
-              <View key={root.id}>
-                <FolderCheck
-                  folder={root}
-                  checked={selected.includes(root.id)}
-                  onToggle={() => toggle(root.id)}
-                  disabled={pending}
-                />
-                {root.children.map((child) => (
-                  <FolderCheck
-                    key={child.id}
-                    folder={child}
-                    nested
-                    checked={selected.includes(child.id)}
-                    onToggle={() => toggle(child.id)}
-                    disabled={pending}
-                  />
-                ))}
-              </View>
-            ))}
+            <FolderChecklist
+              nodes={roots}
+              selected={selected}
+              onToggle={toggle}
+              disabled={pending}
+            />
           </ScrollView>
         )}
       </View>
@@ -183,16 +169,58 @@ function ConversationForm({
   );
 }
 
-/** Rangée cochable d'un dossier. `nested` décale les sous-dossiers d'un cran. */
+/**
+ * Arborescence cochable.
+ *
+ * Le retrait est porté par des vues imbriquées plutôt que par une classe
+ * calculée depuis la profondeur : avec 5 niveaux possibles, une classe par
+ * niveau ne tiendrait pas, et Tailwind ne génère pas de valeur dynamique.
+ */
+function FolderChecklist({
+  nodes,
+  selected,
+  onToggle,
+  disabled,
+}: {
+  nodes: FolderTreeNode[];
+  selected: string[];
+  onToggle: (folderId: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <>
+      {nodes.map((node) => (
+        <View key={node.id}>
+          <FolderCheck
+            folder={node}
+            checked={selected.includes(node.id)}
+            onToggle={() => onToggle(node.id)}
+            disabled={disabled}
+          />
+          {node.children.length > 0 ? (
+            <View className="ml-4 border-l border-border pl-1">
+              <FolderChecklist
+                nodes={node.children}
+                selected={selected}
+                onToggle={onToggle}
+                disabled={disabled}
+              />
+            </View>
+          ) : null}
+        </View>
+      ))}
+    </>
+  );
+}
+
+/** Rangée cochable d'un dossier. */
 function FolderCheck({
   folder,
-  nested = false,
   checked,
   onToggle,
   disabled,
 }: {
   folder: Folder;
-  nested?: boolean;
   checked: boolean;
   onToggle: () => void;
   disabled: boolean;
@@ -208,7 +236,7 @@ function FolderCheck({
       role="checkbox"
       accessibilityState={{ checked }}
       accessibilityLabel={folder.name}
-      className={nested ? "h-11 justify-start gap-3 pl-8 pr-2" : "h-11 justify-start gap-3 px-2"}
+      className="h-11 justify-start gap-3 px-2"
     >
       <View
         className={

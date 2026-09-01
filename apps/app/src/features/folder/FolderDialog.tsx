@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { View } from "react-native";
 import { FolderPlus, Trash2 } from "lucide-react-native";
-import type { Folder } from "@jc/domain";
+import { MAX_FOLDER_DEPTH, type Folder } from "@jc/domain";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -19,7 +19,9 @@ import { useFolderActions } from "./hooks/use-folder-actions";
 
 /** Ce que la fenêtre est en train de faire. `parent` renseigné = sous-dossier. */
 export type FolderDialogTarget =
-  { mode: "create"; parent: Folder | null } | { mode: "edit"; folder: Folder };
+  | { mode: "create"; parent: Folder | null }
+  /** `depth` vaut 1 pour un dossier racine — dit si le dossier peut encore descendre. */
+  | { mode: "edit"; folder: Folder; depth: number };
 
 export type FolderDialogProps = {
   /** `null` = fenêtre fermée. */
@@ -136,10 +138,10 @@ function FolderForm({
           <Separator />
 
           <View className="gap-1">
-            {/* L'arborescence est bornée à 2 niveaux (§3 Phase A) : un
-                sous-dossier ne peut pas en accueillir un autre. Le serveur le
-                refuse déjà, autant ne pas proposer le geste. */}
-            {target.folder.parentId === null ? (
+            {/* L'arborescence est bornée à `MAX_FOLDER_DEPTH` niveaux : au
+                dernier, un sous-dossier ne rentre plus. Le serveur le refuse
+                déjà, autant ne pas proposer le geste. */}
+            {target.depth < MAX_FOLDER_DEPTH ? (
               <Button
                 variant="ghost"
                 onPress={() => onAddChild(target.folder)}

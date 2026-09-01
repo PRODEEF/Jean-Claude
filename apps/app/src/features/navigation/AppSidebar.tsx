@@ -128,9 +128,10 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
           <FolderGroup
             key={group.folder.id}
             group={group}
+            depth={1}
             pathname={pathname}
             onOpen={go}
-            onEdit={(folder) => setFolderTarget({ mode: "edit", folder })}
+            onEdit={(folder, depth) => setFolderTarget({ mode: "edit", folder, depth })}
           />
         ))}
 
@@ -224,17 +225,26 @@ function RowAction({
   );
 }
 
-/** Un dossier, ses sous-dossiers et leurs conversations, repliables d'un geste. */
+/**
+ * Un dossier, ses sous-dossiers et leurs conversations, repliables d'un geste.
+ *
+ * Récursif, et repliable à chaque niveau : avec 5 niveaux possibles, un cran
+ * de repli réservé à la racine laisserait des branches entières impossibles à
+ * escamoter. `depth` (1 pour un dossier racine) sert à savoir si le dossier
+ * peut encore accueillir un sous-dossier.
+ */
 function FolderGroup({
   group,
+  depth,
   pathname,
   onOpen,
   onEdit,
 }: {
   group: SidebarGroup;
+  depth: number;
   pathname: string;
   onOpen: (href: string) => void;
-  onEdit: (folder: Folder) => void;
+  onEdit: (folder: Folder, depth: number) => void;
 }) {
   const [open, setOpen] = useState(true);
   const isEmpty = group.conversations.length === 0 && group.children.length === 0;
@@ -258,13 +268,16 @@ function FolderGroup({
         <RowAction
           icon={MoreHorizontal}
           label={`Modifier le dossier ${group.folder.name}`}
-          onPress={() => onEdit(group.folder)}
+          onPress={() => onEdit(group.folder, depth)}
         />
       </View>
 
       <CollapsibleContent>
         {/* Le filet vertical est ce qui rattache visuellement les
-            conversations à leur dossier, comme dans le bloc shadcn. */}
+            conversations à leur dossier, comme dans le bloc shadcn. Il se
+            répète à chaque niveau : au 5e, la barre est très entamée à gauche
+            et les libellés se tronquent — le retrait reste plus lisible qu'un
+            aplatissement qui perdrait la filiation. */}
         <View className="ml-4 border-l border-border pl-2">
           {group.conversations.map((conversation) => (
             <ConversationRow
@@ -275,43 +288,15 @@ function FolderGroup({
             />
           ))}
 
-          {/* Les sous-dossiers ne sont pas repliables à leur tour : replier le
-              dossier racine escamote déjà l'ensemble, et l'arborescence est
-              bornée à 2 niveaux — un second cran n'aurait rien à cacher. */}
           {group.children.map((child) => (
-            <View key={child.folder.id}>
-              <View className="flex-row items-center">
-                <View className="h-9 flex-1 flex-row items-center gap-2 px-2">
-                  <Icon as={FolderIcon} size={14} className="text-muted-foreground" />
-                  <Text
-                    className="flex-1 text-xs font-medium text-muted-foreground"
-                    numberOfLines={1}
-                  >
-                    {child.folder.name}
-                  </Text>
-                </View>
-                <RowAction
-                  icon={MoreHorizontal}
-                  label={`Modifier le dossier ${child.folder.name}`}
-                  onPress={() => onEdit(child.folder)}
-                />
-              </View>
-
-              <View className="ml-3 border-l border-border pl-2">
-                {child.conversations.length === 0 ? (
-                  <EmptyRow />
-                ) : (
-                  child.conversations.map((conversation) => (
-                    <ConversationRow
-                      key={conversation.id}
-                      conversation={conversation}
-                      pathname={pathname}
-                      onOpen={onOpen}
-                    />
-                  ))
-                )}
-              </View>
-            </View>
+            <FolderGroup
+              key={child.folder.id}
+              group={child}
+              depth={depth + 1}
+              pathname={pathname}
+              onOpen={onOpen}
+              onEdit={onEdit}
+            />
           ))}
 
           {isEmpty ? <EmptyRow /> : null}
