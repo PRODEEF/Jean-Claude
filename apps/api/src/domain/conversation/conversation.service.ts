@@ -366,8 +366,10 @@ function buildSystemPrompt(kind: Conversation["kind"], todo: Housekeeping): stri
   if (todo.tools.includes(NAME_CONVERSATION)) {
     lines.push(
       "",
-      "Cette conversation n'a pas encore de titre. Dès que l'échange en dit assez",
-      "sur son sujet, appelle `name_conversation`. N'attends pas qu'on te le",
+      "Cette conversation n'a pas encore de titre. Appelle `name_conversation`",
+      "dès ce tour-ci, sur la foi du premier message : un titre approximatif vaut",
+      "mieux qu'une liste de « Nouvelle conversation » indiscernables dans la barre",
+      "latérale, et l'utilisateur peut le corriger. N'attends pas qu'on te le",
       "demande et n'en parle pas : le titre s'applique seul.",
     );
   }
