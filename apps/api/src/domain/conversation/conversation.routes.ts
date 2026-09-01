@@ -14,6 +14,8 @@ import {
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware";
 import { validate } from "../../core/http";
 import { llm } from "../../core/llm/providers/gateway.provider";
+import { folderRepository } from "../folder/folder.repository";
+import { FolderService } from "../folder/folder.service";
 import { suggestionRepository } from "../suggestion/suggestion.repository";
 import { SuggestionService } from "../suggestion/suggestion.service";
 import { conversationRepository } from "./conversation.repository";
@@ -23,6 +25,7 @@ const service = new ConversationService(
   conversationRepository,
   llm,
   new SuggestionService(suggestionRepository),
+  new FolderService(folderRepository),
 );
 
 const idParam = validate("param", z.object({ id: uuidSchema }));

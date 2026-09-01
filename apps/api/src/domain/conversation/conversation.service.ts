@@ -1,9 +1,10 @@
-import { labelSchema } from "@jc/domain";
+import { DEFAULT_CONVERSATION_TITLE, labelSchema } from "@jc/domain";
 import type {
   AssignFolders,
   Conversation,
   CreateConversation,
   CursorPagination,
+  FolderTreeNode,
   Message,
   MessageStreamEvent,
   Paginated,
@@ -11,19 +12,44 @@ import type {
   UpdateConversation,
 } from "@jc/domain";
 import { httpError } from "../../core/http";
-import type { LlmProvider, LlmToolCall } from "../../core/llm/llm.port";
-import { ASSISTANT_TOOLS, CHAT_TOOLS, OPEN_NEW_CONVERSATION } from "../../core/llm/llm.tools";
+import type { LlmProvider, LlmTool, LlmToolCall } from "../../core/llm/llm.port";
+import {
+  ASSISTANT_TOOLS,
+  CHAT_TOOLS,
+  NAME_CONVERSATION,
+  OPEN_NEW_CONVERSATION,
+  SUGGEST_FOLDERS,
+} from "../../core/llm/llm.tools";
+import type { FolderService } from "../folder/folder.service";
 import type { SuggestionService } from "../suggestion/suggestion.service";
 import type { IConversationRepository } from "./conversation.repository.interface";
 
 /** Nombre de messages de contexte envoyés au modèle à chaque tour. */
 const CONTEXT_WINDOW_MESSAGES = 40;
 
+/**
+ * Outils que le serveur applique lui-même, et qui ne deviennent donc pas des
+ * propositions à valider. Ils ne touchent pas aux données de l'utilisateur :
+ * l'un nomme la conversation, l'autre choisit où la réponse sera donnée.
+ */
+const APPLIED_DIRECTLY = new Set([NAME_CONVERSATION.name, OPEN_NEW_CONVERSATION.name]);
+
+/**
+ * Ce que le tour peut encore faire du fil. `filing` à `null` signifie qu'aucun
+ * rangement n'est à proposer — un tableau de dossiers vide, lui, resterait
+ * ambigu : l'utilisateur peut n'avoir aucun dossier et attendre le premier.
+ */
+type Housekeeping = {
+  tools: LlmTool[];
+  filing: { folders: FolderTreeNode[] } | null;
+};
+
 export class ConversationService {
   constructor(
     private readonly conversations: IConversationRepository,
     private readonly llm: LlmProvider,
     private readonly suggestions: SuggestionService,
+    private readonly folders: FolderService,
   ) {}
 
   list(
@@ -140,17 +166,19 @@ export class ConversationService {
     let model: string | null = null;
     const toolCalls: LlmToolCall[] = [];
 
+    // Ce que le fil laisse encore à faire : le nommer, le ranger. Résolu avant
+    // l'appel au modèle, parce que cela décide des outils qu'on lui expose.
+    const todo = await this.pendingHousekeeping(conversation, accessToken);
+
     try {
       const stream = this.llm.stream({
-        system: buildSystemPrompt(conversation.kind),
+        system: buildSystemPrompt(conversation.kind, todo.filing),
         messages: history.items
           // Les messages `system` stockés ne sont pas rejouables comme des tours
           // de dialogue : la consigne système est reconstruite à chaque appel.
           .filter((m) => m.role !== "system")
           .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-        // Le canal permanent a son propre jeu d'outils : lui exposer ceux d'une
-        // conversation classique le ferait déborder de son périmètre (A.10).
-        tools: conversation.kind === "assistant" ? ASSISTANT_TOOLS : CHAT_TOOLS,
+        tools: todo.tools,
       });
 
       for await (const chunk of stream) {
@@ -184,15 +212,75 @@ export class ConversationService {
       // s'exécuterait alors jamais. Une proposition perdue ici le serait
       // définitivement — le modèle ne sera pas rejoué.
       for (const toolCall of toolCalls) {
-        if (toolCall.name === OPEN_NEW_CONVERSATION.name) continue;
+        if (APPLIED_DIRECTLY.has(toolCall.name)) continue;
         await this.suggestions.capture(userId, conversationId, toolCall, accessToken);
       }
+
+      await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
 
       const redirect = await this.openRequestedConversation(userId, toolCalls, accessToken);
 
       if (assistantMessage) yield { type: "done", message: assistantMessage };
       if (redirect) yield { type: "redirect", conversation: redirect };
     }
+  }
+
+  /**
+   * Outils du tour, et arborescence à injecter dans la consigne.
+   *
+   * Le canal permanent a son propre jeu (A.10). Une conversation classique
+   * reçoit en plus de quoi se nommer tant qu'elle porte le titre par défaut, et
+   * de quoi se ranger tant qu'elle n'est dans aucun dossier — mais pas si une
+   * proposition de rangement attend déjà une réponse : la relancer à chaque
+   * message empilerait les cartes sur un geste que l'utilisateur a laissé venir.
+   */
+  private async pendingHousekeeping(
+    conversation: Conversation,
+    accessToken: string,
+  ): Promise<Housekeeping> {
+    if (conversation.kind === "assistant") return { tools: ASSISTANT_TOOLS, filing: null };
+
+    // `SUGGEST_FOLDERS` n'est rendu qu'aux conversations non classées : il n'a
+    // rien à proposer sur un fil déjà rangé.
+    const tools = CHAT_TOOLS.filter((tool) => tool !== SUGGEST_FOLDERS);
+
+    if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
+
+    if (conversation.folderIds.length > 0) return { tools, filing: null };
+
+    const pending = await this.suggestions.listPending(conversation.id, accessToken);
+    if (pending.some((suggestion) => suggestion.kind === "assign_folders")) {
+      return { tools, filing: null };
+    }
+
+    tools.push(SUGGEST_FOLDERS);
+    return { tools, filing: { folders: await this.folders.getTree(accessToken) } };
+  }
+
+  /**
+   * Titre déduit de l'échange (§5.2).
+   *
+   * Appliqué directement, sans passer par une suggestion : le titre est le
+   * libellé de la conversation, pas une donnée que l'utilisateur aurait créée,
+   * et le schéma partagé le décrit depuis le début comme « généré par
+   * l'assistant, éditable par l'utilisateur ». Aucune des applications de
+   * référence du §4.2 ne fait valider un titre.
+   */
+  private async applyRequestedTitle(
+    conversationId: string,
+    toolCalls: LlmToolCall[],
+    accessToken: string,
+  ): Promise<void> {
+    const call = toolCalls.find((toolCall) => toolCall.name === NAME_CONVERSATION.name);
+    if (!call) return;
+
+    const title = labelSchema.safeParse(call.input["title"]);
+    if (!title.success) {
+      console.warn("Appel `name_conversation` sans titre exploitable : renommage ignoré.");
+      return;
+    }
+
+    await this.conversations.update(conversationId, { title: title.data }, accessToken);
   }
 
   /**
@@ -236,7 +324,7 @@ export class ConversationService {
  * l'UI : c'est une règle métier, elle doit valoir identiquement pour le web,
  * le mobile et le desktop (§5.3).
  */
-function buildSystemPrompt(kind: Conversation["kind"]): string {
+function buildSystemPrompt(kind: Conversation["kind"], filing: Housekeeping["filing"]): string {
   if (kind === "assistant") {
     return [
       "Tu es Jean-Claude, l'assistant d'organisation personnelle de l'utilisateur.",
@@ -261,7 +349,7 @@ function buildSystemPrompt(kind: Conversation["kind"]): string {
     ].join("\n");
   }
 
-  return [
+  const lines = [
     "Tu es Jean-Claude, un assistant conversationnel personnel.",
     "Réponds de façon utile, directe et naturelle, en français.",
     "",
@@ -270,5 +358,32 @@ function buildSystemPrompt(kind: Conversation["kind"]): string {
     "un rendez-vous récurrent. Le cas échéant, appelle l'outil correspondant",
     "pour le proposer — sans interrompre le fil de la conversation, et sans",
     "jamais présenter la chose comme déjà faite : c'est une proposition.",
-  ].join("\n");
+  ];
+
+  if (filing) {
+    lines.push(
+      "",
+      "Cette conversation n'est rangée dans aucun dossier. Dès que l'échange en",
+      "dit assez sur son sujet, appelle `suggest_folders` pour proposer où la",
+      "ranger. N'attends pas qu'on te le demande, et ne le fais qu'une fois.",
+    );
+
+    lines.push(
+      "",
+      filing.folders.length > 0
+        ? "Dossiers existants, à réutiliser en priorité avec leur identifiant exact :"
+        : "L'utilisateur n'a encore aucun dossier : propose-en un nouveau, sobrement nommé.",
+      ...describeFolders(filing.folders),
+    );
+  }
+
+  return lines.join("\n");
+}
+
+/** Arborescence mise à plat, un dossier par ligne, identifiant compris. */
+function describeFolders(folders: FolderTreeNode[]): string[] {
+  return folders.flatMap((folder) => [
+    `- ${folder.name} (${folder.id})`,
+    ...folder.children.map((child) => `- ${folder.name} > ${child.name} (${child.id})`),
+  ]);
 }

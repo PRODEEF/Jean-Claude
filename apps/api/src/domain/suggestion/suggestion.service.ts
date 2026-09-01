@@ -1,11 +1,13 @@
 import {
+  assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
   type Suggestion,
+  type SuggestionKind,
   type SuggestionStatus,
 } from "@jc/domain";
 import { httpError } from "../../core/http";
 import type { LlmToolCall } from "../../core/llm/llm.port";
-import { SUGGEST_PROJECT_FOLDERS } from "../../core/llm/llm.tools";
+import { SUGGEST_FOLDERS, SUGGEST_PROJECT_FOLDERS } from "../../core/llm/llm.tools";
 import type { ISuggestionRepository } from "./suggestion.repository.interface";
 
 /** Longueur maximale de `message`, alignée sur la contrainte CHECK de la table. */
@@ -32,28 +34,20 @@ export class SuggestionService {
     toolCall: LlmToolCall,
     accessToken: string,
   ): Promise<Suggestion | null> {
-    if (toolCall.name !== SUGGEST_PROJECT_FOLDERS.name) {
-      console.warn(`Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
-      return null;
-    }
+    const translated = translate(toolCall);
+    if (!translated) return null;
 
     const raw = toolCall.input["message"];
     const message = typeof raw === "string" ? raw.trim() : "";
-    const payload = createProjectFoldersPayloadSchema.safeParse(toolCall.input);
 
-    if (message.length === 0 || message.length > MESSAGE_MAX_LENGTH || !payload.success) {
-      console.warn("Appel d'outil `suggest_project_folders` inexploitable : suggestion ignorée.");
+    if (message.length === 0 || message.length > MESSAGE_MAX_LENGTH) {
+      console.warn(`Appel d'outil \`${toolCall.name}\` sans phrase à afficher : ignoré.`);
       return null;
     }
 
     return this.suggestions.create(
       userId,
-      {
-        conversationId,
-        kind: "create_project_folders",
-        message,
-        payload: payload.data,
-      },
+      { conversationId, kind: translated.kind, message, payload: translated.payload },
       accessToken,
     );
   }
@@ -86,4 +80,30 @@ export class SuggestionService {
     await this.requirePending(id, accessToken);
     return this.suggestions.markResolved(id, status, accessToken);
   }
+}
+
+/**
+ * Nature de la proposition portée par un appel d'outil, et sa charge utile
+ * validée.
+ *
+ * Un outil dont la charge utile ne passe pas son schéma est abandonné plutôt
+ * que persisté : afficher une carte dont l'action échouerait à coup sûr serait
+ * pire que de perdre la proposition.
+ */
+function translate(
+  toolCall: LlmToolCall,
+): { kind: SuggestionKind; payload: Record<string, unknown> } | null {
+  if (toolCall.name === SUGGEST_PROJECT_FOLDERS.name) {
+    const payload = createProjectFoldersPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "create_project_folders", payload: payload.data };
+  } else if (toolCall.name === SUGGEST_FOLDERS.name) {
+    const payload = assignFoldersPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "assign_folders", payload: payload.data };
+  } else {
+    console.warn(`Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
+    return null;
+  }
+
+  console.warn(`Appel d'outil \`${toolCall.name}\` inexploitable : suggestion ignorée.`);
+  return null;
 }

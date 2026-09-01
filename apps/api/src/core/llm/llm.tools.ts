@@ -57,18 +57,60 @@ export const SUGGEST_TASK_LIST: LlmTool = {
 export const SUGGEST_FOLDERS: LlmTool = {
   name: "suggest_folders",
   description:
-    "À appeler pour proposer le rangement de la conversation dans un ou plusieurs dossiers. " +
+    "À appeler dès que l'échange en dit assez sur le sujet de la conversation pour " +
+    "savoir où la ranger. Ne pas attendre qu'on le demande. " +
     "Une conversation peut légitimement appartenir à plusieurs dossiers à la fois " +
     "(une conversation sur la mutuelle relève à la fois de « Santé » et de " +
     "« Administratif > Assurances ») : proposer tous les dossiers pertinents, pas seulement un. " +
+    "Réutiliser en priorité les dossiers existants listés dans la consigne, avec leur " +
+    "identifiant exact ; n'en proposer un nouveau que si aucun ne convient. " +
     "S'aligner sur la façon dont l'utilisateur nomme déjà ses dossiers plutôt que d'imposer " +
     "une nomenclature standard.",
   inputSchema: {
     type: "object",
     properties: {
-      existingFolderIds: { type: "array", items: { type: "string" } },
-      newFolderNames: { type: "array", items: { type: "string" } },
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « Je range ça dans Santé et j'ouvre un dossier Assurances ? ». " +
+          "Ne jamais présenter le rangement comme déjà fait. 500 caractères maximum.",
+      },
+      existingFolderIds: {
+        type: "array",
+        description: "Identifiants de dossiers existants, repris tels quels de la consigne.",
+        maxItems: 8,
+        items: { type: "string" },
+      },
+      newFolderNames: {
+        type: "array",
+        description: "Dossiers à créer, quand aucun dossier existant ne convient.",
+        maxItems: 8,
+        items: { type: "string" },
+      },
     },
+    required: ["message"],
+  },
+};
+
+export const NAME_CONVERSATION: LlmTool = {
+  name: "name_conversation",
+  description:
+    "À appeler une fois, dès que l'échange en dit assez pour nommer la conversation. " +
+    "Contrairement aux autres outils, celui-ci ne demande rien à l'utilisateur : le titre " +
+    "s'applique aussitôt, et l'utilisateur pourra le corriger. " +
+    "Ne pas y répondre en langage naturel, ne pas annoncer le renommage.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: {
+        type: "string",
+        description:
+          "Titre court et descriptif, tiré du sujet réel de l'échange — 60 caractères " +
+          "au plus, sans guillemets ni ponctuation finale. Ex. « Travaux du jardin ».",
+      },
+    },
+    required: ["title"],
   },
 };
 
