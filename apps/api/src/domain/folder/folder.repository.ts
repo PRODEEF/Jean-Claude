@@ -64,7 +64,7 @@ export const folderRepository: IFolderRepository = {
     return data ? toEntity(data as unknown as FolderRow) : null;
   },
 
-  async create(userId, input: CreateFolder, accessToken) {
+  async create(userId, input: CreateFolder & { createdByAssistant?: boolean }, accessToken) {
     const { data, error } = await forUser(accessToken)
       .from("folders")
       .insert({
@@ -74,6 +74,7 @@ export const folderRepository: IFolderRepository = {
         category: input.category ?? null,
         purpose: input.purpose ?? "generic",
         color: input.color ?? null,
+        created_by_assistant: input.createdByAssistant ?? false,
       })
       .select(COLUMNS)
       .single();

@@ -39,7 +39,11 @@ export class FolderService {
       });
   }
 
-  async create(userId: string, input: CreateFolder, accessToken: string): Promise<Folder> {
+  async create(
+    userId: string,
+    input: CreateFolder & { createdByAssistant?: boolean },
+    accessToken: string,
+  ): Promise<Folder> {
     if (input.parentId) {
       const parent = await this.folders.findById(input.parentId, accessToken);
       if (!parent) throw httpError(404, "Dossier parent introuvable.");
