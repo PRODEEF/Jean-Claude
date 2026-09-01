@@ -55,6 +55,11 @@ export function useConversationThread(conversationId: string) {
       // Le tri de la liste des conversations dépend de `lastMessageAt`, que
       // ce tour vient de déplacer.
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      // Le tour a pu produire une proposition de l'assistant (§12.1) : elle
+      // n'arrive pas dans le flux, elle se relit.
+      await queryClient.invalidateQueries({
+        queryKey: ["conversation", conversationId, "suggestions"],
+      });
       // Après l'invalidation seulement : plus tôt, la bulle en cours
       // disparaîtrait avant que la version persistée n'ait pris sa place.
       setStreamingText(null);

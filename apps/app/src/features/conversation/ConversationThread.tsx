@@ -15,6 +15,8 @@ import type { Message } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { useConversationThread } from "./hooks/use-conversation-thread";
+import { useSuggestions } from "./hooks/use-suggestions";
+import { SuggestionCard } from "./SuggestionCard";
 
 export type ConversationThreadProps = {
   conversationId: string;
@@ -38,6 +40,10 @@ export function ConversationThread({ conversationId }: ConversationThreadProps) 
   const listRef = useRef<FlatList<Message>>(null);
 
   const { messages, send, submit, streamingText } = useConversationThread(conversationId);
+  const { suggestions, resolve } = useSuggestions(conversationId);
+
+  const pending = suggestions.data ?? [];
+  const failure = messages.error ?? send.error ?? resolve.error;
 
   const sendDraft = useCallback(() => {
     const content = draft.trim();
@@ -95,38 +101,65 @@ export function ConversationThread({ conversationId }: ConversationThreadProps) 
               Écrivez ce que vous avez en tête. Le rangement viendra ensuite.
             </Text>
           }
+          // Rendu `null` quand il n'y a rien à montrer : un pied vide compterait
+          // malgré tout dans l'espacement de la liste.
           ListFooterComponent={
-            streamingText === null ? null : (
-              <View
-                style={[
-                  styles.bubble,
-                  styles.pending,
-                  { backgroundColor: palette.surface, borderColor: palette.border },
-                ]}
-              >
-                {/* Tant qu'aucun jeton n'est arrivé, la barre d'attente dit que
-                    la demande est partie ; ensuite le texte parle de lui-même. */}
-                {streamingText.length === 0 ? (
-                  <ActivityIndicator color={palette.textMuted} />
-                ) : (
-                  <Text style={[styles.bubbleText, { color: palette.text }]}>{streamingText}</Text>
+            streamingText === null && pending.length === 0 ? null : (
+              <View style={styles.footer}>
+                {streamingText === null ? null : (
+                  <View
+                    style={[
+                      styles.bubble,
+                      styles.pending,
+                      { backgroundColor: palette.surface, borderColor: palette.border },
+                    ]}
+                  >
+                    {/* Tant qu'aucun jeton n'est arrivé, la barre d'attente dit
+                        que la demande est partie ; ensuite le texte parle de
+                        lui-même. */}
+                    {streamingText.length === 0 ? (
+                      <ActivityIndicator color={palette.textMuted} />
+                    ) : (
+                      <Text style={[styles.bubbleText, { color: palette.text }]}>
+                        {streamingText}
+                      </Text>
+                    )}
+                  </View>
                 )}
+
+                {/* L'assistant propose, il n'exécute pas : les dossiers ne sont
+                    créés que si l'utilisateur touche « Créer » (§12.1). */}
+                {pending.map((suggestion) => (
+                  <SuggestionCard
+                    key={suggestion.id}
+                    suggestion={suggestion}
+                    isPending={resolve.isPending && resolve.variables?.id === suggestion.id}
+                    onAccept={() => resolve.mutate({ id: suggestion.id, action: "accept" })}
+                    onDismiss={() => resolve.mutate({ id: suggestion.id, action: "dismiss" })}
+                  />
+                ))}
               </View>
             )
           }
         />
       )}
 
-      {messages.error || send.error ? (
+      {failure ? (
         <View style={[styles.errorBar, { borderColor: palette.border }]}>
-          <Text style={[styles.errorText, { color: palette.danger }]}>
-            {errorMessage(messages.error ?? send.error)}
-          </Text>
+          <Text style={[styles.errorText, { color: palette.danger }]}>{errorMessage(failure)}</Text>
           {/* Un échec de chargement se rejoue ; un échec d'envoi, non — le
               message est déjà enregistré et l'API n'offre pas de relancer le
-              modèle seul. Proposer « Réessayer » dans ce cas mentirait. */}
+              modèle seul. Proposer « Réessayer » dans ce cas mentirait. Une
+              proposition refusée par le serveur se rejoue depuis sa carte. */}
           <Pressable
-            onPress={() => (messages.error ? void messages.refetch() : send.reset())}
+            onPress={() => {
+              if (messages.error) {
+                void messages.refetch();
+                return;
+              }
+              send.reset();
+              resolve.reset();
+            }}
             accessibilityRole="button"
             style={styles.retry}
           >
@@ -203,6 +236,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: radius.lg,
   },
+  footer: { gap: spacing.md },
   pending: { alignSelf: "flex-start", borderWidth: 1 },
   bubbleText: { fontSize: fontSize.md, lineHeight: 22 },
   empty: { fontSize: fontSize.sm, textAlign: "center", marginTop: spacing.xxl },
