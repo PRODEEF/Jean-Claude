@@ -96,7 +96,7 @@ export const SUGGEST_FOLDERS: LlmTool = {
 export const NAME_CONVERSATION: LlmTool = {
   name: "name_conversation",
   description:
-    "À appeler une fois, dès que l'échange en dit assez pour nommer la conversation. " +
+    "À appeler une fois, dès le premier tour de dialogue, pour nommer la conversation. " +
     "Contrairement aux autres outils, celui-ci ne demande rien à l'utilisateur : le titre " +
     "s'applique aussitôt, et l'utilisateur pourra le corriger. " +
     "Ne pas y répondre en langage naturel, ne pas annoncer le renommage.",
