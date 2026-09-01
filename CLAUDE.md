@@ -86,7 +86,7 @@ Sens des dépendances côté API : `feature/` → `domain/` → `core/`. Jamais 
 
 ---
 
-## Vérifier avant de committer
+## Vérifier avant de pousser
 
 ```bash
 npm run typecheck
@@ -95,6 +95,14 @@ npm run typecheck
 ```bash
 npm test
 ```
+
+```bash
+npm run build
+```
+
+Ce sont les trois commandes du job CI `verify`. `dev` et `main` sont protégés :
+une PR dont la CI est rouge ne se merge pas, et `main` déploie sur Vercel.
+Le flux complet est dans `.claude/rules/000-general.md`.
 
 Puis mettre à jour `docs/SUIVI-BACKLOG.md` si un point du backlog a avancé.
 

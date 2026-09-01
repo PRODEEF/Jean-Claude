@@ -5,7 +5,9 @@ import { api } from "@/shared/lib/api";
 
 export type SidebarGroup = {
   folder: FolderTreeNode;
+  /** Rattachées à ce dossier précisément, pas à l'un de ses descendants. */
   conversations: Conversation[];
+  children: SidebarGroup[];
 };
 
 export type SidebarData = {
@@ -24,10 +26,8 @@ export type SidebarData = {
  * apparaît simplement sous chacun d'eux. Ce n'est pas une duplication, c'est
  * la même donnée vue depuis deux endroits.
  *
- * Les conversations d'un sous-dossier remontent sous leur dossier parent :
- * l'utilisateur raisonne en « ce que contient Santé », pas en « ce qui est à
- * sa racine ». L'arborescence est bornée à 2 niveaux (§3 Phase A), la barre
- * latérale n'a donc qu'un seul niveau de repli à gérer.
+ * La descente est récursive et suit celle du serveur, bornée par
+ * `MAX_FOLDER_DEPTH`.
  */
 export function useSidebarData(): SidebarData {
   const folders = useQuery({
@@ -44,18 +44,15 @@ export function useSidebarData(): SidebarData {
     // Le canal permanent a son entrée dédiée en haut de la barre (A.10) : le
     // laisser aussi dans la liste le ferait apparaître deux fois.
     const items = (conversations.data?.items ?? []).filter((item) => item.kind !== "assistant");
-    const roots = (folders.data ?? []).filter((node) => node.parentId === null);
 
-    const groups = roots.map((folder) => {
-      const ids = new Set([folder.id, ...folder.children.map((child) => child.id)]);
-      return {
-        folder,
-        conversations: items.filter((item) => item.folderIds.some((id) => ids.has(id))),
-      };
+    const build = (node: FolderTreeNode): SidebarGroup => ({
+      folder: node,
+      conversations: items.filter((item) => item.folderIds.includes(node.id)),
+      children: node.children.map(build),
     });
 
     return {
-      groups,
+      groups: (folders.data ?? []).filter((node) => node.parentId === null).map(build),
       unfiled: items.filter((item) => item.folderIds.length === 0),
       isLoading: folders.isLoading || conversations.isLoading,
       error: (folders.error ?? conversations.error) as Error | null,
