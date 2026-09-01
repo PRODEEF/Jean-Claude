@@ -61,6 +61,16 @@ export type Palette = {
   /** Couleur de l'assistant — surchargée par la préférence utilisateur. */
   accent: string;
   accentText: string;
+  /**
+   * Version atténuée de l'accent, pour les larges aplats — la bulle de
+   * l'utilisateur au premier chef.
+   *
+   * L'accent plein sur une bulle entière fatigue à la lecture : il est éclairci
+   * en thème clair et assombri en thème sombre, de sorte que le texte y reste
+   * dans la couleur du thème plutôt que d'être renversé.
+   */
+  accentSoft: string;
+  accentSoftText: string;
   danger: string;
   success: string;
 };
@@ -74,6 +84,8 @@ export const lightPalette: Palette = {
   textMuted: "#71717A",
   accent: "#6366F1",
   accentText: "#FFFFFF",
+  accentSoft: "#E3E4FC",
+  accentSoftText: "#18181B",
   danger: "#DC2626",
   success: "#16A34A",
 };
@@ -87,6 +99,8 @@ export const darkPalette: Palette = {
   textMuted: "#A1A1AA",
   accent: "#818CF8",
   accentText: "#0B0B0F",
+  accentSoft: "#242745",
+  accentSoftText: "#FAFAFA",
   danger: "#F87171",
   success: "#4ADE80",
 };

@@ -20,7 +20,43 @@ export function buildPalette(scheme: ColorScheme, accent?: string): Palette {
     // Le texte posé sur l'accent est recalculé pour rester lisible quelle que
     // soit la couleur retenue.
     accentText: readableTextOn(accent),
+    accentSoft: softenAccent(accent, scheme),
+    accentSoftText: base.text,
   };
+}
+
+/**
+ * Atténue l'accent pour les larges aplats.
+ *
+ * En thème clair on tire vers le blanc, en thème sombre vers le noir : dans les
+ * deux cas la couleur perd assez de force pour que le texte du thème s'y pose
+ * sans être renversé, tout en restant reconnaissable comme la couleur choisie.
+ */
+export function softenAccent(hex: string, scheme: ColorScheme): string {
+  return scheme === "dark" ? mix(hex, "#000000", 0.72) : mix(hex, "#FFFFFF", 0.82);
+}
+
+/** Mélange deux couleurs, `ratio` étant la part de `target`. */
+function mix(hex: string, target: string, ratio: number): string {
+  const from = channels(hex);
+  const to = channels(target);
+  if (!from || !to) return hex;
+
+  const blended = from.map((value, index) =>
+    Math.round(value * (1 - ratio) + (to[index] ?? 0) * ratio),
+  );
+  return `#${blended.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function channels(hex: string): [number, number, number] | null {
+  const normalized = hex.replace("#", "");
+  if (normalized.length !== 6) return null;
+
+  return [
+    parseInt(normalized.slice(0, 2), 16),
+    parseInt(normalized.slice(2, 4), 16),
+    parseInt(normalized.slice(4, 6), 16),
+  ];
 }
 
 /**
