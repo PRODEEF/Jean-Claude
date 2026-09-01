@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { isoDateTimeSchema, uuidSchema } from "../shared/primitives";
+import { folderPurposeSchema } from "../folder/folder.schema";
+import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 
 /**
  * Périmètre du canal permanent Jean-Claude (A.10).
@@ -75,6 +76,36 @@ export const resolveSuggestionSchema = z.object({
 });
 
 export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
+
+/** Dossier proposé par l'assistant, tel qu'il apparaît dans la carte de suggestion. */
+const proposedFolderSchema = z.object({
+  name: labelSchema,
+  purpose: folderPurposeSchema.default("generic"),
+});
+
+/**
+ * Charge utile d'une suggestion `create_project_folders` (A.4).
+ *
+ * Deux niveaux et pas trois : un sous-dossier ne porte pas d'enfants, la
+ * profondeur étant bornée en V1 (§3 Phase A). La forme l'interdit donc avant
+ * même que le trigger Postgres n'ait à le faire.
+ */
+export const createProjectFoldersPayloadSchema = z.object({
+  folders: z
+    .array(
+      proposedFolderSchema.extend({
+        // `strict()` sur l'enfant : un sous-dossier qui porterait lui-même des
+        // enfants fait échouer la validation au lieu d'être silencieusement
+        // élagué. Créer moins que ce que la proposition annonce serait pire
+        // que de renoncer à la proposition.
+        children: z.array(proposedFolderSchema.strict()).max(8).default([]),
+      }),
+    )
+    .min(1)
+    .max(8),
+});
+
+export type CreateProjectFoldersPayload = z.infer<typeof createProjectFoldersPayloadSchema>;
 
 /**
  * Verdict de bornage du canal permanent (A.10).
