@@ -1,11 +1,18 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Conversation, FolderTreeNode } from "@jc/domain";
+import type { Conversation, Folder, FolderTreeNode } from "@jc/domain";
 import { api } from "@/shared/lib/api";
+
+export type SidebarSubGroup = {
+  folder: Folder;
+  conversations: Conversation[];
+};
 
 export type SidebarGroup = {
   folder: FolderTreeNode;
+  /** Rattachées au dossier racine lui-même, pas à l'un de ses sous-dossiers. */
   conversations: Conversation[];
+  children: SidebarSubGroup[];
 };
 
 export type SidebarData = {
@@ -24,10 +31,8 @@ export type SidebarData = {
  * apparaît simplement sous chacun d'eux. Ce n'est pas une duplication, c'est
  * la même donnée vue depuis deux endroits.
  *
- * Les conversations d'un sous-dossier remontent sous leur dossier parent :
- * l'utilisateur raisonne en « ce que contient Santé », pas en « ce qui est à
- * sa racine ». L'arborescence est bornée à 2 niveaux (§3 Phase A), la barre
- * latérale n'a donc qu'un seul niveau de repli à gérer.
+ * Deux niveaux, sans récursion : `MAX_FOLDER_DEPTH` vaut 2 et le serveur
+ * refuse un 3e. Une descente récursive laisserait croire le contraire.
  */
 export function useSidebarData(): SidebarData {
   const folders = useQuery({
@@ -46,13 +51,17 @@ export function useSidebarData(): SidebarData {
     const items = (conversations.data?.items ?? []).filter((item) => item.kind !== "assistant");
     const roots = (folders.data ?? []).filter((node) => node.parentId === null);
 
-    const groups = roots.map((folder) => {
-      const ids = new Set([folder.id, ...folder.children.map((child) => child.id)]);
-      return {
-        folder,
-        conversations: items.filter((item) => item.folderIds.some((id) => ids.has(id))),
-      };
-    });
+    const inFolder = (folderId: string) =>
+      items.filter((item) => item.folderIds.includes(folderId));
+
+    const groups = roots.map((folder) => ({
+      folder,
+      conversations: inFolder(folder.id),
+      children: folder.children.map((child) => ({
+        folder: child,
+        conversations: inFolder(child.id),
+      })),
+    }));
 
     return {
       groups,

@@ -5,14 +5,16 @@ import { usePathname, useRouter } from "expo-router";
 import {
   CalendarDays,
   ChevronRight,
-  Folder,
+  Folder as FolderIcon,
   ListChecks,
+  MoreHorizontal,
   Plus,
   Settings,
   Sparkles,
 } from "lucide-react-native";
-import type { Conversation } from "@jc/domain";
+import type { Conversation, Folder } from "@jc/domain";
 import { api } from "@/shared/lib/api";
+import { FolderDialog, type FolderDialogTarget } from "@/features/folder/FolderDialog";
 import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { Icon } from "@/shared/ui/icon";
@@ -46,6 +48,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const { groups, unfiled, isLoading, error } = useSidebarData();
+  const [folderTarget, setFolderTarget] = useState<FolderDialogTarget | null>(null);
 
   const go = (href: string) => {
     router.push(href as never);
@@ -63,6 +66,8 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
       go(`/chat/${conversation.id}`);
     },
   });
+
+  const createRootFolder = () => setFolderTarget({ mode: "create", parent: null });
 
   return (
     <View className="h-full w-64 border-r border-border bg-secondary">
@@ -99,7 +104,9 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
       </View>
 
       <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
-        <SectionLabel>Dossiers</SectionLabel>
+        <SectionLabel action={{ label: "Créer un dossier", onPress: createRootFolder }}>
+          Dossiers
+        </SectionLabel>
 
         {/* Message fixe, et non `error.message` : une erreur brute de fetch ou
             du serveur peut porter des fragments de requête, donc des données
@@ -111,13 +118,20 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
         ) : null}
 
         {!error && !isLoading && groups.length === 0 ? (
-          <Text className="px-2 py-1 text-xs italic text-muted-foreground">
-            Aucun dossier pour le moment.
-          </Text>
+          <Button variant="ghost" onPress={createRootFolder} className="justify-start gap-2 px-2">
+            <Icon as={Plus} size={14} className="text-muted-foreground" />
+            <Text className="text-xs text-muted-foreground">Créer un premier dossier</Text>
+          </Button>
         ) : null}
 
         {groups.map((group) => (
-          <FolderGroup key={group.folder.id} group={group} pathname={pathname} onOpen={go} />
+          <FolderGroup
+            key={group.folder.id}
+            group={group}
+            pathname={pathname}
+            onOpen={go}
+            onEdit={(folder) => setFolderTarget({ mode: "edit", folder })}
+          />
         ))}
 
         {unfiled.length > 0 ? (
@@ -150,6 +164,12 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
           </Button>
         ))}
       </View>
+
+      <FolderDialog
+        target={folderTarget}
+        onClose={() => setFolderTarget(null)}
+        onAddChild={(parent) => setFolderTarget({ mode: "create", parent })}
+      />
     </View>
   );
 }
@@ -159,60 +179,150 @@ function cx(base: string, active: boolean): string {
   return active ? `${base} bg-accent` : base;
 }
 
-function SectionLabel({ children }: { children: string }) {
+function SectionLabel({
+  children,
+  action,
+}: {
+  children: string;
+  action?: { label: string; onPress: () => void };
+}) {
   return (
-    <Text className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">{children}</Text>
+    <View className="flex-row items-center justify-between pb-1 pt-3">
+      <Text className="px-2 text-xs font-medium text-muted-foreground">{children}</Text>
+      {action ? <RowAction icon={Plus} label={action.label} onPress={action.onPress} /> : null}
+    </View>
   );
 }
 
-/** Un dossier et les conversations qu'il contient, repliables d'un geste. */
+/**
+ * Bouton d'action d'une rangée.
+ *
+ * 32 pt de côté pour ne pas épaissir la barre, plus 8 pt de `hitSlop` de
+ * chaque côté : la zone réellement touchable atteint les 44 pt de
+ * `MIN_TOUCH_TARGET` sans que la rangée ne grandisse.
+ */
+function RowAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: typeof Plus;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityLabel={label}
+      className="size-8"
+    >
+      <Icon as={icon} size={16} className="text-muted-foreground" />
+    </Button>
+  );
+}
+
+/** Un dossier, ses sous-dossiers et leurs conversations, repliables d'un geste. */
 function FolderGroup({
   group,
   pathname,
   onOpen,
+  onEdit,
 }: {
   group: SidebarGroup;
   pathname: string;
   onOpen: (href: string) => void;
+  onEdit: (folder: Folder) => void;
 }) {
   const [open, setOpen] = useState(true);
+  const isEmpty = group.conversations.length === 0 && group.children.length === 0;
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <Button variant="ghost" className="w-full justify-start gap-2 px-2">
-          <Icon
-            as={ChevronRight}
-            size={14}
-            className={open ? "rotate-90 text-muted-foreground" : "text-muted-foreground"}
-          />
-          <Icon as={Folder} size={16} className="text-muted-foreground" />
-          <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
-            {group.folder.name}
-          </Text>
-        </Button>
-      </CollapsibleTrigger>
+      <View className="flex-row items-center">
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" className="flex-1 justify-start gap-2 px-2">
+            <Icon
+              as={ChevronRight}
+              size={14}
+              className={open ? "rotate-90 text-muted-foreground" : "text-muted-foreground"}
+            />
+            <Icon as={FolderIcon} size={16} className="text-muted-foreground" />
+            <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
+              {group.folder.name}
+            </Text>
+          </Button>
+        </CollapsibleTrigger>
+        <RowAction
+          icon={MoreHorizontal}
+          label={`Modifier le dossier ${group.folder.name}`}
+          onPress={() => onEdit(group.folder)}
+        />
+      </View>
 
       <CollapsibleContent>
         {/* Le filet vertical est ce qui rattache visuellement les
             conversations à leur dossier, comme dans le bloc shadcn. */}
         <View className="ml-4 border-l border-border pl-2">
-          {group.conversations.length === 0 ? (
-            <Text className="px-2 py-1 text-xs italic text-muted-foreground">Vide</Text>
-          ) : (
-            group.conversations.map((conversation) => (
-              <ConversationRow
-                key={conversation.id}
-                conversation={conversation}
-                pathname={pathname}
-                onOpen={onOpen}
-              />
-            ))
-          )}
+          {group.conversations.map((conversation) => (
+            <ConversationRow
+              key={conversation.id}
+              conversation={conversation}
+              pathname={pathname}
+              onOpen={onOpen}
+            />
+          ))}
+
+          {/* Les sous-dossiers ne sont pas repliables à leur tour : replier le
+              dossier racine escamote déjà l'ensemble, et l'arborescence est
+              bornée à 2 niveaux — un second cran n'aurait rien à cacher. */}
+          {group.children.map((child) => (
+            <View key={child.folder.id}>
+              <View className="flex-row items-center">
+                <View className="h-9 flex-1 flex-row items-center gap-2 px-2">
+                  <Icon as={FolderIcon} size={14} className="text-muted-foreground" />
+                  <Text
+                    className="flex-1 text-xs font-medium text-muted-foreground"
+                    numberOfLines={1}
+                  >
+                    {child.folder.name}
+                  </Text>
+                </View>
+                <RowAction
+                  icon={MoreHorizontal}
+                  label={`Modifier le dossier ${child.folder.name}`}
+                  onPress={() => onEdit(child.folder)}
+                />
+              </View>
+
+              <View className="ml-3 border-l border-border pl-2">
+                {child.conversations.length === 0 ? (
+                  <EmptyRow />
+                ) : (
+                  child.conversations.map((conversation) => (
+                    <ConversationRow
+                      key={conversation.id}
+                      conversation={conversation}
+                      pathname={pathname}
+                      onOpen={onOpen}
+                    />
+                  ))
+                )}
+              </View>
+            </View>
+          ))}
+
+          {isEmpty ? <EmptyRow /> : null}
         </View>
       </CollapsibleContent>
     </Collapsible>
   );
+}
+
+function EmptyRow() {
+  return <Text className="px-2 py-1 text-xs italic text-muted-foreground">Vide</Text>;
 }
 
 function ConversationRow({
@@ -235,7 +345,9 @@ function ConversationRow({
     >
       <Text
         className={
-          active ? "flex-1 text-sm font-medium text-foreground" : "flex-1 text-sm text-muted-foreground"
+          active
+            ? "flex-1 text-sm font-medium text-foreground"
+            : "flex-1 text-sm text-muted-foreground"
         }
         numberOfLines={1}
       >
