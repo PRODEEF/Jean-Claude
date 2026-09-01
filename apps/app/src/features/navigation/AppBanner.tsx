@@ -62,8 +62,8 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
       <View className="min-w-0 flex-1 flex-row items-center justify-end">
         <Button
           variant="ghost"
-          onPress={() => router.push("/profile")}
-          accessibilityLabel={`Ouvrir le profil de ${displayName}`}
+          onPress={() => router.push("/settings")}
+          accessibilityLabel={`Ouvrir les réglages de ${displayName}`}
           className="h-auto max-w-full gap-2 rounded-full py-1 pl-1 pr-1 sm:pr-3"
         >
           <Avatar alt={`Avatar de ${displayName}`} className="size-7">

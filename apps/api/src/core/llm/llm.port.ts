@@ -71,6 +71,15 @@ export interface LlmProvider {
    */
   readonly isSovereign: boolean;
 
+  /**
+   * Modèle actif, au format `éditeur/modèle`.
+   *
+   * Exposé pour que les réglages puissent montrer ce qui répond réellement,
+   * plutôt que de le réécrire en dur côté client. Il reste choisi par le
+   * serveur : le choix par l'utilisateur (§5.1) n'existe pas encore.
+   */
+  readonly model: string;
+
   complete(request: LlmCompletionRequest): Promise<LlmCompletionResponse>;
 
   /**

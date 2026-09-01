@@ -1,12 +1,13 @@
 import "../../global.css";
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { PortalHost } from "@rn-primitives/portal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useProfile } from "@/shared/hooks/use-profile";
 import { AuthProvider, useAuth } from "@/shared/providers/auth-provider";
 import { ThemeProvider, useTheme } from "@/shared/providers/theme-provider";
 
@@ -65,12 +66,28 @@ function AuthGate() {
   );
 }
 
+/**
+ * Alimente le thème avec la préférence enregistrée dans les réglages.
+ *
+ * Sous `AuthProvider` : la préférence est servie par l'API, donc illisible
+ * tant que la session n'est pas rétablie. Tant qu'elle ne l'est pas, on suit
+ * le réglage du système — c'est ce qui ressemble le plus au choix probable de
+ * l'utilisateur.
+ */
+function ThemedRoot({ children }: { children: ReactNode }) {
+  const { data: profile } = useProfile();
+
+  return (
+    <ThemeProvider preference={profile?.preferences.theme ?? "system"}>{children}</ThemeProvider>
+  );
+}
+
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <ThemeProvider>
+          <ThemedRoot>
             <StatusBar style="auto" />
             <AuthGate />
             {/* Point de sortie des fenêtres modales. Placé *dans*
@@ -78,7 +95,7 @@ export default function RootLayout() {
                 variables de couleur sur la vue qui enveloppe ses enfants, et
                 une fenêtre rendue en dehors s'afficherait sans palette. */}
             <PortalHost />
-          </ThemeProvider>
+          </ThemedRoot>
         </AuthProvider>
       </QueryClientProvider>
     </SafeAreaProvider>

@@ -7,7 +7,16 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **1er septembre 2026** — issues #5 et #7 terminées. #5 était déjà
+Dernière mise à jour : **1er septembre 2026** — page Réglages basique (issue #12,
+partielle). L'utilisateur voit son adresse e-mail (non modifiable), change son pseudo et
+son thème (clair / sombre / système) ; le modèle IA y figure, affiché mais désactivé.
+Côté serveur, cela ouvre le module `domain/user` et `/api/me` — jusqu'ici la table
+`profiles` existait sans qu'aucune route n'y donne accès. Aucune migration : les colonnes
+`display_name` et `theme` étaient déjà là. Le pseudo enregistré remplace partout le nom
+dérivé de l'adresse e-mail. Restent ouverts dans #12 : nom et couleur de l'assistant,
+périmètre du mode assistant (A.10).
+
+Auparavant le 1er septembre : issues #5 et #7 terminées. #5 était déjà
 couverte par le socle (table de liaison `conversation_folders`, colonne `source`, garde-fou
 de profondeur) : vérifiée point par point puis clôturée. #7 rend les dossiers manipulables :
 création, renommage et suppression, sous-dossiers visibles dans la barre latérale, et
@@ -32,11 +41,11 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                                                                             |
 | §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code                                     |
 | §5.1 | Timeouts, quotas et erreurs                            |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés                                                 |
-| §5.1 | Choix du modèle par l'utilisateur                      |   ⬜   | `LLM_MODEL` est le défaut serveur. À porter dans `userPreferences` + panneau de réglages                                                    |
+| §5.1 | Choix du modèle par l'utilisateur                      |   🟡   | `LLM_MODEL` reste le défaut serveur, désormais exposé par `/api/health` et affiché **désactivé** dans les réglages. Reste à porter dans `userPreferences` |
 | §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                                                                       |
 | §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                                                                |
 | §5.3 | API commune web + mobile                               |   ✅   | REST sur Hono, arbitrage consigné dans `docs/ARCHITECTURE.md` ; client `@jc/api-client` partagé, l'app ne touche jamais la base directement |
-| §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre                                                         |
+| §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre — ce dernier désormais choisi par l'utilisateur         |
 | §4.4 | React Native                                           |   ✅   | Expo SDK 57, Expo Router, React 19                                                                                                          |
 | §8   | Postgres portable, migration UE possible               |   ✅   | Aucune extension propriétaire                                                                                                               |
 | §8   | **Créer le projet Supabase en région UE**              |   ⬜   | **À faire avant tout remplissage de données**                                                                                               |
@@ -70,7 +79,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison — la matière première est capturée                                                                       |
 | A.8  | Assistant proactif                                    |   🔵   | Outils IA définis, table `assistant_suggestions` prête. `feature/assistant` à écrire                                                                      |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                   |
-| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique en base, prompt de bornage testé, onglet Jean-Claude opérationnel. Bascule automatique hors périmètre et réglages à faire                    |
+| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique en base, prompt de bornage testé, onglet Jean-Claude opérationnel. Bascule automatique hors périmètre et réglages de périmètre à faire       |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                                      |
 | A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                         |
 | A.13 | Onboarding conversationnel                            |   ⬜   | Voir §6.3                                                                                                                                                 |
