@@ -27,6 +27,8 @@ export function useSuggestions(conversationId: string) {
         }),
         // Accepter crée des dossiers : c'est la clé que lit la barre latérale.
         queryClient.invalidateQueries({ queryKey: ["folders"] }),
+        // Un rangement change le dossier sous lequel la conversation apparaît.
+        queryClient.invalidateQueries({ queryKey: ["conversations"] }),
       ]);
     },
   });

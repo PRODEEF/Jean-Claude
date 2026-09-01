@@ -1,6 +1,12 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { createProjectFoldersPayloadSchema, type Suggestion } from "@jc/domain";
+import { useQuery } from "@tanstack/react-query";
+import {
+  assignFoldersPayloadSchema,
+  createProjectFoldersPayloadSchema,
+  type Suggestion,
+} from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { api } from "@/shared/lib/api";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 export type SuggestionCardProps = {
@@ -25,7 +31,7 @@ export function SuggestionCard({
   isPending,
 }: SuggestionCardProps) {
   const { palette } = useTheme();
-  const proposed = createProjectFoldersPayloadSchema.safeParse(suggestion.payload);
+  const preview = useSuggestionPreview(suggestion);
 
   return (
     <View
@@ -38,17 +44,22 @@ export function SuggestionCard({
 
       {/* L'aperçu est un confort : une charge utile illisible ne doit pas
           empêcher l'utilisateur de trancher. */}
-      {proposed.success ? (
+      {preview.lines.length > 0 ? (
         <View style={[styles.tree, { borderLeftColor: palette.border }]}>
-          {proposed.data.folders.map((folder) => (
-            <View key={folder.name} style={styles.branch}>
-              <Text style={[styles.folder, { color: palette.text }]}>{folder.name}</Text>
-              {folder.children.map((child) => (
-                <Text key={child.name} style={[styles.child, { color: palette.textMuted }]}>
-                  {child.name}
-                </Text>
-              ))}
-            </View>
+          {preview.lines.map((line) => (
+            <Text
+              key={line.key}
+              style={[
+                styles.folder,
+                line.nested ? styles.nested : null,
+                { color: line.nested ? palette.textMuted : palette.text },
+              ]}
+            >
+              {line.label}
+              {line.hint ? (
+                <Text style={[styles.hint, { color: palette.textMuted }]}> · {line.hint}</Text>
+              ) : null}
+            </Text>
           ))}
         </View>
       ) : null}
@@ -58,11 +69,11 @@ export function SuggestionCard({
           onPress={onAccept}
           disabled={isPending}
           accessibilityRole="button"
-          accessibilityLabel="Créer les dossiers proposés"
+          accessibilityLabel={preview.acceptLabel}
           style={[styles.action, { backgroundColor: palette.accent, opacity: isPending ? 0.4 : 1 }]}
         >
           <Text style={[styles.actionLabel, { color: palette.accentText }]}>
-            Créer les dossiers
+            {preview.acceptLabel}
           </Text>
         </Pressable>
 
@@ -84,6 +95,69 @@ export function SuggestionCard({
   );
 }
 
+type PreviewLine = { key: string; label: string; nested: boolean; hint?: string };
+
+/**
+ * Ce que la carte montre, selon la nature de la proposition.
+ *
+ * Un rangement ne transporte que des identifiants : les noms sont relus depuis
+ * l'arborescence, déjà en cache — c'est la même clé que la barre latérale.
+ */
+function useSuggestionPreview(suggestion: Suggestion): {
+  lines: PreviewLine[];
+  acceptLabel: string;
+} {
+  const folders = useQuery({
+    queryKey: ["folders"],
+    queryFn: () => api.folders.tree(),
+    enabled: suggestion.kind === "assign_folders",
+  });
+
+  if (suggestion.kind === "create_project_folders") {
+    const proposed = createProjectFoldersPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Créer les dossiers",
+      lines: proposed.success
+        ? proposed.data.folders.flatMap((folder) => [
+            { key: folder.name, label: folder.name, nested: false },
+            ...folder.children.map((child) => ({
+              key: `${folder.name}/${child.name}`,
+              label: child.name,
+              nested: true,
+            })),
+          ])
+        : [],
+    };
+  }
+
+  const acceptLabel = "Ranger la conversation";
+  const proposed = assignFoldersPayloadSchema.safeParse(suggestion.payload);
+  if (!proposed.success) return { acceptLabel, lines: [] };
+
+  const byId = new Map(
+    (folders.data ?? []).flatMap((node) => [node, ...node.children]).map((f) => [f.id, f.name]),
+  );
+
+  return {
+    acceptLabel,
+    lines: [
+      // Un dossier que l'arborescence ne connaît pas encore n'est pas affiché :
+      // mieux vaut une ligne de moins qu'un identifiant technique à l'écran.
+      ...proposed.data.existingFolderIds.flatMap((id) => {
+        const name = byId.get(id);
+        return name ? [{ key: id, label: name, nested: false }] : [];
+      }),
+      ...proposed.data.newFolderNames.map((name) => ({
+        key: `nouveau:${name}`,
+        label: name,
+        nested: false,
+        hint: "nouveau dossier",
+      })),
+    ],
+  };
+}
+
 const styles = StyleSheet.create({
   card: {
     alignSelf: "flex-start",
@@ -94,10 +168,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   message: { fontSize: fontSize.md, lineHeight: 22 },
-  tree: { gap: spacing.sm, paddingLeft: spacing.md, borderLeftWidth: 2 },
-  branch: { gap: spacing.xs },
+  tree: { gap: spacing.xs, paddingLeft: spacing.md, borderLeftWidth: 2 },
   folder: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  child: { fontSize: fontSize.sm, paddingLeft: spacing.md },
+  nested: { paddingLeft: spacing.md, fontWeight: fontWeight.regular },
+  hint: { fontSize: fontSize.xs, fontWeight: fontWeight.regular },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   action: {
     minHeight: MIN_TOUCH_TARGET,

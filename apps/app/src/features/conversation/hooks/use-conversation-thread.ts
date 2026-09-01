@@ -66,6 +66,8 @@ export function useConversationThread(
       // Le tri de la liste des conversations dépend de `lastMessageAt`, que
       // ce tour vient de déplacer.
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      // Le titre a pu être posé par l'assistant pendant ce tour (§5.2).
+      await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
       // Le tour a pu produire une proposition de l'assistant (§12.1) : elle
       // n'arrive pas dans le flux, elle se relit.
       await queryClient.invalidateQueries({
