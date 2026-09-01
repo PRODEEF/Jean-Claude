@@ -41,7 +41,11 @@ export class FolderService {
     return (childrenByParent.get(null) ?? []).map(build);
   }
 
-  async create(userId: string, input: CreateFolder, accessToken: string): Promise<Folder> {
+  async create(
+    userId: string,
+    input: CreateFolder & { createdByAssistant?: boolean },
+    accessToken: string,
+  ): Promise<Folder> {
     if (input.parentId) {
       const all = await this.folders.findAll(accessToken);
       const parentOf = parentMap(all);

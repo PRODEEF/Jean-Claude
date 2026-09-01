@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { isoDateTimeSchema, uuidSchema } from "../shared/primitives";
+import { folderPurposeSchema } from "../folder/folder.schema";
+import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 
 /**
  * Périmètre du canal permanent Jean-Claude (A.10).
@@ -76,6 +77,57 @@ export const resolveSuggestionSchema = z.object({
 
 export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
 
+/** Dossier proposé par l'assistant, tel qu'il apparaît dans la carte de suggestion. */
+const proposedFolderSchema = z.object({
+  name: labelSchema,
+  purpose: folderPurposeSchema.default("generic"),
+});
+
+/**
+ * Charge utile d'une suggestion `create_project_folders` (A.4).
+ *
+ * Deux niveaux, là où l'arborescence en autorise `MAX_FOLDER_DEPTH` : le motif
+ * de l'A.4 est un projet et ses rubriques (IDÉE, TODO, ACHAT, PRENDRE RDV), pas
+ * une hiérarchie libre. Cette borne est un choix produit, pas une contrainte de
+ * schéma — l'utilisateur reste libre d'imbriquer davantage à la main.
+ */
+export const createProjectFoldersPayloadSchema = z.object({
+  folders: z
+    .array(
+      proposedFolderSchema.extend({
+        // `strict()` sur l'enfant : un sous-dossier qui porterait lui-même des
+        // enfants fait échouer la validation au lieu d'être silencieusement
+        // élagué. Créer moins que ce que la proposition annonce serait pire
+        // que de renoncer à la proposition.
+        children: z.array(proposedFolderSchema.strict()).max(8).default([]),
+      }),
+    )
+    .min(1)
+    .max(8),
+});
+
+export type CreateProjectFoldersPayload = z.infer<typeof createProjectFoldersPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `assign_folders` (A.1).
+ *
+ * Deux listes et non une : l'assistant peut ranger dans des dossiers qui
+ * existent déjà **et** en proposer de nouveaux dans le même geste. Une
+ * conversation appartient à plusieurs dossiers à la fois — ce n'est pas une
+ * duplication, c'est la même donnée vue de plusieurs endroits (§5.2).
+ */
+export const assignFoldersPayloadSchema = z
+  .object({
+    existingFolderIds: z.array(uuidSchema).max(8).default([]),
+    newFolderNames: z.array(labelSchema).max(8).default([]),
+  })
+  .refine(
+    (payload) => payload.existingFolderIds.length + payload.newFolderNames.length > 0,
+    "Un rangement sans dossier n'a rien à appliquer.",
+  );
+
+export type AssignFoldersPayload = z.infer<typeof assignFoldersPayloadSchema>;
+
 /**
  * Verdict de bornage du canal permanent (A.10).
  *
@@ -84,5 +136,4 @@ export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
  * conversation classique, rangée en dossier.
  */
 export type ScopeVerdict =
-  | { inScope: true }
-  | { inScope: false; reason: string; suggestedTitle: string };
+  { inScope: true } | { inScope: false; reason: string; suggestedTitle: string };

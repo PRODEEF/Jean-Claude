@@ -7,7 +7,25 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **1er septembre 2026** — issues #5 et #7 terminées. #5 était déjà
+Dernière mise à jour : **1er septembre 2026** — issue #8 : les appels d'outils du modèle
+deviennent des propositions en attente (`feature/assistant`) au lieu d'être perdus, et le
+§12.1 est appliqué de bout en bout pour la première fois. Depuis le canal permanent,
+Jean-Claude propose une arborescence de dossiers que l'utilisateur crée d'un geste ; une
+demande étrangère à son périmètre ouvre une conversation classique où la question est
+reposée ; et une conversation sans dossier se nomme à partir de son contenu (§5.2) puis
+propose où se ranger (A.1).
+
+Plus tôt le même jour : issues #5 et #7 terminées. #5 était déjà
+Dernière mise à jour : **1er septembre 2026** — page Réglages basique (issue #12,
+partielle). L'utilisateur voit son adresse e-mail (non modifiable), change son pseudo et
+son thème (clair / sombre / système) ; le modèle IA y figure, affiché mais désactivé.
+Côté serveur, cela ouvre le module `domain/user` et `/api/me` — jusqu'ici la table
+`profiles` existait sans qu'aucune route n'y donne accès. Aucune migration : les colonnes
+`display_name` et `theme` étaient déjà là. Le pseudo enregistré remplace partout le nom
+dérivé de l'adresse e-mail. Restent ouverts dans #12 : nom et couleur de l'assistant,
+périmètre du mode assistant (A.10).
+
+Auparavant le 1er septembre : issues #5 et #7 terminées. #5 était déjà
 couverte par le socle (table de liaison `conversation_folders`, colonne `source`, garde-fou
 de profondeur) : vérifiée point par point puis clôturée. #7 rend les dossiers manipulables :
 création, renommage et suppression, sous-dossiers visibles dans la barre latérale, et
@@ -32,11 +50,11 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                                                                             |
 | §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code                                     |
 | §5.1 | Timeouts, quotas et erreurs                            |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés                                                 |
-| §5.1 | Choix du modèle par l'utilisateur                      |   ⬜   | `LLM_MODEL` est le défaut serveur. À porter dans `userPreferences` + panneau de réglages                                                    |
+| §5.1 | Choix du modèle par l'utilisateur                      |   🟡   | `LLM_MODEL` reste le défaut serveur, désormais exposé par `/api/health` et affiché **désactivé** dans les réglages. Reste à porter dans `userPreferences` |
 | §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                                                                       |
 | §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                                                                |
 | §5.3 | API commune web + mobile                               |   ✅   | REST sur Hono, arbitrage consigné dans `docs/ARCHITECTURE.md` ; client `@jc/api-client` partagé, l'app ne touche jamais la base directement |
-| §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre                                                         |
+| §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre — ce dernier désormais choisi par l'utilisateur         |
 | §4.4 | React Native                                           |   ✅   | Expo SDK 57, Expo Router, React 19                                                                                                          |
 | §8   | Postgres portable, migration UE possible               |   ✅   | Aucune extension propriétaire                                                                                                               |
 | §8   | **Créer le projet Supabase en région UE**              |   ⬜   | **À faire avant tout remplissage de données**                                                                                               |
@@ -58,6 +76,22 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Annexe A — backlog fonctionnel
 
+| Réf. | Point                                                 | Statut | Note                                                                                                                                                               |
+| ---- | ----------------------------------------------------- | :----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                  |
+| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, et proposition de rangement par l'assistant pour un fil non classé        |
+| A.2  | Conversion conversation → todoliste                   |   🔵   | Tables `task_lists` / `tasks` prêtes, outil `suggest_task_list` défini. Module `domain/task` à écrire                                                              |
+| A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                                                     |
+| A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                  |
+| A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                 |
+| A.6  | Recherche avancée par filtres                         |   🔵   | Index plein texte français créés, `searchFiltersSchema` défini. `feature/search` à écrire                                                                          |
+| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                          |
+| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste. Restent la todoliste et les rendez-vous              |
+| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                            |
+| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre vers une conversation classique. Restent le rangement du fil ouvert et les réglages |
+| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                                               |
+| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                  |
+| A.13 | Onboarding conversationnel                            |   ⬜   | Voir §6.3                                                                                                                                                          |
 | Réf. | Point                                                 | Statut | Note                                                                                                                                                      |
 | ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                         |
@@ -70,7 +104,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison — la matière première est capturée                                                                       |
 | A.8  | Assistant proactif                                    |   🔵   | Outils IA définis, table `assistant_suggestions` prête. `feature/assistant` à écrire                                                                      |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                   |
-| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique en base, prompt de bornage testé, onglet Jean-Claude opérationnel. Bascule automatique hors périmètre et réglages à faire                    |
+| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique en base, prompt de bornage testé, onglet Jean-Claude opérationnel. Bascule automatique hors périmètre et réglages de périmètre à faire       |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                                      |
 | A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                         |
 | A.13 | Onboarding conversationnel                            |   ⬜   | Voir §6.3                                                                                                                                                 |
@@ -110,12 +144,12 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Dette technique connue
 
-| Point                                | Détail                                                                                                                                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pagination remontante du fil absente | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                       |
-| Titre de conversation non généré     | Toute conversation créée s'appelle « Nouvelle conversation ». Le §5.2 prévoit un titre déduit des premiers messages                                                 |
-| `toolCalls` non exploités            | Le modèle produit bien des appels `suggest_task_list` / `suggest_folders`, le service les reçoit et ne les persiste pas. C'est `feature/assistant`, Phase B (§12.1) |
-| Node ≥ 22.12 requis                  | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                 |
+| Point                                | Détail                                                                                                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pagination remontante du fil absente | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                   |
+| Périmètre assistant non appliqué     | `profiles.assistant_scope` est stocké mais jamais lu : une capacité désactivée dans les réglages n'empêche pas encore le serveur de produire la proposition (§12.1)             |
+| Todoliste et rendez-vous non captés  | `feature/assistant` ne traduit que les propositions de dossiers ; `suggest_task_list` et `suggest_recurring_event` restent ignorés, faute de `domain/task` et `domain/calendar` |
+| Node ≥ 22.12 requis                  | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                             |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo
 (`app.config.js` / `metro.config.js`).

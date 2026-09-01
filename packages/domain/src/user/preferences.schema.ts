@@ -46,3 +46,19 @@ export const userProfileSchema = z.object({
 });
 
 export type UserProfile = z.infer<typeof userProfileSchema>;
+
+/**
+ * Ce que la page de réglages sait modifier aujourd'hui.
+ *
+ * Volontairement plus étroit que `updateUserPreferencesSchema` : accepter des
+ * champs que le serveur ignorerait ferait croire au client qu'ils ont été
+ * enregistrés. Il s'élargira quand la page saura les piloter.
+ */
+export const updateUserProfileSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(80),
+    theme: themeSchema,
+  })
+  .partial();
+
+export type UpdateUserProfile = z.infer<typeof updateUserProfileSchema>;

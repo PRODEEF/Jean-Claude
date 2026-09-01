@@ -9,9 +9,13 @@ import {
   type Message,
   type MessageStreamEvent,
   type Paginated,
+  type ResolveSuggestion,
   type SendMessage,
+  type Suggestion,
   type UpdateConversation,
   type UpdateFolder,
+  type UpdateUserProfile,
+  type UserProfile,
 } from "@jc/domain";
 import { HttpClient, type ApiClientOptions } from "./http";
 
@@ -32,9 +36,18 @@ export class JeanClaudeClient {
 
   readonly health = {
     check: () =>
-      this.http.request<{ status: string; llm: { provider: string; sovereign: boolean } }>(
-        "/health",
-      ),
+      this.http.request<{
+        status: string;
+        llm: { provider: string; model: string; sovereign: boolean };
+      }>("/health"),
+  };
+
+  /** Profil et préférences de l'utilisateur connecté. */
+  readonly me = {
+    profile: () => this.http.request<UserProfile>("/me"),
+
+    update: (patch: UpdateUserProfile) =>
+      this.http.request<UserProfile>("/me", { method: "PATCH", body: patch }),
   };
 
   readonly folders = {
@@ -47,6 +60,25 @@ export class JeanClaudeClient {
       this.http.request<Folder>(`/folders/${id}`, { method: "PATCH", body: patch }),
 
     remove: (id: string) => this.http.request<void>(`/folders/${id}`, { method: "DELETE" }),
+  };
+
+  /**
+   * Canal permanent Jean-Claude (A.10).
+   *
+   * Les propositions de l'assistant vivent hors du fil des messages : elles
+   * survivent au rechargement tant que l'utilisateur ne les a pas tranchées,
+   * ce qu'un événement de flux ne permettrait pas (§12.1).
+   */
+  readonly assistant = {
+    suggestions: (conversationId: string) =>
+      this.http.request<Suggestion[]>("/assistant/suggestions", { query: { conversationId } }),
+
+    /** Accepte ou ignore d'un geste. Rend les dossiers réellement créés. */
+    resolve: (id: string, input: ResolveSuggestion) =>
+      this.http.request<{ suggestion: Suggestion; folders: Folder[] }>(
+        `/assistant/suggestions/${id}/resolve`,
+        { method: "POST", body: input },
+      ),
   };
 
   readonly conversations = {

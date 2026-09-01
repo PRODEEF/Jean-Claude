@@ -1,5 +1,10 @@
-import type { Conversation, Message, MessageStreamEvent } from "@jc/domain";
-import type { LlmCompletionRequest, LlmProvider } from "../../core/llm/llm.port.js";
+import { DEFAULT_CONVERSATION_TITLE } from "@jc/domain";
+import type { Conversation, Folder, Message, MessageStreamEvent, Suggestion } from "@jc/domain";
+import type { LlmCompletionRequest, LlmProvider, LlmToolCall } from "../../core/llm/llm.port.js";
+import type { IFolderRepository } from "../folder/folder.repository.interface.js";
+import { FolderService } from "../folder/folder.service.js";
+import type { ISuggestionRepository } from "../suggestion/suggestion.repository.interface.js";
+import { SuggestionService } from "../suggestion/suggestion.service.js";
 import { ConversationService } from "./conversation.service.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
 
@@ -53,10 +58,13 @@ function makeRepository(overrides: Partial<IConversationRepository> = {}): IConv
 }
 
 /**
- * Moteur qui rend `chunks` de texte puis clôt par un `done`, comme le fait
- * l'adaptateur réel.
+ * Moteur qui rend `chunks` de texte, puis ses éventuels appels d'outils, puis
+ * clôt par un `done` — dans cet ordre, comme le fait l'adaptateur réel.
  */
-function makeLlm(chunks: string[] = ["Voici ", "ce que je propose."]): LlmProvider {
+function makeLlm(
+  chunks: string[] = ["Voici ", "ce que je propose."],
+  toolCalls: LlmToolCall[] = [],
+): LlmProvider {
   const stream = jest.fn(() =>
     (async function* () {
       let text = "";
@@ -64,11 +72,14 @@ function makeLlm(chunks: string[] = ["Voici ", "ce que je propose."]): LlmProvid
         text += chunk;
         yield { type: "text" as const, text: chunk };
       }
+      for (const toolCall of toolCalls) {
+        yield { type: "tool_call" as const, toolCall };
+      }
       yield {
         type: "done" as const,
         response: {
           text,
-          toolCalls: [],
+          toolCalls,
           provider: "anthropic",
           model: "claude-opus-5",
           usage: { inputTokens: 12, outputTokens: 34 },
@@ -77,7 +88,81 @@ function makeLlm(chunks: string[] = ["Voici ", "ce que je propose."]): LlmProvid
     })(),
   );
 
-  return { name: "gateway", isSovereign: false, complete: jest.fn(), stream };
+  return {
+    name: "gateway",
+    model: "anthropic/claude-sonnet-5",
+    isSovereign: false,
+    complete: jest.fn(),
+    stream,
+  };
+}
+
+function makeSuggestionRepository(
+  overrides: Partial<ISuggestionRepository> = {},
+): ISuggestionRepository {
+  const suggestion: Suggestion = {
+    id: "sug-1",
+    kind: "create_project_folders",
+    status: "pending",
+    conversationId: "conv-1",
+    message: "Je te crée un dossier Jardin ?",
+    payload: {},
+    createdAt: "2026-09-01T08:00:00.000Z",
+    resolvedAt: null,
+  };
+
+  return {
+    create: jest.fn().mockResolvedValue(suggestion),
+    findById: jest.fn().mockResolvedValue(suggestion),
+    listPending: jest.fn().mockResolvedValue([]),
+    markResolved: jest.fn().mockResolvedValue(suggestion),
+    ...overrides,
+  };
+}
+
+/**
+ * Service sous test, avec des doubles par défaut.
+ *
+ * Passer par une fabrique plutôt que d'appeler le constructeur : une
+ * dépendance de plus ne rouvre alors pas chacun des tests du fichier.
+ */
+function makeFolder(overrides: Partial<Folder> & Pick<Folder, "id" | "name">): Folder {
+  return {
+    parentId: null,
+    category: null,
+    purpose: "generic",
+    color: null,
+    position: 0,
+    createdByAssistant: false,
+    createdAt: "2026-09-01T08:00:00.000Z",
+    updatedAt: "2026-09-01T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeFolderRepository(folders: Folder[] = []): IFolderRepository {
+  return {
+    findAll: jest.fn().mockResolvedValue(folders),
+    findById: jest.fn().mockResolvedValue(null),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn().mockResolvedValue(undefined),
+    countConversations: jest.fn().mockResolvedValue(new Map<string, number>()),
+  };
+}
+
+function makeService(
+  repo: IConversationRepository = makeRepository(),
+  llm: LlmProvider = makeLlm(),
+  suggestions: ISuggestionRepository = makeSuggestionRepository(),
+  folders: IFolderRepository = makeFolderRepository(),
+): ConversationService {
+  return new ConversationService(
+    repo,
+    llm,
+    new SuggestionService(suggestions),
+    new FolderService(folders),
+  );
 }
 
 /** Requête effectivement transmise au moteur IA lors du dernier appel. */
@@ -101,7 +186,7 @@ async function drain(
 describe("ConversationService", () => {
   describe("getById", () => {
     it("signale une conversation introuvable plutôt que de renvoyer null", async () => {
-      const service = new ConversationService(
+      const service = makeService(
         makeRepository({ findById: jest.fn().mockResolvedValue(null) }),
         makeLlm(),
       );
@@ -117,10 +202,7 @@ describe("ConversationService", () => {
         findAssistantChannel: jest.fn().mockResolvedValue(existing),
       });
 
-      const channel = await new ConversationService(repo, makeLlm()).getOrCreateAssistantChannel(
-        USER,
-        TOKEN,
-      );
+      const channel = await makeService(repo, makeLlm()).getOrCreateAssistantChannel(USER, TOKEN);
 
       expect(channel).toBe(existing);
       expect(repo.create).not.toHaveBeenCalled();
@@ -129,7 +211,7 @@ describe("ConversationService", () => {
     it("crée le canal permanent au premier accès", async () => {
       const repo = makeRepository();
 
-      await new ConversationService(repo, makeLlm()).getOrCreateAssistantChannel(USER, TOKEN);
+      await makeService(repo, makeLlm()).getOrCreateAssistantChannel(USER, TOKEN);
 
       expect(repo.create).toHaveBeenCalledWith(
         USER,
@@ -144,7 +226,7 @@ describe("ConversationService", () => {
     it("persiste le message de l'utilisateur, interroge le moteur, puis persiste la réponse", async () => {
       const repo = makeRepository();
 
-      const events = await drain(new ConversationService(repo, makeLlm()), {
+      const events = await drain(makeService(repo, makeLlm()), {
         content: "Que planter en septembre ?",
         inputMode: "text",
       });
@@ -179,7 +261,7 @@ describe("ConversationService", () => {
     it("émet le message de l'utilisateur avant toute génération", async () => {
       // C'est ce qui permet au fil de l'afficher immédiatement, sans attendre
       // le premier jeton du modèle.
-      const events = await drain(new ConversationService(makeRepository(), makeLlm()));
+      const events = await drain(makeService(makeRepository(), makeLlm()));
 
       expect(events[0]).toEqual({
         type: "message",
@@ -188,9 +270,7 @@ describe("ConversationService", () => {
     });
 
     it("rend la réponse par fragments plutôt qu'en un bloc", async () => {
-      const events = await drain(
-        new ConversationService(makeRepository(), makeLlm(["Bon", "jour", " !"])),
-      );
+      const events = await drain(makeService(makeRepository(), makeLlm(["Bon", "jour", " !"])));
 
       expect(events.filter((e) => e.type === "text")).toEqual([
         { type: "text", text: "Bon" },
@@ -204,7 +284,7 @@ describe("ConversationService", () => {
       // produit est déjà facturé et doit se retrouver au rechargement.
       const repo = makeRepository();
       const llm = makeLlm(["Première partie", "jamais lue"]);
-      const service = new ConversationService(repo, llm);
+      const service = makeService(repo, llm);
 
       const stream = service.streamMessage(
         "conv-1",
@@ -229,7 +309,7 @@ describe("ConversationService", () => {
     it("n'écrit aucune réponse d'assistant quand le modèle n'a rien produit", async () => {
       const repo = makeRepository();
 
-      await drain(new ConversationService(repo, makeLlm([])));
+      await drain(makeService(repo, makeLlm([])));
 
       expect(repo.appendMessage).toHaveBeenCalledTimes(1);
     });
@@ -247,7 +327,7 @@ describe("ConversationService", () => {
         }),
       });
 
-      await drain(new ConversationService(repo, llm));
+      await drain(makeService(repo, llm));
 
       expect(lastRequest(llm).messages).toEqual([
         { role: "user", content: "Bonjour" },
@@ -261,7 +341,7 @@ describe("ConversationService", () => {
         findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
       });
 
-      await drain(new ConversationService(repo, llm), {
+      await drain(makeService(repo, llm), {
         content: "Qu'est-ce qui est important aujourd'hui ?",
         inputMode: "text",
       });
@@ -274,7 +354,7 @@ describe("ConversationService", () => {
     it("laisse une conversation classique sans bornage de périmètre", async () => {
       const llm = makeLlm();
 
-      await drain(new ConversationService(makeRepository(), llm), {
+      await drain(makeService(makeRepository(), llm), {
         content: "Une recette de tarte ?",
         inputMode: "text",
       });
@@ -286,7 +366,7 @@ describe("ConversationService", () => {
       const llm = makeLlm();
       const repo = makeRepository();
 
-      await drain(new ConversationService(repo, llm), {
+      await drain(makeService(repo, llm), {
         content: "Il me faut du terreau et des bulbes.",
         inputMode: "text",
       });
@@ -296,13 +376,240 @@ describe("ConversationService", () => {
       // créée à la volée. L'assistant propose, il n'exécute pas.
       expect(repo.appendMessage).toHaveBeenCalledTimes(2);
     });
+
+    it("n'expose au canal permanent que les outils de son périmètre (A.10)", async () => {
+      const llm = makeLlm();
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+
+      await drain(makeService(repo, llm), {
+        content: "Aide-moi à ranger mon espace.",
+        inputMode: "text",
+      });
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).toContain("suggest_project_folders");
+      expect(tools).toContain("open_new_conversation");
+      expect(tools).not.toContain("suggest_task_list");
+    });
+
+    it("transforme un appel d'outil en proposition en attente (§12.1)", async () => {
+      const suggestions = makeSuggestionRepository();
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+      const llm = makeLlm(
+        ["Je peux structurer ça."],
+        [
+          {
+            id: "call-1",
+            name: "suggest_project_folders",
+            input: {
+              message: "Je te crée un dossier Jardin ?",
+              folders: [{ name: "Jardin", children: [{ name: "ACHAT", purpose: "purchase" }] }],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(repo, llm, suggestions), {
+        content: "Je me lance dans le jardin.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          conversationId: "conv-1",
+          kind: "create_project_folders",
+          message: "Je te crée un dossier Jardin ?",
+        }),
+        TOKEN,
+      );
+
+      // La proposition est écrite, les dossiers ne le sont pas : le tour n'a
+      // produit que les deux messages du dialogue.
+      expect(repo.appendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("ouvre une conversation classique quand la demande sort du périmètre (A.10)", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+        create: jest
+          .fn()
+          .mockResolvedValue(makeConversation({ id: "conv-2", title: "Itinéraire en Bretagne" })),
+      });
+      const llm = makeLlm(
+        ["Ça sort de notre fil, je t'ouvre une conversation dédiée."],
+        [
+          {
+            id: "call-1",
+            name: "open_new_conversation",
+            input: { title: "Itinéraire en Bretagne" },
+          },
+        ],
+      );
+
+      const events = await drain(makeService(repo, llm), {
+        content: "Propose-moi un itinéraire de 5 jours en Bretagne.",
+        inputMode: "text",
+      });
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        { title: "Itinéraire en Bretagne", folderIds: [] },
+        "chat",
+        TOKEN,
+      );
+      // Émise après le message de l'assistant : le canal garde la trace de ce
+      // qui a été demandé et de la bascule.
+      expect(events.at(-1)).toEqual({
+        type: "redirect",
+        conversation: expect.objectContaining({ id: "conv-2" }),
+      });
+    });
+
+    it("ne transforme pas la bascule en proposition à valider", async () => {
+      const suggestions = makeSuggestionRepository();
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+      const llm = makeLlm(
+        ["J'ouvre un fil dédié."],
+        [{ id: "call-1", name: "open_new_conversation", input: { title: "Recette de tarte" } }],
+      );
+
+      await drain(makeService(repo, llm, suggestions), {
+        content: "Une recette de tarte aux pommes ?",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).not.toHaveBeenCalled();
+    });
+
+    it("reste dans le canal quand le titre de bascule est inexploitable", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+      const llm = makeLlm(
+        ["Je regarde ça."],
+        [{ id: "call-1", name: "open_new_conversation", input: { title: "   " } }],
+      );
+
+      const events = await drain(makeService(repo, llm), { content: "?", inputMode: "text" });
+
+      // Ouvrir un fil sans titre serait plus déroutant que de ne pas basculer.
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(events.some((event) => event.type === "redirect")).toBe(false);
+      jest.restoreAllMocks();
+    });
+  });
+
+  describe("entretien du fil", () => {
+    const untitled = () =>
+      makeRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeConversation({ title: DEFAULT_CONVERSATION_TITLE })),
+      });
+
+    it("propose de nommer un fil encore intitulé par défaut", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(untitled(), llm));
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("name_conversation");
+    });
+
+    it("n'offre plus de nommer un fil qui porte déjà un titre", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("name_conversation");
+    });
+
+    it("applique le titre sans passer par une proposition à valider (§5.2)", async () => {
+      const repo = untitled();
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        ["Bien noté."],
+        [{ id: "call-1", name: "name_conversation", input: { title: "Travaux du jardin" } }],
+      );
+
+      await drain(makeService(repo, llm, suggestions));
+
+      expect(repo.update).toHaveBeenCalledWith("conv-1", { title: "Travaux du jardin" }, TOKEN);
+      // Le titre est le libellé du fil, pas une donnée créée pour l'utilisateur :
+      // il ne relève pas du §12.1.
+      expect(suggestions.create).not.toHaveBeenCalled();
+    });
+
+    it("donne au modèle les dossiers existants quand le fil n'est rangé nulle part", async () => {
+      const llm = makeLlm();
+      const folders = makeFolderRepository([
+        makeFolder({ id: "folder-1", name: "Santé" }),
+        makeFolder({ id: "folder-2", name: "Assurances", parentId: "folder-1" }),
+        makeFolder({ id: "folder-3", name: "Mutuelle", parentId: "folder-2" }),
+      ]);
+
+      await drain(makeService(makeRepository(), llm, makeSuggestionRepository(), folders));
+
+      const request = lastRequest(llm);
+      expect(request.tools?.map((t) => t.name)).toContain("suggest_folders");
+      // Sans les identifiants, le modèle ne pourrait proposer que des dossiers
+      // neufs et rouvrirait « Santé » à chaque conversation.
+      expect(request.system ?? "").toContain("Santé (folder-1)");
+      expect(request.system ?? "").toContain("Santé > Assurances (folder-2)");
+      // L'arborescence descend jusqu'à MAX_FOLDER_DEPTH : s'arrêter au deuxième
+      // niveau rendrait les dossiers profonds inutilisables.
+      expect(request.system ?? "").toContain("Santé > Assurances > Mutuelle (folder-3)");
+    });
+
+    it("demande explicitement de nommer et de ranger, sans compter sur les seuls outils", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(untitled(), llm));
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("`name_conversation`");
+      expect(system).toContain("`suggest_folders`");
+    });
+
+    it("n'offre pas de rangement à un fil déjà classé", async () => {
+      const llm = makeLlm();
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ folderIds: ["folder-1"] })),
+      });
+
+      await drain(makeService(repo, llm));
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_folders");
+    });
+
+    it("ne relance pas un rangement tant que la proposition précédente attend", async () => {
+      const llm = makeLlm();
+      const suggestions = makeSuggestionRepository({
+        listPending: jest
+          .fn()
+          .mockResolvedValue([{ id: "sug-1", kind: "assign_folders", status: "pending" }]),
+      });
+
+      await drain(makeService(makeRepository(), llm, suggestions));
+
+      // Sinon chaque message empilerait une carte sur un geste que
+      // l'utilisateur a simplement laissé venir.
+      expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_folders");
+    });
   });
 
   describe("assignFolders", () => {
     it("remplace l'ensemble des rattachements plutôt que d'en ajouter un (§5.2, A.1)", async () => {
       const repo = makeRepository();
 
-      await new ConversationService(repo, makeLlm()).assignFolders(
+      await makeService(repo, makeLlm()).assignFolders(
         "conv-1",
         { folderIds: ["sante", "assurances"], source: "user" },
         TOKEN,

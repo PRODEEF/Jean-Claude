@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { conversationSchema } from "../conversation/conversation.schema";
 import { isoDateTimeSchema, uuidSchema } from "../shared/primitives";
 
 export const messageRoleSchema = z.enum(["user", "assistant", "system"]);
@@ -55,6 +56,12 @@ export const messageStreamEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: z.string() }),
   /** La réponse complète, persistée. Clôt le flux. */
   z.object({ type: z.literal("done"), message: messageSchema }),
+  /**
+   * Le canal permanent a jugé la demande hors de son périmètre (A.10) : la
+   * conversation classique qui doit l'accueillir vient d'être créée, et c'est
+   * là que l'échange se poursuit.
+   */
+  z.object({ type: z.literal("redirect"), conversation: conversationSchema }),
   /** Échec après le premier octet. Clôt le flux. */
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);

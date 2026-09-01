@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Conversation } from "@jc/domain";
 import { api } from "@/shared/lib/api";
 
 /** Nombre de messages chargés à l'ouverture du fil. */
@@ -12,7 +13,15 @@ const THREAD_PAGE_SIZE = 50;
  * *avant* d'interroger le modèle, et le renvoie comme premier événement du
  * flux : une insertion optimiste locale ferait un doublon.
  */
-export function useConversationThread(conversationId: string) {
+export function useConversationThread(
+  conversationId: string,
+  /**
+   * Appelé quand le canal permanent a jugé la demande hors de son périmètre
+   * (A.10) : la conversation qui l'accueille existe déjà, il reste à y emmener
+   * l'utilisateur avec sa question.
+   */
+  onRedirect?: (conversation: Conversation, content: string) => void,
+) {
   const queryClient = useQueryClient();
 
   /**
@@ -37,6 +46,8 @@ export function useConversationThread(conversationId: string) {
       })) {
         if (event.type === "text") {
           setStreamingText((current) => (current ?? "") + event.text);
+        } else if (event.type === "redirect") {
+          onRedirect?.(event.conversation, content);
         } else if (event.type === "error") {
           // L'échec survient après le premier octet : il ne peut plus prendre
           // la forme d'un code HTTP, il arrive donc dans le flux.
@@ -55,6 +66,13 @@ export function useConversationThread(conversationId: string) {
       // Le tri de la liste des conversations dépend de `lastMessageAt`, que
       // ce tour vient de déplacer.
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      // Le titre a pu être posé par l'assistant pendant ce tour (§5.2).
+      await queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+      // Le tour a pu produire une proposition de l'assistant (§12.1) : elle
+      // n'arrive pas dans le flux, elle se relit.
+      await queryClient.invalidateQueries({
+        queryKey: ["conversation", conversationId, "suggestions"],
+      });
       // Après l'invalidation seulement : plus tôt, la bulle en cours
       // disparaîtrait avant que la version persistée n'ait pris sa place.
       setStreamingText(null);

@@ -9,7 +9,6 @@ import {
   ListChecks,
   MoreHorizontal,
   Plus,
-  Settings,
   Sparkles,
 } from "lucide-react-native";
 import type { Conversation, Folder } from "@jc/domain";
@@ -26,7 +25,6 @@ import { useSidebarData, type SidebarGroup } from "./use-sidebar-data";
 const UTILITY_LINKS = [
   { href: "/todo", label: "Todoliste", icon: ListChecks },
   { href: "/calendar", label: "Calendrier", icon: CalendarDays },
-  { href: "/settings", label: "Réglages", icon: Settings },
 ] as const;
 
 export type AppSidebarProps = {
