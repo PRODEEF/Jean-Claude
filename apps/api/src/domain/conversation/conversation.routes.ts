@@ -11,11 +11,11 @@ import {
   uuidSchema,
   type MessageStreamEvent,
 } from "@jc/domain";
-import { auth, type AuthEnv } from "../../core/auth/auth.middleware";
-import { validate } from "../../core/http";
-import { llm } from "../../core/llm/providers/gateway.provider";
-import { conversationRepository } from "./conversation.repository";
-import { ConversationService } from "./conversation.service";
+import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
+import { validate } from "../../core/http.js";
+import { llm } from "../../core/llm/providers/gateway.provider.js";
+import { conversationRepository } from "./conversation.repository.js";
+import { ConversationService } from "./conversation.service.js";
 
 const service = new ConversationService(conversationRepository, llm);
 

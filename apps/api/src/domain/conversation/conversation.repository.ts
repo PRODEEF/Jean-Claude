@@ -6,9 +6,9 @@ import type {
   SendMessage,
   UpdateConversation,
 } from "@jc/domain";
-import { httpError } from "../../core/http";
-import { forUser } from "../../core/supabase/supabase";
-import type { IConversationRepository } from "./conversation.repository.interface";
+import { httpError } from "../../core/http.js";
+import { forUser } from "../../core/supabase/supabase.js";
+import type { IConversationRepository } from "./conversation.repository.interface.js";
 
 type ConversationRow = {
   id: string;

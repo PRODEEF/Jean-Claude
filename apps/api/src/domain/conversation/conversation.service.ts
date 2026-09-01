@@ -9,10 +9,10 @@ import type {
   SendMessage,
   UpdateConversation,
 } from "@jc/domain";
-import { httpError } from "../../core/http";
-import type { LlmProvider } from "../../core/llm/llm.port";
-import { CHAT_TOOLS } from "../../core/llm/llm.tools";
-import type { IConversationRepository } from "./conversation.repository.interface";
+import { httpError } from "../../core/http.js";
+import type { LlmProvider } from "../../core/llm/llm.port.js";
+import { CHAT_TOOLS } from "../../core/llm/llm.tools.js";
+import type { IConversationRepository } from "./conversation.repository.interface.js";
 
 /** Nombre de messages de contexte envoyés au modèle à chaque tour. */
 const CONTEXT_WINDOW_MESSAGES = 40;

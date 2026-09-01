@@ -1,7 +1,7 @@
 import { MAX_FOLDER_DEPTH } from "@jc/domain";
 import type { CreateFolder, Folder, FolderTreeNode, UpdateFolder } from "@jc/domain";
-import { httpError } from "../../core/http";
-import type { IFolderRepository } from "./folder.repository.interface";
+import { httpError } from "../../core/http.js";
+import type { IFolderRepository } from "./folder.repository.interface.js";
 
 export class FolderService {
   constructor(private readonly folders: IFolderRepository) {}

@@ -1,7 +1,7 @@
 import type { Conversation, Message, MessageStreamEvent } from "@jc/domain";
-import type { LlmCompletionRequest, LlmProvider } from "../../core/llm/llm.port";
-import { ConversationService } from "./conversation.service";
-import type { IConversationRepository } from "./conversation.repository.interface";
+import type { LlmCompletionRequest, LlmProvider } from "../../core/llm/llm.port.js";
+import { ConversationService } from "./conversation.service.js";
+import type { IConversationRepository } from "./conversation.repository.interface.js";
 
 const TOKEN = "access-token";
 const USER = "user-1";

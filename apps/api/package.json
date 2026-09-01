@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "API commune web + mobile + desktop (§5.3)",
-  "engines": { "node": "22.x" },
+  "type": "module",
   "scripts": {
     "build": "tsc -b",
     "start:dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
@@ -38,12 +38,23 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.ts$": "ts-jest"
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "module": "CommonJS",
+            "moduleResolution": "node"
+          }
+        }
+      ]
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
+    }
   }
 }
