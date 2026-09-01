@@ -77,7 +77,13 @@ function makeLlm(chunks: string[] = ["Voici ", "ce que je propose."]): LlmProvid
     })(),
   );
 
-  return { name: "gateway", isSovereign: false, complete: jest.fn(), stream };
+  return {
+    name: "gateway",
+    model: "anthropic/claude-sonnet-5",
+    isSovereign: false,
+    complete: jest.fn(),
+    stream,
+  };
 }
 
 /** Requête effectivement transmise au moteur IA lors du dernier appel. */

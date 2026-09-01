@@ -12,6 +12,8 @@ import {
   type SendMessage,
   type UpdateConversation,
   type UpdateFolder,
+  type UpdateUserProfile,
+  type UserProfile,
 } from "@jc/domain";
 import { HttpClient, type ApiClientOptions } from "./http";
 
@@ -32,9 +34,18 @@ export class JeanClaudeClient {
 
   readonly health = {
     check: () =>
-      this.http.request<{ status: string; llm: { provider: string; sovereign: boolean } }>(
-        "/health",
-      ),
+      this.http.request<{
+        status: string;
+        llm: { provider: string; model: string; sovereign: boolean };
+      }>("/health"),
+  };
+
+  /** Profil et préférences de l'utilisateur connecté. */
+  readonly me = {
+    profile: () => this.http.request<UserProfile>("/me"),
+
+    update: (patch: UpdateUserProfile) =>
+      this.http.request<UserProfile>("/me", { method: "PATCH", body: patch }),
   };
 
   readonly folders = {
