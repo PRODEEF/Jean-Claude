@@ -11,10 +11,12 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ArrowUp } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import type { Conversation, Message } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { Markdown } from "@/shared/ui/Markdown";
 import { useConversationThread } from "./hooks/use-conversation-thread";
 import { useSuggestions } from "./hooks/use-suggestions";
 import { SuggestionCard } from "./SuggestionCard";
@@ -56,7 +58,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     [router],
   );
 
-  const { messages, send, submit, streamingText } = useConversationThread(
+  const { messages, send, submit, streamingText, pendingUserText } = useConversationThread(
     conversationId,
     goToNewConversation,
   );
@@ -74,6 +76,15 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     submit(initialDraft);
   }, [initialDraft, submit]);
 
+  // `onContentSizeChange` ne suffit pas pendant le flux : le pied de liste
+  // grandit d'un jeton à la fois, et le rendu Markdown reflue après coup —
+  // la liste mesure alors sa hauteur d'avant. Suivre `streamingText` la
+  // recale à chaque arrivée de texte.
+  useEffect(() => {
+    if (streamingText === null && pendingUserText === null) return;
+    listRef.current?.scrollToEnd({ animated: false });
+  }, [streamingText, pendingUserText]);
+
   const sendDraft = useCallback(() => {
     const content = draft.trim();
     if (!content || send.isPending) return;
@@ -89,18 +100,23 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           style={[
             styles.bubble,
             isUser
-              ? { alignSelf: "flex-end", backgroundColor: palette.accent }
-              : {
-                  alignSelf: "flex-start",
-                  backgroundColor: palette.surface,
-                  borderColor: palette.border,
-                  borderWidth: 1,
-                },
+              ? { alignSelf: "flex-end", backgroundColor: palette.accentSoft }
+              : // La réponse de l'assistant n'a ni fond ni cadre : c'est le
+                // corps du texte, pas une pièce rapportée. Seule la parole de
+                // l'utilisateur est encadrée, ce que font ChatGPT et Claude.
+                styles.plain,
           ]}
         >
-          <Text style={[styles.bubbleText, { color: isUser ? palette.accentText : palette.text }]}>
-            {item.content}
-          </Text>
+          {/* Le message de l'utilisateur reste du texte brut : c'est ce qu'il a
+              tapé, l'interpréter ferait disparaître ses astérisques. Celui du
+              modèle est du Markdown, et se lit criblé de signes sans rendu. */}
+          {isUser ? (
+            <Text style={[styles.bubbleText, { color: palette.accentSoftText }]}>
+              {item.content}
+            </Text>
+          ) : (
+            <Markdown>{item.content}</Markdown>
+          )}
         </View>
       );
     },
@@ -133,25 +149,34 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           // Rendu `null` quand il n'y a rien à montrer : un pied vide compterait
           // malgré tout dans l'espacement de la liste.
           ListFooterComponent={
-            streamingText === null && pending.length === 0 ? null : (
+            streamingText === null && pending.length === 0 && pendingUserText === null ? null : (
               <View style={styles.footer}>
-                {streamingText === null ? null : (
+                {/* Le message tel qu'il vient d'être tapé, en attendant que le
+                    serveur renvoie sa version enregistrée. Même apparence que
+                    les autres : rien ne doit signaler à l'utilisateur qu'il
+                    regarde un état transitoire. */}
+                {pendingUserText === null ? null : (
                   <View
                     style={[
                       styles.bubble,
-                      styles.pending,
-                      { backgroundColor: palette.surface, borderColor: palette.border },
+                      { alignSelf: "flex-end", backgroundColor: palette.accentSoft },
                     ]}
                   >
+                    <Text style={[styles.bubbleText, { color: palette.accentSoftText }]}>
+                      {pendingUserText}
+                    </Text>
+                  </View>
+                )}
+
+                {streamingText === null ? null : (
+                  <View style={[styles.bubble, styles.plain]}>
                     {/* Tant qu'aucun jeton n'est arrivé, la barre d'attente dit
                         que la demande est partie ; ensuite le texte parle de
                         lui-même. */}
                     {streamingText.length === 0 ? (
                       <ActivityIndicator color={palette.textMuted} />
                     ) : (
-                      <Text style={[styles.bubbleText, { color: palette.text }]}>
-                        {streamingText}
-                      </Text>
+                      <Markdown>{streamingText}</Markdown>
                     )}
                   </View>
                 )}
@@ -199,47 +224,60 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
         </View>
       ) : null}
 
-      <View
-        style={[
-          styles.composer,
-          {
-            backgroundColor: palette.surfaceElevated,
-            borderTopColor: palette.border,
-            paddingBottom: spacing.md + insets.bottom,
-          },
-        ]}
-      >
-        <TextInput
-          value={draft}
-          onChangeText={setDraft}
-          placeholder="Votre message"
-          placeholderTextColor={palette.textMuted}
-          multiline
-          onSubmitEditing={sendDraft}
-          // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde
-          // un retour à la ligne, la saisie multiligne y étant la norme.
-          blurOnSubmit={Platform.OS === "web"}
-          accessibilityLabel="Votre message"
+      <View style={[styles.composer, { paddingBottom: spacing.md + insets.bottom }]}>
+        {/* Le bouton est dans le champ, et le champ seul porte le cadre : la
+            saisie se lit comme un objet unique posé sur le fil, sans bandeau
+            qui la sépare de la conversation. C'est ce que font ChatGPT, Claude
+            et Perplexity. */}
+        <View
           style={[
-            styles.input,
-            { color: palette.text, backgroundColor: palette.surface, borderColor: palette.border },
-          ]}
-        />
-        <Pressable
-          onPress={sendDraft}
-          disabled={draft.trim().length === 0 || send.isPending}
-          accessibilityRole="button"
-          accessibilityLabel="Envoyer le message"
-          style={[
-            styles.sendButton,
-            {
-              backgroundColor: palette.accent,
-              opacity: draft.trim().length === 0 || send.isPending ? 0.4 : 1,
-            },
+            styles.inputShell,
+            { backgroundColor: palette.surface, borderColor: palette.border },
           ]}
         >
-          <Text style={[styles.sendLabel, { color: palette.accentText }]}>Envoyer</Text>
-        </Pressable>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Votre message"
+            placeholderTextColor={palette.textMuted}
+            multiline
+            onSubmitEditing={sendDraft}
+            // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde
+            // un retour à la ligne, la saisie multiligne y étant la norme.
+            blurOnSubmit={Platform.OS === "web"}
+            accessibilityLabel="Votre message"
+            // Le cadre est porté par la coque : celui du champ ferait double
+            // trait. `web:` seulement — sur mobile, `outline` n'existe pas et
+            // le retrait du liseré de focus enlèverait le repère de navigation
+            // au clavier, qui est ici la coque elle-même.
+            className="web:outline-none"
+            style={[styles.input, { color: palette.text }]}
+            // Un `textarea` s'ouvre sur deux rangées par défaut : le champ
+            // naissait donc deux fois trop haut, texte collé en haut et flèche
+            // en bas. Sur mobile, `numberOfLines` bornerait au contraire la
+            // saisie à une ligne — d'où la restriction au web.
+            {...(Platform.OS === "web" ? { numberOfLines: 1 } : {})}
+          />
+          <Pressable
+            onPress={sendDraft}
+            disabled={draft.trim().length === 0 || send.isPending}
+            accessibilityRole="button"
+            accessibilityLabel="Envoyer le message"
+            // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie,
+            // plus 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
+            // `MIN_TOUCH_TARGET` sans faire grandir le champ.
+            hitSlop={8}
+            style={[
+              styles.sendButton,
+              {
+                backgroundColor: palette.accent,
+                opacity: draft.trim().length === 0 || send.isPending ? 0.4 : 1,
+              },
+            ]}
+          >
+            <ArrowUp size={18} color={palette.accentText} />
+          </Pressable>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );
@@ -266,7 +304,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   footer: { gap: spacing.md },
-  pending: { alignSelf: "flex-start", borderWidth: 1 },
+  /**
+   * Réponse de l'assistant : sans fond, elle n'a plus de raison d'être bornée
+   * à 85 % ni d'être rentrée de son propre padding — elle se lit sur toute la
+   * colonne, alignée sur les autres textes de l'écran.
+   */
+  plain: { alignSelf: "flex-start", maxWidth: "100%", paddingHorizontal: 0 },
   bubbleText: { fontSize: fontSize.md, lineHeight: 22 },
   empty: { fontSize: fontSize.sm, textAlign: "center", marginTop: spacing.xxl },
   errorBar: {
@@ -286,30 +329,33 @@ const styles = StyleSheet.create({
   },
   retryText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   composer: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: spacing.sm,
     padding: spacing.md,
-    borderTopWidth: 1,
     width: "100%",
     maxWidth: 900,
     alignSelf: "center",
   },
-  input: {
-    flex: 1,
+  inputShell: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: spacing.sm,
     minHeight: MIN_TOUCH_TARGET,
-    maxHeight: 140,
-    paddingHorizontal: spacing.md,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.sm,
     paddingVertical: spacing.sm,
     borderWidth: 1,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
+  },
+  input: {
+    flex: 1,
+    maxHeight: 140,
+    paddingVertical: spacing.xs,
     fontSize: fontSize.md,
   },
   sendButton: {
-    minHeight: MIN_TOUCH_TARGET,
+    width: 32,
+    height: 32,
+    alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.md,
+    borderRadius: radius.pill,
   },
-  sendLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
 });

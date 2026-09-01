@@ -79,18 +79,23 @@ export default function ConversationScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  /**
+   * Pleine largeur, et non bornée à 900 pt comme le fil.
+   *
+   * L'en-tête est un bandeau d'écran : le titre se cale au bord gauche et le
+   * « … » au bord droit. Le suivre sur la largeur du fil les ramènerait tous
+   * deux vers le centre sur grand écran, sans rien y gagner.
+   */
   header: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     width: "100%",
-    maxWidth: 900,
-    alignSelf: "center",
   },
   back: { minHeight: MIN_TOUCH_TARGET, justifyContent: "center" },
   backLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   titleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  title: { flex: 1, fontSize: fontSize.lg, fontWeight: fontWeight.semibold },
+  title: { flex: 1, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
   actions: {
     width: 32,
     height: 32,

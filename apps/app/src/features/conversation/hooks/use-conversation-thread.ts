@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Conversation } from "@jc/domain";
+import type { Conversation, Message, Paginated } from "@jc/domain";
 import { api } from "@/shared/lib/api";
 
 /** Nombre de messages chargés à l'ouverture du fil. */
@@ -9,9 +9,12 @@ const THREAD_PAGE_SIZE = 50;
 /**
  * Fil d'une conversation : lecture de l'historique et envoi d'un message.
  *
- * L'envoi n'est pas optimiste. Le serveur écrit le message de l'utilisateur
- * *avant* d'interroger le modèle, et le renvoie comme premier événement du
- * flux : une insertion optimiste locale ferait un doublon.
+ * Le message de l'utilisateur s'affiche en deux temps. D'abord tel qu'il a été
+ * tapé, hors du cache, dès l'appui sur « Envoyer » : rien ne justifie de lui
+ * faire attendre un aller-retour réseau pour relire son propre texte. Puis le
+ * serveur, qui l'écrit en base *avant* d'interroger le modèle, le renvoie comme
+ * premier événement du flux : la version persistée entre alors dans le cache et
+ * la provisoire disparaît, dans le même rendu — jamais les deux à la fois.
  */
 export function useConversationThread(
   conversationId: string,
@@ -31,6 +34,18 @@ export function useConversationThread(
    */
   const [streamingText, setStreamingText] = useState<string | null>(null);
 
+  /**
+   * Message que l'utilisateur vient d'envoyer, affiché avant que le serveur ne
+   * l'ait confirmé.
+   *
+   * Sans lui, la bulle n'apparaît qu'au retour de l'écriture en base : sur une
+   * connexion ordinaire, on voit le champ se vider et rien s'afficher pendant
+   * une seconde. Le texte n'est pas écrit dans le cache — il vit à côté, et
+   * cède la place à la version persistée dès qu'elle arrive, ce qui interdit
+   * le doublon.
+   */
+  const [pendingUserText, setPendingUserText] = useState<string | null>(null);
+
   const messages = useQuery({
     queryKey: ["conversation", conversationId, "messages"],
     queryFn: () => api.conversations.messages(conversationId, { limit: THREAD_PAGE_SIZE }),
@@ -38,13 +53,31 @@ export function useConversationThread(
 
   const send = useMutation({
     mutationFn: async (content: string) => {
+      setPendingUserText(content);
       setStreamingText("");
 
       for await (const event of api.conversations.send(conversationId, {
         content,
         inputMode: "text",
       })) {
-        if (event.type === "text") {
+        if (event.type === "message") {
+          // Le serveur vient de persister le message de l'utilisateur, avant
+          // même d'interroger le modèle. L'écrire dans le cache le fait
+          // apparaître aussitôt : sans cela, il n'arrivait qu'avec
+          // l'invalidation de fin de tour, soit plusieurs secondes après avoir
+          // été tapé — le temps d'écrire la réponse.
+          queryClient.setQueryData<Paginated<Message>>(
+            ["conversation", conversationId, "messages"],
+            (current) => {
+              if (!current) return current;
+              if (current.items.some((item) => item.id === event.message.id)) return current;
+              return { ...current, items: [...current.items, event.message] };
+            },
+          );
+          // Dans le même rendu que l'insertion : la bulle provisoire disparaît
+          // à l'instant où la persistée la remplace, sans clignotement.
+          setPendingUserText(null);
+        } else if (event.type === "text") {
           setStreamingText((current) => (current ?? "") + event.text);
         } else if (event.type === "redirect") {
           onRedirect?.(event.conversation, content);
@@ -76,10 +109,13 @@ export function useConversationThread(
       // Après l'invalidation seulement : plus tôt, la bulle en cours
       // disparaîtrait avant que la version persistée n'ait pris sa place.
       setStreamingText(null);
+      // Filet : un tour interrompu avant l'événement `message` laisserait
+      // sinon la bulle provisoire à l'écran indéfiniment.
+      setPendingUserText(null);
     },
   });
 
   const submit = useCallback((content: string) => send.mutate(content), [send]);
 
-  return { messages, send, submit, streamingText };
+  return { messages, send, submit, streamingText, pendingUserText };
 }
