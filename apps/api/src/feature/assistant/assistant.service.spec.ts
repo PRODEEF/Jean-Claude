@@ -1,4 +1,7 @@
-import type { Folder, Suggestion } from "@jc/domain";
+import type { Conversation, Folder, Suggestion } from "@jc/domain";
+import type { LlmProvider } from "../../core/llm/llm.port";
+import type { IConversationRepository } from "../../domain/conversation/conversation.repository.interface";
+import { ConversationService } from "../../domain/conversation/conversation.service";
 import type { IFolderRepository } from "../../domain/folder/folder.repository.interface";
 import { FolderService } from "../../domain/folder/folder.service";
 import type { ISuggestionRepository } from "../../domain/suggestion/suggestion.repository.interface";
@@ -7,6 +10,11 @@ import { AssistantService } from "./assistant.service";
 
 const TOKEN = "access-token";
 const USER = "user-1";
+
+/** Les identifiants de dossier voyagent dans la charge utile, validés en UUID. */
+const SANTE = "a1b2c3d4-0001-4000-8000-000000000001";
+const ASSURANCES = "a1b2c3d4-0002-4000-8000-000000000002";
+const INVENTE = "a1b2c3d4-0003-4000-8000-000000000003";
 
 function makeFolder(overrides: Partial<Folder> & Pick<Folder, "id" | "name">): Folder {
   return {
@@ -97,11 +105,65 @@ function makeFolderRepository(initial: Folder[] = []): IFolderRepository {
   };
 }
 
+function makeConversationRepository(
+  overrides: Partial<IConversationRepository> = {},
+): IConversationRepository {
+  const conversation: Conversation = {
+    id: "conv-1",
+    kind: "chat",
+    title: "Mutuelle santé",
+    folderIds: [],
+    archivedAt: null,
+    lastMessageAt: null,
+    createdAt: "2026-09-01T08:00:00.000Z",
+    updatedAt: "2026-09-01T08:00:00.000Z",
+  };
+
+  return {
+    findAll: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    findById: jest.fn().mockResolvedValue(conversation),
+    findAssistantChannel: jest.fn().mockResolvedValue(null),
+    create: jest.fn().mockResolvedValue(conversation),
+    update: jest.fn().mockResolvedValue(conversation),
+    delete: jest.fn().mockResolvedValue(undefined),
+    setFolders: jest.fn().mockResolvedValue([]),
+    listMessages: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    appendMessage: jest.fn(),
+    ...overrides,
+  };
+}
+
+/** Le tour de dialogue n'est jamais joué ici : seul `assignFolders` est appelé. */
+const IDLE_LLM: LlmProvider = {
+  name: "gateway",
+  isSovereign: false,
+  complete: jest.fn(),
+  stream: jest.fn(),
+};
+
 function makeService(
   suggestions: ISuggestionRepository = makeSuggestionRepository(),
   folders: IFolderRepository = makeFolderRepository(),
+  conversations: IConversationRepository = makeConversationRepository(),
 ): AssistantService {
-  return new AssistantService(new SuggestionService(suggestions), new FolderService(folders));
+  const suggestionService = new SuggestionService(suggestions);
+  const folderService = new FolderService(folders);
+
+  return new AssistantService(
+    suggestionService,
+    folderService,
+    new ConversationService(conversations, IDLE_LLM, suggestionService, folderService),
+  );
+}
+
+function makeFilingSuggestion(payload: Record<string, unknown>): Suggestion {
+  return makeSuggestion({ kind: "assign_folders", message: "Je range ça ?", payload });
+}
+
+/** Dossiers finalement rattachés à la conversation, dans l'ordre d'appel. */
+function assignedFolders(repo: IConversationRepository): string[] {
+  const call = (repo.setFolders as jest.Mock).mock.calls[0] as [string, string[], string, string];
+  return call[1];
 }
 
 /** Noms des dossiers créés, dans l'ordre, avec leur parent. */
@@ -191,6 +253,136 @@ describe("AssistantService", () => {
       ).rejects.toMatchObject({ status: 422 });
 
       expect(folders.create).not.toHaveBeenCalled();
+      expect(suggestions.markResolved).not.toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+  });
+
+  describe("rangement d'une conversation (A.1)", () => {
+    it("rattache la conversation aux dossiers existants proposés", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolderNames: [] }),
+          ),
+      });
+      const folders = makeFolderRepository([
+        makeFolder({ id: SANTE, name: "Santé" }),
+        makeFolder({ id: ASSURANCES, name: "Assurances" }),
+      ]);
+      const conversations = makeConversationRepository();
+
+      await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      // Plusieurs dossiers d'un coup : une conversation n'a pas de parent
+      // unique (§5.2, A.1).
+      expect(assignedFolders(conversations)).toEqual([SANTE, ASSURANCES]);
+      expect(folders.create).not.toHaveBeenCalled();
+    });
+
+    it("crée le dossier proposé quand aucun existant ne convient", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [], newFolderNames: ["Assurances"] }),
+          ),
+      });
+      const folders = makeFolderRepository();
+      const conversations = makeConversationRepository();
+
+      const resolved = await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      expect(folders.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ name: "Assurances", createdByAssistant: true }),
+        TOKEN,
+      );
+      expect(assignedFolders(conversations)).toEqual(["folder-Assurances"]);
+      expect(resolved.folders.map((folder) => folder.name)).toEqual(["Assurances"]);
+    });
+
+    it("réutilise un dossier homonyme au lieu d'en créer un doublon", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [], newFolderNames: ["assurances"] }),
+          ),
+      });
+      const folders = makeFolderRepository([makeFolder({ id: ASSURANCES, name: "Assurances" })]);
+      const conversations = makeConversationRepository();
+
+      await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      expect(folders.create).not.toHaveBeenCalled();
+      expect(assignedFolders(conversations)).toEqual([ASSURANCES]);
+    });
+
+    it("écarte un identifiant de dossier que le modèle a inventé", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeFilingSuggestion({
+            existingFolderIds: [SANTE, INVENTE],
+            newFolderNames: [],
+          }),
+        ),
+      });
+      const folders = makeFolderRepository([makeFolder({ id: SANTE, name: "Santé" })]);
+      const conversations = makeConversationRepository();
+
+      await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      // L'identifiant inventé échouerait sur la clé étrangère et emporterait
+      // tout le rangement avec lui.
+      expect(assignedFolders(conversations)).toEqual([SANTE]);
+      jest.restoreAllMocks();
+    });
+
+    it("refuse un rangement dont plus aucun dossier n'est applicable", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      jest.spyOn(console, "error").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [INVENTE], newFolderNames: [] }),
+          ),
+      });
+      const conversations = makeConversationRepository();
+
+      await expect(
+        makeService(suggestions, makeFolderRepository(), conversations).resolve(
+          USER,
+          "sug-1",
+          { action: "accept" },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 422 });
+
+      expect(conversations.setFolders).not.toHaveBeenCalled();
       expect(suggestions.markResolved).not.toHaveBeenCalled();
       jest.restoreAllMocks();
     });

@@ -1,10 +1,13 @@
 import {
+  assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
   type Folder,
+  type FolderTreeNode,
   type ResolveSuggestion,
   type Suggestion,
 } from "@jc/domain";
 import { httpError } from "../../core/http";
+import type { ConversationService } from "../../domain/conversation/conversation.service";
 import type { FolderService } from "../../domain/folder/folder.service";
 import type { SuggestionService } from "../../domain/suggestion/suggestion.service";
 
@@ -26,6 +29,7 @@ export class AssistantService {
   constructor(
     private readonly suggestions: SuggestionService,
     private readonly folders: FolderService,
+    private readonly conversations: ConversationService,
   ) {}
 
   listPending(conversationId: string, accessToken: string): Promise<Suggestion[]> {
@@ -47,12 +51,86 @@ export class AssistantService {
       };
     }
 
-    const folders = await this.createFolders(userId, suggestion, accessToken);
+    const folders = await this.apply(userId, suggestion, accessToken);
 
     return {
       suggestion: await this.suggestions.markResolved(id, "accepted", accessToken),
       folders,
     };
+  }
+
+  private apply(userId: string, suggestion: Suggestion, accessToken: string): Promise<Folder[]> {
+    if (suggestion.kind === "create_project_folders") {
+      return this.createFolders(userId, suggestion, accessToken);
+    }
+    if (suggestion.kind === "assign_folders") {
+      return this.fileConversation(userId, suggestion, accessToken);
+    }
+
+    // Les autres types de suggestion existent au contrat mais n'ont pas encore
+    // de module pour les exécuter (todolistes, rendez-vous).
+    throw httpError(422, "Cette proposition n'est pas encore prise en charge.");
+  }
+
+  /**
+   * Range la conversation, en créant au passage les dossiers qui manquent (A.1).
+   *
+   * L'appel remplace l'ensemble des rattachements, ce qui est sans effet de
+   * bord ici : le rangement n'est proposé qu'aux conversations qui n'en ont
+   * aucun.
+   */
+  private async fileConversation(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<Folder[]> {
+    const payload = assignFoldersPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success || !suggestion.conversationId) {
+      console.error("Charge utile de rangement illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    const tree = await this.folders.getTree(accessToken);
+    const known = flatten(tree);
+    const targetIds = new Set<string>();
+    const created: Folder[] = [];
+
+    for (const id of payload.data.existingFolderIds) {
+      // Un identifiant inventé par le modèle échouerait sur la clé étrangère :
+      // on l'écarte plutôt que de perdre tout le rangement avec lui.
+      if (known.some((folder) => folder.id === id)) targetIds.add(id);
+      else console.warn("Dossier proposé inconnu, ignoré", suggestion.id);
+    }
+
+    for (const name of payload.data.newFolderNames) {
+      const existing = known.find((folder) => sameName(folder.name, name));
+      if (existing) {
+        targetIds.add(existing.id);
+        continue;
+      }
+
+      const folder = await this.folders.create(
+        userId,
+        { name, parentId: null, createdByAssistant: true },
+        accessToken,
+      );
+      created.push(folder);
+      targetIds.add(folder.id);
+    }
+
+    if (targetIds.size === 0) {
+      console.error("Rangement sans dossier applicable", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    await this.conversations.assignFolders(
+      suggestion.conversationId,
+      { folderIds: [...targetIds], source: "assistant" },
+      accessToken,
+    );
+
+    return created;
   }
 
   /**
@@ -128,4 +206,9 @@ export class AssistantService {
  */
 function sameName(a: string, b: string): boolean {
   return a.trim().toLocaleLowerCase("fr") === b.trim().toLocaleLowerCase("fr");
+}
+
+/** Racines et sous-dossiers sur un seul niveau — le modèle peut nommer les deux. */
+function flatten(tree: FolderTreeNode[]): Folder[] {
+  return tree.flatMap((node) => [node, ...node.children]);
 }
