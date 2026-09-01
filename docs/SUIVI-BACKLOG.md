@@ -7,9 +7,15 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **31 août 2026** — issues #3 et #4 terminées : abstraction IA via
-Vercel AI Gateway, fil de conversation en flux, timeouts et quotas. Critère de recette
-§11 Phase A validé. API migrée de NestJS vers Hono dans la foulée, en vue du
+Dernière mise à jour : **1er septembre 2026** — issues #5 et #7 terminées. #5 était déjà
+couverte par le socle (table de liaison `conversation_folders`, colonne `source`, garde-fou
+de profondeur) : vérifiée point par point puis clôturée. #7 rend les dossiers manipulables :
+création, renommage et suppression, sous-dossiers visibles dans la barre latérale, et
+rangement d'une conversation dans **plusieurs** dossiers à la fois (A.1). Aucune ligne d'API
+n'a été nécessaire — les routes existaient, aucune interface ne les appelait.
+
+Avant cela, le 31 août : issues #3 et #4 — abstraction IA via Vercel AI Gateway, fil de
+conversation en flux, timeouts et quotas. API migrée de NestJS vers Hono en vue du
 déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2,4 s à 0,7 s.
 
 ---
@@ -47,22 +53,22 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Annexe A — backlog fonctionnel
 
-| Réf. | Point                                                 | Statut | Note                                                                                                                                   |
-| ---- | ----------------------------------------------------- | :----: | -------------------------------------------------------------------------------------------------------------------------------------- |
-| A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                      |
-| A.1  | Conversations multi-dossiers, rangement matriciel     |   🔵   | Schéma, repository et `PUT /conversations/:id/folders` faits. UI à construire                                                          |
-| A.2  | Conversion conversation → todoliste                   |   🔵   | Tables `task_lists` / `tasks` prêtes, outil `suggest_task_list` défini. Module `domain/task` à écrire                                  |
-| A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                         |
-| A.4  | Sous-dossiers automatiques de projet                  |   🔵   | Colonne `purpose` (idea/todo/purchase/appointment) posée                                                                               |
-| A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                     |
-| A.6  | Recherche avancée par filtres                         |   🔵   | Index plein texte français créés, `searchFiltersSchema` défini. `feature/search` à écrire                                              |
-| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison — la matière première est capturée                                                    |
-| A.8  | Assistant proactif                                    |   🔵   | Outils IA définis, table `assistant_suggestions` prête. `feature/assistant` à écrire                                                   |
-| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                |
-| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique en base, prompt de bornage testé, onglet Jean-Claude opérationnel. Bascule automatique hors périmètre et réglages à faire |
-| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                   |
-| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                      |
-| A.13 | Onboarding conversationnel                            |   ⬜   | Voir §6.3                                                                                                                              |
+| Réf. | Point                                                 | Statut | Note                                                                                                                                                      |
+| ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                         |
+| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders` et interface de rangement par cases à cocher multiples. L'origine `user`/`assistant` est déjà distinguée en base |
+| A.2  | Conversion conversation → todoliste                   |   🔵   | Tables `task_lists` / `tasks` prêtes, outil `suggest_task_list` défini. Module `domain/task` à écrire                                                     |
+| A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                                            |
+| A.4  | Sous-dossiers automatiques de projet                  |   🔵   | Colonne `purpose` (idea/todo/purchase/appointment) posée                                                                                                  |
+| A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                        |
+| A.6  | Recherche avancée par filtres                         |   🔵   | Index plein texte français créés, `searchFiltersSchema` défini. `feature/search` à écrire                                                                 |
+| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison — la matière première est capturée                                                                       |
+| A.8  | Assistant proactif                                    |   🔵   | Outils IA définis, table `assistant_suggestions` prête. `feature/assistant` à écrire                                                                      |
+| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                   |
+| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique en base, prompt de bornage testé, onglet Jean-Claude opérationnel. Bascule automatique hors périmètre et réglages à faire                    |
+| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                                      |
+| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                         |
+| A.13 | Onboarding conversationnel                            |   ⬜   | Voir §6.3                                                                                                                                                 |
 
 ---
 
@@ -91,8 +97,10 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Points nécessitant un A/B testing humain (§4.3)
 
-Aucun à ce stade — aucune décision d'interface contestable n'a encore été
-tranchée. À alimenter dès que les écrans réels seront construits.
+| Sujet                                             | Ce qui a été tranché, faute de mieux                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Actions d'un dossier et d'une conversation        | Une **fenêtre unique** portant toutes les actions, ouverte par un « … ». Les applications de référence ne convergent pas : ChatGPT et Claude posent un menu déroulant au survol, Notion et Apple Notes un menu contextuel — or ni le survol ni le clic droit n'existent au doigt (§4.2 non concluant) |
+| Sous-dossiers dépliés en permanence dans la barre | Seul le dossier racine se replie. Un second cran de repli a été écarté parce que l'arborescence est bornée à 2 niveaux, mais le point mérite d'être vu par un utilisateur avec un vrai volume de dossiers                                                                                             |
 
 ## Dette technique connue
 
@@ -108,6 +116,8 @@ Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo
 
 ## Éléments du cahier des charges non disponibles
 
-| Élément                      | Réf.     | Impact                                                                                                                       |
-| ---------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `maquette-interface-ia.html` | §1, §4.5 | Référence visuelle et fonctionnelle du web — **manquante**. Nécessaire pour construire les écrans conformément à la maquette |
+Aucun. Les deux maquettes annoncées aux §1 et §4.5 sont dans `models/` —
+`maquette-interface-ia.html` (web) et `maquette-interface-mobile.html`. La
+barre latérale en reprend la structure : entrée Jean-Claude en tête, bouton
+« Nouvelle conversation », « + » d'ajout de dossier sur l'en-tête de section,
+groupes de dossiers repliables, « … » dans l'en-tête de conversation.
