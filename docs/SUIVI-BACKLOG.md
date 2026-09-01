@@ -13,7 +13,9 @@ ou ignore d'un geste. Les appels d'outils du modèle deviennent des suggestions 
 (`feature/assistant`) au lieu d'être perdus — le §12.1 est appliqué de bout en bout pour
 la première fois. La bascule hors périmètre suit : une demande étrangère aux trois sujets
 du canal ouvre une conversation classique, où la question est reposée et la réponse
-donnée.
+donnée. Enfin, une conversation qui traîne sans dossier se nomme toute seule à partir de
+son contenu (§5.2) et propose où se ranger (A.1) — en réutilisant les dossiers existants,
+ou en en ouvrant un si aucun ne convient.
 
 Rappel de la mise à jour précédente (31 août 2026) : issues #3 et #4 terminées —
 abstraction IA via Vercel AI Gateway, fil de conversation en flux, timeouts et quotas.
@@ -58,13 +60,13 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Réf. | Point                                                 | Statut | Note                                                                                                                                                                          |
 | ---- | ----------------------------------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                             |
-| A.1  | Conversations multi-dossiers, rangement matriciel     |   🔵   | Schéma, repository et `PUT /conversations/:id/folders` faits. UI à construire                                                                                                 |
+| A.1  | Conversations multi-dossiers, rangement matriciel     |   🟡   | L'assistant propose plusieurs dossiers à la fois pour un fil non classé, l'utilisateur valide d'un geste. Reste le rangement manuel depuis l'interface                        |
 | A.2  | Conversion conversation → todoliste                   |   🔵   | Tables `task_lists` / `tasks` prêtes, outil `suggest_task_list` défini. Module `domain/task` à écrire                                                                         |
 | A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                                                                |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                             |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                            |
 | A.6  | Recherche avancée par filtres                         |   🔵   | Index plein texte français créés, `searchFiltersSchema` défini. `feature/search` à écrire                                                                                     |
-| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison — la matière première est capturée                                                                                           |
+| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison, désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore    |
 | A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des suggestions en attente, acceptées ou ignorées d'un geste. Reste les suggestions de todoliste et de rendez-vous |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                       |
 | A.10 | Bornage du mode assistant                             |   🟡   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre vers une conversation classique. Restent le rangement en dossier du fil ouvert et les réglages |
@@ -107,7 +109,6 @@ tranchée. À alimenter dès que les écrans réels seront construits.
 | Point                                                  | Détail                                                                                                                                                                                    |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pagination remontante du fil absente                   | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                             |
-| Titre de conversation non généré                       | Toute conversation créée s'appelle « Nouvelle conversation ». Le §5.2 prévoit un titre déduit des premiers messages                                                                       |
 | Périmètre assistant non appliqué                       | `profiles.assistant_scope` est stocké mais jamais lu : une capacité désactivée dans les réglages n'empêche pas encore le serveur de produire la suggestion (§12.1). Demande `domain/user` |
 | Suggestions de todoliste et de rendez-vous non captées | `feature/assistant` ne traduit que `suggest_project_folders` ; `suggest_task_list` et `suggest_recurring_event` sont encore ignorés, faute de `domain/task` et `domain/calendar`          |
 | Node ≥ 22.12 requis                                    | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                                       |
