@@ -7,14 +7,25 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — issue #8 terminée : le périmètre du mode
-assistant (A.10) devient une règle appliquée par le serveur. Chaque capacité de
-`assistant_scope` — détection de todolistes, planification, aide au rangement, suggestions
-de structure — commande l'outil correspondant : coupée, l'outil n'entre plus dans le jeu
-remis au modèle, la consigne cesse de le réclamer, et un appel qui arriverait malgré tout
-est écarté avant de devenir une proposition. Deux capacités échappent au réglage et c'est
-volontaire : nommer une conversation, et basculer une demande hors périmètre vers une
-conversation classique — désactiver la seconde reviendrait à supprimer A.10.
+Dernière mise à jour : **2 septembre 2026** — issue #11 : la recherche par filtres (A.6).
+Le bouton de recherche cherche désormais **dans le contenu des messages** et plus seulement
+dans les titres, côté serveur, via les index plein texte français — un fil se retrouve sans
+qu'on se rappelle comment il s'appelait, et le passage trouvé est affiché sous le titre.
+S'y ajoutent les filtres attendus par A.6 : six raccourcis de période, une plage de dates
+saisie, un ou plusieurs dossiers, et l'inclusion des conversations archivées. Les périodes
+sont résolues côté serveur dans le fuseau du profil : « le mois dernier » ne peut pas se
+calculer sur quatre plateformes sans risquer quatre résultats. Une migration remplace la
+configuration de recherche `french` par `french_unaccent`, sans quoi « sante » ne trouvait
+pas « santé ».
+
+Le même jour : issue #8 terminée, le périmètre du mode assistant (A.10) devient une règle
+appliquée par le serveur. Chaque capacité de `assistant_scope` — détection de todolistes,
+planification, aide au rangement, suggestions de structure — commande l'outil
+correspondant : coupée, l'outil n'entre plus dans le jeu remis au modèle, la consigne cesse
+de le réclamer, et un appel qui arriverait malgré tout est écarté avant de devenir une
+proposition. Deux capacités échappent au réglage et c'est volontaire : nommer une
+conversation, et basculer une demande hors périmètre vers une conversation classique —
+désactiver la seconde reviendrait à supprimer A.10.
 
 Le réglage vit donc côté serveur avant d'exister dans l'interface : les interrupteurs de
 la page Réglages restent à l'issue #12, qui n'aura qu'à les brancher sur une règle déjà
@@ -102,7 +113,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                                                     |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                  |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                 |
-| A.6  | Recherche avancée par filtres                         |   🔵   | Index plein texte français créés, `searchFiltersSchema` défini. `feature/search` à écrire. Recherche par titre en place dans la bannière, filtrée en mémoire — le plein texte reste à brancher                                                                          |
+| A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                          |
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                          |
 | A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste. Restent la todoliste et les rendez-vous              |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                            |
@@ -118,7 +129,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                                            |
 | A.4  | Sous-dossiers automatiques de projet                  |   🔵   | Colonne `purpose` (idea/todo/purchase/appointment) posée                                                                                                  |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                        |
-| A.6  | Recherche avancée par filtres                         |   🔵   | Index plein texte français créés, `searchFiltersSchema` défini. `feature/search` à écrire. Recherche par titre en place dans la bannière, filtrée en mémoire — le plein texte reste à brancher                                                                 |
+| A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                 |
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` (user/assistant) sur la liaison — la matière première est capturée                                                                       |
 | A.8  | Assistant proactif                                    |   🔵   | Outils IA définis, table `assistant_suggestions` prête. `feature/assistant` à écrire                                                                      |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                   |

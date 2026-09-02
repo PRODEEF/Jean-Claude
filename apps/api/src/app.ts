@@ -8,6 +8,7 @@ import { folderRoutes } from "./domain/folder/folder.routes.js";
 import { assistantRoutes } from "./feature/assistant/assistant.routes.js";
 import { userRoutes } from "./domain/user/user.routes.js";
 import { healthRoutes } from "./feature/health/health.routes.js";
+import { searchRoutes } from "./feature/search/search.routes.js";
 
 const allowedOrigins = config.corsOrigin.split(",");
 
@@ -33,5 +34,6 @@ export const app = new Hono()
   .route("/api/conversations", conversationRoutes)
   .route("/api/assistant", assistantRoutes)
   .route("/api/me", userRoutes)
+  .route("/api/search", searchRoutes)
   .route("/api/health", healthRoutes)
   .onError(onError);
