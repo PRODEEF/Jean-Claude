@@ -239,7 +239,13 @@ export function SettingsScreen() {
                   updateProfile.mutate({ scope: { [capability.key]: value } })
                 }
                 disabled={!scope || updateProfile.isPending}
-                trackColor={{ true: palette.accent, false: palette.border }}
+                // Le bouton porte la couleur de l'assistant, le rail son aplat
+                // atténué — clair en thème clair, sombre en thème sombre. Sans
+                // `thumbColor`, React Native pose son vert par défaut, qui ne
+                // vient d'aucune palette et jure avec la couleur choisie (§4.5).
+                thumbColor={palette.accent}
+                trackColor={{ true: palette.accentSoft, false: palette.border }}
+                ios_backgroundColor={palette.border}
                 accessibilityLabel={capability.label}
               />
             </View>
