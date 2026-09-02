@@ -35,6 +35,7 @@ type MessageRow = {
   input_mode: string;
   provider: string | null;
   model: string | null;
+  choices: string[] | null;
   created_at: string;
 };
 
@@ -62,6 +63,7 @@ function toMessage(row: MessageRow): Message {
     inputMode: row.input_mode as Message["inputMode"],
     provider: row.provider,
     model: row.model,
+    choices: row.choices,
     createdAt: row.created_at,
   };
 }
@@ -69,7 +71,7 @@ function toMessage(row: MessageRow): Message {
 export const CONVERSATION_COLUMNS =
   "id, kind, title, archived_at, last_message_at, created_at, updated_at, conversation_folders(folder_id)";
 const MESSAGE_COLUMNS =
-  "id, conversation_id, role, content, input_mode, provider, model, created_at";
+  "id, conversation_id, role, content, input_mode, provider, model, choices, created_at";
 
 export const conversationRepository: IConversationRepository = {
   async findAll(accessToken, options) {
@@ -255,6 +257,7 @@ export const conversationRepository: IConversationRepository = {
       role: Message["role"];
       provider?: string | null;
       model?: string | null;
+      choices?: string[] | null;
     },
     accessToken,
   ) {
@@ -270,6 +273,7 @@ export const conversationRepository: IConversationRepository = {
         input_mode: message.inputMode,
         provider: message.provider ?? null,
         model: message.model ?? null,
+        choices: message.choices ?? null,
       })
       .select(MESSAGE_COLUMNS)
       .single();
