@@ -1,9 +1,11 @@
 import { useState, type ReactNode } from "react";
-import { ScrollView, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import type { Theme } from "@jc/domain";
+import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
+import type { AssistantScope, Theme } from "@jc/domain";
 import { useProfile, useUpdateProfile } from "@/shared/hooks/use-profile";
 import { useAuth } from "@/shared/providers/auth-provider";
+import { useTheme } from "@/shared/providers/theme-provider";
 import { api } from "@/shared/lib/api";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -14,6 +16,44 @@ const THEMES: { value: Theme; label: string }[] = [
   { value: "light", label: "Clair" },
   { value: "dark", label: "Sombre" },
   { value: "system", label: "Système" },
+];
+
+/**
+ * Capacités que l'utilisateur laisse à l'assistant (A.10).
+ *
+ * Les cinq du schéma, et pas seulement les trois de la maquette : le serveur
+ * les applique déjà toutes, et en cacher deux laisserait l'assistant agir de
+ * lui-même sans que rien dans l'interface ne permette de l'en empêcher.
+ *
+ * Libellés sans jargon (§13.4.4) : on décrit ce que l'assistant fait, pas le
+ * nom technique de la capacité.
+ */
+const CAPABILITIES: { key: keyof AssistantScope; label: string; hint: string }[] = [
+  {
+    key: "morningReminders",
+    label: "Rappels du matin",
+    hint: "Ce qui compte aujourd'hui, et le point du lundi sur la semaine.",
+  },
+  {
+    key: "folderOrganization",
+    label: "Aide au rangement",
+    hint: "Proposer dans quels dossiers ranger une conversation.",
+  },
+  {
+    key: "structureSuggestions",
+    label: "Dossiers pour un projet",
+    hint: "Proposer une structure de dossiers quand un projet se dessine.",
+  },
+  {
+    key: "proactiveTaskDetection",
+    label: "Listes repérées au fil de l'eau",
+    hint: "Proposer une todoliste ou une liste d'achats née d'un échange.",
+  },
+  {
+    key: "proactiveScheduling",
+    label: "Échéances et rendez-vous",
+    hint: "Proposer de poser une date sur ce qui en mérite une.",
+  },
 ];
 
 /**
@@ -31,6 +71,7 @@ const THEMES: { value: Theme; label: string }[] = [
  */
 export function SettingsScreen() {
   const { signOut } = useAuth();
+  const { palette } = useTheme();
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
 
@@ -44,7 +85,15 @@ export function SettingsScreen() {
   const trimmedPseudo = pseudo.trim();
   const canSavePseudo = trimmedPseudo.length > 0 && trimmedPseudo !== savedPseudo;
 
+  const [draftName, setDraftName] = useState<string | null>(null);
+  const savedName = profile?.preferences.assistantName ?? "";
+  const assistantName = draftName ?? savedName;
+  const trimmedName = assistantName.trim();
+  const canSaveName = trimmedName.length > 0 && trimmedName !== savedName;
+
   const theme = profile?.preferences.theme ?? "system";
+  const accent = profile?.preferences.assistantColor ?? DEFAULT_ACCENT;
+  const scope = profile?.preferences.scope;
 
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="p-6">
@@ -94,11 +143,107 @@ export function SettingsScreen() {
         </Section>
 
         <Section title="Assistant">
+          <Field label="Son nom">
+            <View className="flex-row gap-2">
+              <Input
+                value={assistantName}
+                onChangeText={setDraftName}
+                placeholder="Jean-Claude"
+                maxLength={40}
+                accessibilityLabel="Nom de l'assistant"
+                className="flex-1"
+              />
+              <Button
+                variant="outline"
+                disabled={!canSaveName || updateProfile.isPending}
+                onPress={() => updateProfile.mutate({ assistantName: trimmedName })}
+                hitSlop={8}
+                accessibilityRole="button"
+              >
+                <Text>Enregistrer</Text>
+              </Button>
+            </View>
+          </Field>
+
+          <Field label="Sa couleur">
+            {/* Chaque pastille montre la couleur telle qu'elle apparaîtra en
+                thème clair et en thème sombre : c'est sur ces deux aplats
+                qu'elle se voit vraiment — bannière et bulles — et l'un des deux
+                seul ne dit rien du rendu de l'autre. Le cercle plein au centre
+                donne la teinte franche, celle des boutons. */}
+            <View className="flex-row flex-wrap gap-3" accessibilityRole="radiogroup">
+              {ASSISTANT_ACCENTS.map((option) => {
+                const selected = option.value.toLowerCase() === accent.toLowerCase();
+
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => updateProfile.mutate({ assistantColor: option.value })}
+                    disabled={updateProfile.isPending}
+                    // Une rangée de pastilles de 44 pt paraîtrait grossière ;
+                    // le `hitSlop` rétablit la cible tactile sans grossir le
+                    // dessin, comme sur les boutons de la barre latérale.
+                    hitSlop={(MIN_TOUCH_TARGET - SWATCH_SIZE) / 2}
+                    style={[
+                      styles.swatch,
+                      { borderColor: selected ? option.value : palette.border },
+                      selected && styles.swatchSelected,
+                    ]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={option.label}
+                  >
+                    <View style={styles.swatchHalves}>
+                      <View
+                        style={[
+                          styles.swatchHalf,
+                          { backgroundColor: softenAccent(option.value, "light") },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.swatchHalf,
+                          { backgroundColor: softenAccent(option.value, "dark") },
+                        ]}
+                      />
+                    </View>
+                    <View style={[styles.swatchCore, { backgroundColor: option.value }]} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Field>
+
           <Field label="Modèle" hint="Bientôt modifiable">
             <View className="h-10 justify-center rounded-md border border-border px-3 opacity-50 sm:h-9">
               <Text className="text-base text-foreground">{health.data?.llm.model ?? "—"}</Text>
             </View>
           </Field>
+        </Section>
+
+        <Section title="Ce qu'il peut proposer de lui-même">
+          <Text className="-mt-3 text-sm text-muted-foreground">
+            Il propose toujours, il n'agit jamais seul : vous acceptez ou vous ignorez d'un geste.
+            Ce qui est désactivé ici ne vous sera plus proposé.
+          </Text>
+
+          {CAPABILITIES.map((capability) => (
+            <View key={capability.key} className="flex-row items-center gap-3">
+              <View className="flex-1">
+                <Text className="text-base text-foreground">{capability.label}</Text>
+                <Text className="text-sm text-muted-foreground">{capability.hint}</Text>
+              </View>
+              <Switch
+                value={scope?.[capability.key] ?? true}
+                onValueChange={(value) =>
+                  updateProfile.mutate({ scope: { [capability.key]: value } })
+                }
+                disabled={!scope || updateProfile.isPending}
+                trackColor={{ true: palette.accent, false: palette.border }}
+                accessibilityLabel={capability.label}
+              />
+            </View>
+          ))}
         </Section>
 
         <Section title="Apparence">
@@ -151,6 +296,38 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
     </View>
   );
 }
+
+/**
+ * Pastille de couleur.
+ *
+ * En `StyleSheet` et non en classes utilitaires : les deux moitiés se
+ * superposent en absolu et la teinte vient d'une donnée, pas d'un jeton — les
+ * classes ne sauraient pas l'exprimer sans style en ligne de toute façon.
+ */
+const SWATCH_SIZE = 40;
+
+const styles = StyleSheet.create({
+  swatch: {
+    width: SWATCH_SIZE,
+    height: SWATCH_SIZE,
+    borderRadius: SWATCH_SIZE / 2,
+    borderWidth: 2,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  swatchSelected: { borderWidth: 3 },
+  swatchHalves: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    flexDirection: "row",
+  },
+  swatchHalf: { flex: 1 },
+  swatchCore: { width: SWATCH_SIZE / 2.5, height: SWATCH_SIZE / 2.5, borderRadius: SWATCH_SIZE },
+});
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (

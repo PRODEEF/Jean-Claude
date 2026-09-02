@@ -228,6 +228,32 @@ export const OPEN_NEW_CONVERSATION: LlmTool = {
   },
 };
 
+export const FINISH_ONBOARDING: LlmTool = {
+  name: "finish_onboarding",
+  description:
+    "À appeler dès que la conversation d'accueil a appris l'essentiel sur l'utilisateur : " +
+    "qui il est, où il en est côté professionnel et personnel, les projets ou les idées " +
+    "qu'il a en tête. Trois ou quatre échanges suffisent — mieux vaut clore tôt que " +
+    "transformer l'accueil en interrogatoire. " +
+    "Comme `name_conversation`, cet outil ne demande rien à l'utilisateur : il enregistre " +
+    "aussitôt. Ne pas l'annoncer, et poursuivre la conversation normalement.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      memory: {
+        type: "string",
+        description:
+          "Ce qu'il faut retenir durablement de l'utilisateur, rédigé à la troisième " +
+          "personne, en quelques phrases : situation, activité, projets en cours, façon " +
+          "de s'organiser. Uniquement ce qui sera encore vrai dans six mois — le détail " +
+          "ponctuel appartient à la conversation, pas à la mémoire. " +
+          "2000 caractères au plus.",
+      },
+    },
+    required: ["memory"],
+  },
+};
+
 /** Outils actifs sur une conversation classique. */
 export const CHAT_TOOLS: LlmTool[] = [SUGGEST_TASK_LIST, SUGGEST_FOLDERS, SUGGEST_RECURRING_EVENT];
 
@@ -244,9 +270,10 @@ export const ASSISTANT_TOOLS: LlmTool[] = [SUGGEST_PROJECT_FOLDERS, OPEN_NEW_CON
  * Capacité de périmètre dont dépend chaque outil de suggestion (A.10).
  *
  * Les outils absents de cette table ne relèvent d'aucun réglage :
- * `name_conversation` ne fait que poser un libellé, et `open_new_conversation`
- * applique le bornage du canal lui-même — le rendre désactivable reviendrait à
- * supprimer A.10.
+ * `name_conversation` ne fait que poser un libellé, `finish_onboarding` clôt
+ * un accueil qui ne se produit qu'une fois, et `open_new_conversation` applique
+ * le bornage du canal lui-même — le rendre désactivable reviendrait à supprimer
+ * A.10.
  */
 const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",

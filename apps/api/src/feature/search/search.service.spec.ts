@@ -34,7 +34,11 @@ function makeUserRepository(timezone = "Europe/Paris"): IUserRepository {
     preferences: { timezone },
   } as unknown as ProfileRecord;
 
-  return { findById: jest.fn().mockResolvedValue(profile), update: jest.fn() };
+  return {
+    findById: jest.fn().mockResolvedValue(profile),
+    update: jest.fn(),
+    completeOnboarding: jest.fn(),
+  };
 }
 
 function filters(overrides: Partial<SearchFilters> = {}): SearchFilters {

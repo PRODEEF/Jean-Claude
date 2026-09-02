@@ -54,6 +54,15 @@ export class JeanClaudeClient {
 
     update: (patch: UpdateUserProfile) =>
       this.http.request<UserProfile>("/me", { method: "PATCH", body: patch }),
+
+    /**
+     * Passe la conversation d'accueil (§6.3, A.13).
+     *
+     * Hors de `update` : l'horodatage d'accueil n'est pas un réglage, et le
+     * serveur ne le laisse pas écrire par le client.
+     */
+    completeOnboarding: () =>
+      this.http.request<UserProfile>("/me/onboarding/complete", { method: "POST" }),
   };
 
   readonly folders = {
