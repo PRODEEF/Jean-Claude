@@ -15,6 +15,28 @@ export type MessageRole = z.infer<typeof messageRoleSchema>;
 export const messageInputModeSchema = z.enum(["text", "voice"]);
 export type MessageInputMode = z.infer<typeof messageInputModeSchema>;
 
+/**
+ * Réponse proposée sous une question de l'assistant.
+ *
+ * Brève par construction : c'est un bouton, pas une phrase. Au-delà, la carte
+ * de question devient un pavé et l'utilisateur fait plus vite d'écrire.
+ */
+export const messageChoiceSchema = z.string().trim().min(1).max(80);
+
+/**
+ * Question à réponses proposées, telle que le modèle la renvoie.
+ *
+ * Décrite ici et non dans l'API : c'est la même forme que le client rendra,
+ * et une seconde définition côté serveur aurait dérivé au premier changement
+ * de bornes.
+ */
+export const askedQuestionSchema = z.object({
+  question: z.string().trim().min(1).max(200),
+  choices: z.array(messageChoiceSchema).min(2).max(6),
+});
+
+export type AskedQuestion = z.infer<typeof askedQuestionSchema>;
+
 export const messageSchema = z.object({
   id: uuidSchema,
   conversationId: uuidSchema,
@@ -27,6 +49,14 @@ export const messageSchema = z.object({
    */
   provider: z.string().nullable(),
   model: z.string().nullable(),
+  /**
+   * Réponses proposées quand le message est une question de l'assistant.
+   *
+   * `null` sur tout le reste : la carte de choix ne s'affiche que là où le
+   * modèle a jugé que quelques réponses couvraient la question. Deux au moins,
+   * six au plus — mêmes bornes que la contrainte SQL.
+   */
+  choices: z.array(messageChoiceSchema).min(2).max(6).nullable(),
   createdAt: isoDateTimeSchema,
 });
 

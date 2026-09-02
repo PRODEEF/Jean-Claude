@@ -7,7 +7,27 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — corrections après relecture : calendrier,
+Dernière mise à jour : **2 septembre 2026** — questions à réponses proposées, et couleur
+des interrupteurs.
+
+L'assistant peut désormais **poser une question avec quelques réponses à choisir** :
+l'outil `ask_question` attache les réponses au message qui porte la question (colonne
+`messages.choices`), et le fil les rend au-dessus de la saisie, numérotées, avec « Autre
+chose » qui rend la main au clavier et « Passer » qui referme. Réservé aux questions dont
+quelques réponses couvrent l'essentiel des cas : la consigne système écarte explicitement
+les questions ouvertes, où souffler quatre réponses priverait l'utilisateur de la sienne.
+C'est d'abord l'accueil (§6.3) qui en profite.
+
+⚠️ La migration `20260902160000_message_choices.sql` doit être appliquée
+(`npx supabase db push` puis `npm run db:types`) **avant** de déployer : sans la colonne,
+la lecture des messages échoue.
+
+Les interrupteurs des réglages prennent la couleur de l'assistant (bouton) sur son aplat
+atténué (rail) : sans `thumbColor`, React Native posait son vert par défaut, étranger à la
+palette et à la couleur choisie (§4.5). Même correction sur l'interrupteur « journée
+entière » du calendrier.
+
+Auparavant le même jour : corrections après relecture : calendrier,
 canal permanent, bannière et historique des propositions.
 
 Le calendrier passe à **quatre vues — jour, semaine, mois (par défaut) et année**, la
@@ -170,13 +190,13 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Authentification (§6)
 
-| Réf.        | Point                                            | Statut | Note                                                                                                                                                      |
-| ----------- | ------------------------------------------------ | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| §6.1        | E-mail + code à usage unique                     |   ✅   | Parcours complet : envoi, saisie, vérification automatique, renvoi avec délai d'attente, erreurs traduites. Gabarit d'e-mail forcé sur `{{ .Token }}`     |
-| §6.1        | Règles de validation partagées                   |   ✅   | `packages/domain/src/auth/auth.schema.ts`, 14 tests. Plus aucune règle de saisie dans l'écran                                                             |
-| §6.1        | Gabarit d'e-mail à pousser sur le projet hébergé |   ⬜   | `npx supabase config push` — **tant que ce n'est pas fait, le projet hébergé envoie un lien et non un code**                                              |
-| §6.2        | 2FA par SMS                                      |   ⬜   | Étape 2. Si non fait dans le sprint → priorité immédiate du backlog restant                                                                               |
-| §6.3 / A.13 | Onboarding conversationnel                       |   🟡   | Accueil mené dans le canal permanent au premier accès : questions ouvertes, mémoire écrite par `finish_onboarding`, lien « Passer ». Reste le vocal → #25 |
+| Réf.        | Point                                            | Statut | Note                                                                                                                                                                                               |
+| ----------- | ------------------------------------------------ | :----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §6.1        | E-mail + code à usage unique                     |   ✅   | Parcours complet : envoi, saisie, vérification automatique, renvoi avec délai d'attente, erreurs traduites. Gabarit d'e-mail forcé sur `{{ .Token }}`                                              |
+| §6.1        | Règles de validation partagées                   |   ✅   | `packages/domain/src/auth/auth.schema.ts`, 14 tests. Plus aucune règle de saisie dans l'écran                                                                                                      |
+| §6.1        | Gabarit d'e-mail à pousser sur le projet hébergé |   ⬜   | `npx supabase config push` — **tant que ce n'est pas fait, le projet hébergé envoie un lien et non un code**                                                                                       |
+| §6.2        | 2FA par SMS                                      |   ⬜   | Étape 2. Si non fait dans le sprint → priorité immédiate du backlog restant                                                                                                                        |
+| §6.3 / A.13 | Onboarding conversationnel                       |   🟡   | Accueil mené dans le canal permanent au premier accès : questions ouvertes ou à réponses proposées (`ask_question`), mémoire écrite par `finish_onboarding`, lien « Passer ». Reste le vocal → #25 |
 
 ---
 

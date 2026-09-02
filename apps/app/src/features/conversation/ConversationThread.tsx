@@ -19,6 +19,7 @@ import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
 import { useConversationThread } from "./hooks/use-conversation-thread";
 import { useSuggestions } from "./hooks/use-suggestions";
+import { QuestionCard } from "./QuestionCard";
 import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
 
 export type ConversationThreadProps = {
@@ -47,6 +48,10 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
   const router = useRouter();
   const [draft, setDraft] = useState("");
   const listRef = useRef<FlatList<ThreadItem>>(null);
+  const inputRef = useRef<TextInput>(null);
+  // Question écartée d'un « Passer », retenue par identifiant de message : le
+  // fil se recharge, la carte ne doit pas revenir pour autant.
+  const [skippedQuestion, setSkippedQuestion] = useState<string | null>(null);
 
   // La question voyage jusqu'au nouveau fil, qui s'en charge à l'ouverture :
   // c'est ce qui permet de réutiliser le tour de dialogue ordinaire, réponse
@@ -78,6 +83,20 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
       ].sort((a, b) => itemDate(a) - itemDate(b)),
     [messages.data, resolved],
   );
+
+  // Réponses proposées sous la dernière question de l'assistant, tant qu'elle
+  // n'a pas reçu de réponse : un message plus récent, une réponse en cours de
+  // frappe ou un « Passer » la referment.
+  const question = useMemo(() => {
+    const items = messages.data?.items ?? [];
+    const last = items[items.length - 1];
+    if (!last || last.role !== "assistant" || !last.choices || last.id === skippedQuestion) {
+      return null;
+    }
+    return { id: last.id, text: last.content, choices: last.choices };
+  }, [messages.data, skippedQuestion]);
+
+  const askable = question !== null && streamingText === null && pendingUserText === null;
 
   // `useRef` et non l'état d'envoi : revenir sur ce fil ne doit pas renvoyer la
   // question une seconde fois, alors que le paramètre de route est toujours là.
@@ -239,6 +258,21 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
         </View>
       ) : null}
 
+      {askable && question ? (
+        <View style={styles.question}>
+          <QuestionCard
+            question={question.text}
+            choices={question.choices}
+            onChoose={(choice) => {
+              setSkippedQuestion(question.id);
+              submit(choice);
+            }}
+            onWrite={() => inputRef.current?.focus()}
+            onSkip={() => setSkippedQuestion(question.id)}
+          />
+        </View>
+      ) : null}
+
       <View style={[styles.composer, { paddingBottom: spacing.md + insets.bottom }]}>
         {/* Le bouton est dans le champ, et le champ seul porte le cadre : la
             saisie se lit comme un objet unique posé sur le fil, sans bandeau
@@ -251,9 +285,12 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           ]}
         >
           <TextInput
+            ref={inputRef}
             value={draft}
             onChangeText={setDraft}
-            placeholder="Votre message"
+            // Le libellé dit que la carte n'oblige à rien : on peut toujours
+            // répondre à côté de ce qui est proposé.
+            placeholder={askable ? "Ou répondre directement…" : "Votre message"}
             placeholderTextColor={palette.textMuted}
             multiline
             onSubmitEditing={sendDraft}
@@ -355,6 +392,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   retryText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  question: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    width: "100%",
+    maxWidth: 900,
+    alignSelf: "center",
+  },
   composer: {
     padding: spacing.md,
     width: "100%",

@@ -254,8 +254,53 @@ export const FINISH_ONBOARDING: LlmTool = {
   },
 };
 
+export const ASK_QUESTION: LlmTool = {
+  name: "ask_question",
+  description:
+    "À appeler en posant une question dont quelques réponses couvrent l'essentiel des " +
+    "cas — « quel type de questions veux-tu ? », « on part sur quel angle ? ». " +
+    "L'utilisateur répond alors d'un appui, sans avoir à écrire ; il garde de toute " +
+    "façon la possibilité de répondre librement ou de passer. " +
+    "Ne pas l'appeler pour une question ouverte, dont la réponse tient dans le récit " +
+    "de l'utilisateur (« raconte-moi ce qui t'occupe ») : lui présenter quatre boutons " +
+    "reviendrait à lui souffler sa réponse. Une seule question à la fois. " +
+    "Comme `name_conversation`, cet outil ne demande rien : les réponses proposées " +
+    "s'affichent aussitôt sous la question. Ne pas les énumérer une seconde fois dans " +
+    "le texte de la réponse.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      question: {
+        type: "string",
+        description:
+          "La question posée, telle qu'elle sera affichée — courte et directe, " +
+          "200 caractères au plus. À reprendre à l'identique si le texte de la " +
+          "réponse la pose déjà.",
+      },
+      choices: {
+        type: "array",
+        description:
+          "Réponses proposées, de la plus probable à la moins probable. " +
+          "Deux au moins, six au plus — au-delà, la liste devient un formulaire.",
+        minItems: 2,
+        maxItems: 6,
+        items: {
+          type: "string",
+          description: "Réponse en quelques mots, 80 caractères au plus.",
+        },
+      },
+    },
+    required: ["question", "choices"],
+  },
+};
+
 /** Outils actifs sur une conversation classique. */
-export const CHAT_TOOLS: LlmTool[] = [SUGGEST_TASK_LIST, SUGGEST_FOLDERS, SUGGEST_RECURRING_EVENT];
+export const CHAT_TOOLS: LlmTool[] = [
+  SUGGEST_TASK_LIST,
+  SUGGEST_FOLDERS,
+  SUGGEST_RECURRING_EVENT,
+  ASK_QUESTION,
+];
 
 /**
  * Outils actifs sur le canal permanent Jean-Claude (A.10).
@@ -264,16 +309,21 @@ export const CHAT_TOOLS: LlmTool[] = [SUGGEST_TASK_LIST, SUGGEST_FOLDERS, SUGGES
  * l'organisation de l'outil et à la structure du projet. Y exposer la détection
  * de todolistes ou de rendez-vous récurrents le ferait déborder de ce périmètre.
  */
-export const ASSISTANT_TOOLS: LlmTool[] = [SUGGEST_PROJECT_FOLDERS, OPEN_NEW_CONVERSATION];
+export const ASSISTANT_TOOLS: LlmTool[] = [
+  SUGGEST_PROJECT_FOLDERS,
+  OPEN_NEW_CONVERSATION,
+  ASK_QUESTION,
+];
 
 /**
  * Capacité de périmètre dont dépend chaque outil de suggestion (A.10).
  *
  * Les outils absents de cette table ne relèvent d'aucun réglage :
  * `name_conversation` ne fait que poser un libellé, `finish_onboarding` clôt
- * un accueil qui ne se produit qu'une fois, et `open_new_conversation` applique
- * le bornage du canal lui-même — le rendre désactivable reviendrait à supprimer
- * A.10.
+ * un accueil qui ne se produit qu'une fois, `ask_question` ne fait que donner
+ * une forme à une question que le modèle poserait de toute façon, et
+ * `open_new_conversation` applique le bornage du canal lui-même — le rendre
+ * désactivable reviendrait à supprimer A.10.
  */
 const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",

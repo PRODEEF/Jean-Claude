@@ -2,10 +2,12 @@ import {
   assistantScopeSchema,
   DEFAULT_ASSISTANT_NAME,
   DEFAULT_CONVERSATION_TITLE,
+  askedQuestionSchema,
   labelSchema,
   userMemorySchema,
 } from "@jc/domain";
 import type {
+  AskedQuestion,
   AssignFolders,
   AssistantScope,
   Conversation,
@@ -21,6 +23,7 @@ import type {
 import { httpError } from "../../core/http.js";
 import type { LlmProvider, LlmTool, LlmToolCall } from "../../core/llm/llm.port.js";
 import {
+  ASK_QUESTION,
   ASSISTANT_TOOLS,
   CHAT_TOOLS,
   FINISH_ONBOARDING,
@@ -47,6 +50,7 @@ const APPLIED_DIRECTLY = new Set([
   NAME_CONVERSATION.name,
   OPEN_NEW_CONVERSATION.name,
   FINISH_ONBOARDING.name,
+  ASK_QUESTION.name,
 ]);
 
 /**
@@ -277,12 +281,24 @@ export class ConversationService {
       // pleine génération, le texte déjà produit est déjà facturé. Le perdre
       // priverait l'utilisateur d'une réponse qu'il retrouverait de toute façon
       // au rechargement.
+      // Résolu avant l'écriture : les réponses proposées voyagent sur le
+      // message qui porte la question, pas dans une seconde requête.
+      const asked = readQuestion(toolCalls);
+      const content = text.length > 0 ? text : (asked?.question ?? "");
+
       const assistantMessage =
-        text.length > 0
+        content.length > 0
           ? await this.conversations.appendMessage(
               conversationId,
               userId,
-              { content: text, inputMode: "text", role: "assistant", provider, model },
+              {
+                content,
+                inputMode: "text",
+                role: "assistant",
+                provider,
+                model,
+                ...(asked ? { choices: asked.choices } : {}),
+              },
               accessToken,
             )
           : null;
@@ -519,6 +535,10 @@ function buildSystemPrompt(
       "Prends les devants : quand un échange laisse deviner une action à faire,",
       "propose-la plutôt que d'attendre qu'on te la demande. Reste suggestif —",
       "une proposition courte que l'utilisateur accepte ou ignore d'un geste.",
+      "",
+      "Quand tu poses une question dont quelques réponses couvrent l'essentiel des",
+      "cas, pose-la avec `ask_question` : l'utilisateur répond d'un appui plutôt",
+      "que d'écrire. Réserve-la à ces questions-là.",
     ];
 
     if (todo.tools.includes(SUGGEST_PROJECT_FOLDERS)) {
@@ -538,6 +558,10 @@ function buildSystemPrompt(
   const lines = [
     `Tu es ${context.name}, un assistant conversationnel personnel.`,
     "Réponds de façon utile, directe et naturelle, en français.",
+    "",
+    "Quand tu poses une question dont quelques réponses couvrent l'essentiel des cas,",
+    "pose-la avec `ask_question` : l'utilisateur répond d'un appui plutôt que d'écrire.",
+    "Réserve-la à ces questions-là — une question ouverte se pose à l'écrit.",
     ...describeMemory(context.memory),
   ];
 
@@ -605,6 +629,10 @@ function buildOnboardingPrompt(assistantName: string): string {
     "un formulaire de profil : rebondis sur ce qu'il raconte plutôt que de dérouler",
     "une liste. N'insiste jamais sur une question laissée sans réponse.",
     "",
+    "Quand ta question appelle quelques réponses plutôt qu'un récit, pose-la avec",
+    "`ask_question` : l'utilisateur répond alors d'un appui. Une question ouverte,",
+    "elle, se pose à l'écrit — lui souffler quatre réponses le priverait de la sienne.",
+    "",
     "Au bout de trois ou quatre échanges, appelle `finish_onboarding` avec ce",
     "qu'il faut retenir de lui, sans l'annoncer, et enchaîne naturellement.",
     "",
@@ -613,6 +641,29 @@ function buildOnboardingPrompt(assistantName: string): string {
     "ne crée rien : il affiche une proposition que l'utilisateur valide d'un geste.",
     "Ne présente donc jamais les dossiers comme déjà créés.",
   ].join("\n");
+}
+
+/**
+ * Question à réponses proposées portée par les appels d'outils du tour.
+ *
+ * Appliquée directement plutôt que transformée en suggestion : rien n'est
+ * écrit dans les données de l'utilisateur, on donne seulement une forme à une
+ * question que le modèle poserait de toute façon (§12.1).
+ *
+ * Un appel inexploitable est abandonné et la réponse reste affichée en texte :
+ * une carte de choix vide serait pire qu'une question posée à l'écrit.
+ */
+function readQuestion(toolCalls: LlmToolCall[]): AskedQuestion | null {
+  const call = toolCalls.find((toolCall) => toolCall.name === ASK_QUESTION.name);
+  if (!call) return null;
+
+  const asked = askedQuestionSchema.safeParse(call.input);
+  if (!asked.success) {
+    console.warn("Appel `ask_question` inexploitable : réponses proposées ignorées.");
+    return null;
+  }
+
+  return asked.data;
 }
 
 /** Ce que l'assistant sait déjà de l'utilisateur, s'il sait quelque chose (§13.4.2). */
