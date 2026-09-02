@@ -12,11 +12,14 @@ import { folderRepository } from "../../domain/folder/folder.repository.js";
 import { FolderService } from "../../domain/folder/folder.service.js";
 import { suggestionRepository } from "../../domain/suggestion/suggestion.repository.js";
 import { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
+import { taskRepository } from "../../domain/task/task.repository.js";
+import { TaskService } from "../../domain/task/task.service.js";
 import { userRepository } from "../../domain/user/user.repository.js";
 import { AssistantService } from "./assistant.service.js";
 
 const suggestions = new SuggestionService(suggestionRepository);
 const folders = new FolderService(folderRepository);
+const calendar = new CalendarService(calendarRepository);
 
 const service = new AssistantService(
   suggestions,
@@ -27,8 +30,10 @@ const service = new AssistantService(
     suggestions,
     folders,
     userRepository,
-    new CalendarService(calendarRepository),
+    calendar,
   ),
+  new TaskService(taskRepository),
+  calendar,
 );
 
 export const assistantRoutes = new Hono<AuthEnv>()

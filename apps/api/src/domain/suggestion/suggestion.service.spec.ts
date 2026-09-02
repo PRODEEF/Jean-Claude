@@ -6,6 +6,7 @@ import { SuggestionService } from "./suggestion.service.js";
 const TOKEN = "access-token";
 const USER = "user-1";
 const CONVERSATION = "conv-1";
+const NOW = "2026-09-01T08:00:00.000Z";
 
 function makeSuggestion(overrides: Partial<Suggestion> = {}): Suggestion {
   return {
@@ -101,10 +102,104 @@ describe("SuggestionService", () => {
     it("ignore un appel d'outil qui ne correspond à aucune suggestion", async () => {
       const repo = makeRepository();
 
+      // `suggest_recurring_event` est exposé au modèle mais n'a pas encore de
+      // suggestion correspondante (A.11).
       const suggestion = await new SuggestionService(repo).capture(
         USER,
         CONVERSATION,
-        makeToolCall({ lists: [] }, "suggest_task_list"),
+        makeToolCall(
+          { title: "Kiné", startsAt: NOW, rrule: "FREQ=WEEKLY;BYDAY=TU" },
+          "suggest_recurring_event",
+        ),
+        TOKEN,
+      );
+
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("garde les listes d'achats et de tâches distinctes", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je te les organise ?",
+            lists: [
+              { title: "Achats jardin", kind: "shopping", items: [{ title: "Terreau" }] },
+              { title: "Travaux jardin", kind: "todo", items: [{ title: "Désherber" }] },
+            ],
+          },
+          "suggest_task_list",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_task_list",
+          message: "Je te les organise ?",
+          payload: {
+            lists: [
+              {
+                title: "Achats jardin",
+                kind: "shopping",
+                items: [{ title: "Terreau", dueAt: null }],
+              },
+              {
+                title: "Travaux jardin",
+                kind: "todo",
+                items: [{ title: "Désherber", dueAt: null }],
+              },
+            ],
+          },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("écarte une échéance illisible sans perdre la liste", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je te l'organise ?",
+            lists: [
+              {
+                title: "Travaux jardin",
+                kind: "todo",
+                items: [{ title: "Désherber", dueAt: "lundi prochain" }],
+              },
+            ],
+          },
+          "suggest_task_list",
+        ),
+        TOKEN,
+      );
+
+      // Le modèle laisse parfois l'échéance en clair : la tâche vaut mieux sans
+      // date que pas de liste du tout.
+      const input = (repo.create as jest.Mock).mock.calls[0]?.[1] as { payload: unknown };
+      expect(input.payload).toEqual({
+        lists: [
+          { title: "Travaux jardin", kind: "todo", items: [{ title: "Désherber", dueAt: null }] },
+        ],
+      });
+    });
+
+    it("ignore une proposition de todoliste sans aucune liste", async () => {
+      const repo = makeRepository();
+
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall({ message: "Je te les organise ?", lists: [] }, "suggest_task_list"),
         TOKEN,
       );
 
