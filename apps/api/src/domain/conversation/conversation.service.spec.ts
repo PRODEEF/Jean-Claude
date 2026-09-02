@@ -46,9 +46,16 @@ function makeMessage(
     provider: null,
     model: null,
     choices: null,
+    redirectTitle: null,
+    redirectAcceptedAt: null,
     createdAt: "2026-08-31T08:00:00.000Z",
     ...overrides,
   };
+}
+
+/** Fil vide — l'état d'un canal permanent qui n'a encore rien reçu (§6.3). */
+function emptyThread() {
+  return jest.fn().mockResolvedValue({ items: [], nextCursor: null });
 }
 
 function makeRepository(overrides: Partial<IConversationRepository> = {}): IConversationRepository {
@@ -60,12 +67,36 @@ function makeRepository(overrides: Partial<IConversationRepository> = {}): IConv
     update: jest.fn().mockResolvedValue(makeConversation()),
     delete: jest.fn().mockResolvedValue(undefined),
     setFolders: jest.fn().mockResolvedValue([]),
-    listMessages: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    // Le fil tel que le serveur le relit après avoir écrit la demande : la
+    // génération part toujours d'au moins un message, jamais du vide.
+    listMessages: jest.fn().mockResolvedValue({
+      items: [makeMessage({ id: "msg-user", role: "user", content: "Bonjour" })],
+      nextCursor: null,
+    }),
     appendMessage: jest
       .fn()
       .mockImplementation((_id, _user, message: { role: Message["role"]; content: string }) =>
         Promise.resolve(makeMessage({ id: `msg-${message.role}`, ...message })),
       ),
+    findMessage: jest.fn().mockResolvedValue(null),
+    updateMessageContent: jest
+      .fn()
+      .mockImplementation((id: string, content: string) =>
+        Promise.resolve(makeMessage({ id, role: "user", content })),
+      ),
+    deleteMessage: jest.fn().mockResolvedValue(undefined),
+    deleteMessagesAfter: jest.fn().mockResolvedValue(undefined),
+    acceptRedirect: jest.fn().mockImplementation((id: string) =>
+      Promise.resolve(
+        makeMessage({
+          id,
+          role: "assistant",
+          content: "Ce sujet mérite une conversation dédiée. On y bascule ?",
+          redirectTitle: "Itinéraire en Bretagne",
+          redirectAcceptedAt: "2026-09-02T10:00:00.000Z",
+        }),
+      ),
+    ),
     ...overrides,
   };
 }
@@ -353,7 +384,7 @@ describe("ConversationService", () => {
     });
 
     it("ouvre l'accueil sur une question plutôt que sur un fil vide (§6.3)", async () => {
-      const repo = makeRepository();
+      const repo = makeRepository({ listMessages: emptyThread() });
 
       await makeService(
         repo,
@@ -384,6 +415,7 @@ describe("ConversationService", () => {
 
     it("accueille aussi dans un canal déjà ouvert mais resté vide (§6.3)", async () => {
       const repo = makeRepository({
+        listMessages: emptyThread(),
         findAssistantChannel: jest
           .fn()
           .mockResolvedValue(makeConversation({ id: "canal", kind: "assistant" })),
@@ -957,15 +989,12 @@ describe("ConversationService", () => {
       expect(repo.appendMessage).toHaveBeenCalledTimes(2);
     });
 
-    it("ouvre une conversation classique quand la demande sort du périmètre (A.10)", async () => {
+    it("propose la bascule sans ouvrir la conversation dédiée (A.10)", async () => {
       const repo = makeRepository({
         findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
-        create: jest
-          .fn()
-          .mockResolvedValue(makeConversation({ id: "conv-2", title: "Itinéraire en Bretagne" })),
       });
       const llm = makeLlm(
-        ["Ça sort de notre fil, je t'ouvre une conversation dédiée."],
+        [],
         [
           {
             id: "call-1",
@@ -975,23 +1004,55 @@ describe("ConversationService", () => {
         ],
       );
 
-      const events = await drain(makeService(repo, llm), {
+      await drain(makeService(repo, llm), {
         content: "Propose-moi un itinéraire de 5 jours en Bretagne.",
         inputMode: "text",
       });
 
-      expect(repo.create).toHaveBeenCalledWith(
+      // Rien n'est ouvert tant que l'utilisateur n'a pas validé : la
+      // proposition voyage sur le message qui l'annonce.
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(repo.appendMessage).toHaveBeenLastCalledWith(
+        "conv-1",
         USER,
-        { title: "Itinéraire en Bretagne", folderIds: [] },
-        "chat",
+        expect.objectContaining({
+          role: "assistant",
+          redirectTitle: "Itinéraire en Bretagne",
+        }),
         TOKEN,
       );
-      // Émise après le message de l'assistant : le canal garde la trace de ce
-      // qui a été demandé et de la bascule.
-      expect(events.at(-1)).toEqual({
-        type: "redirect",
-        conversation: expect.objectContaining({ id: "conv-2" }),
+    });
+
+    it("annonce la bascule dans les mêmes termes, quoi qu'écrive le modèle", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
       });
+      const llm = makeLlm(
+        ["Alors, pour la Bretagne, je te conseille de commencer par Saint-Malo…"],
+        [
+          {
+            id: "call-1",
+            name: "open_new_conversation",
+            input: { title: "Itinéraire en Bretagne" },
+          },
+        ],
+      );
+
+      await drain(makeService(repo, llm), {
+        content: "Propose-moi un itinéraire de 5 jours en Bretagne.",
+        inputMode: "text",
+      });
+
+      // C'est ce message qui porte la validation : il doit être le même à
+      // chaque bascule, et non le début d'une réponse hors périmètre.
+      expect(repo.appendMessage).toHaveBeenLastCalledWith(
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content: "Ce sujet mérite une conversation dédiée. On y bascule ?",
+        }),
+        TOKEN,
+      );
     });
 
     it("ne transforme pas la bascule en proposition à valider", async () => {
@@ -1022,12 +1083,254 @@ describe("ConversationService", () => {
         [{ id: "call-1", name: "open_new_conversation", input: { title: "   " } }],
       );
 
-      const events = await drain(makeService(repo, llm), { content: "?", inputMode: "text" });
+      await drain(makeService(repo, llm), { content: "?", inputMode: "text" });
 
-      // Ouvrir un fil sans titre serait plus déroutant que de ne pas basculer.
-      expect(repo.create).not.toHaveBeenCalled();
-      expect(events.some((event) => event.type === "redirect")).toBe(false);
+      // Proposer un fil sans titre serait plus déroutant que de ne pas basculer.
+      expect(repo.appendMessage).toHaveBeenLastCalledWith(
+        "conv-1",
+        USER,
+        expect.objectContaining({ content: "Je regarde ça." }),
+        TOKEN,
+      );
       jest.restoreAllMocks();
+    });
+
+    it("ouvre la conversation dédiée une fois la bascule validée", async () => {
+      const proposal = makeMessage({
+        id: "msg-switch",
+        role: "assistant",
+        content: "Ce sujet mérite une conversation dédiée. On y bascule ?",
+        redirectTitle: "Itinéraire en Bretagne",
+      });
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+        findMessage: jest.fn().mockResolvedValue(proposal),
+        create: jest
+          .fn()
+          .mockResolvedValue(makeConversation({ id: "conv-2", title: "Itinéraire en Bretagne" })),
+      });
+
+      const conversation = await makeService(repo).switchToDedicatedConversation(
+        "conv-1",
+        USER,
+        "msg-switch",
+        TOKEN,
+      );
+
+      expect(conversation.id).toBe("conv-2");
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        { title: "Itinéraire en Bretagne", folderIds: [] },
+        "chat",
+        TOKEN,
+      );
+      expect(repo.acceptRedirect).toHaveBeenCalledWith("msg-switch", TOKEN);
+    });
+
+    it("refuse de basculer depuis un message qui ne le propose pas", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+        findMessage: jest
+          .fn()
+          .mockResolvedValue(makeMessage({ id: "msg-1", role: "assistant", content: "Bonjour." })),
+      });
+
+      await expect(
+        makeService(repo).switchToDedicatedConversation("conv-1", USER, "msg-1", TOKEN),
+      ).rejects.toThrow();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("retire du contexte l'échange déjà basculé", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+        listMessages: jest.fn().mockResolvedValue({
+          items: [
+            makeMessage({
+              id: "msg-1",
+              role: "user",
+              content: "Un itinéraire en Bretagne ?",
+              createdAt: "2026-09-02T08:00:00.000Z",
+            }),
+            makeMessage({
+              id: "msg-2",
+              role: "assistant",
+              content: "Ce sujet mérite une conversation dédiée. On y bascule ?",
+              redirectTitle: "Itinéraire en Bretagne",
+              redirectAcceptedAt: "2026-09-02T08:00:10.000Z",
+              createdAt: "2026-09-02T08:00:05.000Z",
+            }),
+            makeMessage({
+              id: "msg-3",
+              role: "user",
+              content: "Qu'est-ce que j'ai cette semaine ?",
+              createdAt: "2026-09-02T09:00:00.000Z",
+            }),
+          ],
+          nextCursor: null,
+        }),
+      });
+      const llm = makeLlm();
+
+      await drain(makeService(repo, llm), {
+        content: "Qu'est-ce que j'ai cette semaine ?",
+        inputMode: "text",
+      });
+
+      // La réponse se donne dans l'autre fil : la relire ici ferait revenir le
+      // canal sur un sujet dont il vient de se dessaisir.
+      expect(lastRequest(llm).messages).toEqual([
+        { role: "user", content: "Qu'est-ce que j'ai cette semaine ?" },
+      ]);
+    });
+  });
+
+  describe("correction et reprise d'un tour", () => {
+    /** Déroule un générateur de tour, comme le fait le controller. */
+    async function collect(
+      events: AsyncGenerator<MessageStreamEvent>,
+    ): Promise<MessageStreamEvent[]> {
+      const collected: MessageStreamEvent[] = [];
+      for await (const event of events) collected.push(event);
+      return collected;
+    }
+
+    const history = (...items: Message[]) =>
+      jest.fn().mockResolvedValue({ items, nextCursor: null });
+
+    it("efface la suite du fil avant de rejouer un message corrigé", async () => {
+      const question = makeMessage({
+        id: "msg-1",
+        role: "user",
+        content: "Une recette de tarte ?",
+        createdAt: "2026-09-02T08:00:00.000Z",
+      });
+      const repo = makeRepository({
+        findMessage: jest.fn().mockResolvedValue(question),
+        listMessages: history(
+          makeMessage({ id: "msg-1", role: "user", content: "Une recette de tarte aux poires ?" }),
+        ),
+      });
+
+      const events = await collect(
+        makeService(repo).editMessage(
+          "conv-1",
+          USER,
+          "msg-1",
+          { content: "Une recette de tarte aux poires ?" },
+          TOKEN,
+        ),
+      );
+
+      // Ce qui suivait répondait au texte d'avant : le garder ferait un fil
+      // qui se contredit.
+      expect(repo.deleteMessagesAfter).toHaveBeenCalledWith(
+        "conv-1",
+        "2026-09-02T08:00:00.000Z",
+        TOKEN,
+      );
+      expect(repo.updateMessageContent).toHaveBeenCalledWith(
+        "msg-1",
+        "Une recette de tarte aux poires ?",
+        TOKEN,
+      );
+      expect(events[0]).toEqual({
+        type: "message",
+        message: expect.objectContaining({ content: "Une recette de tarte aux poires ?" }),
+      });
+      expect(events.at(-1)?.type).toBe("done");
+    });
+
+    it("refuse de corriger une réponse de l'assistant", async () => {
+      const repo = makeRepository({
+        findMessage: jest
+          .fn()
+          .mockResolvedValue(makeMessage({ id: "msg-2", role: "assistant", content: "Voilà." })),
+      });
+
+      await expect(
+        collect(
+          makeService(repo).editMessage("conv-1", USER, "msg-2", { content: "Autre chose" }, TOKEN),
+        ),
+      ).rejects.toThrow();
+      expect(repo.updateMessageContent).not.toHaveBeenCalled();
+    });
+
+    it("remplace la réponse rejouée plutôt que de la doubler", async () => {
+      const answer = makeMessage({
+        id: "msg-2",
+        role: "assistant",
+        content: "Voilà une première réponse.",
+        createdAt: "2026-09-02T08:00:05.000Z",
+      });
+      const repo = makeRepository({
+        findMessage: jest.fn().mockResolvedValue(answer),
+        listMessages: history(
+          makeMessage({ id: "msg-1", role: "user", content: "Une recette de tarte ?" }),
+        ),
+      });
+
+      const events = await collect(makeService(repo).retryMessage("conv-1", USER, "msg-2", TOKEN));
+
+      expect(repo.deleteMessagesAfter).toHaveBeenCalledWith(
+        "conv-1",
+        "2026-09-02T08:00:05.000Z",
+        TOKEN,
+      );
+      expect(repo.deleteMessage).toHaveBeenCalledWith("msg-2", TOKEN);
+      expect(events.at(-1)?.type).toBe("done");
+    });
+
+    it("garde la demande quand c'est elle qu'on rejoue", async () => {
+      const question = makeMessage({
+        id: "msg-1",
+        role: "user",
+        content: "Une recette de tarte ?",
+        createdAt: "2026-09-02T08:00:00.000Z",
+      });
+      const repo = makeRepository({
+        findMessage: jest.fn().mockResolvedValue(question),
+        listMessages: history(question),
+      });
+
+      await collect(makeService(repo).retryMessage("conv-1", USER, "msg-1", TOKEN));
+
+      expect(repo.deleteMessage).not.toHaveBeenCalled();
+    });
+
+    it("refuse de rejouer un message d'une autre conversation", async () => {
+      const repo = makeRepository({
+        findMessage: jest.fn().mockResolvedValue(
+          makeMessage({
+            id: "msg-9",
+            conversationId: "conv-9",
+            role: "user",
+            content: "Ailleurs",
+          }),
+        ),
+      });
+
+      await expect(
+        collect(makeService(repo).retryMessage("conv-1", USER, "msg-9", TOKEN)),
+      ).rejects.toThrow();
+      expect(repo.deleteMessagesAfter).not.toHaveBeenCalled();
+    });
+
+    it("refuse de rejouer quand il ne reste rien à quoi répondre", async () => {
+      const answer = makeMessage({
+        id: "msg-1",
+        role: "assistant",
+        content: "Bonjour, moi c'est Jean-Claude.",
+        createdAt: "2026-09-02T08:00:00.000Z",
+      });
+      const repo = makeRepository({
+        findMessage: jest.fn().mockResolvedValue(answer),
+        listMessages: history(),
+      });
+
+      await expect(
+        collect(makeService(repo).retryMessage("conv-1", USER, "msg-1", TOKEN)),
+      ).rejects.toThrow();
     });
   });
 

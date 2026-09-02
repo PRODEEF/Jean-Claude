@@ -10,12 +10,24 @@ import {
   Plus,
   Sparkles,
 } from "lucide-react-native";
-import type { Conversation, Folder, TaskList } from "@jc/domain";
+import type { Conversation, Folder, FolderTreeNode, TaskList } from "@jc/domain";
 import { api } from "@/shared/lib/api";
+import {
+  ConversationContextMenu,
+  type ConversationMenuTarget,
+} from "@/features/conversation/ConversationContextMenu";
+import { ConversationDeleteDialog } from "@/features/conversation/ConversationDeleteDialog";
+import { ConversationDialog } from "@/features/conversation/ConversationDialog";
+import {
+  ConversationDropDialog,
+  type ConversationDrop,
+} from "@/features/conversation/ConversationDropDialog";
+import { ConversationNameRow } from "@/features/conversation/ConversationNameRow";
 import { FolderContextMenu, type FolderMenuTarget } from "@/features/folder/FolderContextMenu";
 import { FolderDeleteDialog } from "@/features/folder/FolderDeleteDialog";
 import { FolderNameRow, type FolderNameTarget } from "@/features/folder/FolderNameRow";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
+import { useConversationDragSource, useFolderDropTarget } from "./conversation-drag";
 import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { Icon } from "@/shared/ui/icon";
@@ -65,13 +77,23 @@ export function AppSidebar({
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const assistantName = useAssistantName();
-  const { groups, unfiled, isLoading, error } = useSidebarData();
+  const { groups, unfiled, all, isLoading, error } = useSidebarData();
   const [deleting, setDeleting] = useState<Folder | null>(null);
   const [menuTarget, setMenuTarget] = useState<FolderMenuTarget | null>(null);
   /** Dossier en cours de nommage — création ou renommage, `null` si aucun. */
   const [naming, setNaming] = useState<FolderNameTarget | null>(null);
   /** Todoliste en cours de création depuis un dossier, `null` si aucune. */
   const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
+  /** Conversation dont le menu contextuel est ouvert, `null` si aucun. */
+  const [conversationMenu, setConversationMenu] = useState<ConversationMenuTarget | null>(null);
+  /** Conversation dont le titre s'édite en ligne, `null` si aucune. */
+  const [renaming, setRenaming] = useState<Conversation | null>(null);
+  /** Conversation dont la fenêtre de rangement est ouverte, `null` si aucune. */
+  const [filing, setFiling] = useState<Conversation | null>(null);
+  /** Conversation en attente de confirmation de suppression, `null` si aucune. */
+  const [deletingConversation, setDeletingConversation] = useState<Conversation | null>(null);
+  /** Conversation lâchée sur un dossier, en attente du choix de rangement. */
+  const [drop, setDrop] = useState<ConversationDrop | null>(null);
 
   const go = (href: string) => {
     router.push(href as never);
@@ -91,6 +113,20 @@ export function AppSidebar({
   });
 
   const createRootFolder = () => setNaming({ kind: "create", parentId: null });
+
+  /**
+   * Conversation lâchée sur un dossier.
+   *
+   * Rien à faire quand elle n'est déjà rangée que là : la fenêtre poserait une
+   * question dont les deux réponses donnent le même résultat.
+   */
+  const dropOnFolder = (folder: FolderTreeNode, conversationId: string) => {
+    const conversation = all.find((item) => item.id === conversationId);
+    if (!conversation) return;
+    if (conversation.folderIds.length === 1 && conversation.folderIds[0] === folder.id) return;
+
+    setDrop({ conversation, folder });
+  };
 
   return (
     <View className="h-full border-r border-border bg-secondary" style={{ width }}>
@@ -154,10 +190,14 @@ export function AppSidebar({
             depth={1}
             pathname={pathname}
             naming={naming}
+            renamedConversation={renaming}
             onOpen={go}
             onMenu={setMenuTarget}
             onCloseNaming={() => setNaming(null)}
             onNewConversation={(folderId) => create.mutate([folderId])}
+            onConversationMenu={setConversationMenu}
+            onCloseRenaming={() => setRenaming(null)}
+            onDropConversation={dropOnFolder}
           />
         ))}
 
@@ -168,14 +208,23 @@ export function AppSidebar({
         {unfiled.length > 0 ? (
           <>
             <SectionLabel>Sans dossier</SectionLabel>
-            {unfiled.map((conversation) => (
-              <ConversationRow
-                key={conversation.id}
-                conversation={conversation}
-                pathname={pathname}
-                onOpen={go}
-              />
-            ))}
+            {unfiled.map((conversation) =>
+              renaming?.id === conversation.id ? (
+                <ConversationNameRow
+                  key={conversation.id}
+                  conversation={conversation}
+                  onDone={() => setRenaming(null)}
+                />
+              ) : (
+                <ConversationRow
+                  key={conversation.id}
+                  conversation={conversation}
+                  pathname={pathname}
+                  onOpen={go}
+                  onMenu={setConversationMenu}
+                />
+              ),
+            )}
           </>
         ) : null}
       </ScrollView>
@@ -220,6 +269,46 @@ export function AppSidebar({
       />
 
       <FolderDeleteDialog folder={deleting} onClose={() => setDeleting(null)} />
+
+      {/* Clic droit sur une conversation : le renommage se fait en ligne, le
+          rangement et la suppression dans leur fenêtre. */}
+      <ConversationContextMenu
+        target={conversationMenu}
+        onClose={() => setConversationMenu(null)}
+        onRename={({ conversation }) => {
+          setConversationMenu(null);
+          setRenaming(conversation);
+        }}
+        onFile={({ conversation }) => {
+          setConversationMenu(null);
+          setFiling(conversation);
+        }}
+        onDelete={({ conversation }) => {
+          setConversationMenu(null);
+          setDeletingConversation(conversation);
+        }}
+      />
+
+      {/* La fenêtre de la conversation porte déjà l'arborescence cochable :
+          une conversation appartient à plusieurs dossiers (§5.2, A.1). */}
+      <ConversationDialog
+        conversation={filing}
+        onClose={() => setFiling(null)}
+        onDeleted={() => setFiling(null)}
+      />
+
+      <ConversationDeleteDialog
+        conversation={deletingConversation}
+        onClose={() => setDeletingConversation(null)}
+        onDeleted={(conversation) => {
+          setDeletingConversation(null);
+          // La conversation supprimée ne doit pas rester à l'écran, ni dans
+          // l'historique de navigation.
+          if (pathname === `/chat/${conversation.id}`) router.replace("/chat");
+        }}
+      />
+
+      <ConversationDropDialog drop={drop} onClose={() => setDrop(null)} />
 
       {/* Créer depuis un dossier est le seul moment où le rangement précède la
           capture (§13.4.1) : l'utilisateur l'a déjà exprimé en partant de là. */}
@@ -371,20 +460,29 @@ function FolderGroup({
   depth,
   pathname,
   naming,
+  renamedConversation,
   onOpen,
   onMenu,
   onCloseNaming,
   onNewConversation,
+  onConversationMenu,
+  onCloseRenaming,
+  onDropConversation,
 }: {
   group: SidebarGroup;
   depth: number;
   pathname: string;
   /** Dossier en cours de nommage, où qu'il soit dans l'arborescence. */
   naming: FolderNameTarget | null;
+  /** Conversation en cours de renommage, où qu'elle soit rangée. */
+  renamedConversation: Conversation | null;
   onOpen: (href: string) => void;
   onMenu: (target: FolderMenuTarget) => void;
   onCloseNaming: () => void;
   onNewConversation: (folderId: string) => void;
+  onConversationMenu: (target: ConversationMenuTarget) => void;
+  onCloseRenaming: () => void;
+  onDropConversation: (folder: FolderTreeNode, conversationId: string) => void;
 }) {
   const isEmpty = isFolderEmpty(group);
   // Un dossier est « courant » quand la conversation ouverte est chez lui ou
@@ -395,6 +493,9 @@ function FolderGroup({
   // défaut allongerait la barre sans rien apprendre.
   const [open, setOpen] = useState(!isEmpty);
   const [hovered, setHovered] = useState(false);
+  const { ref: dropRef, isOver } = useFolderDropTarget((conversationId) =>
+    onDropConversation(group.folder, conversationId),
+  );
   // Le dossier se déplie de force le temps de la saisie : le sous-dossier
   // qu'on est en train de nommer doit être visible pendant qu'on le nomme.
   const drafting = naming?.kind === "create" && naming.parentId === group.folder.id;
@@ -413,10 +514,14 @@ function FolderGroup({
             depth={depth}
             pathname={pathname}
             naming={naming}
+            renamedConversation={renamedConversation}
             onOpen={onOpen}
             onMenu={onMenu}
             onCloseNaming={onCloseNaming}
             onNewConversation={onNewConversation}
+            onConversationMenu={onConversationMenu}
+            onCloseRenaming={onCloseRenaming}
+            onDropConversation={onDropConversation}
           />
         </CollapsibleContent>
       </Collapsible>
@@ -425,7 +530,9 @@ function FolderGroup({
 
   return (
     <Collapsible open={open || drafting} onOpenChange={setOpen}>
-      <View className="flex-row items-center">
+      {/* La rangée entière est la cible de dépôt, pas seulement son libellé :
+          viser un mot de trois lettres à la souris serait intenable. */}
+      <View ref={dropRef} className={cx("flex-row items-center rounded-md", isOver)}>
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
@@ -469,10 +576,14 @@ function FolderGroup({
           depth={depth}
           pathname={pathname}
           naming={naming}
+          renamedConversation={renamedConversation}
           onOpen={onOpen}
           onMenu={onMenu}
           onCloseNaming={onCloseNaming}
           onNewConversation={onNewConversation}
+          onConversationMenu={onConversationMenu}
+          onCloseRenaming={onCloseRenaming}
+          onDropConversation={onDropConversation}
         />
       </CollapsibleContent>
     </Collapsible>
@@ -491,19 +602,27 @@ function FolderChildren({
   depth,
   pathname,
   naming,
+  renamedConversation,
   onOpen,
   onMenu,
   onCloseNaming,
   onNewConversation,
+  onConversationMenu,
+  onCloseRenaming,
+  onDropConversation,
 }: {
   group: SidebarGroup;
   depth: number;
   pathname: string;
   naming: FolderNameTarget | null;
+  renamedConversation: Conversation | null;
   onOpen: (href: string) => void;
   onMenu: (target: FolderMenuTarget) => void;
   onCloseNaming: () => void;
   onNewConversation: (folderId: string) => void;
+  onConversationMenu: (target: ConversationMenuTarget) => void;
+  onCloseRenaming: () => void;
+  onDropConversation: (folder: FolderTreeNode, conversationId: string) => void;
 }) {
   const isEmpty = isFolderEmpty(group);
   const drafting = naming?.kind === "create" && naming.parentId === group.folder.id;
@@ -515,14 +634,23 @@ function FolderChildren({
     // le retrait reste plus lisible qu'un aplatissement qui perdrait la
     // filiation.
     <View className="ml-4 border-l border-border pl-2">
-      {group.conversations.map((conversation) => (
-        <ConversationRow
-          key={conversation.id}
-          conversation={conversation}
-          pathname={pathname}
-          onOpen={onOpen}
-        />
-      ))}
+      {group.conversations.map((conversation) =>
+        renamedConversation?.id === conversation.id ? (
+          <ConversationNameRow
+            key={conversation.id}
+            conversation={conversation}
+            onDone={onCloseRenaming}
+          />
+        ) : (
+          <ConversationRow
+            key={conversation.id}
+            conversation={conversation}
+            pathname={pathname}
+            onOpen={onOpen}
+            onMenu={onConversationMenu}
+          />
+        ),
+      )}
 
       {/* Une todoliste se lit dans son dossier thématique autant que dans
           l'onglet Todoliste : c'est la même liste, vue d'un autre endroit (A.2). */}
@@ -537,10 +665,14 @@ function FolderChildren({
           depth={depth + 1}
           pathname={pathname}
           naming={naming}
+          renamedConversation={renamedConversation}
           onOpen={onOpen}
           onMenu={onMenu}
           onCloseNaming={onCloseNaming}
           onNewConversation={onNewConversation}
+          onConversationMenu={onConversationMenu}
+          onCloseRenaming={onCloseRenaming}
+          onDropConversation={onDropConversation}
         />
       ))}
 
@@ -581,9 +713,7 @@ function NewConversationRow({ onPress }: { onPress: () => void }) {
 /** Vide au sens de la barre : ni conversation, ni todoliste, ni sous-dossier. */
 function isFolderEmpty(group: SidebarGroup): boolean {
   return (
-    group.conversations.length === 0 &&
-    group.taskLists.length === 0 &&
-    group.children.length === 0
+    group.conversations.length === 0 && group.taskLists.length === 0 && group.children.length === 0
   );
 }
 
@@ -614,23 +744,42 @@ function ConversationRow({
   conversation,
   pathname,
   onOpen,
+  onMenu,
 }: {
   conversation: Conversation;
   pathname: string;
   onOpen: (href: string) => void;
+  onMenu: (target: ConversationMenuTarget) => void;
 }) {
   const active = pathname === `/chat/${conversation.id}`;
+  const dragRef = useConversationDragSource(conversation.id);
 
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      onPress={() => onOpen(`/chat/${conversation.id}`)}
-      className={cx("w-full justify-start px-2", active)}
-    >
-      <Text className={rowLabel(active)} numberOfLines={1}>
-        {conversation.title}
-      </Text>
-    </Button>
+    // La poignée de déplacement est portée par une vue et non par le bouton :
+    // c'est elle qui reçoit la référence DOM, et le bouton garde la sienne pour
+    // l'appui.
+    <View ref={dragRef}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onPress={() => onOpen(`/chat/${conversation.id}`)}
+        // L'appui long est l'équivalent tactile du clic droit : sans lui,
+        // renommer une conversation serait impossible sur téléphone — le
+        // glisser-déposer, lui, n'y existe pas.
+        onLongPress={(event) =>
+          onMenu({
+            conversation,
+            x: event.nativeEvent.pageX,
+            y: event.nativeEvent.pageY,
+          })
+        }
+        {...contextMenuProps((x, y) => onMenu({ conversation, x, y }))}
+        className={cx("w-full justify-start px-2", active)}
+      >
+        <Text className={rowLabel(active)} numberOfLines={1}>
+          {conversation.title}
+        </Text>
+      </Button>
+    </View>
   );
 }

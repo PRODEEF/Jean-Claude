@@ -11,18 +11,20 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowUp, Square } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import { MESSAGE_MAX_LENGTH, type Conversation, type Message, type Suggestion } from "@jc/domain";
+import type { Conversation, Message, Suggestion } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
 import { contentColumn, READING_MAX_WIDTH } from "@/shared/ui/screen-shell";
+import { Composer } from "./Composer";
 import { useConversationThread } from "./hooks/use-conversation-thread";
 import { useSuggestions } from "./hooks/use-suggestions";
+import { MessageRow } from "./MessageRow";
 import { QuestionCard } from "./QuestionCard";
 import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
+import { SwitchAsideCard } from "./SwitchAsideCard";
 
 export type ConversationThreadProps = {
   conversationId: string;
@@ -61,7 +63,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
   // La question voyage jusqu'au nouveau fil, qui s'en charge à l'ouverture :
   // c'est ce qui permet de réutiliser le tour de dialogue ordinaire, réponse
   // en flux comprise, plutôt que d'inventer un second chemin.
-  const goToNewConversation = useCallback(
+  const goToDedicatedConversation = useCallback(
     (conversation: Conversation, content: string) => {
       router.push({ pathname: "/chat/[id]", params: { id: conversation.id, draft: content } });
     },
@@ -75,14 +77,11 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     setDraft((current) => (current.length > 0 ? current : content));
   }, []);
 
-  const { messages, send, submit, stop, streamingText, pendingUserText } = useConversationThread(
-    conversationId,
-    goToNewConversation,
-    restoreDraft,
-  );
+  const { messages, send, submit, edit, retry, stop, switchAside, streamingText, pendingUserText } =
+    useConversationThread(conversationId, goToDedicatedConversation, restoreDraft);
   const { pending, resolved, resolve } = useSuggestions(conversationId);
 
-  const failure = messages.error ?? send.error ?? resolve.error;
+  const failure = messages.error ?? send.error ?? resolve.error ?? switchAside.error;
 
   // Messages et propositions tranchées sont refondus en une seule suite,
   // ordonnée par date : ce que l'assistant a fait se relit au moment où il l'a
@@ -137,37 +136,41 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
   }, [draft, send.isPending, submit]);
 
   const renderItem = useCallback(
-    ({ item }: { item: ThreadItem }) => {
+    ({ item, index }: { item: ThreadItem; index: number }) => {
       if (!item.message) return <ResolvedSuggestionNote suggestion={item.suggestion} />;
 
       const message = item.message;
-      const isUser = message.role === "user";
+      const previous = items[index - 1]?.message;
+
       return (
-        <View
-          style={[
-            styles.bubble,
-            isUser
-              ? { alignSelf: "flex-end", backgroundColor: palette.accentSoft }
-              : // La réponse de l'assistant n'a ni fond ni cadre : c'est le
-                // corps du texte, pas une pièce rapportée. Seule la parole de
-                // l'utilisateur est encadrée, ce que font ChatGPT et Claude.
-                styles.plain,
-          ]}
-        >
-          {/* Le message de l'utilisateur reste du texte brut : c'est ce qu'il a
-              tapé, l'interpréter ferait disparaître ses astérisques. Celui du
-              modèle est du Markdown, et se lit criblé de signes sans rendu. */}
-          {isUser ? (
-            <Text style={[styles.bubbleText, { color: palette.accentSoftText }]}>
-              {message.content}
-            </Text>
-          ) : (
-            <Markdown>{message.content}</Markdown>
-          )}
-        </View>
+        <>
+          <MessageRow
+            message={message}
+            answeredQuestion={answeredQuestion(message, previous)}
+            onRetry={() => retry(message.id)}
+            onEdit={(content) => edit(message.id, content)}
+            busy={send.isPending}
+          />
+
+          {/* Le canal permanent propose, l'utilisateur valide (§12.1, A.10). La
+              question restée sans réponse part avec lui : il n'a pas à la
+              retaper dans le fil qui l'accueille. */}
+          {message.redirectTitle !== null && message.redirectAcceptedAt === null ? (
+            <SwitchAsideCard
+              title={message.redirectTitle}
+              isPending={switchAside.isPending}
+              onSwitch={() =>
+                switchAside.mutate({
+                  messageId: message.id,
+                  draft: previous?.role === "user" ? previous.content : "",
+                })
+              }
+            />
+          ) : null}
+        </>
       );
     },
-    [palette],
+    [items, retry, edit, send.isPending, switchAside],
   );
 
   return (
@@ -262,6 +265,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
               }
               send.reset();
               resolve.reset();
+              switchAside.reset();
             }}
             accessibilityRole="button"
             style={styles.retry}
@@ -289,76 +293,17 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
       ) : null}
 
       <View style={[styles.composer, column, { paddingBottom: spacing.md + insets.bottom }]}>
-        {/* Le bouton est dans le champ, et le champ seul porte le cadre : la
-            saisie se lit comme un objet unique posé sur le fil, sans bandeau
-            qui la sépare de la conversation. C'est ce que font ChatGPT, Claude
-            et Perplexity. */}
-        <View
-          style={[
-            styles.inputShell,
-            { backgroundColor: palette.surface, borderColor: palette.border },
-          ]}
-        >
-          <TextInput
-            ref={inputRef}
-            value={draft}
-            onChangeText={setDraft}
-            // Le libellé dit que la carte n'oblige à rien : on peut toujours
-            // répondre à côté de ce qui est proposé.
-            placeholder={askable ? "Ou répondre directement…" : "Votre message"}
-            placeholderTextColor={palette.textMuted}
-            multiline
-            // Bornée ici comme elle l'est au contrat partagé : sans cela, un
-            // texte trop long partait au serveur, revenait en 400 générique, et
-            // le brouillon était perdu en chemin.
-            maxLength={MESSAGE_MAX_LENGTH}
-            onSubmitEditing={sendDraft}
-            // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde
-            // un retour à la ligne, la saisie multiligne y étant la norme.
-            blurOnSubmit={Platform.OS === "web"}
-            accessibilityLabel="Votre message"
-            // Le cadre est porté par la coque : celui du champ ferait double
-            // trait. `web:` seulement — sur mobile, `outline` n'existe pas et
-            // le retrait du liseré de focus enlèverait le repère de navigation
-            // au clavier, qui est ici la coque elle-même.
-            className="web:outline-none"
-            style={[styles.input, { color: palette.text }]}
-            // Un `textarea` s'ouvre sur deux rangées par défaut : le champ
-            // naissait donc deux fois trop haut, texte collé en haut et flèche
-            // en bas. Sur mobile, `numberOfLines` bornerait au contraire la
-            // saisie à une ligne — d'où la restriction au web.
-            {...(Platform.OS === "web" ? { numberOfLines: 1 } : {})}
-          />
-          {/* Pendant la génération, le même bouton arrête la réponse plutôt
-              que de rester grisé : c'est ce que font ChatGPT, Claude et
-              Perplexity (§4.2), et rien n'est perdu — le serveur conserve le
-              texte déjà produit. */}
-          <Pressable
-            onPress={send.isPending ? stop : sendDraft}
-            disabled={!send.isPending && draft.trim().length === 0}
-            accessibilityRole="button"
-            accessibilityLabel={
-              send.isPending ? "Arrêter la réponse en cours" : "Envoyer le message"
-            }
-            // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie,
-            // plus 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
-            // `MIN_TOUCH_TARGET` sans faire grandir le champ.
-            hitSlop={8}
-            style={[
-              styles.sendButton,
-              {
-                backgroundColor: palette.accent,
-                opacity: !send.isPending && draft.trim().length === 0 ? 0.4 : 1,
-              },
-            ]}
-          >
-            {send.isPending ? (
-              <Square size={14} fill={palette.accentText} color={palette.accentText} />
-            ) : (
-              <ArrowUp size={18} color={palette.accentText} />
-            )}
-          </Pressable>
-        </View>
+        <Composer
+          value={draft}
+          onChangeText={setDraft}
+          onSubmit={sendDraft}
+          // Le libellé dit que la carte n'oblige à rien : on peut toujours
+          // répondre à côté de ce qui est proposé.
+          placeholder={askable ? "Ou répondre directement…" : "Votre message"}
+          busy={send.isPending}
+          onStop={stop}
+          inputRef={inputRef}
+        />
       </View>
     </KeyboardAvoidingView>
   );
@@ -371,6 +316,20 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
 type ThreadItem =
   | { id: string; message: Message; suggestion?: undefined }
   | { id: string; message?: undefined; suggestion: Suggestion };
+
+/**
+ * La question à laquelle ce message répond, quand la réponse a été choisie
+ * d'un appui sous une carte de questions.
+ *
+ * Reconstituée à l'affichage et non enregistrée : c'est bien la réponse seule
+ * que l'utilisateur a envoyée, et la dupliquer en base ferait deux textes à
+ * tenir cohérents. Relue plus haut dans le fil, « Oui » ne dirait plus à quoi
+ * il répondait.
+ */
+function answeredQuestion(message: Message, previous: Message | undefined): string | null {
+  if (message.role !== "user" || !previous || previous.role !== "assistant") return null;
+  return previous.choices?.includes(message.content) ? previous.content : null;
+}
 
 function itemDate(item: ThreadItem): number {
   return new Date(item.message ? item.message.createdAt : item.suggestion.createdAt).getTime();
@@ -417,28 +376,4 @@ const styles = StyleSheet.create({
   retryText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   question: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
   composer: { padding: spacing.md },
-  inputShell: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: spacing.sm,
-    minHeight: MIN_TOUCH_TARGET,
-    paddingLeft: spacing.md,
-    paddingRight: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
-    borderRadius: radius.lg,
-  },
-  input: {
-    flex: 1,
-    maxHeight: 140,
-    paddingVertical: spacing.xs,
-    fontSize: fontSize.md,
-  },
-  sendButton: {
-    width: 32,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.pill,
-  },
 });

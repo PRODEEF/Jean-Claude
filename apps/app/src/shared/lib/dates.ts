@@ -164,3 +164,36 @@ export function formatFullDay(date: Date): string {
   const month = (MONTH_NAMES[date.getMonth()] ?? "").toLowerCase();
   return `${weekday} ${date.getDate()} ${month}`;
 }
+
+/**
+ * Ancienneté d'un horodatage, telle qu'on la lit sous un message.
+ *
+ * Les paliers suivent ce que fait ChatGPT : la minute près tant que l'échange
+ * est vivant, puis l'heure, puis le jour. Au-delà d'une semaine, un décompte
+ * en jours ne dit plus rien — c'est la date qui parle.
+ *
+ * `now` est un paramètre pour que l'appelant puisse figer l'instant ; sans
+ * cela, deux messages du même tour pourraient s'afficher à une minute d'écart
+ * selon l'ordre de rendu.
+ */
+export function formatRelativeTime(iso: string, now: Date = new Date()): string {
+  const elapsed = now.getTime() - new Date(iso).getTime();
+  const minutes = Math.floor(elapsed / 60_000);
+
+  if (minutes < 1) return "À l'instant";
+  if (minutes < 60) return `Il y a ${minutes} ${plural(minutes, "minute")}`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Il y a ${hours} ${plural(hours, "heure")}`;
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Hier";
+  if (days < 7) return `Il y a ${days} jours`;
+
+  const date = new Date(iso);
+  return `Le ${date.getDate()} ${(MONTH_NAMES[date.getMonth()] ?? "").toLowerCase()}`;
+}
+
+function plural(count: number, word: string): string {
+  return count > 1 ? `${word}s` : word;
+}

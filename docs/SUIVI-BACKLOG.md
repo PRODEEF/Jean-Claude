@@ -7,8 +7,50 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — le contexte remis au modèle, et la
-robustesse du tour de dialogue.
+Dernière mise à jour : **2 septembre 2026** — la conversation se reprend, se corrige,
+et se range au geste.
+
+**Un message n'est plus figé.** Au survol, chaque message porte son ancienneté et ses
+commandes, comme dans ChatGPT et Claude (§4.2) : copier, redemander une réponse, et — sur
+sa propre parole — corriger le texte. Corriger rejoue le tour à partir de là et emporte ce
+qui suivait, puisque cela répondait à un texte qui n'existe plus ; redemander une réponse la
+remplace au lieu de la doubler. Deux routes s'ajoutent pour cela
+(`PUT /conversations/:id/messages/:messageId` et `.../retry`), toutes deux en flux : la
+génération est extraite du tour d'envoi et partagée par les trois gestes, plutôt que
+recopiée trois fois.
+
+**La bascule hors périmètre du canal permanent demande désormais son accord** (A.10). Le
+serveur n'ouvre plus la conversation dédiée de lui-même : il pose une annonce générique — la
+même à chaque fois, c'est elle qui porte le geste — et attend le bouton « Basculer ».
+L'assistant propose, il n'exécute pas (§12.1) ; au passage, une bascule que l'utilisateur
+laisse venir ne laisse plus derrière elle une conversation vide. Une fois validée, l'échange
+sort du contexte du canal : la demande et son annonce cessent d'être relues à chaque tour,
+faute de quoi le canal reviendrait sur un sujet dont il vient justement de se dessaisir.
+Deux colonnes portent cela sur `messages`, pas une table de plus : la proposition naît et
+meurt avec le message qui l'annonce.
+
+**Une réponse choisie d'un appui se relit.** Sous une carte de questions, « Oui » seul ne
+disait plus à quoi il répondait une fois le fil remonté : la bulle affiche maintenant la
+question puis la réponse. Reconstitué à l'affichage, pas enregistré — c'est bien la réponse
+seule que l'utilisateur a envoyée. Les réponses proposées s'éclairent par ailleurs au survol,
+qu'aucun retour ne distinguait jusqu'ici d'une liste à puces.
+
+**L'écran d'accueil ouvre sur une saisie** et non plus sur un bouton « Nouvelle
+conversation » : le premier message suffit à créer le fil, et faire cliquer avant d'écrire
+ajoutait un geste sans rien demander de plus (§13.4.1). La saisie est le composant du fil,
+partagé.
+
+**Le rangement se fait au geste dans la barre latérale.** Clic droit sur une conversation —
+appui long au doigt — pour la renommer sur place, la ranger ou la supprimer ; et, à la
+souris, glisser-déposer sur un dossier. Le dépôt pose la question plutôt que de trancher :
+ajouter le dossier aux autres, ou n'y laisser que celui-là. Les deux sont légitimes — une
+conversation appartient à plusieurs dossiers à la fois (§5.2, A.1) alors que le geste dit
+« déplacer » dans tout explorateur de fichiers. Le glisser-déposer est web seulement : au
+doigt, un glissement se confondrait avec le défilement de la barre, et le menu contextuel
+couvre le même besoin. Le menu contextuel des dossiers et celui des conversations partagent
+désormais une même coque dans `shared/ui`.
+
+Auparavant le même jour : le contexte remis au modèle, et la robustesse du tour de dialogue.
 
 **Ce que le modèle ignorait.** La consigne système ne portait ni date, ni heure, ni fuseau :
 le modèle datait au jugé une échéance déduite de « lundi prochain », alors même que le canal
@@ -285,7 +327,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Réf. | Point                                                 | Statut | Note                                                                                                                                                                                                                                                                                                                                                    |
 | ---- | ----------------------------------------------------- | :----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                                                                                                                       |
-| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                             |
+| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer sur un dossier (ajouter ou déplacer, au choix), et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                             |
 | A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (semaine + toutes les listes), todolistes visibles dans leur dossier. Reste la conversion depuis une conversation → #17                                                                                                        |
 | A.3  | Détection de tâches datées                            |   🔵   | `dueAt` se saisit et se lit désormais de bout en bout — semaine, calendrier. Reste l'extraction automatique depuis la conversation → #18                                                                                                                                                                                                                |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                                                                                                                                                                                                       |
@@ -294,7 +336,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                                                                                                                                                                                                               |
 | A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées — et que le modèle relit au tour suivant, pour ne pas reproposer ce qui vient d'être écarté. Restent la todoliste et les rendez-vous                                                        |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                                                                                                                                                 |
-| A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre, et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages. Le canal reçoit l'agenda des 7 jours et les dossiers existants — il peut enfin répondre sur le premier de ses trois sujets ; délivrance des rappels → #26 |
+| A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule hors périmètre proposée puis validée par l'utilisateur (et retirée du contexte une fois faite), et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages. Le canal reçoit l'agenda des 7 jours et les dossiers existants — il peut enfin répondre sur le premier de ses trois sujets ; délivrance des rappels → #26 |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                                                                                                                                                       |
 | A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                                                                                                                                                                                                       |
 | A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte, vocal renvoyé à #25                                                                                                                                                                                                                                                                                                          |

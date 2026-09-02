@@ -16,6 +16,7 @@ import type {
   Conversation,
   CreateConversation,
   CursorPagination,
+  EditMessage,
   FolderTreeNode,
   Message,
   MessageStreamEvent,
@@ -125,6 +126,15 @@ type AssistantContext = {
   /** L'accueil n'a pas encore été mené à son terme (§6.3, A.13). */
   onboarding: boolean;
 };
+
+/**
+ * Annonce d'une bascule vers une conversation dédiée (A.10).
+ *
+ * Écrite par le serveur et non par le modèle : c'est elle qui porte la
+ * validation, et une formulation qui change d'un tour à l'autre ferait douter
+ * qu'il s'agisse du même geste. Le modèle, lui, n'écrit rien dans ce cas.
+ */
+const SWITCH_ANNOUNCEMENT = "Ce sujet mérite une conversation dédiée. On y bascule ?";
 
 /**
  * Premier message du canal permanent, quand l'accueil reste à faire (§6.3).
@@ -287,9 +297,146 @@ export class ConversationService {
 
     yield { type: "message", message: userMessage };
 
+    yield* this.generate(conversation, userId, accessToken);
+  }
+
+  /**
+   * Corrige un message déjà envoyé et rejoue le tour à partir de là.
+   *
+   * Ce qui suivait répondait au texte d'avant : le conserver ferait un fil qui
+   * se contredit. C'est le geste de ChatGPT et de Claude (§4.2) — la
+   * correction remplace la question, et la réponse est refaite.
+   */
+  async *editMessage(
+    conversationId: string,
+    userId: string,
+    messageId: string,
+    input: EditMessage,
+    accessToken: string,
+  ): AsyncGenerator<MessageStreamEvent> {
+    const conversation = await this.getById(conversationId, accessToken);
+    const message = await this.requireMessage(conversationId, messageId, accessToken);
+
+    if (message.role !== "user") {
+      throw httpError(422, "Seul un message que vous avez écrit peut être corrigé.");
+    }
+
+    await this.conversations.deleteMessagesAfter(conversationId, message.createdAt, accessToken);
+    const corrected = await this.conversations.updateMessageContent(
+      messageId,
+      input.content,
+      accessToken,
+    );
+
+    yield { type: "message", message: corrected };
+
+    yield* this.generate(conversation, userId, accessToken);
+  }
+
+  /**
+   * Redemande une réponse au modèle.
+   *
+   * Sur une réponse de l'assistant, celle-ci est remplacée et non doublée : on
+   * la rejoue parce qu'elle n'allait pas. Sur un message de l'utilisateur, la
+   * suite du fil part et le tour repart de sa demande.
+   */
+  async *retryMessage(
+    conversationId: string,
+    userId: string,
+    messageId: string,
+    accessToken: string,
+  ): AsyncGenerator<MessageStreamEvent> {
+    const conversation = await this.getById(conversationId, accessToken);
+    const message = await this.requireMessage(conversationId, messageId, accessToken);
+
+    if (message.role === "system") {
+      throw httpError(422, "Ce message ne peut pas être rejoué.");
+    }
+
+    await this.conversations.deleteMessagesAfter(conversationId, message.createdAt, accessToken);
+    if (message.role === "assistant") {
+      await this.conversations.deleteMessage(messageId, accessToken);
+    }
+
+    yield* this.generate(conversation, userId, accessToken);
+  }
+
+  /**
+   * Ouvre la conversation dédiée que le canal permanent a proposée (A.10).
+   *
+   * Rien n'est ouvert tant que l'utilisateur n'a pas validé : le canal propose,
+   * il n'exécute pas (§12.1). La validation faite, l'échange sort du contexte
+   * du canal — la réponse se donne dans l'autre fil, et la relire ici ferait
+   * revenir le modèle sur un sujet dont il vient de se dessaisir.
+   */
+  async switchToDedicatedConversation(
+    conversationId: string,
+    userId: string,
+    messageId: string,
+    accessToken: string,
+  ): Promise<Conversation> {
+    await this.getById(conversationId, accessToken);
+    const message = await this.requireMessage(conversationId, messageId, accessToken);
+
+    if (message.redirectTitle === null) {
+      throw httpError(422, "Ce message ne propose pas de conversation dédiée.");
+    }
+    if (message.redirectAcceptedAt !== null) {
+      throw httpError(409, "Cette conversation a déjà été ouverte.");
+    }
+
+    const conversation = await this.conversations.create(
+      userId,
+      { title: message.redirectTitle, folderIds: [] },
+      "chat",
+      accessToken,
+    );
+
+    await this.conversations.acceptRedirect(messageId, accessToken);
+
+    return conversation;
+  }
+
+  private async requireMessage(
+    conversationId: string,
+    messageId: string,
+    accessToken: string,
+  ): Promise<Message> {
+    const message = await this.conversations.findMessage(messageId, accessToken);
+    // Le rattachement est vérifié ici et non par les RLS : un message d'une
+    // autre conversation du même utilisateur passerait sinon sans bruit.
+    if (!message || message.conversationId !== conversationId) {
+      throw httpError(404, "Message introuvable.");
+    }
+    return message;
+  }
+
+  /**
+   * Interroge le modèle sur l'état courant du fil et persiste sa réponse.
+   *
+   * Partagé par l'envoi, la correction et la reprise : ces trois gestes ne
+   * diffèrent que par ce qu'ils font du fil *avant* d'appeler le modèle.
+   */
+  private async *generate(
+    conversation: Conversation,
+    userId: string,
+    accessToken: string,
+  ): AsyncGenerator<MessageStreamEvent> {
+    const conversationId = conversation.id;
+
     const history = await this.conversations.listMessages(conversationId, accessToken, {
       limit: CONTEXT_WINDOW_MESSAGES,
     });
+
+    // Les messages `system` stockés ne sont pas rejouables comme des tours de
+    // dialogue : la consigne système est reconstruite à chaque appel.
+    const dialogue = forgetSwitchedAside(history.items).filter((m) => m.role !== "system");
+
+    // Une reprise sur le tout premier message le retirerait sans rien laisser
+    // à quoi répondre : mieux vaut le dire que d'appeler le modèle à vide.
+    if (dialogue.length === 0) {
+      throw httpError(422, "Il n'y a rien à quoi répondre dans cette conversation.");
+    }
 
     let text = "";
     let provider: string | null = null;
@@ -308,11 +455,10 @@ export class ConversationService {
     try {
       const stream = this.llm.stream({
         system: buildSystemPrompt(conversation.kind, todo, context, now),
-        messages: history.items
-          // Les messages `system` stockés ne sont pas rejouables comme des tours
-          // de dialogue : la consigne système est reconstruite à chaque appel.
-          .filter((m) => m.role !== "system")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+        messages: dialogue.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
         tools: todo.tools,
       });
 
@@ -335,7 +481,14 @@ export class ConversationService {
       // Résolu avant l'écriture : les réponses proposées voyagent sur le
       // message qui porte la question, pas dans une seconde requête.
       const asked = readQuestion(toolCalls);
-      const content = text.length > 0 ? text : (asked?.question ?? "");
+      // La bascule prime sur tout ce que le modèle a pu écrire : l'annonce doit
+      // être la même à chaque fois, puisque c'est elle qui porte la validation.
+      const redirectTitle = readRedirectTitle(conversation.kind, toolCalls);
+      const content = redirectTitle
+        ? SWITCH_ANNOUNCEMENT
+        : text.length > 0
+          ? text
+          : (asked?.question ?? "");
 
       const assistantMessage =
         content.length > 0
@@ -348,7 +501,8 @@ export class ConversationService {
                 role: "assistant",
                 provider,
                 model,
-                ...(asked ? { choices: asked.choices } : {}),
+                ...(asked && !redirectTitle ? { choices: asked.choices } : {}),
+                ...(redirectTitle ? { redirectTitle } : {}),
               },
               accessToken,
             )
@@ -375,10 +529,7 @@ export class ConversationService {
 
       await this.applyOnboardingMemory(userId, toolCalls, accessToken);
 
-      const redirect = await this.openRequestedConversation(userId, toolCalls, accessToken);
-
       if (assistantMessage) yield { type: "done", message: assistantMessage };
-      if (redirect) yield { type: "redirect", conversation: redirect };
     }
   }
 
@@ -556,39 +707,50 @@ export class ConversationService {
       );
     }
   }
+}
 
-  /**
-   * Bascule hors périmètre du canal permanent (A.10).
-   *
-   * Le modèle ne crée pas la conversation lui-même : il signale que la demande
-   * relève du registre conversationnel classique, et le serveur ouvre le fil
-   * qui l'accueillera. Ce n'est pas une exception au §12.1 — rien n'est écrit
-   * dans les données de l'utilisateur, on choisit seulement où la réponse doit
-   * être donnée, ce que le cahier des charges décrit comme automatique.
-   */
-  private async openRequestedConversation(
-    userId: string,
-    toolCalls: LlmToolCall[],
-    accessToken: string,
-  ): Promise<Conversation | null> {
-    const call = toolCalls.find((toolCall) => toolCall.name === OPEN_NEW_CONVERSATION.name);
-    if (!call) return null;
+/**
+ * Titre de la conversation dédiée que le tour propose d'ouvrir (A.10).
+ *
+ * `null` hors du canal permanent : l'outil n'y est pas proposé, et un appel
+ * égaré remplacerait une réponse légitime par l'annonce de bascule.
+ *
+ * Sans titre exploitable, on reste dans le canal : proposer d'ouvrir un fil
+ * « Nouvelle conversation » vide serait plus déroutant que de ne rien faire.
+ */
+function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[]): string | null {
+  if (kind !== "assistant") return null;
 
-    const title = labelSchema.safeParse(call.input["title"]);
-    if (!title.success) {
-      // Sans titre exploitable, on reste dans le canal : ouvrir un fil
-      // « Nouvelle conversation » vide serait plus déroutant que de ne rien faire.
-      console.warn("Appel `open_new_conversation` sans titre exploitable : bascule ignorée.");
-      return null;
-    }
+  const call = toolCalls.find((toolCall) => toolCall.name === OPEN_NEW_CONVERSATION.name);
+  if (!call) return null;
 
-    return this.conversations.create(
-      userId,
-      { title: title.data, folderIds: [] },
-      "chat",
-      accessToken,
-    );
+  const title = labelSchema.safeParse(call.input["title"]);
+  if (!title.success) {
+    console.warn("Appel `open_new_conversation` sans titre exploitable : bascule ignorée.");
+    return null;
   }
+
+  return title.data;
+}
+
+/**
+ * Retire du contexte l'échange déjà basculé vers une conversation dédiée (A.10).
+ *
+ * Deux messages partent : l'annonce validée, et la demande qui l'a provoquée.
+ * La réponse est donnée dans l'autre fil ; les relire ici ferait revenir le
+ * canal sur un sujet dont il vient justement de se dessaisir, et ce qu'il en
+ * dirait ferait doublon avec ce qui s'écrit là-bas.
+ */
+function forgetSwitchedAside(messages: Message[]): Message[] {
+  return messages.filter((message, index) => {
+    if (message.redirectAcceptedAt !== null) return false;
+
+    const next = messages[index + 1];
+    const precedesSwitch =
+      message.role === "user" && next !== undefined && next.redirectAcceptedAt !== null;
+
+    return !precedesSwitch;
+  });
 }
 
 /**
@@ -624,9 +786,9 @@ function buildSystemPrompt(
       "rangement, structure), et l'évolution de la structure du projet de l'utilisateur.",
       "",
       "Si la demande sort de ce périmètre, ne la traite pas ici : appelle",
-      "`open_new_conversation` avec un titre tiré de la demande, et annonce en une",
-      "phrase que tu ouvres cette conversation dédiée. N'y réponds pas toi-même —",
-      "la réponse sera donnée là-bas.",
+      "`open_new_conversation` avec un titre tiré de la demande, et n'écris rien",
+      "d'autre. L'application annonce elle-même la conversation dédiée et en",
+      "demande la validation ; la réponse sera donnée là-bas.",
       "",
       "Prends les devants : quand un échange laisse deviner une action à faire,",
       "propose-la plutôt que d'attendre qu'on te la demande. Reste suggestif —",
