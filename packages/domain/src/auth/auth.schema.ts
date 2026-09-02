@@ -57,14 +57,6 @@ export const otpCodeSchema = z
       .length(OTP_CODE_LENGTH, `Le code de connexion contient ${OTP_CODE_LENGTH} chiffres.`),
   );
 
-/** Étape 1 — demande d'un code. */
-export const requestCodeSchema = z.object({ email: emailSchema });
-export type RequestCodeInput = z.infer<typeof requestCodeSchema>;
-
-/** Étape 2 — vérification du code saisi. */
-export const verifyCodeSchema = z.object({ email: emailSchema, code: otpCodeSchema });
-export type VerifyCodeInput = z.infer<typeof verifyCodeSchema>;
-
 /** Forme canonique d'une adresse, ou `null` si elle n'est pas exploitable. */
 export function normalizeEmail(value: string): string | null {
   const result = emailSchema.safeParse(value);
