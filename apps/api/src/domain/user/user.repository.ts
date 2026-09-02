@@ -1,7 +1,7 @@
-import type { AssistantScope, Theme, UpdateUserProfile } from "@jc/domain";
+import type { AssistantScope, Theme } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { forUser } from "../../core/supabase/supabase.js";
-import type { IUserRepository, ProfileRecord } from "./user.repository.interface.js";
+import type { IUserRepository, ProfilePatch, ProfileRecord } from "./user.repository.interface.js";
 
 /** Ligne Postgres — snake_case, telle que renvoyée par Supabase. */
 type ProfileRow = {
@@ -58,22 +58,43 @@ export const userRepository: IUserRepository = {
     return data ? toEntity(data as unknown as ProfileRow) : null;
   },
 
-  async update(userId, patch: UpdateUserProfile, accessToken) {
+  async update(userId, patch: ProfilePatch, accessToken) {
     // Un `undefined` doit laisser la colonne intacte ; on ne construit donc le
     // payload qu'à partir des clés fournies.
     const payload: Record<string, unknown> = {};
     if (patch.displayName !== undefined) payload["display_name"] = patch.displayName;
     if (patch.theme !== undefined) payload["theme"] = patch.theme;
+    if (patch.assistantName !== undefined) payload["assistant_name"] = patch.assistantName;
+    if (patch.assistantColor !== undefined) payload["assistant_color"] = patch.assistantColor;
+    // Le périmètre arrive complet du Service : l'écrire remplace le `jsonb`
+    // entier, ce qui est la sémantique attendue ici.
+    if (patch.scope !== undefined) payload["assistant_scope"] = patch.scope;
 
-    const { data, error } = await forUser(accessToken)
-      .from("profiles")
-      .update(payload)
-      .eq("id", userId)
-      .select(COLUMNS)
-      .maybeSingle();
+    return write(userId, payload, accessToken);
+  },
 
-    if (error) throw new Error(error.message);
-    if (!data) throw httpError(404, "Profil introuvable.");
-    return toEntity(data as unknown as ProfileRow);
+  async completeOnboarding(userId, memory, accessToken) {
+    const payload: Record<string, unknown> = { onboarding_completed_at: new Date().toISOString() };
+    if (memory !== null) payload["memory"] = memory;
+
+    return write(userId, payload, accessToken);
   },
 };
+
+/** Écriture partielle sur `profiles`, commune aux deux mises à jour. */
+async function write(
+  userId: string,
+  payload: Record<string, unknown>,
+  accessToken: string,
+): Promise<ProfileRecord> {
+  const { data, error } = await forUser(accessToken)
+    .from("profiles")
+    .update(payload)
+    .eq("id", userId)
+    .select(COLUMNS)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) throw httpError(404, "Profil introuvable.");
+  return toEntity(data as unknown as ProfileRow);
+}

@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Conversation, Message, Paginated } from "@jc/domain";
 import { api } from "@/shared/lib/api";
+import { PROFILE_KEY } from "@/shared/hooks/use-profile";
 
 /** Nombre de messages chargés à l'ouverture du fil. */
 const THREAD_PAGE_SIZE = 50;
@@ -106,6 +107,11 @@ export function useConversationThread(
       await queryClient.invalidateQueries({
         queryKey: ["conversation", conversationId, "suggestions"],
       });
+      // Le tour a pu clore la conversation d'accueil et écrire ce qu'elle a
+      // appris (§6.3) : sans relecture, l'écran continuerait d'offrir de la
+      // passer. Une requête de plus est négligeable à l'échelle d'un appel au
+      // modèle.
+      await queryClient.invalidateQueries({ queryKey: PROFILE_KEY });
       // Après l'invalidation seulement : plus tôt, la bulle en cours
       // disparaîtrait avant que la version persistée n'ait pris sa place.
       setStreamingText(null);

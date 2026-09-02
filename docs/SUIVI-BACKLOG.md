@@ -7,7 +7,39 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — issue #11 : la recherche par filtres (A.6).
+Dernière mise à jour : **2 septembre 2026** — issues #12 et #14 : le paramétrage complet
+et l'accueil conversationnel.
+
+**#12 est close.** La page Réglages porte désormais le nom de l'assistant, sa couleur et
+les cinq interrupteurs du périmètre (A.10), qui se branchent sur la règle serveur posée par
+#8. Le nom choisi se propage partout — bannière, barre latérale, titre du canal — et
+jusque dans la consigne système : sans cela, l'assistant aurait continué de se présenter
+comme Jean-Claude. La couleur alimente `buildPalette`, donc aussi bien les `StyleSheet`
+que les classes NativeWind. Elle se choisit parmi huit pastilles et non dans un sélecteur
+libre : la teinte est posée sur des aplats clairs **et** sombres, et une couleur prise au
+hasard y perd son contraste. Chaque pastille montre pour cette raison les deux rendus.
+
+Cinq interrupteurs et non les trois de la maquette : le serveur applique déjà les cinq
+capacités, et en cacher deux aurait laissé l'assistant proposer des todolistes et des
+créneaux sans moyen de l'en empêcher.
+
+**#14 : l'accueil se déroule dans le canal permanent**, pas dans un écran dédié. Le
+compte qui vient d'être créé y est redirigé et y trouve une question plutôt qu'un fil
+vide ; l'assistant mène trois ou quatre échanges ouverts, puis appelle `finish_onboarding`,
+qui écrit ce qu'il a retenu dans `profiles.memory` et horodate l'accueil. Cette mémoire est
+ensuite rappelée au modèle à chaque tour, dans les deux registres de conversation. Le
+bornage du canal est suspendu le temps de l'accueil : appliqué, il aurait ouvert une
+conversation dédiée au premier projet évoqué, alors qu'on cherche justement à en entendre
+parler. Un lien « Passer » clôt l'étape sans rien retenir.
+
+L'amorce proactive demandée par l'issue tombe d'elle-même : `suggest_project_folders` reste
+exposé pendant l'accueil, donc un projet mentionné devient une proposition de dossiers à
+valider d'un geste (§12.1).
+
+Reste ouvert sur #14 : le **vocal**. Aucune brique STT n'existe encore dans l'application —
+le point est traité par l'issue #25, et `inputMode` est déjà au contrat pour l'accueillir.
+
+Auparavant le 2 septembre : issue #11 : la recherche par filtres (A.6).
 Le bouton de recherche cherche désormais **dans le contenu des messages** et plus seulement
 dans les titres, côté serveur, via les index plein texte français — un fil se retrouve sans
 qu'on se rappelle comment il s'appelait, et le passage trouvé est affiché sous le titre.
@@ -99,7 +131,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | §6.1        | Règles de validation partagées                   |   ✅   | `packages/domain/src/auth/auth.schema.ts`, 14 tests. Plus aucune règle de saisie dans l'écran                                                         |
 | §6.1        | Gabarit d'e-mail à pousser sur le projet hébergé |   ⬜   | `npx supabase config push` — **tant que ce n'est pas fait, le projet hébergé envoie un lien et non un code**                                          |
 | §6.2        | 2FA par SMS                                      |   ⬜   | Étape 2. Si non fait dans le sprint → priorité immédiate du backlog restant                                                                           |
-| §6.3 / A.13 | Onboarding conversationnel                       |   ⬜   | Champs `memory` et `onboarding_completed_at` prêts en base                                                                                            |
+| §6.3 / A.13 | Onboarding conversationnel                       |   🟡   | Accueil mené dans le canal permanent au premier accès : questions ouvertes, mémoire écrite par `finish_onboarding`, lien « Passer ». Reste le vocal → #25            |
 
 ---
 
@@ -117,10 +149,10 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                          |
 | A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste. Restent la todoliste et les rendez-vous              |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                            |
-| A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre, et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs de réglages → #12 ; rappels du matin → #26  |
+| A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre, et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages ; rappels du matin → #26  |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                                               |
 | A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                  |
-| A.13 | Onboarding conversationnel                            |   ⬜   | Voir §6.3                                                                                                                                                          |
+| A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte, vocal renvoyé à #25                                                                                                                     |
 | Réf. | Point                                                 | Statut | Note                                                                                                                                                      |
 | ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                         |
@@ -176,7 +208,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Point                                | Détail                                                                                                                                                                          |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pagination remontante du fil absente | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                   |
-| Périmètre assistant non appliqué     | `profiles.assistant_scope` est stocké mais jamais lu : une capacité désactivée dans les réglages n'empêche pas encore le serveur de produire la proposition (§12.1)             |
+| Rappels du matin non délivrés        | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26, #20)                        |
 | Todoliste et rendez-vous non captés  | `feature/assistant` ne traduit que les propositions de dossiers ; `suggest_task_list` et `suggest_recurring_event` restent ignorés, faute de `domain/task` et `domain/calendar` |
 | Node ≥ 22.12 requis                  | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                             |
 

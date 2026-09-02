@@ -6,6 +6,7 @@ import type {
   Message,
   MessageStreamEvent,
   Suggestion,
+  UserPreferences,
 } from "@jc/domain";
 import type { LlmCompletionRequest, LlmProvider, LlmToolCall } from "../../core/llm/llm.port.js";
 import type { IFolderRepository } from "../folder/folder.repository.interface.js";
@@ -159,34 +160,52 @@ function makeFolderRepository(folders: Folder[] = []): IFolderRepository {
   };
 }
 
-/** Profil dont toutes les capacités du périmètre restent actives (A.10). */
-function makeUserRepository(scope: Partial<AssistantScope> = {}): IUserRepository {
+function makePreferences(
+  overrides: Partial<UserPreferences> = {},
+  scope: Partial<AssistantScope> = {},
+): UserPreferences {
+  return {
+    assistantName: "Jean-Claude",
+    assistantColor: "#6366F1",
+    theme: "system",
+    timezone: "Europe/Paris",
+    speakResponses: false,
+    ...overrides,
+    scope: {
+      morningReminders: true,
+      folderOrganization: true,
+      structureSuggestions: true,
+      proactiveTaskDetection: true,
+      proactiveScheduling: true,
+      ...scope,
+    },
+  };
+}
+
+/**
+ * Profil dont toutes les capacités du périmètre restent actives (A.10), et
+ * dont l'accueil est déjà fait — c'est l'état d'un compte ordinaire, celui que
+ * décrivent la plupart des tests. Ceux qui portent sur l'accueil (§6.3) le
+ * remettent explicitement à `null`.
+ */
+function makeUserRepository(
+  scope: Partial<AssistantScope> = {},
+  record: Partial<ProfileRecord> = {},
+): IUserRepository {
   const profile: ProfileRecord = {
     id: USER,
     displayName: "Clarisse",
     memory: null,
-    onboardingCompletedAt: null,
+    onboardingCompletedAt: "2026-08-31T09:00:00.000Z",
     createdAt: "2026-08-31T08:00:00.000Z",
-    preferences: {
-      assistantName: "Jean-Claude",
-      assistantColor: "#6366F1",
-      theme: "system",
-      timezone: "Europe/Paris",
-      speakResponses: false,
-      scope: {
-        morningReminders: true,
-        folderOrganization: true,
-        structureSuggestions: true,
-        proactiveTaskDetection: true,
-        proactiveScheduling: true,
-        ...scope,
-      },
-    },
+    preferences: makePreferences({}, scope),
+    ...record,
   };
 
   return {
     findById: jest.fn().mockResolvedValue(profile),
     update: jest.fn().mockResolvedValue(profile),
+    completeOnboarding: jest.fn().mockResolvedValue(profile),
   };
 }
 
@@ -260,6 +279,63 @@ describe("ConversationService", () => {
         "assistant",
         TOKEN,
       );
+    });
+
+    it("titre le canal du nom d'assistant choisi dans les réglages (§4.5)", async () => {
+      const repo = makeRepository();
+
+      await makeService(
+        repo,
+        makeLlm(),
+        makeSuggestionRepository(),
+        makeFolderRepository(),
+        makeUserRepository({}, { preferences: makePreferences({ assistantName: "Marcel" }) }),
+      ).getOrCreateAssistantChannel(USER, TOKEN);
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        { title: "Marcel", folderIds: [] },
+        "assistant",
+        TOKEN,
+      );
+    });
+
+    it("ouvre l'accueil sur une question plutôt que sur un fil vide (§6.3)", async () => {
+      const repo = makeRepository();
+
+      await makeService(
+        repo,
+        makeLlm(),
+        makeSuggestionRepository(),
+        makeFolderRepository(),
+        makeUserRepository({}, { onboardingCompletedAt: null }),
+      ).getOrCreateAssistantChannel(USER, TOKEN);
+
+      expect(repo.appendMessage).toHaveBeenCalledWith(
+        "conv-1",
+        USER,
+        expect.objectContaining({ role: "assistant" }),
+        TOKEN,
+      );
+
+      const [, , message] = (repo.appendMessage as jest.Mock).mock.calls[0] as [
+        string,
+        string,
+        { content: string },
+        string,
+      ];
+      // L'accueil doit se présenter et dire qu'il est facultatif : le §6.3
+      // demande une étape brève et sautable.
+      expect(message.content).toContain("Jean-Claude");
+      expect(message.content).toContain("passer cette étape");
+    });
+
+    it("n'accueille pas une seconde fois un utilisateur déjà passé par là", async () => {
+      const repo = makeRepository();
+
+      await makeService(repo, makeLlm()).getOrCreateAssistantChannel(USER, TOKEN);
+
+      expect(repo.appendMessage).not.toHaveBeenCalled();
     });
   });
 
@@ -390,6 +466,159 @@ describe("ConversationService", () => {
       const system = lastRequest(llm).system ?? "";
       expect(system).toContain("réservé à trois sujets");
       expect(system).toContain("conversation dédiée");
+    });
+
+    it("conduit l'accueil avant de borner le canal (§6.3)", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository({
+            findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          }),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({}, { onboardingCompletedAt: null }),
+        ),
+        { content: "Je monte une boîte de menuiserie.", inputMode: "text" },
+      );
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("vient de créer son compte");
+      // Le bornage du canal ferait ouvrir une conversation dédiée au premier
+      // projet évoqué, alors que l'accueil cherche justement à en entendre parler.
+      expect(system).not.toContain("réservé à trois sujets");
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("finish_onboarding");
+    });
+
+    it("propose des dossiers pour un projet évoqué pendant l'accueil (§12.1)", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository({
+            findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          }),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({}, { onboardingCompletedAt: null }),
+        ),
+        { content: "Je refais tout mon jardin ce printemps.", inputMode: "text" },
+      );
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_project_folders");
+    });
+
+    it("enregistre ce que l'accueil a appris et le clôt (§6.3, A.13)", async () => {
+      const users = makeUserRepository({}, { onboardingCompletedAt: null });
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        ["Merci, c'est noté."],
+        [
+          {
+            id: "call-1",
+            name: "finish_onboarding",
+            input: { memory: "Menuisier à son compte, monte son atelier." },
+          },
+        ],
+      );
+
+      await drain(
+        makeService(
+          makeRepository({
+            findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          }),
+          llm,
+          suggestions,
+          makeFolderRepository(),
+          users,
+        ),
+      );
+
+      expect(users.completeOnboarding).toHaveBeenCalledWith(
+        USER,
+        "Menuisier à son compte, monte son atelier.",
+        TOKEN,
+      );
+      // Appliqué directement, comme le titre : on ne demande pas à l'utilisateur
+      // de valider ce qu'il vient lui-même de raconter.
+      expect(suggestions.create).not.toHaveBeenCalled();
+    });
+
+    it("ne clôt pas l'accueil sur une mémoire inexploitable", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const users = makeUserRepository({}, { onboardingCompletedAt: null });
+      const llm = makeLlm(
+        ["Enchanté."],
+        [{ id: "call-1", name: "finish_onboarding", input: { memory: "   " } }],
+      );
+
+      await drain(
+        makeService(
+          makeRepository({
+            findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          }),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          users,
+        ),
+      );
+
+      expect(users.completeOnboarding).not.toHaveBeenCalled();
+    });
+
+    it("n'offre plus de clore l'accueil une fois qu'il a eu lieu", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository({
+            findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          }),
+          llm,
+        ),
+        { content: "Qu'est-ce qui est important aujourd'hui ?", inputMode: "text" },
+      );
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("finish_onboarding");
+    });
+
+    it("appelle l'assistant par le nom choisi dans les réglages (§4.5)", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({}, { preferences: makePreferences({ assistantName: "Marcel" }) }),
+        ),
+      );
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("Tu es Marcel");
+      expect(system).not.toContain("Jean-Claude");
+    });
+
+    it("rappelle au modèle ce qu'il sait déjà de l'utilisateur (§13.4.2)", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({}, { memory: "Menuisier à son compte." }),
+        ),
+      );
+
+      expect(lastRequest(llm).system ?? "").toContain("Menuisier à son compte.");
     });
 
     it("laisse une conversation classique sans bornage de périmètre", async () => {
@@ -775,7 +1004,11 @@ describe("ConversationService", () => {
           llm,
           makeSuggestionRepository(),
           makeFolderRepository(),
-          { findById: jest.fn().mockResolvedValue(null), update: jest.fn() },
+          {
+            findById: jest.fn().mockResolvedValue(null),
+            update: jest.fn(),
+            completeOnboarding: jest.fn(),
+          },
         ),
         { content: "Il me faut du terreau.", inputMode: "text" },
       );
