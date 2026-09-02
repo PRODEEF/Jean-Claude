@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { ScrollView, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { ScrollView, View, type LayoutChangeEvent } from "react-native";
 import { Plus } from "lucide-react-native";
 import type { CalendarEvent } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
@@ -10,11 +10,14 @@ import { CalendarToolbar, type CalendarView } from "./CalendarToolbar";
 import { DayAgenda } from "./DayAgenda";
 import { EventFormDialog, type EventDialogTarget } from "./EventFormDialog";
 import { MonthGrid } from "./MonthGrid";
-import { WeekGrid } from "./WeekGrid";
+import { TimeGrid } from "./TimeGrid";
+import { YearGrid } from "./YearGrid";
 import { useCalendarEvents } from "./hooks/use-calendar-events";
 import {
   addDays,
   addMonths,
+  addYears,
+  dayLabel,
   monthGrid,
   monthLabel,
   rangeOf,
@@ -22,17 +25,24 @@ import {
   startOfWeek,
   weekDays,
   weekLabel,
+  yearBounds,
+  yearLabel,
 } from "./lib/calendar-dates";
 
 /** Heure par défaut d'un événement créé sans viser de créneau. */
 const DEFAULT_CREATE_MINUTE = 9 * 60;
 
 /**
- * Calendrier — vues mois et semaine (§3, Phase B).
+ * Calendrier — vues jour, semaine, mois et année (§3, Phase B).
  *
- * Les deux vues n'appellent pas deux routes différentes : elles demandent deux
- * fenêtres à la même. Changer de vue ou de période ne fait donc que déplacer
- * les bornes, et le mois déjà consulté revient du cache.
+ * Les quatre vues n'appellent pas quatre routes différentes : elles demandent
+ * quatre fenêtres à la même. Changer de vue ou de période ne fait donc que
+ * déplacer les bornes, et le mois déjà consulté revient du cache.
+ *
+ * Une seule zone défilante, celle de la page : les grilles se déroulent en
+ * entier dedans. Une grille qui défilerait pour son compte emporterait sa
+ * barre de défilement dans la largeur de ses colonnes, décalant celles-ci de
+ * leurs en-têtes.
  */
 export function CalendarScreen() {
   const compact = useBreakpoint() === "compact";
@@ -42,21 +52,49 @@ export function CalendarScreen() {
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [dialogTarget, setDialogTarget] = useState<EventDialogTarget | null>(null);
 
-  const days = useMemo(
-    () => (view === "month" ? monthGrid(anchor) : weekDays(anchor)),
-    [view, anchor],
-  );
+  const days = useMemo(() => visibleDays(view, anchor), [view, anchor]);
   const range = useMemo(() => rangeOf(days), [days]);
   const { data, isPending, isError } = useCalendarEvents(range);
   const events = data ?? [];
+
+  const page = useRef<ScrollView>(null);
+  /** Position de la grille dans la page, et de la première heure ouvrée en son sein. */
+  const gridTop = useRef(0);
+  const morningOffset = useRef(0);
+  const framePending = useRef(true);
+
+  // Les deux mesures arrivent dans un ordre non garanti : le cadrage se joue
+  // sur la seconde, quelle qu'elle soit. Sans lui, la vue jour et la vue
+  // semaine s'ouvriraient sur sept heures de nuit vides.
+  const frameMorning = () => {
+    if (!framePending.current || morningOffset.current === 0) return;
+    framePending.current = false;
+    page.current?.scrollTo({ y: gridTop.current + morningOffset.current, animated: false });
+  };
+
+  const measureGrid = (event: LayoutChangeEvent) => {
+    gridTop.current = event.nativeEvent.layout.y;
+    frameMorning();
+  };
+
+  const measureMorning = (offset: number) => {
+    morningOffset.current = offset;
+    frameMorning();
+  };
+
+  const changeView = (next: CalendarView) => {
+    if (next === "day" || next === "week") framePending.current = true;
+    setView(next);
+  };
 
   // La sélection suit la période affichée : sans cela, la liste du jour
   // resterait sur septembre alors que la grille montre octobre — le contresens
   // est immédiat sur téléphone, où c'est elle qui porte le détail.
   const shift = (direction: 1 | -1) => {
-    const next = view === "month" ? addMonths(anchor, direction) : addDays(anchor, 7 * direction);
+    const next = shiftAnchor(view, anchor, direction);
     setAnchor(next);
-    setSelectedDay(view === "month" ? startOfDay(next) : startOfWeek(next));
+    if (view === "week") setSelectedDay(startOfWeek(next));
+    else if (view !== "year") setSelectedDay(startOfDay(next));
   };
 
   const goToToday = () => {
@@ -66,17 +104,20 @@ export function CalendarScreen() {
   };
 
   const openEvent = (event: CalendarEvent) => setDialogTarget({ mode: "edit", event });
+  const createAt = (day: Date, minute: number) => setDialogTarget({ mode: "create", day, minute });
 
   return (
     <View className="bg-background flex-1">
-      <View className="w-full max-w-[1100px] flex-1 gap-4 self-center p-6">
+      <ScrollView
+        ref={page}
+        className="flex-1"
+        contentContainerClassName="w-full max-w-[1100px] gap-4 self-center p-6"
+      >
         <View className="flex-row items-center justify-between gap-3">
           <Text className="text-2xl font-semibold">Calendrier</Text>
           <Button
             size="sm"
-            onPress={() =>
-              setDialogTarget({ mode: "create", day: selectedDay, minute: DEFAULT_CREATE_MINUTE })
-            }
+            onPress={() => createAt(selectedDay, DEFAULT_CREATE_MINUTE)}
             accessibilityRole="button"
             accessibilityLabel="Nouvel événement"
           >
@@ -86,9 +127,9 @@ export function CalendarScreen() {
         </View>
 
         <CalendarToolbar
-          label={view === "month" ? monthLabel(anchor) : weekLabel(anchor)}
+          label={periodLabel(view, anchor)}
           view={view}
-          onViewChange={setView}
+          onViewChange={changeView}
           onPrevious={() => shift(-1)}
           onNext={() => shift(1)}
           onToday={goToToday}
@@ -101,7 +142,7 @@ export function CalendarScreen() {
         ) : null}
 
         {view === "month" ? (
-          <ScrollView contentContainerClassName="gap-4 pb-6">
+          <>
             <MonthGrid
               days={days}
               anchor={anchor}
@@ -112,23 +153,62 @@ export function CalendarScreen() {
               compact={compact}
             />
             <DayAgenda day={selectedDay} events={events} onOpenEvent={openEvent} />
-          </ScrollView>
-        ) : (
-          <WeekGrid
-            days={days}
+          </>
+        ) : null}
+
+        {view === "year" ? (
+          <YearGrid
+            anchor={anchor}
             events={events}
-            onOpenEvent={openEvent}
-            onCreateAt={(day, minute) => setDialogTarget({ mode: "create", day, minute })}
+            onSelectMonth={(month) => {
+              setAnchor(month);
+              setSelectedDay(startOfDay(month));
+              setView("month");
+            }}
           />
-        )}
+        ) : null}
+
+        {view === "day" || view === "week" ? (
+          <View onLayout={measureGrid}>
+            <TimeGrid
+              days={days}
+              events={events}
+              onOpenEvent={openEvent}
+              onCreateAt={createAt}
+              onMorningOffset={measureMorning}
+            />
+          </View>
+        ) : null}
 
         {/* Sous la grille et non à sa place : le mois déjà chargé reste
             affiché pendant qu'on en récupère un autre, plutôt que de laisser
             un écran vide à chaque navigation. */}
         {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
-      </View>
+      </ScrollView>
 
       <EventFormDialog target={dialogTarget} onClose={() => setDialogTarget(null)} />
     </View>
   );
+}
+
+/** Jours couverts par la vue — la vue année n'en rend que ses deux bornes. */
+function visibleDays(view: CalendarView, anchor: Date): Date[] {
+  if (view === "day") return [startOfDay(anchor)];
+  if (view === "week") return weekDays(anchor);
+  if (view === "month") return monthGrid(anchor);
+  return yearBounds(anchor);
+}
+
+function shiftAnchor(view: CalendarView, anchor: Date, direction: 1 | -1): Date {
+  if (view === "day") return addDays(anchor, direction);
+  if (view === "week") return addDays(anchor, 7 * direction);
+  if (view === "month") return addMonths(anchor, direction);
+  return addYears(anchor, direction);
+}
+
+function periodLabel(view: CalendarView, anchor: Date): string {
+  if (view === "day") return dayLabel(anchor);
+  if (view === "week") return weekLabel(anchor);
+  if (view === "month") return monthLabel(anchor);
+  return yearLabel(anchor);
 }
