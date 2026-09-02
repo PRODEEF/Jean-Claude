@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { ScrollView, Switch, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import type { CalendarEvent } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
+import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 import { useCalendarActions } from "./hooks/use-calendar-events";
 import {

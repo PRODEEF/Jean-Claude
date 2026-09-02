@@ -3,8 +3,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import { useRouter } from "expo-router";
 import { fontSize, MIN_TOUCH_TARGET, spacing } from "@jc/design";
 import { api } from "@/shared/lib/api";
-import { ConversationHeader } from "@/features/conversation/ConversationHeader";
 import { ConversationThread } from "@/features/conversation/ConversationThread";
+import { ScreenShell } from "@/shared/ui/screen-shell";
 import { useAssistantName, useCompleteOnboarding, useProfile } from "@/shared/hooks/use-profile";
 import { useTheme } from "@/shared/providers/theme-provider";
 
@@ -38,32 +38,31 @@ export default function AssistantScreen() {
   const onboarding = profile?.onboardingCompletedAt === null;
 
   return (
-    <View style={[styles.root, { backgroundColor: palette.background }]}>
-      <ConversationHeader
-        title={assistantName}
-        // L'accueil doit rester sautable (§6.3) : la sortie est visible dès le
-        // premier écran, pas cachée derrière un menu. En texte discret et non
-        // en bouton plein — c'est une échappatoire, pas l'action principale.
-        action={
-          onboarding ? (
-            <Pressable
-              onPress={() => {
-                completeOnboarding.mutate(undefined, {
-                  onSuccess: () => router.replace("/chat"),
-                });
-              }}
-              disabled={completeOnboarding.isPending}
-              hitSlop={8}
-              style={styles.skip}
-              accessibilityRole="button"
-              accessibilityLabel="Passer les questions d'accueil"
-            >
-              <Text style={[styles.skipLabel, { color: palette.textMuted }]}>Passer</Text>
-            </Pressable>
-          ) : null
-        }
-      />
-
+    <ScreenShell
+      title={assistantName}
+      // L'accueil doit rester sautable (§6.3) : la sortie est visible dès le
+      // premier écran, pas cachée derrière un menu. En texte discret et non
+      // en bouton plein — c'est une échappatoire, pas l'action principale.
+      action={
+        onboarding ? (
+          <Pressable
+            onPress={() => {
+              completeOnboarding.mutate(undefined, {
+                onSuccess: () => router.replace("/chat"),
+              });
+            }}
+            disabled={completeOnboarding.isPending}
+            hitSlop={8}
+            style={styles.skip}
+            accessibilityRole="button"
+            accessibilityLabel="Passer les questions d'accueil"
+          >
+            <Text style={[styles.skipLabel, { color: palette.textMuted }]}>Passer</Text>
+          </Pressable>
+        ) : null
+      }
+      scrolls={false}
+    >
       {channel.data ? (
         <ConversationThread conversationId={channel.data.id} />
       ) : (
@@ -79,12 +78,11 @@ export default function AssistantScreen() {
           )}
         </View>
       )}
-    </View>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
   skip: {
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",

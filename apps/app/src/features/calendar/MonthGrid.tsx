@@ -1,7 +1,11 @@
 import { Pressable, View } from "react-native";
+import { ListChecks } from "lucide-react-native";
 import type { CalendarEvent } from "@jc/domain";
+import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
-import { eventsOfDay, formatTime, isSameDay, WEEKDAY_LABELS } from "./lib/calendar-dates";
+import { eventsOfDay } from "./lib/calendar-dates";
+import { formatTime, isSameDay, WEEKDAY_LABELS } from "@/shared/lib/dates";
+import { openTasksOfDay, type DatedTask } from "@/shared/lib/tasks";
 
 export type MonthGridProps = {
   /** Les 42 jours de la grille, lundi en tête. */
@@ -9,6 +13,8 @@ export type MonthGridProps = {
   /** Mois mis en avant ; les jours des mois voisins sont atténués. */
   anchor: Date;
   events: CalendarEvent[];
+  /** Tâches datées, toutes listes confondues : ce qui charge la journée (A.2). */
+  tasks: DatedTask[];
   selectedDay: Date;
   onSelectDay: (day: Date) => void;
   onOpenEvent: (event: CalendarEvent) => void;
@@ -31,6 +37,7 @@ export function MonthGrid({
   days,
   anchor,
   events,
+  tasks,
   selectedDay,
   onSelectDay,
   onOpenEvent,
@@ -54,13 +61,16 @@ export function MonthGrid({
           const isToday = isSameDay(day, today);
           const selected = isSameDay(day, selectedDay);
           const dayEvents = eventsOfDay(events, day);
+          // Ce qui reste à faire, pas ce qui a été fait : une journée entièrement
+          // cochée ne doit plus se signaler comme chargée.
+          const dayTasks = openTasksOfDay(tasks, day).length;
 
           return (
             <Pressable
               key={day.toISOString()}
               onPress={() => onSelectDay(day)}
               accessibilityRole="button"
-              accessibilityLabel={`${day.getDate()}, ${dayEvents.length} événement(s)`}
+              accessibilityLabel={`${day.getDate()}, ${dayEvents.length} événement(s), ${dayTasks} tâche(s) à faire`}
               accessibilityState={{ selected }}
               style={{ width: `${100 / 7}%`, height: compact ? 64 : 96 }}
               className={`border-border gap-1 border-b border-r p-1 ${
@@ -80,13 +90,17 @@ export function MonthGrid({
               </View>
 
               {compact ? (
-                <View className="flex-row flex-wrap gap-0.5">
+                <View className="flex-row flex-wrap items-center gap-0.5">
                   {dayEvents.slice(0, MAX_PILLS_PER_CELL).map((event) => (
                     <View key={event.id} className="bg-primary h-1.5 w-1.5 rounded-full" />
                   ))}
+                  {dayTasks > 0 ? <TaskBadge count={dayTasks} compact /> : null}
                 </View>
               ) : (
                 <View className="gap-0.5">
+                  {/* Avant les rendez-vous : au-delà de trois lignes la cellule
+                      déborde, et la charge de la journée doit rester visible. */}
+                  {dayTasks > 0 ? <TaskBadge count={dayTasks} /> : null}
                   {dayEvents.slice(0, MAX_PILLS_PER_CELL).map((event) => (
                     <Pressable
                       key={event.id}
@@ -116,6 +130,33 @@ export function MonthGrid({
           );
         })}
       </View>
+    </View>
+  );
+}
+
+/**
+ * Ce qu'une journée porte de tâches à faire.
+ *
+ * Un compte et non les titres : la cellule est déjà partagée avec les
+ * rendez-vous, et c'est la charge de la journée qu'on lit d'un coup d'œil dans
+ * une grille mensuelle. Le détail se lit dans la liste du jour, en dessous.
+ */
+function TaskBadge({ count, compact }: { count: number; compact?: boolean }) {
+  if (compact) {
+    return (
+      <View className="flex-row items-center gap-0.5">
+        <Icon as={ListChecks} size={10} className="text-muted-foreground" />
+        <Text className="text-muted-foreground text-[10px]">{count}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View className="border-border flex-row items-center gap-1 rounded border px-1 py-0.5">
+      <Icon as={ListChecks} size={10} className="text-muted-foreground" />
+      <Text className="text-muted-foreground text-[11px] leading-4">
+        {count === 1 ? "1 tâche" : `${count} tâches`}
+      </Text>
     </View>
   );
 }

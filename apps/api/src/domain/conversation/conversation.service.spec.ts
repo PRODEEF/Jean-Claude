@@ -45,6 +45,7 @@ function makeMessage(
     inputMode: "text",
     provider: null,
     model: null,
+    choices: null,
     createdAt: "2026-08-31T08:00:00.000Z",
     ...overrides,
   };
@@ -470,6 +471,89 @@ describe("ConversationService", () => {
       );
 
       expect(events.map((e) => e.type)).toEqual(["message", "text", "text", "done"]);
+    });
+
+    it("attache au message de l'assistant les réponses qu'il propose", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm(
+        ["On peut prendre ça par plusieurs bouts."],
+        [
+          {
+            id: "call-1",
+            name: "ask_question",
+            input: {
+              question: "Quel type de questions voulez-vous ?",
+              choices: ["Vous connaître", "Cadrer un projet", "Creuser un problème"],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(repo, llm));
+
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          role: "assistant",
+          choices: ["Vous connaître", "Cadrer un projet", "Creuser un problème"],
+        }),
+        TOKEN,
+      );
+    });
+
+    it("prend la question pour texte quand le modèle n'a rien écrit d'autre", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "ask_question",
+            input: { question: "On part sur quel angle ?", choices: ["Le mien", "Le vôtre"] },
+          },
+        ],
+      );
+
+      await drain(makeService(repo, llm));
+
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({ content: "On part sur quel angle ?" }),
+        TOKEN,
+      );
+    });
+
+    it("laisse la réponse en texte quand une seule réponse est proposée", async () => {
+      // L'appel inexploitable est consigné : on vérifie le comportement, pas le log.
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const repo = makeRepository();
+      const llm = makeLlm(
+        ["Et sinon ?"],
+        [
+          {
+            id: "call-1",
+            name: "ask_question",
+            input: { question: "On continue ?", choices: ["Oui"] },
+          },
+        ],
+      );
+
+      await drain(makeService(repo, llm));
+
+      // Une carte de choix à une seule réponse n'est pas un choix : mieux vaut
+      // la question posée à l'écrit qu'un bouton unique.
+      const call = (repo.appendMessage as jest.Mock).mock.calls[1] as [
+        string,
+        string,
+        Record<string, unknown>,
+        string,
+      ];
+      expect(call[2]["choices"]).toBeUndefined();
+      jest.restoreAllMocks();
     });
 
     it("émet le message de l'utilisateur avant toute génération", async () => {
@@ -1274,8 +1358,12 @@ describe("ConversationService", () => {
       );
 
       // Sans elle, le canal répondrait lui-même hors de son périmètre : A.10
-      // ne tiendrait plus.
-      expect(lastRequest(llm).tools?.map((t) => t.name)).toEqual(["open_new_conversation"]);
+      // ne tiendrait plus. `ask_question` reste lui aussi : il ne fait que
+      // donner une forme à une question, il n'ouvre aucune capacité.
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toEqual([
+        "open_new_conversation",
+        "ask_question",
+      ]);
     });
 
     it("ignore l'appel d'un outil désactivé plutôt que d'en faire une proposition", async () => {

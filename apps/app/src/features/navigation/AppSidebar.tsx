@@ -6,14 +6,16 @@ import {
   ChevronDown,
   ChevronRight,
   Folder as FolderIcon,
+  ListChecks,
   Plus,
   Sparkles,
 } from "lucide-react-native";
-import type { Conversation, Folder } from "@jc/domain";
+import type { Conversation, Folder, TaskList } from "@jc/domain";
 import { api } from "@/shared/lib/api";
 import { FolderContextMenu, type FolderMenuTarget } from "@/features/folder/FolderContextMenu";
 import { FolderDeleteDialog } from "@/features/folder/FolderDeleteDialog";
 import { FolderNameRow, type FolderNameTarget } from "@/features/folder/FolderNameRow";
+import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
 import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { Icon } from "@/shared/ui/icon";
@@ -68,6 +70,8 @@ export function AppSidebar({
   const [menuTarget, setMenuTarget] = useState<FolderMenuTarget | null>(null);
   /** Dossier en cours de nommage — création ou renommage, `null` si aucun. */
   const [naming, setNaming] = useState<FolderNameTarget | null>(null);
+  /** Todoliste en cours de création depuis un dossier, `null` si aucune. */
+  const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
 
   const go = (href: string) => {
     router.push(href as never);
@@ -205,6 +209,10 @@ export function AppSidebar({
           setMenuTarget(null);
           setNaming({ kind: "create", parentId: folder.id });
         }}
+        onAddTaskList={({ folder }) => {
+          setMenuTarget(null);
+          setListTarget({ mode: "create", folderId: folder.id });
+        }}
         onDelete={({ folder }) => {
           setMenuTarget(null);
           setDeleting(folder);
@@ -212,6 +220,10 @@ export function AppSidebar({
       />
 
       <FolderDeleteDialog folder={deleting} onClose={() => setDeleting(null)} />
+
+      {/* Créer depuis un dossier est le seul moment où le rangement précède la
+          capture (§13.4.1) : l'utilisateur l'a déjà exprimé en partant de là. */}
+      <TaskListDialog target={listTarget} onClose={() => setListTarget(null)} />
 
       {onResize ? <ResizeHandle width={width} onResize={onResize} /> : null}
     </View>
@@ -374,7 +386,7 @@ function FolderGroup({
   onCloseNaming: () => void;
   onNewConversation: (folderId: string) => void;
 }) {
-  const isEmpty = group.conversations.length === 0 && group.children.length === 0;
+  const isEmpty = isFolderEmpty(group);
   // Un dossier est « courant » quand la conversation ouverte est chez lui ou
   // chez l'un de ses descendants : c'est la seule sélection qu'un dossier
   // puisse avoir, n'étant pas lui-même une destination.
@@ -493,7 +505,7 @@ function FolderChildren({
   onCloseNaming: () => void;
   onNewConversation: (folderId: string) => void;
 }) {
-  const isEmpty = group.conversations.length === 0 && group.children.length === 0;
+  const isEmpty = isFolderEmpty(group);
   const drafting = naming?.kind === "create" && naming.parentId === group.folder.id;
 
   return (
@@ -510,6 +522,12 @@ function FolderChildren({
           pathname={pathname}
           onOpen={onOpen}
         />
+      ))}
+
+      {/* Une todoliste se lit dans son dossier thématique autant que dans
+          l'onglet Todoliste : c'est la même liste, vue d'un autre endroit (A.2). */}
+      {group.taskLists.map((list) => (
+        <TaskListRow key={list.id} list={list} onOpen={onOpen} />
       ))}
 
       {group.children.map((child) => (
@@ -556,6 +574,38 @@ function NewConversationRow({ onPress }: { onPress: () => void }) {
     <Button variant="ghost" size="sm" onPress={onPress} className="justify-start gap-2 px-2">
       <Icon as={Plus} size={14} className="text-muted-foreground" />
       <Text className="text-xs text-muted-foreground">Nouvelle conversation</Text>
+    </Button>
+  );
+}
+
+/** Vide au sens de la barre : ni conversation, ni todoliste, ni sous-dossier. */
+function isFolderEmpty(group: SidebarGroup): boolean {
+  return (
+    group.conversations.length === 0 &&
+    group.taskLists.length === 0 &&
+    group.children.length === 0
+  );
+}
+
+/**
+ * Une todoliste rangée dans ce dossier.
+ *
+ * Elle ouvre l'onglet Todoliste sur la liste visée plutôt qu'un écran à part :
+ * la vue centralisée reste le seul endroit où une liste se lit et se coche,
+ * quel que soit le chemin par lequel on y arrive.
+ */
+function TaskListRow({ list, onOpen }: { list: TaskList; onOpen: (href: string) => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onPress={() => onOpen(`/todo?list=${list.id}`)}
+      className="w-full justify-start gap-2 px-2"
+    >
+      <Icon as={ListChecks} size={14} className="text-muted-foreground" />
+      <Text className={rowLabel(false)} numberOfLines={1}>
+        {list.title}
+      </Text>
     </Button>
   );
 }

@@ -15,10 +15,13 @@ import { ArrowUp, Square } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { MESSAGE_MAX_LENGTH, type Conversation, type Message, type Suggestion } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
+import { contentColumn, READING_MAX_WIDTH } from "@/shared/ui/screen-shell";
 import { useConversationThread } from "./hooks/use-conversation-thread";
 import { useSuggestions } from "./hooks/use-suggestions";
+import { QuestionCard } from "./QuestionCard";
 import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
 
 export type ConversationThreadProps = {
@@ -44,9 +47,16 @@ export type ConversationThreadProps = {
 export function ConversationThread({ conversationId, initialDraft }: ConversationThreadProps) {
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
+  // Le fil porte son propre défilement, mais suit la colonne des autres
+  // écrans : sans cela, le shell et le fil borneraient chacun à leur façon.
+  const column = contentColumn(useBreakpoint() === "compact", READING_MAX_WIDTH);
   const router = useRouter();
   const [draft, setDraft] = useState("");
   const listRef = useRef<FlatList<ThreadItem>>(null);
+  const inputRef = useRef<TextInput>(null);
+  // Question écartée d'un « Passer », retenue par identifiant de message : le
+  // fil se recharge, la carte ne doit pas revenir pour autant.
+  const [skippedQuestion, setSkippedQuestion] = useState<string | null>(null);
 
   // La question voyage jusqu'au nouveau fil, qui s'en charge à l'ouverture :
   // c'est ce qui permet de réutiliser le tour de dialogue ordinaire, réponse
@@ -86,6 +96,20 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
       ].sort((a, b) => itemDate(a) - itemDate(b)),
     [messages.data, resolved],
   );
+
+  // Réponses proposées sous la dernière question de l'assistant, tant qu'elle
+  // n'a pas reçu de réponse : un message plus récent, une réponse en cours de
+  // frappe ou un « Passer » la referment.
+  const question = useMemo(() => {
+    const items = messages.data?.items ?? [];
+    const last = items[items.length - 1];
+    if (!last || last.role !== "assistant" || !last.choices || last.id === skippedQuestion) {
+      return null;
+    }
+    return { id: last.id, text: last.content, choices: last.choices };
+  }, [messages.data, skippedQuestion]);
+
+  const askable = question !== null && streamingText === null && pendingUserText === null;
 
   // `useRef` et non l'état d'envoi : revenir sur ce fil ne doit pas renvoyer la
   // question une seconde fois, alors que le paramètre de route est toujours là.
@@ -161,7 +185,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           data={items}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, column]}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
@@ -249,7 +273,22 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
         </View>
       ) : null}
 
-      <View style={[styles.composer, { paddingBottom: spacing.md + insets.bottom }]}>
+      {askable && question ? (
+        <View style={[styles.question, column]}>
+          <QuestionCard
+            question={question.text}
+            choices={question.choices}
+            onChoose={(choice) => {
+              setSkippedQuestion(question.id);
+              submit(choice);
+            }}
+            onWrite={() => inputRef.current?.focus()}
+            onSkip={() => setSkippedQuestion(question.id)}
+          />
+        </View>
+      ) : null}
+
+      <View style={[styles.composer, column, { paddingBottom: spacing.md + insets.bottom }]}>
         {/* Le bouton est dans le champ, et le champ seul porte le cadre : la
             saisie se lit comme un objet unique posé sur le fil, sans bandeau
             qui la sépare de la conversation. C'est ce que font ChatGPT, Claude
@@ -261,9 +300,12 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           ]}
         >
           <TextInput
+            ref={inputRef}
             value={draft}
             onChangeText={setDraft}
-            placeholder="Votre message"
+            // Le libellé dit que la carte n'oblige à rien : on peut toujours
+            // répondre à côté de ce qui est proposé.
+            placeholder={askable ? "Ou répondre directement…" : "Votre message"}
             placeholderTextColor={palette.textMuted}
             multiline
             // Bornée ici comme elle l'est au contrat partagé : sans cela, un
@@ -341,13 +383,7 @@ function errorMessage(error: unknown): string {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
-  list: {
-    padding: spacing.lg,
-    gap: spacing.md,
-    width: "100%",
-    maxWidth: 900,
-    alignSelf: "center",
-  },
+  list: { padding: spacing.lg, gap: spacing.md },
   bubble: {
     maxWidth: "85%",
     paddingVertical: spacing.md,
@@ -379,12 +415,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   retryText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  composer: {
-    padding: spacing.md,
-    width: "100%",
-    maxWidth: 900,
-    alignSelf: "center",
-  },
+  question: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  composer: { padding: spacing.md },
   inputShell: {
     flexDirection: "row",
     alignItems: "flex-end",

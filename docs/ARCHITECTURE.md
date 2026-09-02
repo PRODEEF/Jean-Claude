@@ -235,11 +235,13 @@ hors UE.
 
 ## 5. Ce qui n'est pas encore là
 
-`domain/folder`, `domain/conversation`, `domain/calendar`, `domain/user`,
-`domain/suggestion`, `feature/assistant` et `feature/search` sont écrits.
-Restent à écrire, en suivant exactement le même découpage :
+Tous les modules `domain/` du socle sont écrits — `folder`, `conversation`,
+`calendar`, `task`, `user`, `suggestion` — ainsi que `feature/assistant` et
+`feature/search`. Restent, en suivant exactement le même découpage :
 
-- `domain/task` — todolistes (A.2) et tâches datées (A.3) ; le schéma SQL est prêt
+- la conversion d'une conversation en todoliste (A.2) : `domain/task` existe,
+  mais un appel `suggest_task_list` du modèle n'a pas encore de traduction en
+  proposition, ni d'exécution à l'acceptation
 - l'expansion des séries récurrentes et la délivrance des rappels (A.11), qui
   demandent un planificateur dont le projet ne dispose pas encore
 

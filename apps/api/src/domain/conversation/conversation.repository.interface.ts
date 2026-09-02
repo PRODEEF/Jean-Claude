@@ -51,6 +51,8 @@ export interface IConversationRepository {
       role: Message["role"];
       provider?: string | null;
       model?: string | null;
+      /** Réponses proposées sous une question de l'assistant. */
+      choices?: string[] | null;
     },
     accessToken: string,
   ): Promise<Message>;

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import type { CalendarEvent } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
-import { isSameDay, monthGrid, monthName, monthsOfYear } from "./lib/calendar-dates";
+import { isSameDay, monthGrid, monthName, monthsOfYear } from "@/shared/lib/dates";
 
 export type YearGridProps = {
   /** Année affichée ; seul le millésime compte. */
