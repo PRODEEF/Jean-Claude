@@ -158,6 +158,55 @@ describe("SuggestionService", () => {
       expect(suggestion).toBeNull();
       expect(repo.create).not.toHaveBeenCalled();
     });
+
+    it("écarte un identifiant de dossier inventé sans perdre le reste du rangement", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je range ça dans Santé ?",
+            existingFolderIds: ["Santé", "f8f4c0ec-6f0b-4a9a-8f0f-2f2a7b0d1c3e"],
+          },
+          "suggest_folders",
+        ),
+        TOKEN,
+      );
+
+      // Le modèle reprend parfois le nom du dossier là où la consigne demandait
+      // son identifiant : perdre tout le rangement pour une ligne serait pire
+      // que de la laisser de côté.
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "assign_folders",
+          payload: expect.objectContaining({
+            existingFolderIds: ["f8f4c0ec-6f0b-4a9a-8f0f-2f2a7b0d1c3e"],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("renonce au rangement quand aucun dossier proposé n'est exploitable", async () => {
+      const repo = makeRepository();
+
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          { message: "Je range ça dans Santé ?", existingFolderIds: ["Santé"] },
+          "suggest_folders",
+        ),
+        TOKEN,
+      );
+
+      // Une carte dont l'acceptation ne rangerait rien serait pire que pas de carte.
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
   });
 
   describe("requirePending", () => {

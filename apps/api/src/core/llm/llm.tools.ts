@@ -63,8 +63,11 @@ export const SUGGEST_FOLDERS: LlmTool = {
     "Une conversation peut légitimement appartenir à plusieurs dossiers à la fois " +
     "(une conversation sur la mutuelle relève à la fois de « Santé » et de " +
     "« Administratif > Assurances ») : proposer tous les dossiers pertinents, pas seulement un. " +
-    "Réutiliser en priorité les dossiers existants listés dans la consigne, avec leur " +
-    "identifiant exact ; n'en proposer un nouveau que si aucun ne convient. " +
+    "Réutiliser en priorité les dossiers existants listés dans la consigne, en recopiant " +
+    "leur identifiant caractère pour caractère — un identifiant reconstitué de mémoire ou " +
+    "remplacé par le nom du dossier fait perdre la ligne correspondante. " +
+    "N'en proposer un nouveau que si aucun ne convient, et remplir au moins l'une des deux " +
+    "listes : une proposition sans aucun dossier n'a rien à ranger. " +
     "S'aligner sur la façon dont l'utilisateur nomme déjà ses dossiers plutôt que d'imposer " +
     "une nomenclature standard.",
   inputSchema: {

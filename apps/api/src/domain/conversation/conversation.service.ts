@@ -4,10 +4,13 @@ import {
   DEFAULT_CONVERSATION_TITLE,
   labelSchema,
   userMemorySchema,
+  userPreferencesSchema,
 } from "@jc/domain";
 import type {
   AssignFolders,
   AssistantScope,
+  CalendarEvent,
+  CalendarRange,
   Conversation,
   CreateConversation,
   CursorPagination,
@@ -16,6 +19,7 @@ import type {
   MessageStreamEvent,
   Paginated,
   SendMessage,
+  Suggestion,
   UpdateConversation,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
@@ -30,6 +34,7 @@ import {
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
 } from "../../core/llm/llm.tools.js";
+import type { CalendarService } from "../calendar/calendar.service.js";
 import type { FolderService } from "../folder/folder.service.js";
 import type { SuggestionService } from "../suggestion/suggestion.service.js";
 import type { IUserRepository } from "../user/user.repository.interface.js";
@@ -37,6 +42,20 @@ import type { IConversationRepository } from "./conversation.repository.interfac
 
 /** Nombre de messages de contexte envoyés au modèle à chaque tour. */
 const CONTEXT_WINDOW_MESSAGES = 40;
+
+/**
+ * Profondeur de l'agenda remis au canal permanent.
+ *
+ * Sept jours parce que le canal couvre « ce qui est important aujourd'hui ou
+ * cette semaine » (A.10) : plus loin, la liste devient du bruit dans la consigne.
+ */
+const AGENDA_WINDOW_DAYS = 7;
+
+/** Propositions rappelées au modèle, des plus récentes aux plus anciennes. */
+const RECENT_DECISIONS = 5;
+
+/** Fuseau retenu quand le profil est illisible — celui du schéma partagé. */
+const DEFAULT_TIMEZONE = userPreferencesSchema.shape.timezone.parse(undefined);
 
 /**
  * Outils que le serveur applique lui-même, et qui ne deviennent donc pas des
@@ -57,6 +76,14 @@ const APPLIED_DIRECTLY = new Set([
 type Housekeeping = {
   tools: LlmTool[];
   filing: { folders: FolderTreeNode[] } | null;
+  /**
+   * Ce que le canal permanent doit savoir de l'utilisateur pour proposer juste :
+   * ses dossiers, et son agenda proche. `null` partout ailleurs — une
+   * conversation classique n'a pas à connaître les rendez-vous de son auteur.
+   */
+  channel: { folders: FolderTreeNode[]; agenda: CalendarEvent[] } | null;
+  /** Propositions déjà faites sur ce fil, tranchées ou non (§12.1). */
+  decided: Suggestion[];
 };
 
 /**
@@ -69,6 +96,10 @@ type Housekeeping = {
 type AssistantContext = {
   /** Nom choisi dans les réglages — « Jean-Claude » n'en est que le défaut. */
   name: string;
+  /** Prénom ou pseudo de l'utilisateur, quand il en a choisi un. */
+  displayName: string | null;
+  /** Fuseau IANA du profil — sans lui, aucune date ne peut être annoncée. */
+  timezone: string;
   scope: AssistantScope;
   /** Contexte stable appris à l'accueil puis enrichi (§13.4.2). */
   memory: string | null;
@@ -101,6 +132,7 @@ export class ConversationService {
     private readonly suggestions: SuggestionService,
     private readonly folders: FolderService,
     private readonly users: IUserRepository,
+    private readonly calendar: CalendarService,
   ) {}
 
   list(
@@ -245,14 +277,18 @@ export class ConversationService {
     let model: string | null = null;
     const toolCalls: LlmToolCall[] = [];
 
+    // Instant du tour, pris une fois : la fenêtre d'agenda et le repère
+    // temporel de la consigne doivent désigner le même moment.
+    const now = new Date();
+
     // Profil et entretien du fil : résolus avant l'appel au modèle, parce que
     // les deux décident des outils qu'on lui expose.
     const context = await this.contextFor(userId, accessToken);
-    const todo = await this.pendingHousekeeping(conversation, context, accessToken);
+    const todo = await this.pendingHousekeeping(conversation, context, now, accessToken);
 
     try {
       const stream = this.llm.stream({
-        system: buildSystemPrompt(conversation.kind, todo, context),
+        system: buildSystemPrompt(conversation.kind, todo, context, now),
         messages: history.items
           // Les messages `system` stockés ne sont pas rejouables comme des tours
           // de dialogue : la consigne système est reconstruite à chaque appel.
@@ -331,6 +367,8 @@ export class ConversationService {
       console.warn("Profil introuvable au moment de borner l'assistant : réglages par défaut.");
       return {
         name: DEFAULT_ASSISTANT_NAME,
+        displayName: null,
+        timezone: DEFAULT_TIMEZONE,
         scope: assistantScopeSchema.parse({}),
         memory: null,
         onboarding: false,
@@ -339,6 +377,8 @@ export class ConversationService {
 
     return {
       name: profile.preferences.assistantName,
+      displayName: profile.displayName,
+      timezone: profile.preferences.timezone,
       scope: profile.preferences.scope,
       memory: profile.memory,
       onboarding: profile.onboardingCompletedAt === null,
@@ -346,13 +386,18 @@ export class ConversationService {
   }
 
   /**
-   * Outils du tour, et arborescence à injecter dans la consigne.
+   * Outils du tour, et ce qu'il faut injecter dans la consigne pour que le
+   * modèle propose juste.
    *
-   * Le canal permanent a son propre jeu (A.10). Une conversation classique
-   * reçoit en plus de quoi se nommer tant qu'elle porte le titre par défaut, et
-   * de quoi se ranger tant qu'elle n'est dans aucun dossier — mais pas si une
-   * proposition de rangement attend déjà une réponse : la relancer à chaque
-   * message empilerait les cartes sur un geste que l'utilisateur a laissé venir.
+   * Le canal permanent a son propre jeu (A.10) et reçoit en plus l'agenda
+   * proche — il annonce les rappels comme premier de ses trois sujets, et sans
+   * cette lecture il ne pourrait qu'inventer. Une conversation classique reçoit
+   * de quoi se nommer tant qu'elle porte le titre par défaut, et de quoi se
+   * ranger tant qu'elle n'est dans aucun dossier.
+   *
+   * Dans les deux registres, une proposition qui attend déjà une réponse retire
+   * l'outil correspondant du jeu : la relancer à chaque message empilerait les
+   * cartes sur un geste que l'utilisateur a laissé venir.
    *
    * Le périmètre s'applique en amont de tout le reste : un outil dont la
    * capacité est désactivée n'entre pas dans le jeu, et la consigne cesse du
@@ -361,16 +406,38 @@ export class ConversationService {
   private async pendingHousekeeping(
     conversation: Conversation,
     context: AssistantContext,
+    now: Date,
     accessToken: string,
   ): Promise<Housekeeping> {
     const scope = context.scope;
 
     if (conversation.kind === "assistant") {
       const tools = allowed(ASSISTANT_TOOLS, scope);
+
       // L'accueil se déroule dans le canal permanent : tant qu'il n'est pas
-      // clos, le modèle doit pouvoir le clore lui-même.
-      if (context.onboarding) tools.push(FINISH_ONBOARDING);
-      return { tools, filing: null };
+      // clos, le modèle doit pouvoir le clore lui-même. Ni l'agenda ni les
+      // dossiers n'y ont leur place — le compte vient d'être créé, les deux
+      // sont vides, et la consigne d'accueil doit rester une conversation.
+      if (context.onboarding) {
+        tools.push(FINISH_ONBOARDING);
+        return { tools, filing: null, channel: null, decided: [] };
+      }
+
+      const decided = await this.suggestions.listForConversation(conversation.id, accessToken);
+      const structuring = isPending(decided, "create_project_folders")
+        ? tools.filter((tool) => tool !== SUGGEST_PROJECT_FOLDERS)
+        : tools;
+
+      const [folders, agenda] = await Promise.all([
+        // L'arborescence n'est lue que si le modèle peut en proposer une : sans
+        // l'outil, elle ne servirait qu'à allonger la consigne.
+        structuring.includes(SUGGEST_PROJECT_FOLDERS)
+          ? this.folders.getTree(accessToken)
+          : Promise.resolve<FolderTreeNode[]>([]),
+        this.calendar.list(agendaWindow(now), accessToken),
+      ]);
+
+      return { tools: structuring, filing: null, channel: { folders, agenda }, decided };
     }
 
     // `SUGGEST_FOLDERS` n'est rendu qu'aux conversations non classées : il n'a
@@ -379,17 +446,23 @@ export class ConversationService {
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
 
-    if (conversation.folderIds.length > 0 || !scope.folderOrganization) {
-      return { tools, filing: null };
-    }
+    const decided = await this.suggestions.listForConversation(conversation.id, accessToken);
 
-    const pending = await this.suggestions.listPending(conversation.id, accessToken);
-    if (pending.some((suggestion) => suggestion.kind === "assign_folders")) {
-      return { tools, filing: null };
+    if (
+      conversation.folderIds.length > 0 ||
+      !scope.folderOrganization ||
+      isPending(decided, "assign_folders")
+    ) {
+      return { tools, filing: null, channel: null, decided };
     }
 
     tools.push(SUGGEST_FOLDERS);
-    return { tools, filing: { folders: await this.folders.getTree(accessToken) } };
+    return {
+      tools,
+      filing: { folders: await this.folders.getTree(accessToken) },
+      channel: null,
+      decided,
+    };
   }
 
   /**
@@ -498,15 +571,23 @@ function buildSystemPrompt(
   kind: Conversation["kind"],
   todo: Housekeeping,
   context: AssistantContext,
+  now: Date,
 ): string {
+  // Commun aux trois registres : sans repère temporel le modèle date au jugé,
+  // et sans le prénom il s'adresse à un inconnu dont il vient de recueillir
+  // l'histoire.
+  const preamble = [...describeNow(context.timezone, now), ...describeUser(context.displayName)];
+
   if (kind === "assistant") {
     // L'accueil prend toute la place tant qu'il dure : lui superposer le
     // bornage du canal ferait ouvrir une conversation dédiée au premier projet
     // évoqué, alors qu'on cherche justement à en entendre parler ici.
-    if (context.onboarding) return buildOnboardingPrompt(context.name);
+    if (context.onboarding) return buildOnboardingPrompt(context.name, preamble);
 
     const channel = [
       `Tu es ${context.name}, l'assistant d'organisation personnelle de l'utilisateur.`,
+      ...preamble,
+      "",
       "Ce canal est réservé à trois sujets : les rappels (ce qui est important",
       "aujourd'hui ou cette semaine), l'organisation interne de l'outil (dossiers,",
       "rangement, structure), et l'évolution de la structure du projet de l'utilisateur.",
@@ -519,7 +600,21 @@ function buildSystemPrompt(
       "Prends les devants : quand un échange laisse deviner une action à faire,",
       "propose-la plutôt que d'attendre qu'on te la demande. Reste suggestif —",
       "une proposition courte que l'utilisateur accepte ou ignore d'un geste.",
+      ...FORMAT_RULES,
+      ...describeAgenda(todo.channel?.agenda ?? [], context.timezone),
     ];
+
+    const known = todo.channel?.folders ?? [];
+
+    if (known.length > 0) {
+      channel.push(
+        "",
+        "Dossiers que l'utilisateur possède déjà. Ne propose jamais de créer l'un",
+        "d'eux : il existe. Rattache-toi à ce qui est là, et reprends sa façon de",
+        "les nommer plutôt qu'une nomenclature standard.",
+        ...describeFolders(known),
+      );
+    }
 
     if (todo.tools.includes(SUGGEST_PROJECT_FOLDERS)) {
       channel.push(
@@ -532,12 +627,17 @@ function buildSystemPrompt(
       );
     }
 
-    return [...channel, ...describeMemory(context.memory)].join("\n");
+    return [...channel, ...describeMemory(context.memory), ...describeDecisions(todo.decided)].join(
+      "\n",
+    );
   }
 
   const lines = [
     `Tu es ${context.name}, un assistant conversationnel personnel.`,
+    ...preamble,
+    "",
     "Réponds de façon utile, directe et naturelle, en français.",
+    ...FORMAT_RULES,
     ...describeMemory(context.memory),
   ];
 
@@ -583,7 +683,7 @@ function buildSystemPrompt(
     );
   }
 
-  return lines.join("\n");
+  return [...lines, ...describeDecisions(todo.decided)].join("\n");
 }
 
 /**
@@ -594,9 +694,10 @@ function buildSystemPrompt(
  * répétée parce qu'un modèle laissé libre enchaînerait les questions, et que
  * l'accueil doit rendre la main vite.
  */
-function buildOnboardingPrompt(assistantName: string): string {
+function buildOnboardingPrompt(assistantName: string, preamble: string[]): string {
   return [
     `Tu es ${assistantName}, l'assistant d'organisation personnelle de l'utilisateur.`,
+    ...preamble,
     "Il vient de créer son compte : tu l'accueilles, et vous faites connaissance.",
     "",
     "Pose des questions ouvertes, une seule à la fois, sur qui il est, où il en",
@@ -615,6 +716,99 @@ function buildOnboardingPrompt(assistantName: string): string {
   ].join("\n");
 }
 
+/**
+ * Cadre de rédaction commun aux deux registres.
+ *
+ * La même réponse s'affiche sur un téléphone et sur un écran large : un modèle
+ * laissé libre y déroule des titres et des tableaux là où deux phrases
+ * suffisaient. Le Markdown est bien rendu par l'application — c'est son usage
+ * systématique qu'on borne, pas sa disponibilité.
+ */
+const FORMAT_RULES = [
+  "",
+  "Va au fait : quelques phrases suffisent le plus souvent. Le Markdown est",
+  "rendu — titres, listes, tableaux — mais réserve-le à ce qui en a réellement",
+  "besoin, la même réponse se lit sur un téléphone.",
+];
+
+/**
+ * Repère temporel du tour, dans le fuseau de l'utilisateur.
+ *
+ * Sans lui le modèle date au jugé : les outils réclament des échéances ISO
+ * déduites de « lundi prochain » (A.3), et le canal annonce comme premier sujet
+ * ce qui est important aujourd'hui (A.10). Un fuseau illisible retombe sur le
+ * défaut du schéma plutôt que de faire échouer le tour — une consigne datée
+ * approximativement vaut mieux qu'une conversation perdue.
+ */
+function describeNow(timezone: string, now: Date): string[] {
+  return ["", `Nous sommes ${formatInstant(now, timezone)} (fuseau ${timezone}).`];
+}
+
+/** Ce que l'assistant sait de l'identité de l'utilisateur, s'il sait quelque chose. */
+function describeUser(displayName: string | null): string[] {
+  return displayName ? [`L'utilisateur s'appelle ${displayName}.`] : [];
+}
+
+/**
+ * Agenda des jours qui viennent, remis au seul canal permanent (A.10).
+ *
+ * Les séries récurrentes ne sont pas expansées (A.11) : une ligne portant une
+ * `rrule` n'apparaît qu'à la date de son premier créneau. La limite est dite au
+ * modèle plutôt que laissée à deviner, sans quoi il conclurait d'une semaine
+ * vide qu'il n'y a rien de prévu.
+ */
+function describeAgenda(events: CalendarEvent[], timezone: string): string[] {
+  if (events.length === 0) return [];
+
+  return [
+    "",
+    `Agenda des ${AGENDA_WINDOW_DAYS} prochains jours. Les rendez-vous récurrents`,
+    "n'y figurent qu'à leur première occurrence : ne conclus pas d'une absence",
+    "qu'il n'y a rien de prévu.",
+    ...events.map((event) => `- ${describeSlot(event, timezone)} — ${event.title}`),
+  ];
+}
+
+/** Date seule pour une journée entière, date et heure locale sinon. */
+function describeSlot(event: CalendarEvent, timezone: string): string {
+  const start = new Date(event.startsAt);
+  return event.allDay
+    ? `${formatInstant(start, timezone, "date")} (journée entière)`
+    : formatInstant(start, timezone);
+}
+
+/**
+ * Propositions déjà faites sur ce fil, et ce qu'elles sont devenues (§12.1).
+ *
+ * Sans elles le modèle ne relit que sa propre prose : rien ne l'empêche de
+ * reformuler au tour suivant une proposition que l'utilisateur vient d'écarter,
+ * ce qui est l'inverse du « suggestif et non intrusif ».
+ */
+function describeDecisions(suggestions: Suggestion[]): string[] {
+  const recent = suggestions.slice(-RECENT_DECISIONS);
+  if (recent.length === 0) return [];
+
+  return [
+    "",
+    "Propositions que tu as déjà faites sur ce fil :",
+    ...recent.map((suggestion) => `- « ${suggestion.message} » → ${outcome(suggestion.status)}`),
+    "Ne repropose ni ce qui a été écarté, ni ce qui attend encore une réponse.",
+  ];
+}
+
+function outcome(status: Suggestion["status"]): string {
+  switch (status) {
+    case "pending":
+      return "en attente de réponse";
+    case "accepted":
+      return "acceptée";
+    case "dismissed":
+      return "écartée par l'utilisateur";
+    case "expired":
+      return "expirée";
+  }
+}
+
 /** Ce que l'assistant sait déjà de l'utilisateur, s'il sait quelque chose (§13.4.2). */
 function describeMemory(memory: string | null): string[] {
   if (!memory) return [];
@@ -630,6 +824,47 @@ function describeMemory(memory: string | null): string[] {
 /** Les outils du jeu dont la capacité reste active dans les réglages (A.10). */
 function allowed(tools: LlmTool[], scope: AssistantScope): LlmTool[] {
   return tools.filter((tool) => isAllowedByScope(tool.name, scope));
+}
+
+/** Une proposition de ce type attend-elle encore une réponse de l'utilisateur ? */
+function isPending(suggestions: Suggestion[], kind: Suggestion["kind"]): boolean {
+  return suggestions.some(
+    (suggestion) => suggestion.status === "pending" && suggestion.kind === kind,
+  );
+}
+
+/** Fenêtre d'agenda remise au canal : de maintenant à `AGENDA_WINDOW_DAYS` jours. */
+function agendaWindow(now: Date): CalendarRange {
+  const to = new Date(now.getTime() + AGENDA_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  return { from: now.toISOString(), to: to.toISOString() };
+}
+
+/**
+ * Instant rendu en français dans le fuseau de l'utilisateur.
+ *
+ * Un fuseau invalide en base ferait lever `Intl` et emporterait le tour de
+ * dialogue avec lui : on retombe alors sur le fuseau par défaut du schéma, en
+ * le signalant.
+ */
+function formatInstant(
+  instant: Date,
+  timezone: string,
+  precision: "date" | "full" = "full",
+): string {
+  const options: Intl.DateTimeFormatOptions =
+    precision === "date" ? { dateStyle: "full" } : { dateStyle: "full", timeStyle: "short" };
+
+  try {
+    return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: timezone }).format(instant);
+  } catch (error) {
+    console.warn(
+      "Fuseau horaire illisible, repli sur le défaut :",
+      error instanceof Error ? error.message : error,
+    );
+    return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: DEFAULT_TIMEZONE }).format(
+      instant,
+    );
+  }
 }
 
 /**
