@@ -101,7 +101,6 @@ function makeLlm(
     name: "gateway",
     model: "anthropic/claude-sonnet-5",
     isSovereign: false,
-    complete: jest.fn(),
     stream,
   };
 }

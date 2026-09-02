@@ -4,11 +4,11 @@
  * ─────────────────────────────────────────────────────────────────────────
  * C'EST LA SEULE FAÇON D'APPELER UN MODÈLE DANS CETTE APPLICATION.
  *
- * Aucun service métier ne doit importer le SDK d'un moteur IA : ils injectent
- * `LLM_PROVIDER` et parlent à cette interface. Passer à Mistral, DeepSeek ou
- * Qwen ne demande alors pas une ligne de code métier — c'est ce qu'exige le
- * §5.1 — et pas même un adaptateur, l'unique implémentation passant par
- * Vercel AI Gateway qui les route tous.
+ * Aucun service métier ne doit importer le SDK d'un moteur IA : ils reçoivent
+ * `llm` et parlent à cette interface. Passer à Mistral, DeepSeek ou Qwen ne
+ * demande alors pas une ligne de code métier — c'est ce qu'exige le §5.1 — et
+ * pas même un adaptateur, l'unique implémentation passant par Vercel AI
+ * Gateway qui les route tous.
  * ─────────────────────────────────────────────────────────────────────────
  */
 
@@ -45,10 +45,9 @@ export type LlmCompletionRequest = {
   system?: string;
   messages: LlmMessage[];
   tools?: LlmTool[];
-  maxTokens?: number;
-  temperature?: number;
 };
 
+/** Réponse complète, telle que l'événement `done` du flux la porte. */
 export type LlmCompletionResponse = {
   text: string;
   toolCalls: LlmToolCall[];
@@ -80,12 +79,14 @@ export interface LlmProvider {
    */
   readonly model: string;
 
-  complete(request: LlmCompletionRequest): Promise<LlmCompletionResponse>;
-
   /**
-   * Réponse en flux. Indispensable à la perception de réactivité d'une app
-   * conversationnelle : les 3 apps de référence du §4.2 affichent toutes le
-   * texte au fil de sa génération.
+   * Réponse en flux — seule façon d'interroger le moteur.
+   *
+   * Pas de variante bloquante : elle ferait deux implémentations du même tour
+   * de dialogue à tenir cohérentes, alors qu'un appelant qui veut la réponse
+   * entière consomme le flux jusqu'au bout. Le flux est par ailleurs
+   * indispensable à la perception de réactivité — les 3 apps de référence du
+   * §4.2 affichent toutes le texte au fil de sa génération.
    */
   stream(request: LlmCompletionRequest): AsyncIterable<LlmStreamChunk>;
 }
@@ -94,6 +95,3 @@ export type LlmStreamChunk =
   | { type: "text"; text: string }
   | { type: "tool_call"; toolCall: LlmToolCall }
   | { type: "done"; response: LlmCompletionResponse };
-
-/** Jeton d'injection Nest — les services dépendent du port, jamais d'une classe concrète. */
-export const LLM_PROVIDER = Symbol("LlmProvider");
