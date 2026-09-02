@@ -1,18 +1,16 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import type { CalendarEvent } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
-import {
-  eventsOfDay,
-  formatDayLabel,
-  formatTime,
-  isSameDay,
-  layoutDayEvents,
-} from "./lib/calendar-dates";
+import { eventsOfDay, layoutDayEvents } from "./lib/calendar-dates";
+import { formatDayLabel, formatTime, isSameDay } from "@/shared/lib/dates";
+import { openTasksOfDay, type DatedTask } from "@/shared/lib/tasks";
 
 export type TimeGridProps = {
   /** Les jours à mettre en colonnes : un seul en vue jour, sept en vue semaine. */
   days: Date[];
   events: CalendarEvent[];
+  /** Tâches datées, en bandeau au-dessus de la grille : elles chargent le jour. */
+  tasks: DatedTask[];
   onOpenEvent: (event: CalendarEvent) => void;
   /** Appui sur un créneau libre — la minute est celle visée dans la colonne. */
   onCreateAt: (day: Date, minute: number) => void;
@@ -38,6 +36,9 @@ const INITIAL_HOUR = 7;
 /** En deçà, le titre d'un rendez-vous court n'est plus lisible. */
 const MIN_EVENT_HEIGHT = 18;
 
+/** Au-delà, le bandeau des tâches repousserait la grille hors de l'écran. */
+const MAX_TASKS_PER_COLUMN = 3;
+
 /**
  * Grille horaire, d'un jour ou d'une semaine.
  *
@@ -50,6 +51,7 @@ const MIN_EVENT_HEIGHT = 18;
 export function TimeGrid({
   days,
   events,
+  tasks,
   onOpenEvent,
   onCreateAt,
   onMorningOffset,
@@ -62,10 +64,12 @@ export function TimeGrid({
       day,
       allDay: dayEvents.filter((event) => event.allDay),
       timed: layoutDayEvents(dayEvents, day),
+      tasks: openTasksOfDay(tasks, day),
     };
   });
 
   const hasAllDay = perDay.some((column) => column.allDay.length > 0);
+  const hasTasks = perDay.some((column) => column.tasks.length > 0);
 
   return (
     <View className="border-border overflow-hidden rounded-xl border">
@@ -110,6 +114,36 @@ export function TimeGrid({
                   </Text>
                 </Pressable>
               ))}
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {/* Les tâches ont leur propre bandeau, au-dessus des heures : une tâche
+          « pour jeudi » n'occupe pas un créneau, mais elle pèse sur la journée
+          et doit se voir sans changer d'onglet. */}
+      {hasTasks ? (
+        <View className="border-border flex-row border-b">
+          <View style={{ width: GUTTER_WIDTH }} className="justify-center px-1">
+            <Text className="text-muted-foreground text-[10px]">tâches</Text>
+          </View>
+          {perDay.map((column) => (
+            <View
+              key={column.day.toISOString()}
+              className="border-border min-h-8 flex-1 gap-0.5 border-l p-0.5"
+            >
+              {column.tasks.slice(0, MAX_TASKS_PER_COLUMN).map(({ task }) => (
+                <View key={task.id} className="bg-muted rounded px-1 py-0.5">
+                  <Text numberOfLines={1} className="text-muted-foreground text-[11px] leading-4">
+                    {task.title}
+                  </Text>
+                </View>
+              ))}
+              {column.tasks.length > MAX_TASKS_PER_COLUMN ? (
+                <Text className="text-muted-foreground px-1 text-[10px]">
+                  +{column.tasks.length - MAX_TASKS_PER_COLUMN}
+                </Text>
+              ) : null}
             </View>
           ))}
         </View>
