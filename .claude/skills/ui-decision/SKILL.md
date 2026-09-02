@@ -28,12 +28,12 @@ comportement d'un composant qui n'a pas d'équivalent dans le code.
 Identifier trois applications reconnues comme les meilleures sur **l'usage
 concerné**, et s'aligner sur ce qu'elles partagent.
 
-| Composant concerné | Références |
-|---|---|
-| Interface conversationnelle, fils de discussion | ChatGPT (mobile), Claude (mobile), Perplexity |
-| Todolistes, tâches | Things 3, Todoist, TickTick |
-| Calendrier | Calendrier natif iOS, Google Calendar, Fantastical |
-| Navigation par dossiers, organisation | Notion, Apple Notes |
+| Composant concerné                              | Références                                         |
+| ----------------------------------------------- | -------------------------------------------------- |
+| Interface conversationnelle, fils de discussion | ChatGPT (mobile), Claude (mobile), Perplexity      |
+| Todolistes, tâches                              | Things 3, Todoist, TickTick                        |
+| Calendrier                                      | Calendrier natif iOS, Google Calendar, Fantastical |
+| Navigation par dossiers, organisation           | Notion, Apple Notes                                |
 
 Liste indicative — à ajuster avec Antonin selon le composant réellement traité.
 
@@ -69,8 +69,8 @@ Tout point **non encore tranché** va dans `docs/SUIVI-BACKLOG.md`, section
 de stage (§10).
 
 ```markdown
-| Point | Variantes | Statut |
-|---|---|---|
+| Point                                   | Variantes                           | Statut             |
+| --------------------------------------- | ----------------------------------- | ------------------ |
 | Position de la recherche dans le tiroir | A : en tête · B : sous les dossiers | En attente de test |
 ```
 

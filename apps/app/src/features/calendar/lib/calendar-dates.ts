@@ -40,7 +40,8 @@ const MONTH_NAMES = [
   "Décembre",
 ] as const;
 
-export const MINUTES_PER_DAY = 24 * 60;
+/** Borne haute du placement d'un événement dans la colonne d'une journée. */
+const MINUTES_PER_DAY = 24 * 60;
 
 /** 6 semaines : le maximum qu'un mois puisse occuper, quel que soit son premier jour. */
 const MONTH_GRID_CELLS = 42;

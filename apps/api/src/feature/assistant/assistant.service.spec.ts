@@ -139,7 +139,6 @@ const IDLE_LLM: LlmProvider = {
   name: "gateway",
   model: "anthropic/claude-sonnet-5",
   isSovereign: false,
-  complete: jest.fn(),
   stream: jest.fn(),
 };
 
@@ -161,13 +160,7 @@ function makeService(
   return new AssistantService(
     suggestionService,
     folderService,
-    new ConversationService(
-      conversations,
-      IDLE_LLM,
-      suggestionService,
-      folderService,
-      IDLE_USERS,
-    ),
+    new ConversationService(conversations, IDLE_LLM, suggestionService, folderService, IDLE_USERS),
   );
 }
 

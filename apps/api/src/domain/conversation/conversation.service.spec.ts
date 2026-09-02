@@ -101,7 +101,6 @@ function makeLlm(
     name: "gateway",
     model: "anthropic/claude-sonnet-5",
     isSovereign: false,
-    complete: jest.fn(),
     stream,
   };
 }
@@ -999,17 +998,11 @@ describe("ConversationService", () => {
       const llm = makeLlm();
 
       await drain(
-        makeService(
-          makeRepository(),
-          llm,
-          makeSuggestionRepository(),
-          makeFolderRepository(),
-          {
-            findById: jest.fn().mockResolvedValue(null),
-            update: jest.fn(),
-            completeOnboarding: jest.fn(),
-          },
-        ),
+        makeService(makeRepository(), llm, makeSuggestionRepository(), makeFolderRepository(), {
+          findById: jest.fn().mockResolvedValue(null),
+          update: jest.fn(),
+          completeOnboarding: jest.fn(),
+        }),
         { content: "Il me faut du terreau.", inputMode: "text" },
       );
 

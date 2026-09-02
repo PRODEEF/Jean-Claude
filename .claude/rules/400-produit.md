@@ -46,12 +46,12 @@ En cas de doute sur la position d'un bouton, un pattern de navigation ou un
 geste, s'aligner sur ce que font **trois applications de référence** du domaine.
 Ne pas trancher à l'intuition.
 
-| Domaine | Références |
-|---|---|
-| Conversationnel | ChatGPT, Claude, Perplexity |
-| Todolistes | Things 3, Todoist, TickTick |
-| Calendrier | Calendrier iOS, Google Calendar, Fantastical |
-| Dossiers | Notion, Apple Notes |
+| Domaine         | Références                                   |
+| --------------- | -------------------------------------------- |
+| Conversationnel | ChatGPT, Claude, Perplexity                  |
+| Todolistes      | Things 3, Todoist, TickTick                  |
+| Calendrier      | Calendrier iOS, Google Calendar, Fantastical |
+| Dossiers        | Notion, Apple Notes                          |
 
 Doute persistant après consultation → 2 ou 3 variantes, arbitrées par un test
 humain (§4.3), et le point consigné dans `docs/SUIVI-BACKLOG.md`.
@@ -61,12 +61,12 @@ Voir skill [ui-decision](../skills/ui-decision/SKILL.md).
 
 Bannir le jargon des outils de gestion de connaissances dans l'interface.
 
-| ❌ Interdit | ✅ À la place |
-|---|---|
-| tag, étiquette | dossier |
-| graphe, base relationnelle | — (ne pas exposer) |
+| ❌ Interdit                  | ✅ À la place                      |
+| ---------------------------- | ---------------------------------- |
+| tag, étiquette               | dossier                            |
+| graphe, base relationnelle   | — (ne pas exposer)                 |
 | Zettelkasten, second cerveau | — (positionnement interne, pas UI) |
-| entité, instance, requête | — vocabulaire courant |
+| entité, instance, requête    | — vocabulaire courant              |
 
 Le produit vise le grand public sans prérequis technique. Chaque fonctionnalité
 ajoutée doit être questionnée à l'aune de sa simplicité d'usage — faute de quoi

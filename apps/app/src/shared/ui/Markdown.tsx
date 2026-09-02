@@ -32,7 +32,14 @@ export function Markdown({ children }: MarkdownProps) {
 }
 
 /** Taille et graisse d'un titre selon son niveau. */
-const HEADING_SIZES = [fontSize.lg, fontSize.md, fontSize.md, fontSize.sm, fontSize.sm, fontSize.sm];
+const HEADING_SIZES = [
+  fontSize.lg,
+  fontSize.md,
+  fontSize.md,
+  fontSize.sm,
+  fontSize.sm,
+  fontSize.sm,
+];
 
 const MONOSPACE = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
@@ -96,15 +103,7 @@ function Block({ block }: { block: MarkdownBlock }) {
   }
 }
 
-function Item({
-  item,
-  ordered,
-  position,
-}: {
-  item: ListItem;
-  ordered: boolean;
-  position: number;
-}) {
+function Item({ item, ordered, position }: { item: ListItem; ordered: boolean; position: number }) {
   const { palette } = useTheme();
 
   return (
@@ -197,10 +196,7 @@ function Inline({ nodes }: { nodes: InlineNode[] }) {
 
           case "code":
             return (
-              <Text
-                key={index}
-                style={[styles.inlineCode, { backgroundColor: palette.surface }]}
-              >
+              <Text key={index} style={[styles.inlineCode, { backgroundColor: palette.surface }]}>
                 {node.value}
               </Text>
             );

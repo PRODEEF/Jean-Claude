@@ -1,10 +1,6 @@
 import type { UpdateUserProfile, UserProfile } from "@jc/domain";
 import { httpError } from "../../core/http.js";
-import type {
-  IUserRepository,
-  ProfilePatch,
-  ProfileRecord,
-} from "./user.repository.interface.js";
+import type { IUserRepository, ProfilePatch, ProfileRecord } from "./user.repository.interface.js";
 
 /** Identité de l'appelant, telle que le middleware d'authentification la pose. */
 export type ProfileOwner = {

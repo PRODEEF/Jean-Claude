@@ -1,24 +1,14 @@
-import type { Conversation } from "@jc/domain";
 import { forUser } from "../../core/supabase/supabase.js";
+import {
+  CONVERSATION_COLUMNS,
+  toConversation,
+  type ConversationRow,
+} from "../../domain/conversation/conversation.repository.js";
 import type {
   ConversationPageOptions,
   ISearchRepository,
   MessageMatch,
 } from "./search.repository.interface.js";
-
-type ConversationRow = {
-  id: string;
-  kind: string;
-  title: string;
-  archived_at: string | null;
-  last_message_at: string | null;
-  created_at: string;
-  updated_at: string;
-  conversation_folders?: { folder_id: string }[] | null;
-};
-
-const CONVERSATION_COLUMNS =
-  "id, kind, title, archived_at, last_message_at, created_at, updated_at, conversation_folders(folder_id)";
 
 /**
  * Configuration de recherche plein texte posée par la migration
@@ -36,19 +26,6 @@ const FTS_CONFIG = "french_unaccent";
  * dans le fond d'archive.
  */
 const MESSAGE_MATCH_LIMIT = 200;
-
-function toConversation(row: ConversationRow): Conversation {
-  return {
-    id: row.id,
-    kind: row.kind as Conversation["kind"],
-    folderIds: (row.conversation_folders ?? []).map((link) => link.folder_id),
-    title: row.title,
-    archivedAt: row.archived_at,
-    lastMessageAt: row.last_message_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
 
 export const searchRepository: ISearchRepository = {
   async findIdsInFolders(folderIds, accessToken) {
@@ -84,9 +61,10 @@ export const searchRepository: ISearchRepository = {
     if (error) throw new Error(error.message);
 
     const rows = data as unknown as { conversation_id: string; content: string }[];
-    return rows.map(
-      (row): MessageMatch => ({ conversationId: row.conversation_id, content: row.content }),
-    );
+    return rows.map((row): MessageMatch => ({
+      conversationId: row.conversation_id,
+      content: row.content,
+    }));
   },
 
   async findConversations(options: ConversationPageOptions, accessToken) {

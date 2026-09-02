@@ -80,7 +80,11 @@ describe("UserService", () => {
 
       const profile = await service.updateProfile(OWNER, { displayName: "Clarisse E." });
 
-      expect(update).toHaveBeenCalledWith(OWNER.id, { displayName: "Clarisse E." }, OWNER.accessToken);
+      expect(update).toHaveBeenCalledWith(
+        OWNER.id,
+        { displayName: "Clarisse E." },
+        OWNER.accessToken,
+      );
       expect(profile.displayName).toBe("Clarisse E.");
     });
 

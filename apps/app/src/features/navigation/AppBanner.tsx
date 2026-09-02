@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { CalendarDays, ListChecks, PanelLeft, Search } from "lucide-react-native";
+import { PanelLeft, Search } from "lucide-react-native";
 import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
@@ -10,19 +10,7 @@ import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useCurrentUser } from "@/shared/hooks/use-current-user";
 import { useAssistantName } from "@/shared/hooks/use-profile";
 import { SearchDialog } from "@/features/search/SearchDialog";
-
-/**
- * Raccourcis vers les vues qui ne sont pas des conversations.
- *
- * Doublent les rangées du pied de la barre latérale : celle-ci se replie, la
- * bannière non — la todoliste et le calendrier restent donc atteignables d'un
- * geste depuis n'importe quel écran, comme le sont les onglets d'en-tête de
- * Things 3 et de Todoist.
- */
-const UTILITY_LINKS = [
-  { href: "/todo", label: "Todoliste", icon: ListChecks },
-  { href: "/calendar", label: "Calendrier", icon: CalendarDays },
-] as const;
+import { UTILITY_LINKS } from "./utility-links";
 
 export type AppBannerProps = {
   /** Affiché uniquement quand la barre latérale est escamotable. */

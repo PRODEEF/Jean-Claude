@@ -220,10 +220,7 @@ function isTableDelimiter(line: string): boolean {
   return trimmed.includes("-") && trimmed.includes("|") && /^[|\-:\s]+$/.test(trimmed);
 }
 
-function readTable(
-  lines: string[],
-  start: number,
-): { block: MarkdownBlock; next: number } | null {
+function readTable(lines: string[], start: number): { block: MarkdownBlock; next: number } | null {
   const header = lines[start] ?? "";
   const delimiter = lines[start + 1] ?? "";
   if (!isTableRow(header) || !isTableDelimiter(delimiter)) return null;

@@ -1,10 +1,9 @@
-import { createGateway, generateText, jsonSchema, streamText, tool, type ToolSet } from "ai";
+import { createGateway, jsonSchema, streamText, tool, type ToolSet } from "ai";
 import type { HTTPException } from "hono/http-exception";
 import { config } from "../../config.js";
 import { toHttpException } from "../llm-error.js";
 import type {
   LlmCompletionRequest,
-  LlmCompletionResponse,
   LlmProvider,
   LlmStreamChunk,
   LlmTool,
@@ -40,6 +39,9 @@ const SOVEREIGN_CREATORS = new Set(["mistral"]);
  */
 const COMPLETION_TIMEOUT_MS = 60_000;
 
+/** Assez pour une réponse conversationnelle longue, sans laisser filer le coût. */
+const MAX_OUTPUT_TOKENS = 4096;
+
 /**
  * En flux, ce qui compte n'est pas la durée totale — une longue réponse est
  * légitime — mais le délai avant le premier jeton : c'est lui qui prouve que
@@ -65,35 +67,15 @@ class GatewayProvider implements LlmProvider {
     this.languageModel = createGateway({ apiKey: config.aiGatewayApiKey })(this.model);
   }
 
-  async complete(request: LlmCompletionRequest): Promise<LlmCompletionResponse> {
-    try {
-      const result = await generateText({
-        model: this.languageModel,
-        timeout: COMPLETION_TIMEOUT_MS,
-        ...this.callOptions(request),
-      });
-
-      return {
-        text: result.text,
-        toolCalls: result.toolCalls.map(toToolCall),
-        provider: this.creator,
-        model: result.response.modelId,
-        usage: {
-          inputTokens: result.usage.inputTokens ?? 0,
-          outputTokens: result.usage.outputTokens ?? 0,
-        },
-      };
-    } catch (error) {
-      throw this.fail("Échec de l'appel au moteur IA", error);
-    }
-  }
-
   async *stream(request: LlmCompletionRequest): AsyncIterable<LlmStreamChunk> {
     try {
       const result = streamText({
         model: this.languageModel,
         timeout: { totalMs: COMPLETION_TIMEOUT_MS, firstChunkMs: FIRST_CHUNK_TIMEOUT_MS },
-        ...this.callOptions(request),
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        ...(request.system ? { system: request.system } : {}),
+        ...(request.tools?.length ? { tools: toToolSet(request.tools) } : {}),
+        messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
       });
 
       let text = "";
@@ -127,17 +109,6 @@ class GatewayProvider implements LlmProvider {
     } catch (error) {
       throw this.fail("Échec du flux du moteur IA", error);
     }
-  }
-
-  /** Partie commune de la requête, identique en mode bloquant et en flux. */
-  private callOptions(request: LlmCompletionRequest) {
-    return {
-      maxOutputTokens: request.maxTokens ?? 4096,
-      ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-      ...(request.system ? { system: request.system } : {}),
-      ...(request.tools?.length ? { tools: toToolSet(request.tools) } : {}),
-      messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
-    };
   }
 
   private fail(context: string, error: unknown): HTTPException {

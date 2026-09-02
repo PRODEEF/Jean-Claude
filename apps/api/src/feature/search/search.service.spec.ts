@@ -1,5 +1,8 @@
 import type { Conversation, SearchFilters } from "@jc/domain";
-import type { IUserRepository, ProfileRecord } from "../../domain/user/user.repository.interface.js";
+import type {
+  IUserRepository,
+  ProfileRecord,
+} from "../../domain/user/user.repository.interface.js";
 import { SearchService } from "./search.service.js";
 import type { ISearchRepository } from "./search.repository.interface.js";
 
