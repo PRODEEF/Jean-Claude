@@ -7,7 +7,38 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — questions à réponses proposées, et couleur
+Dernière mise à jour : **2 septembre 2026** — issue #10 : les todolistes.
+
+Le module `domain/task` et `/api/tasks` ouvrent les tables `task_lists` / `tasks`,
+restées sans route jusqu'ici : une seule lecture rend **toutes les listes avec leurs
+tâches**, et la ressource est la liste, les tâches vivant sous elle en `/items`. Deux
+règles vivent dans le service et sont testées : cocher horodate la complétion et décocher
+l'efface, une tâche ajoutée prend la position suivant celles déjà prises.
+
+L'onglet **TODOLISTE** offre deux lectures de la même donnée. La **semaine** montre les
+tâches datées, un bloc par jour découpé en moments — MATIN, APRÈM, SOIRÉE, SOIR, comme la
+maquette. Le moment est déduit de l'heure de l'échéance plutôt que stocké : demander « à
+quel moment ? » en plus de « quand ? » aurait ajouté une question à chaque saisie. Une date
+sans heure vaut « dans la journée ». **Mes listes** montre tout, y compris ce qui n'a pas
+d'échéance — une liste d'achats n'en a jamais, et la cantonner à la semaine la rendrait
+introuvable. Les deux vues se partagent un seul chargement : basculer ne redemande rien.
+
+La capture ne réclame qu'un titre, tapé au bas d'une liste (§13.4.1) ; la date, les notes
+et le dossier se posent ensuite. Une todoliste se lit aussi **dans son dossier thématique**,
+sous ses conversations dans la barre latérale, et le menu contextuel d'un dossier permet
+d'en créer une déjà rangée (A.2).
+
+Enfin, une journée chargée de tâches **se voit depuis le calendrier** : compte dans la
+cellule du mois, bandeau de titres au-dessus de la grille jour et semaine, et liste sous
+les rendez-vous du jour sélectionné. Seul ce qui reste à faire compte — une journée
+entièrement cochée cesse de se signaler. Les tâches y sont en lecture seule : on les coche
+dans l'onglet Todoliste, qui reste leur écran.
+
+Deux remontées dans `shared/lib` au passage, l'arithmétique de dates (`dates.ts`) et la
+lecture des dates tapées (`date-input.ts`) : le calendrier et la todoliste s'appuient
+désormais sur les mêmes semaines, les mêmes libellés et les mêmes formats de saisie.
+
+Auparavant le même jour : questions à réponses proposées, et couleur
 des interrupteurs.
 
 L'assistant peut désormais **poser une question avec quelques réponses à choisir** :
@@ -206,8 +237,8 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                           |
 | A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, et proposition de rangement par l'assistant pour un fil non classé                                                                 |
-| A.2  | Conversion conversation → todoliste                   |   🔵   | Tables `task_lists` / `tasks` prêtes, outil `suggest_task_list` défini. Module `domain/task` à écrire                                                                                                                       |
-| A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                                                                                                              |
+| A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (semaine + toutes les listes), todolistes visibles dans leur dossier. Reste la conversion depuis une conversation → #17 |
+| A.3  | Détection de tâches datées                            |   🔵   | `dueAt` se saisit et se lit désormais de bout en bout — semaine, calendrier. Reste l'extraction automatique depuis la conversation → #18                                                                                     |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                                                                           |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                          |
 | A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix |

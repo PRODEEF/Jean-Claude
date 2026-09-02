@@ -3,6 +3,8 @@ import { ScrollView, View, type LayoutChangeEvent } from "react-native";
 import { Plus } from "lucide-react-native";
 import type { CalendarEvent } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useTaskLists } from "@/shared/hooks/use-task-lists";
+import { datedTasks } from "@/shared/lib/tasks";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
@@ -13,6 +15,7 @@ import { MonthGrid } from "./MonthGrid";
 import { TimeGrid } from "./TimeGrid";
 import { YearGrid } from "./YearGrid";
 import { useCalendarEvents } from "./hooks/use-calendar-events";
+import { rangeOf } from "./lib/calendar-dates";
 import {
   addDays,
   addMonths,
@@ -20,14 +23,13 @@ import {
   dayLabel,
   monthGrid,
   monthLabel,
-  rangeOf,
   startOfDay,
   startOfWeek,
   weekDays,
   weekLabel,
   yearBounds,
   yearLabel,
-} from "./lib/calendar-dates";
+} from "@/shared/lib/dates";
 
 /** Heure par défaut d'un événement créé sans viser de créneau. */
 const DEFAULT_CREATE_MINUTE = 9 * 60;
@@ -56,6 +58,14 @@ export function CalendarScreen() {
   const range = useMemo(() => rangeOf(days), [days]);
   const { data, isPending, isError } = useCalendarEvents(range);
   const events = data ?? [];
+
+  // Les tâches datées se lisent dans le calendrier au même titre que les
+  // rendez-vous : une journée chargée de todos est une journée chargée, et
+  // devoir ouvrir un autre onglet pour s'en apercevoir ferait planifier à
+  // l'aveugle. Elles restent en lecture seule ici — on les coche dans
+  // l'onglet Todoliste, qui est leur écran.
+  const { data: lists } = useTaskLists();
+  const tasks = useMemo(() => datedTasks(lists ?? []), [lists]);
 
   const page = useRef<ScrollView>(null);
   /** Position de la grille dans la page, et de la première heure ouvrée en son sein. */
@@ -147,12 +157,18 @@ export function CalendarScreen() {
               days={days}
               anchor={anchor}
               events={events}
+              tasks={tasks}
               selectedDay={selectedDay}
               onSelectDay={setSelectedDay}
               onOpenEvent={openEvent}
               compact={compact}
             />
-            <DayAgenda day={selectedDay} events={events} onOpenEvent={openEvent} />
+            <DayAgenda
+              day={selectedDay}
+              events={events}
+              tasks={tasks}
+              onOpenEvent={openEvent}
+            />
           </>
         ) : null}
 
@@ -173,6 +189,7 @@ export function CalendarScreen() {
             <TimeGrid
               days={days}
               events={events}
+              tasks={tasks}
               onOpenEvent={openEvent}
               onCreateAt={createAt}
               onMorningOffset={measureMorning}

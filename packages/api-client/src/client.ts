@@ -7,6 +7,8 @@ import {
   type CreateCalendarEvent,
   type CreateConversation,
   type CreateFolder,
+  type CreateTask,
+  type CreateTaskList,
   type Folder,
   type FolderTreeNode,
   type Message,
@@ -16,9 +18,14 @@ import {
   type SearchFilters,
   type SearchResult,
   type SendMessage,
+  type Task,
+  type TaskList,
+  type TaskListWithTasks,
   type Suggestion,
   type UpdateCalendarEvent,
   type UpdateConversation,
+  type UpdateTask,
+  type UpdateTaskList,
   type UpdateFolder,
   type UpdateUserProfile,
   type UserProfile,
@@ -94,6 +101,37 @@ export class JeanClaudeClient {
       this.http.request<CalendarEvent>(`/calendar/${id}`, { method: "PATCH", body: patch }),
 
     remove: (id: string) => this.http.request<void>(`/calendar/${id}`, { method: "DELETE" }),
+  };
+
+  /**
+   * Todolistes (A.2).
+   *
+   * Une seule lecture rend toutes les listes avec leurs tâches : la vue
+   * hebdomadaire et la vue « toutes mes listes » se dérivent du même
+   * chargement, et basculer de l'une à l'autre ne recharge rien.
+   */
+  readonly tasks = {
+    lists: () => this.http.request<TaskListWithTasks[]>("/tasks"),
+
+    createList: (input: CreateTaskList) =>
+      this.http.request<TaskList>("/tasks", { method: "POST", body: input }),
+
+    updateList: (id: string, patch: UpdateTaskList) =>
+      this.http.request<TaskList>(`/tasks/${id}`, { method: "PATCH", body: patch }),
+
+    removeList: (id: string) => this.http.request<void>(`/tasks/${id}`, { method: "DELETE" }),
+
+    addTask: (listId: string, input: CreateTask) =>
+      this.http.request<Task>(`/tasks/${listId}/items`, { method: "POST", body: input }),
+
+    updateTask: (listId: string, taskId: string, patch: UpdateTask) =>
+      this.http.request<Task>(`/tasks/${listId}/items/${taskId}`, {
+        method: "PATCH",
+        body: patch,
+      }),
+
+    removeTask: (listId: string, taskId: string) =>
+      this.http.request<void>(`/tasks/${listId}/items/${taskId}`, { method: "DELETE" }),
   };
 
   /**

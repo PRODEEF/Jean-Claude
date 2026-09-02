@@ -1,4 +1,11 @@
 import type { CalendarEvent, CreateCalendarEvent } from "@jc/domain";
+import {
+  formatDateInput,
+  formatTimeInput,
+  parseDateInput,
+  parseTimeInput,
+  withTime,
+} from "@/shared/lib/date-input";
 
 /**
  * Saisie du formulaire d'événement, sous la forme tapée par l'utilisateur.
@@ -114,50 +121,4 @@ export function parseForm(values: EventFormValues): ParseResult {
       notes: values.notes.trim() || null,
     },
   };
-}
-
-function formatDateInput(date: Date): string {
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${day}/${month}/${date.getFullYear()}`;
-}
-
-function formatTimeInput(date: Date): string {
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-/**
- * Minuit local du jour saisi.
- *
- * Les deux échecs sont distingués : un format non reconnu et un jour qui
- * n'existe pas n'appellent pas la même correction de la part de qui saisit.
- */
-function parseDateInput(value: string): Date | "malformed" | "impossible" {
-  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value.trim());
-  if (!match) return "malformed";
-
-  const [day, month, year] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  const date = new Date(year, month - 1, day);
-
-  // `new Date(2026, 1, 31)` ne lève pas, il glisse au 3 mars : on refuse une
-  // date qui ne s'est pas conservée à la construction.
-  if (date.getDate() !== day || date.getMonth() !== month - 1) return "impossible";
-  return date;
-}
-
-/** Accepte `14:30`, `14h30` et `14h`. */
-function parseTimeInput(value: string): { hours: number; minutes: number } | null {
-  const match = /^(\d{1,2})\s*[:hH]\s*(\d{2})?$/.exec(value.trim());
-  if (!match) return null;
-
-  const hours = Number(match[1]);
-  const minutes = match[2] ? Number(match[2]) : 0;
-  if (hours > 23 || minutes > 59) return null;
-  return { hours, minutes };
-}
-
-function withTime(day: Date, time: { hours: number; minutes: number }): string {
-  const date = new Date(day);
-  date.setHours(time.hours, time.minutes, 0, 0);
-  return date.toISOString();
 }
