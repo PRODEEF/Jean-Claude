@@ -10,7 +10,13 @@ import { httpError } from "../../core/http.js";
 import { forUser } from "../../core/supabase/supabase.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
 
-type ConversationRow = {
+/**
+ * Ligne Postgres d'une conversation — snake_case, telle que renvoyée par
+ * Supabase. Exportée avec son mapper et sa liste de colonnes : la recherche
+ * (`feature/search`) lit la même table, et deux définitions divergeraient à la
+ * première colonne ajoutée.
+ */
+export type ConversationRow = {
   id: string;
   kind: string;
   title: string;
@@ -32,7 +38,7 @@ type MessageRow = {
   created_at: string;
 };
 
-function toConversation(row: ConversationRow): Conversation {
+export function toConversation(row: ConversationRow): Conversation {
   return {
     id: row.id,
     kind: row.kind as Conversation["kind"],
@@ -60,7 +66,7 @@ function toMessage(row: MessageRow): Message {
   };
 }
 
-const CONVERSATION_COLUMNS =
+export const CONVERSATION_COLUMNS =
   "id, kind, title, archived_at, last_message_at, created_at, updated_at, conversation_folders(folder_id)";
 const MESSAGE_COLUMNS =
   "id, conversation_id, role, content, input_mode, provider, model, created_at";
