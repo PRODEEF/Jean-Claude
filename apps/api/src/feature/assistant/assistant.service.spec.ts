@@ -144,7 +144,11 @@ const IDLE_LLM: LlmProvider = {
 };
 
 /** Même raison : le périmètre ne se lit qu'au moment d'appeler le moteur. */
-const IDLE_USERS: IUserRepository = { findById: jest.fn(), update: jest.fn() };
+const IDLE_USERS: IUserRepository = {
+  findById: jest.fn(),
+  update: jest.fn(),
+  completeOnboarding: jest.fn(),
+};
 
 function makeService(
   suggestions: ISuggestionRepository = makeSuggestionRepository(),

@@ -1,4 +1,10 @@
-import { assistantScopeSchema, DEFAULT_CONVERSATION_TITLE, labelSchema } from "@jc/domain";
+import {
+  assistantScopeSchema,
+  DEFAULT_ASSISTANT_NAME,
+  DEFAULT_CONVERSATION_TITLE,
+  labelSchema,
+  userMemorySchema,
+} from "@jc/domain";
 import type {
   AssignFolders,
   AssistantScope,
@@ -17,6 +23,7 @@ import type { LlmProvider, LlmTool, LlmToolCall } from "../../core/llm/llm.port.
 import {
   ASSISTANT_TOOLS,
   CHAT_TOOLS,
+  FINISH_ONBOARDING,
   isAllowedByScope,
   NAME_CONVERSATION,
   OPEN_NEW_CONVERSATION,
@@ -36,7 +43,11 @@ const CONTEXT_WINDOW_MESSAGES = 40;
  * propositions à valider. Ils ne touchent pas aux données de l'utilisateur :
  * l'un nomme la conversation, l'autre choisit où la réponse sera donnée.
  */
-const APPLIED_DIRECTLY = new Set([NAME_CONVERSATION.name, OPEN_NEW_CONVERSATION.name]);
+const APPLIED_DIRECTLY = new Set([
+  NAME_CONVERSATION.name,
+  OPEN_NEW_CONVERSATION.name,
+  FINISH_ONBOARDING.name,
+]);
 
 /**
  * Ce que le tour peut encore faire du fil. `filing` à `null` signifie qu'aucun
@@ -47,6 +58,41 @@ type Housekeeping = {
   tools: LlmTool[];
   filing: { folders: FolderTreeNode[] } | null;
 };
+
+/**
+ * Ce que le profil de l'utilisateur dicte au tour de dialogue.
+ *
+ * Résolu en une lecture : le nom de l'assistant, le périmètre qu'on lui laisse
+ * et ce qu'il sait déjà de l'utilisateur décident tous les trois de la consigne
+ * système, et les relire séparément multiplierait les allers-retours.
+ */
+type AssistantContext = {
+  /** Nom choisi dans les réglages — « Jean-Claude » n'en est que le défaut. */
+  name: string;
+  scope: AssistantScope;
+  /** Contexte stable appris à l'accueil puis enrichi (§13.4.2). */
+  memory: string | null;
+  /** L'accueil n'a pas encore été mené à son terme (§6.3, A.13). */
+  onboarding: boolean;
+};
+
+/**
+ * Premier message du canal permanent, quand l'accueil reste à faire (§6.3).
+ *
+ * Écrit par le serveur et non improvisé par le modèle : l'utilisateur qui vient
+ * de s'inscrire doit trouver une question, pas un fil vide, et cette question
+ * ne doit pas dépendre de la disponibilité du moteur. Elle dit aussi que
+ * l'étape est facultative — le §6.3 demande un accueil sautable.
+ */
+function welcomeMessage(assistantName: string): string {
+  return (
+    `Bonjour, moi c'est ${assistantName}. Avant qu'on se mette au travail, ` +
+    "j'aimerais faire connaissance : raconte-moi en quelques mots qui tu es et ce " +
+    "qui t'occupe en ce moment, côté pro comme côté perso. Si tu as un projet ou " +
+    "une idée en tête, c'est le bon moment pour m'en parler.\n\n" +
+    "Rien d'obligatoire : tu peux passer cette étape et y revenir plus tard."
+  );
+}
 
 export class ConversationService {
   constructor(
@@ -89,12 +135,28 @@ export class ConversationService {
     const existing = await this.conversations.findAssistantChannel(accessToken);
     if (existing) return existing;
 
-    return this.conversations.create(
+    const context = await this.contextFor(userId, accessToken);
+
+    const channel = await this.conversations.create(
       userId,
-      { title: "Jean-Claude", folderIds: [] },
+      { title: context.name, folderIds: [] },
       "assistant",
       accessToken,
     );
+
+    // L'accueil conversationnel démarre ici (§6.3) : le canal est le premier
+    // écran de l'utilisateur qui vient de s'inscrire, et il doit y trouver une
+    // question plutôt qu'un fil vide.
+    if (context.onboarding) {
+      await this.conversations.appendMessage(
+        channel.id,
+        userId,
+        { content: welcomeMessage(context.name), inputMode: "text", role: "assistant" },
+        accessToken,
+      );
+    }
+
+    return channel;
   }
 
   update(id: string, patch: UpdateConversation, accessToken: string): Promise<Conversation> {
@@ -171,14 +233,14 @@ export class ConversationService {
     let model: string | null = null;
     const toolCalls: LlmToolCall[] = [];
 
-    // Périmètre autorisé et entretien du fil : résolus avant l'appel au modèle,
-    // parce que les deux décident des outils qu'on lui expose.
-    const scope = await this.scopeFor(userId, accessToken);
-    const todo = await this.pendingHousekeeping(conversation, scope, accessToken);
+    // Profil et entretien du fil : résolus avant l'appel au modèle, parce que
+    // les deux décident des outils qu'on lui expose.
+    const context = await this.contextFor(userId, accessToken);
+    const todo = await this.pendingHousekeeping(conversation, context, accessToken);
 
     try {
       const stream = this.llm.stream({
-        system: buildSystemPrompt(conversation.kind, todo),
+        system: buildSystemPrompt(conversation.kind, todo, context),
         messages: history.items
           // Les messages `system` stockés ne sont pas rejouables comme des tours
           // de dialogue : la consigne système est reconstruite à chaque appel.
@@ -223,7 +285,7 @@ export class ConversationService {
         // ne garantit qu'il n'en nommera pas un autre. Une capacité coupée dans
         // les réglages ne doit produire aucune suggestion, quel que soit le
         // chemin par lequel l'appel arrive (A.10).
-        if (!isAllowedByScope(toolCall.name, scope)) {
+        if (!isAllowedByScope(toolCall.name, context.scope)) {
           console.warn(`Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
@@ -231,6 +293,8 @@ export class ConversationService {
       }
 
       await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
+
+      await this.applyOnboardingMemory(userId, toolCalls, accessToken);
 
       const redirect = await this.openRequestedConversation(userId, toolCalls, accessToken);
 
@@ -240,18 +304,33 @@ export class ConversationService {
   }
 
   /**
-   * Périmètre que l'utilisateur laisse à l'assistant (A.10).
+   * Réglages et mémoire de l'utilisateur, tels que le tour de dialogue les lit.
    *
-   * Un profil illisible retombe sur le périmètre par défaut plutôt que de faire
-   * échouer le tour de dialogue : c'est celui d'un compte qui n'a jamais ouvert
-   * ses réglages, donc le plus proche de ce que l'utilisateur attend.
+   * Un profil illisible retombe sur les valeurs par défaut plutôt que de faire
+   * échouer le tour : c'est ce que voit un compte qui n'a jamais ouvert ses
+   * réglages, donc le plus proche de ce que l'utilisateur attend. L'accueil est
+   * alors réputé fait — mieux vaut manquer une conversation d'accueil que la
+   * rejouer indéfiniment à chaque message.
    */
-  private async scopeFor(userId: string, accessToken: string): Promise<AssistantScope> {
+  private async contextFor(userId: string, accessToken: string): Promise<AssistantContext> {
     const profile = await this.users.findById(userId, accessToken);
-    if (profile) return profile.preferences.scope;
 
-    console.warn("Profil introuvable au moment de borner l'assistant : périmètre par défaut.");
-    return assistantScopeSchema.parse({});
+    if (!profile) {
+      console.warn("Profil introuvable au moment de borner l'assistant : réglages par défaut.");
+      return {
+        name: DEFAULT_ASSISTANT_NAME,
+        scope: assistantScopeSchema.parse({}),
+        memory: null,
+        onboarding: false,
+      };
+    }
+
+    return {
+      name: profile.preferences.assistantName,
+      scope: profile.preferences.scope,
+      memory: profile.memory,
+      onboarding: profile.onboardingCompletedAt === null,
+    };
   }
 
   /**
@@ -269,11 +348,17 @@ export class ConversationService {
    */
   private async pendingHousekeeping(
     conversation: Conversation,
-    scope: AssistantScope,
+    context: AssistantContext,
     accessToken: string,
   ): Promise<Housekeeping> {
+    const scope = context.scope;
+
     if (conversation.kind === "assistant") {
-      return { tools: allowed(ASSISTANT_TOOLS, scope), filing: null };
+      const tools = allowed(ASSISTANT_TOOLS, scope);
+      // L'accueil se déroule dans le canal permanent : tant qu'il n'est pas
+      // clos, le modèle doit pouvoir le clore lui-même.
+      if (context.onboarding) tools.push(FINISH_ONBOARDING);
+      return { tools, filing: null };
     }
 
     // `SUGGEST_FOLDERS` n'est rendu qu'aux conversations non classées : il n'a
@@ -322,6 +407,41 @@ export class ConversationService {
   }
 
   /**
+   * Clôt l'accueil et enregistre ce qu'il a appris (§6.3, A.13).
+   *
+   * Appliqué directement, comme le titre : rien n'est créé dans les données de
+   * l'utilisateur, on note ce qu'il vient de raconter de lui-même. Le faire
+   * valider reviendrait à lui demander de confirmer ses propres réponses.
+   *
+   * Un échec d'écriture n'interrompt pas le tour : la réponse est déjà partie,
+   * et l'accueil se rejouera au message suivant — moins gênant que de perdre
+   * l'échange en cours.
+   */
+  private async applyOnboardingMemory(
+    userId: string,
+    toolCalls: LlmToolCall[],
+    accessToken: string,
+  ): Promise<void> {
+    const call = toolCalls.find((toolCall) => toolCall.name === FINISH_ONBOARDING.name);
+    if (!call) return;
+
+    const memory = userMemorySchema.safeParse(call.input["memory"]);
+    if (!memory.success) {
+      console.warn("Appel `finish_onboarding` sans mémoire exploitable : accueil non clos.");
+      return;
+    }
+
+    try {
+      await this.users.completeOnboarding(userId, memory.data, accessToken);
+    } catch (error) {
+      console.error(
+        "Clôture de l'accueil impossible :",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  /**
    * Bascule hors périmètre du canal permanent (A.10).
    *
    * Le modèle ne crée pas la conversation lui-même : il signale que la demande
@@ -362,10 +482,19 @@ export class ConversationService {
  * l'UI : c'est une règle métier, elle doit valoir identiquement pour le web,
  * le mobile et le desktop (§5.3).
  */
-function buildSystemPrompt(kind: Conversation["kind"], todo: Housekeeping): string {
+function buildSystemPrompt(
+  kind: Conversation["kind"],
+  todo: Housekeeping,
+  context: AssistantContext,
+): string {
   if (kind === "assistant") {
+    // L'accueil prend toute la place tant qu'il dure : lui superposer le
+    // bornage du canal ferait ouvrir une conversation dédiée au premier projet
+    // évoqué, alors qu'on cherche justement à en entendre parler ici.
+    if (context.onboarding) return buildOnboardingPrompt(context.name);
+
     const channel = [
-      "Tu es Jean-Claude, l'assistant d'organisation personnelle de l'utilisateur.",
+      `Tu es ${context.name}, l'assistant d'organisation personnelle de l'utilisateur.`,
       "Ce canal est réservé à trois sujets : les rappels (ce qui est important",
       "aujourd'hui ou cette semaine), l'organisation interne de l'outil (dossiers,",
       "rangement, structure), et l'évolution de la structure du projet de l'utilisateur.",
@@ -391,12 +520,13 @@ function buildSystemPrompt(kind: Conversation["kind"], todo: Housekeeping): stri
       );
     }
 
-    return channel.join("\n");
+    return [...channel, ...describeMemory(context.memory)].join("\n");
   }
 
   const lines = [
-    "Tu es Jean-Claude, un assistant conversationnel personnel.",
+    `Tu es ${context.name}, un assistant conversationnel personnel.`,
     "Réponds de façon utile, directe et naturelle, en français.",
+    ...describeMemory(context.memory),
   ];
 
   // Réclamée seulement si le tour a de quoi y répondre : sans outil de
@@ -442,6 +572,47 @@ function buildSystemPrompt(kind: Conversation["kind"], todo: Housekeeping): stri
   }
 
   return lines.join("\n");
+}
+
+/**
+ * Consigne de la conversation d'accueil (§6.3, A.13).
+ *
+ * Quelques questions ouvertes, pas un formulaire de profil : c'est la
+ * différence que le cahier des charges demande explicitement. La brièveté est
+ * répétée parce qu'un modèle laissé libre enchaînerait les questions, et que
+ * l'accueil doit rendre la main vite.
+ */
+function buildOnboardingPrompt(assistantName: string): string {
+  return [
+    `Tu es ${assistantName}, l'assistant d'organisation personnelle de l'utilisateur.`,
+    "Il vient de créer son compte : tu l'accueilles, et vous faites connaissance.",
+    "",
+    "Pose des questions ouvertes, une seule à la fois, sur qui il est, où il en",
+    "est côté professionnel et personnel, les projets ou les idées qu'il a en tête.",
+    "Reste conversationnel et bref — deux ou trois phrases par tour. Ce n'est pas",
+    "un formulaire de profil : rebondis sur ce qu'il raconte plutôt que de dérouler",
+    "une liste. N'insiste jamais sur une question laissée sans réponse.",
+    "",
+    "Au bout de trois ou quatre échanges, appelle `finish_onboarding` avec ce",
+    "qu'il faut retenir de lui, sans l'annoncer, et enchaîne naturellement.",
+    "",
+    "Si un projet concret se dessine dans ce qu'il raconte, appelle",
+    "`suggest_project_folders` pour proposer les dossiers correspondants. L'outil",
+    "ne crée rien : il affiche une proposition que l'utilisateur valide d'un geste.",
+    "Ne présente donc jamais les dossiers comme déjà créés.",
+  ].join("\n");
+}
+
+/** Ce que l'assistant sait déjà de l'utilisateur, s'il sait quelque chose (§13.4.2). */
+function describeMemory(memory: string | null): string[] {
+  if (!memory) return [];
+
+  return [
+    "",
+    "Ce que tu sais de l'utilisateur, appris lors de vos échanges précédents.",
+    "Utilise-le pour ajuster tes réponses, sans le lui réciter ni t'en vanter :",
+    memory,
+  ];
 }
 
 /** Les outils du jeu dont la capacité reste active dans les réglages (A.10). */

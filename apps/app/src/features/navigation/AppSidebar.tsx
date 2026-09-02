@@ -24,6 +24,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui
 import { Icon } from "@/shared/ui/icon";
 import { Separator } from "@/shared/ui/separator";
 import { Text } from "@/shared/ui/text";
+import { useAssistantName } from "@/shared/hooks/use-profile";
 import { useSidebarData, type SidebarGroup } from "./use-sidebar-data";
 
 /** Rangées de navigation vers les vues qui ne sont pas des conversations. */
@@ -71,6 +72,7 @@ export function AppSidebar({
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
+  const assistantName = useAssistantName();
   const { groups, unfiled, isLoading, error } = useSidebarData();
   const [deleting, setDeleting] = useState<Folder | null>(null);
   const [menuTarget, setMenuTarget] = useState<FolderMenuTarget | null>(null);
@@ -106,14 +108,14 @@ export function AppSidebar({
         <Button
           variant="ghost"
           onPress={() => go("/assistant")}
-          accessibilityLabel="Ouvrir le fil permanent avec Jean-Claude"
+          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
           className={cx("h-auto justify-start gap-3 px-2 py-2", pathname === "/assistant")}
         >
           <View className="size-8 items-center justify-center rounded-md bg-primary">
             <Icon as={Sparkles} size={16} className="text-primary-foreground" />
           </View>
           <View className="flex-1">
-            <Text className="text-sm font-semibold text-foreground">Jean-Claude</Text>
+            <Text className="text-sm font-semibold text-foreground">{assistantName}</Text>
             <Text className="text-xs text-muted-foreground">Canal permanent</Text>
           </View>
         </Button>

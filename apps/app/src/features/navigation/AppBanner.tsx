@@ -8,16 +8,8 @@ import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useCurrentUser } from "@/shared/hooks/use-current-user";
+import { useAssistantName } from "@/shared/hooks/use-profile";
 import { SearchDialog } from "@/features/search/SearchDialog";
-
-/**
- * Nom de l'assistant.
- *
- * Constante tant que le réglage « Prénom de l'assistant » (Phase B) n'existe
- * pas. Le jour où il existera, c'est la seule ligne à remplacer par la
- * préférence utilisateur — la bannière la lit déjà comme une donnée.
- */
-const ASSISTANT_NAME = "Jean-Claude";
 
 /**
  * Raccourcis vers les vues qui ne sont pas des conversations.
@@ -48,6 +40,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
   const router = useRouter();
   const breakpoint = useBreakpoint();
   const { displayName, initials } = useCurrentUser();
+  const assistantName = useAssistantName();
   const [searching, setSearching] = useState(false);
 
   return (
@@ -82,7 +75,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
 
       <Text className="shrink text-center text-sm text-accent-soft-foreground" numberOfLines={1}>
         <Text className="text-sm font-bold uppercase text-accent-soft-foreground">
-          {ASSISTANT_NAME}
+          {assistantName}
         </Text>
         , ton assistant perso
       </Text>

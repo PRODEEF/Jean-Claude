@@ -107,3 +107,22 @@ export const darkPalette: Palette = {
 
 /** Couleur d'assistant par défaut, avant tout choix de l'utilisateur. */
 export const DEFAULT_ACCENT = "#6366F1";
+
+/**
+ * Couleurs d'assistant proposées dans les réglages (§4.5).
+ *
+ * Une liste fermée et non un sélecteur libre : `buildPalette` pose la couleur
+ * choisie sur des fonds clairs *et* sombres, et une teinte prise au hasard y
+ * perd son contraste. Ces huit-là ont été retenues pour rester lisibles dans
+ * les deux thèmes.
+ */
+export const ASSISTANT_ACCENTS: readonly { value: string; label: string }[] = [
+  { value: DEFAULT_ACCENT, label: "Indigo" },
+  { value: "#8B5CF6", label: "Violet" },
+  { value: "#2563EB", label: "Bleu" },
+  { value: "#0D9488", label: "Turquoise" },
+  { value: "#16A34A", label: "Vert" },
+  { value: "#D97706", label: "Ambre" },
+  { value: "#EA580C", label: "Orange" },
+  { value: "#DB2777", label: "Rose" },
+];
