@@ -37,6 +37,7 @@ import {
   OPEN_NEW_CONVERSATION,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
+  SUGGEST_TASK_LIST,
 } from "../../core/llm/llm.tools.js";
 import type { CalendarService } from "../calendar/calendar.service.js";
 import type { FolderService } from "../folder/folder.service.js";
@@ -622,13 +623,20 @@ export class ConversationService {
       return { tools: structuring, filing: null, channel: { folders, agenda }, decided };
     }
 
-    // `SUGGEST_FOLDERS` n'est rendu qu'aux conversations non classées : il n'a
-    // rien à proposer sur un fil déjà rangé.
-    const tools = allowed(CHAT_TOOLS, scope).filter((tool) => tool !== SUGGEST_FOLDERS);
+    const decided = await this.suggestions.listForConversation(conversation.id, accessToken);
+
+    const tools = allowed(CHAT_TOOLS, scope).filter(
+      (tool) =>
+        // `SUGGEST_FOLDERS` n'est rendu qu'aux conversations non classées : il
+        // n'a rien à proposer sur un fil déjà rangé.
+        tool !== SUGGEST_FOLDERS &&
+        // Une todoliste déjà proposée attend un geste : la reproposer
+        // empilerait deux cartes pour la même chose, ce que le « non intrusif »
+        // du §12.1 exclut.
+        !(tool === SUGGEST_TASK_LIST && isPending(decided, "create_task_list")),
+    );
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
-
-    const decided = await this.suggestions.listForConversation(conversation.id, accessToken);
 
     if (
       conversation.folderIds.length > 0 ||

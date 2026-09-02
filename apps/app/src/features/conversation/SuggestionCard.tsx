@@ -1,18 +1,28 @@
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react-native";
 import {
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
+  createTaskListsPayloadSchema,
+  scheduleTasksPayloadSchema,
+  type AssignFoldersPayload,
   type Suggestion,
 } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { api } from "@/shared/lib/api";
+import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 export type SuggestionCardProps = {
   suggestion: Suggestion;
-  onAccept: () => void;
+  /**
+   * Les dossiers restés cochés, quand la proposition en fait cocher.
+   * `undefined` — rien n'a été décoché — laisse le serveur appliquer la
+   * proposition entière.
+   */
+  onAccept: (folderSelection?: AssignFoldersPayload) => void;
   onDismiss: () => void;
   /** Une réponse est en cours d'envoi : les deux gestes sont neutralisés. */
   isPending: boolean;
@@ -34,6 +44,17 @@ export function SuggestionCard({
   const { palette } = useTheme();
   const preview = useSuggestionPreview(suggestion);
 
+  // Les dossiers écartés, et non ceux retenus : un rangement propose de
+  // ranger, pas de choisir à partir de rien. Décochés plutôt que cochés aussi
+  // parce que les lignes arrivent avec l'arborescence — une liste de cochés
+  // figée au premier rendu les laisserait toutes décochées.
+  const [excluded, setExcluded] = useState<readonly string[]>([]);
+
+  const selection = selectedFolders(preview.lines, excluded);
+  const choosable = preview.lines.some((line) => line.choice);
+  const emptied =
+    choosable && selection.existingFolderIds.length + selection.newFolderNames.length === 0;
+
   return (
     <View
       style={[
@@ -46,32 +67,56 @@ export function SuggestionCard({
       {/* L'aperçu est un confort : une charge utile illisible ne doit pas
           empêcher l'utilisateur de trancher. */}
       {preview.lines.length > 0 ? (
-        <View style={[styles.tree, { borderLeftColor: palette.border }]}>
-          {preview.lines.map((line) => (
-            <Text
-              key={line.key}
-              style={[
-                styles.folder,
-                line.nested ? styles.nested : null,
-                { color: line.nested ? palette.textMuted : palette.text },
-              ]}
-            >
-              {line.label}
-              {line.hint ? (
-                <Text style={[styles.hint, { color: palette.textMuted }]}> · {line.hint}</Text>
-              ) : null}
-            </Text>
-          ))}
+        <View
+          style={choosable ? styles.choices : [styles.tree, { borderLeftColor: palette.border }]}
+        >
+          {preview.lines.map((line) =>
+            line.choice ? (
+              <FolderChoice
+                key={line.key}
+                line={line}
+                checked={!excluded.includes(line.key)}
+                disabled={isPending}
+                onToggle={() =>
+                  setExcluded((current) =>
+                    current.includes(line.key)
+                      ? current.filter((key) => key !== line.key)
+                      : [...current, line.key],
+                  )
+                }
+              />
+            ) : (
+              <Text
+                key={line.key}
+                style={[
+                  styles.folder,
+                  line.nested ? styles.nested : null,
+                  { color: line.nested ? palette.textMuted : palette.text },
+                ]}
+              >
+                {line.label}
+                {line.hint ? (
+                  <Text style={[styles.hint, { color: palette.textMuted }]}> · {line.hint}</Text>
+                ) : null}
+              </Text>
+            ),
+          )}
         </View>
       ) : null}
 
       <View style={styles.actions}>
         <Pressable
-          onPress={onAccept}
-          disabled={isPending}
+          // Rien n'est envoyé tant que rien n'a été décoché : le serveur
+          // applique alors la proposition entière, y compris un dossier que
+          // l'arborescence en cache ne sait pas encore nommer.
+          onPress={() => onAccept(excluded.length > 0 ? selection : undefined)}
+          disabled={isPending || emptied}
           accessibilityRole="button"
           accessibilityLabel={preview.acceptLabel}
-          style={[styles.action, { backgroundColor: palette.accent, opacity: isPending ? 0.4 : 1 }]}
+          style={[
+            styles.action,
+            { backgroundColor: palette.accent, opacity: isPending || emptied ? 0.4 : 1 },
+          ]}
         >
           <Text style={[styles.actionLabel, { color: palette.accentText }]}>
             {preview.acceptLabel}
@@ -97,6 +142,75 @@ export function SuggestionCard({
 }
 
 /**
+ * Dossier d'un rangement, à cocher ou décocher avant d'accepter (§5.2, A.1).
+ *
+ * Une case et non un choix unique : une conversation appartient à plusieurs
+ * dossiers à la fois — « Maison » *et* « Travaux », pas l'un ou l'autre. C'est
+ * la forme retenue par Notion et Apple Notes pour le même geste (§4.2).
+ */
+function FolderChoice({
+  line,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  line: PreviewLine;
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  const { palette } = useTheme();
+
+  return (
+    <Pressable
+      onPress={onToggle}
+      disabled={disabled}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked, disabled }}
+      accessibilityLabel={line.label}
+      style={[styles.choice, { opacity: disabled ? 0.4 : 1 }]}
+    >
+      <View
+        style={[
+          styles.box,
+          checked
+            ? { backgroundColor: palette.accent, borderColor: palette.accent }
+            : { borderColor: palette.border },
+        ]}
+      >
+        {checked ? <Check size={14} color={palette.accentText} /> : null}
+      </View>
+
+      <Text style={[styles.folder, { color: palette.text }]}>
+        {line.label}
+        {line.hint ? (
+          <Text style={[styles.hint, { color: palette.textMuted }]}> · {line.hint}</Text>
+        ) : null}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Dossiers restés cochés, dans la forme attendue par l'API.
+ *
+ * Les lignes qui ne portent pas de case — les todolistes, les sous-dossiers
+ * d'un projet — sont ignorées : elles ne se cochent pas.
+ */
+function selectedFolders(lines: PreviewLine[], excluded: readonly string[]): AssignFoldersPayload {
+  const kept = lines.filter((line) => line.choice && !excluded.includes(line.key));
+
+  return {
+    existingFolderIds: kept.flatMap((line) =>
+      line.choice && "existingFolderId" in line.choice ? [line.choice.existingFolderId] : [],
+    ),
+    newFolderNames: kept.flatMap((line) =>
+      line.choice && "newFolderName" in line.choice ? [line.choice.newFolderName] : [],
+    ),
+  };
+}
+
+/**
  * Trace d'une proposition déjà tranchée, rendue à sa place dans le fil.
  *
  * Ce que l'assistant a fait reste lisible dans la conversation qui l'a
@@ -108,7 +222,13 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
   const { palette } = useTheme();
   const preview = useSuggestionPreview(suggestion);
   const accepted = suggestion.status === "accepted";
-  const names = preview.lines.map((line) => line.label).join(", ");
+
+  // Les tâches sont laissées de côté : une todoliste se relit dans son onglet,
+  // et déplier ses lignes ici ferait de l'historique du fil une seconde liste.
+  const names = preview.lines
+    .filter((line) => !line.nested || suggestion.kind === "create_project_folders")
+    .map((line) => line.label)
+    .join(", ");
 
   return (
     <View style={[styles.note, { borderColor: palette.border }]}>
@@ -125,10 +245,27 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
 function outcomeLabel(suggestion: Suggestion): string {
   if (suggestion.status === "dismissed") return "Proposition ignorée";
   if (suggestion.status === "expired") return "Proposition expirée";
-  return suggestion.kind === "assign_folders" ? "Conversation rangée" : "Dossiers créés";
+
+  switch (suggestion.kind) {
+    case "assign_folders":
+      return "Conversation rangée";
+    case "create_task_list":
+      return "Todolistes créées";
+    case "schedule_task":
+      return "Créneaux posés";
+    default:
+      return "Dossiers créés";
+  }
 }
 
-type PreviewLine = { key: string; label: string; nested: boolean; hint?: string };
+type PreviewLine = {
+  key: string;
+  label: string;
+  nested: boolean;
+  hint?: string;
+  /** Dossier cochable, et ce qu'il vaut dans la réponse envoyée au serveur. */
+  choice?: { existingFolderId: string } | { newFolderName: string };
+};
 
 /**
  * Ce que la carte montre, selon la nature de la proposition.
@@ -164,6 +301,49 @@ function useSuggestionPreview(suggestion: Suggestion): {
     };
   }
 
+  // Les listes sont montrées avec leurs tâches : c'est la seule façon de voir
+  // que les achats et le travail à faire n'ont pas été mélangés (§12.1), et
+  // l'aperçu tient lieu de relecture avant de valider.
+  if (suggestion.kind === "create_task_list") {
+    const proposed = createTaskListsPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Créer les listes",
+      lines: proposed.success
+        ? proposed.data.lists.flatMap((list) => [
+            {
+              key: list.title,
+              label: list.title,
+              nested: false,
+              ...(list.kind === "shopping" ? { hint: "achats" } : {}),
+            },
+            ...list.items.map((item) => ({
+              key: `${list.title}/${item.title}`,
+              label: item.title,
+              nested: true,
+              ...(item.dueAt === null ? {} : { hint: dueLabel(item.dueAt) }),
+            })),
+          ])
+        : [],
+    };
+  }
+
+  if (suggestion.kind === "schedule_task") {
+    const proposed = scheduleTasksPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Poser les créneaux",
+      lines: proposed.success
+        ? proposed.data.tasks.map((task) => ({
+            key: task.taskId,
+            label: task.title,
+            nested: false,
+            hint: dueLabel(task.dueAt),
+          }))
+        : [],
+    };
+  }
+
   const acceptLabel = "Ranger la conversation";
   const proposed = assignFoldersPayloadSchema.safeParse(suggestion.payload);
   if (!proposed.success) return { acceptLabel, lines: [] };
@@ -179,16 +359,32 @@ function useSuggestionPreview(suggestion: Suggestion): {
       // mieux vaut une ligne de moins qu'un identifiant technique à l'écran.
       ...proposed.data.existingFolderIds.flatMap((id) => {
         const name = byId.get(id);
-        return name ? [{ key: id, label: name, nested: false }] : [];
+        return name
+          ? [{ key: id, label: name, nested: false, choice: { existingFolderId: id } }]
+          : [];
       }),
       ...proposed.data.newFolderNames.map((name) => ({
         key: `nouveau:${name}`,
         label: name,
         nested: false,
         hint: "nouveau dossier",
+        choice: { newFolderName: name },
       })),
     ],
   };
+}
+
+/**
+ * Échéance telle qu'elle se lit dans la carte — « lundi 7 septembre, 9h ».
+ *
+ * L'heure est omise à minuit : le modèle la pose faute de mieux quand la
+ * conversation ne dit qu'un jour, et l'afficher ferait passer une date
+ * approximative pour un horaire décidé.
+ */
+function dueLabel(iso: string): string {
+  const date = new Date(iso);
+  const day = formatFullDay(date);
+  return date.getHours() === 0 && date.getMinutes() === 0 ? day : `${day}, ${formatTime(iso)}`;
 }
 
 const styles = StyleSheet.create({
@@ -202,6 +398,22 @@ const styles = StyleSheet.create({
   },
   message: { fontSize: fontSize.md, lineHeight: 22 },
   tree: { gap: spacing.xs, paddingLeft: spacing.md, borderLeftWidth: 2 },
+  // Pas de filet vertical ici : les cases alignent déjà les lignes entre elles.
+  choices: { gap: spacing.xs },
+  choice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    minHeight: MIN_TOUCH_TARGET,
+  },
+  box: {
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderRadius: radius.sm,
+  },
   folder: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   nested: { paddingLeft: spacing.md, fontWeight: fontWeight.regular },
   hint: { fontSize: fontSize.xs, fontWeight: fontWeight.regular },

@@ -1,4 +1,13 @@
-import type { Conversation, Folder, Suggestion } from "@jc/domain";
+import type {
+  Conversation,
+  CreateCalendarEvent,
+  CreateTask,
+  CreateTaskList,
+  Folder,
+  Suggestion,
+  Task,
+  TaskListWithTasks,
+} from "@jc/domain";
 import type { LlmProvider } from "../../core/llm/llm.port.js";
 import type { ICalendarRepository } from "../../domain/calendar/calendar.repository.interface.js";
 import { CalendarService } from "../../domain/calendar/calendar.service.js";
@@ -6,13 +15,33 @@ import type { IConversationRepository } from "../../domain/conversation/conversa
 import { ConversationService } from "../../domain/conversation/conversation.service.js";
 import type { IFolderRepository } from "../../domain/folder/folder.repository.interface.js";
 import { FolderService } from "../../domain/folder/folder.service.js";
-import type { ISuggestionRepository } from "../../domain/suggestion/suggestion.repository.interface.js";
+import type {
+  CreateSuggestion,
+  ISuggestionRepository,
+} from "../../domain/suggestion/suggestion.repository.interface.js";
 import { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
+import type {
+  ITaskRepository,
+  TaskListOrigin,
+  TaskPatch,
+} from "../../domain/task/task.repository.interface.js";
+import { TaskService } from "../../domain/task/task.service.js";
 import type { IUserRepository } from "../../domain/user/user.repository.interface.js";
 import { AssistantService } from "./assistant.service.js";
 
 const TOKEN = "access-token";
 const USER = "user-1";
+const NOW = "2026-09-01T08:00:00.000Z";
+const DESHERBAGE = "2026-09-07T09:00:00.000Z";
+
+/**
+ * Identifiants fabriqués au format UUID : la charge utile des créneaux les
+ * valide comme tels, et un `list-1` la ferait échouer pour une raison qui
+ * n'existe pas en vrai.
+ */
+function uuid(sequence: number): string {
+  return `00000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`;
+}
 
 /** Les identifiants de dossier voyagent dans la charge utile, validés en UUID. */
 const SANTE = "a1b2c3d4-0001-4000-8000-000000000001";
@@ -109,19 +138,23 @@ function makeFolderRepository(initial: Folder[] = []): IFolderRepository {
   };
 }
 
-function makeConversationRepository(
-  overrides: Partial<IConversationRepository> = {},
-): IConversationRepository {
-  const conversation: Conversation = {
+function makeConversation(folderIds: string[] = []): Conversation {
+  return {
     id: "conv-1",
     kind: "chat",
     title: "Mutuelle santé",
-    folderIds: [],
+    folderIds,
     archivedAt: null,
     lastMessageAt: null,
-    createdAt: "2026-09-01T08:00:00.000Z",
-    updatedAt: "2026-09-01T08:00:00.000Z",
+    createdAt: NOW,
+    updatedAt: NOW,
   };
+}
+
+function makeConversationRepository(
+  overrides: Partial<IConversationRepository> = {},
+): IConversationRepository {
+  const conversation = makeConversation();
 
   return {
     findAll: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
@@ -157,22 +190,109 @@ const IDLE_USERS: IUserRepository = {
   completeOnboarding: jest.fn(),
 };
 
-/** Même raison : l'agenda n'est lu que par le canal permanent, hors de ces tests. */
-const IDLE_CALENDAR: ICalendarRepository = {
-  findInRange: jest.fn(),
-  findById: jest.fn(),
-  create: jest.fn(),
-  update: jest.fn(),
-  delete: jest.fn(),
-};
+/**
+ * Double avec état : `TaskService` relit la liste avant d'y ajouter une tâche,
+ * pour en déduire sa position, et relit la tâche avant de lui rattacher un
+ * créneau. Un double sans mémoire échouerait aux deux.
+ */
+function makeTaskRepository(): ITaskRepository {
+  const lists = new Map<string, TaskListWithTasks>();
+  let sequence = 0;
+
+  return {
+    findAll: jest.fn().mockImplementation(() => Promise.resolve([...lists.values()])),
+    findById: jest.fn().mockImplementation((id: string) => Promise.resolve(lists.get(id) ?? null)),
+    createList: jest
+      .fn()
+      .mockImplementation((_userId: string, input: CreateTaskList & TaskListOrigin) => {
+        sequence += 1;
+        const list: TaskListWithTasks = {
+          id: uuid(sequence),
+          title: input.title,
+          kind: input.kind,
+          conversationId: input.conversationId ?? null,
+          folderId: input.folderId ?? null,
+          createdByAssistant: input.createdByAssistant ?? false,
+          createdAt: NOW,
+          updatedAt: NOW,
+          tasks: [],
+        };
+        lists.set(list.id, list);
+        return Promise.resolve(list);
+      }),
+    updateList: jest.fn(),
+    deleteList: jest.fn(),
+    createTask: jest
+      .fn()
+      .mockImplementation(
+        (_userId: string, listId: string, input: CreateTask, position: number) => {
+          sequence += 1;
+          const task: Task = {
+            id: uuid(sequence),
+            listId,
+            title: input.title,
+            notes: input.notes ?? null,
+            done: false,
+            completedAt: null,
+            dueAt: input.dueAt ?? null,
+            eventId: null,
+            position,
+            createdAt: NOW,
+            updatedAt: NOW,
+          };
+          lists.get(listId)?.tasks.push(task);
+          return Promise.resolve(task);
+        },
+      ),
+    updateTask: jest.fn().mockImplementation((listId: string, taskId: string, patch: TaskPatch) => {
+      const task = lists.get(listId)?.tasks.find((candidate) => candidate.id === taskId);
+      if (!task) return Promise.reject(new Error("Tâche introuvable"));
+      if (patch.eventId !== undefined) task.eventId = patch.eventId;
+      return Promise.resolve(task);
+    }),
+    deleteTask: jest.fn(),
+  };
+}
+
+function makeCalendarRepository(): ICalendarRepository {
+  let sequence = 0;
+
+  return {
+    findInRange: jest.fn().mockResolvedValue([]),
+    findById: jest.fn().mockResolvedValue(null),
+    create: jest.fn().mockImplementation((_userId: string, input: CreateCalendarEvent) => {
+      sequence += 1;
+      return Promise.resolve({
+        id: `event-${sequence}`,
+        title: input.title,
+        notes: null,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt ?? null,
+        allDay: input.allDay,
+        rrule: null,
+        reminderMinutesBefore: null,
+        folderId: null,
+        conversationId: null,
+        createdByAssistant: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+    }),
+    update: jest.fn(),
+    delete: jest.fn(),
+  };
+}
 
 function makeService(
   suggestions: ISuggestionRepository = makeSuggestionRepository(),
   folders: IFolderRepository = makeFolderRepository(),
   conversations: IConversationRepository = makeConversationRepository(),
+  tasks: ITaskRepository = makeTaskRepository(),
+  events: ICalendarRepository = makeCalendarRepository(),
 ): AssistantService {
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
+  const calendarService = new CalendarService(events);
 
   return new AssistantService(
     suggestionService,
@@ -183,8 +303,68 @@ function makeService(
       suggestionService,
       folderService,
       IDLE_USERS,
-      new CalendarService(IDLE_CALENDAR),
+      calendarService,
     ),
+    new TaskService(tasks),
+    calendarService,
+  );
+}
+
+/**
+ * Double avec état : la proposition de créneaux naît de l'acceptation des
+ * todolistes, et doit être relisible pour être acceptée à son tour.
+ */
+function makeSuggestionStore(initial: Suggestion): ISuggestionRepository {
+  const store = new Map<string, Suggestion>([[initial.id, initial]]);
+  let sequence = 0;
+
+  return {
+    create: jest.fn().mockImplementation((_userId: string, input: CreateSuggestion) => {
+      sequence += 1;
+      const suggestion = makeSuggestion({ id: `sug-suite-${sequence}`, ...input });
+      store.set(suggestion.id, suggestion);
+      return Promise.resolve(suggestion);
+    }),
+    findById: jest.fn().mockImplementation((id: string) => Promise.resolve(store.get(id) ?? null)),
+    listPending: jest.fn().mockResolvedValue([]),
+    listForConversation: jest.fn().mockResolvedValue([]),
+    markResolved: jest.fn().mockImplementation((id: string, status: Suggestion["status"]) => {
+      const resolved = { ...(store.get(id) ?? makeSuggestion()), id, status };
+      store.set(id, resolved);
+      return Promise.resolve(resolved);
+    }),
+  };
+}
+
+/** Les deux listes du jardin : les achats d'un côté, le travail à faire de l'autre. */
+function makeJardinSuggestion(): Suggestion {
+  return makeSuggestion({
+    kind: "create_task_list",
+    message: "Je te les organise ?",
+    payload: {
+      lists: [
+        {
+          title: "Achats jardin",
+          kind: "shopping",
+          items: [{ title: "Terreau", dueAt: null }],
+        },
+        {
+          title: "Travaux jardin",
+          kind: "todo",
+          items: [
+            { title: "Désherber", dueAt: DESHERBAGE },
+            { title: "Tondre", dueAt: null },
+          ],
+        },
+      ],
+    },
+  });
+}
+
+/** Listes créées, dans l'ordre, avec ce que le serveur y a posé. */
+function createdLists(repo: ITaskRepository): (CreateTaskList & TaskListOrigin)[] {
+  return (repo.createList as jest.Mock).mock.calls.map(
+    (call) => call[1] as CreateTaskList & TaskListOrigin,
   );
 }
 
@@ -447,6 +627,92 @@ describe("AssistantService", () => {
       expect(suggestions.markResolved).not.toHaveBeenCalled();
       jest.restoreAllMocks();
     });
+
+    it("ne range que dans les dossiers restés cochés", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolderNames: ["Assurances"] }),
+          ),
+      });
+      const folders = makeFolderRepository([makeFolder({ id: SANTE, name: "Santé" })]);
+      const conversations = makeConversationRepository();
+
+      await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        {
+          action: "accept",
+          folderSelection: { existingFolderIds: [SANTE], newFolderNames: [] },
+        },
+        TOKEN,
+      );
+
+      // Le dossier décoché n'est pas créé : l'utilisateur retient une partie de
+      // la proposition sans avoir à la refuser en entier (§5.2, A.1).
+      expect(folders.create).not.toHaveBeenCalled();
+      expect(assignedFolders(conversations)).toEqual([SANTE]);
+    });
+
+    it("ne laisse dans le fil que la trace des dossiers retenus", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolderNames: [] }),
+          ),
+      });
+      const folders = makeFolderRepository([
+        makeFolder({ id: SANTE, name: "Santé" }),
+        makeFolder({ id: ASSURANCES, name: "Assurances" }),
+      ]);
+
+      await makeService(suggestions, folders).resolve(
+        USER,
+        "sug-1",
+        {
+          action: "accept",
+          folderSelection: { existingFolderIds: [ASSURANCES], newFolderNames: [] },
+        },
+        TOKEN,
+      );
+
+      // La ligne « Conversation rangée » se relit dans le fil : elle doit dire
+      // ce qui a été fait, pas ce qui avait été proposé.
+      expect(suggestions.markResolved).toHaveBeenCalledWith("sug-1", "accepted", TOKEN, {
+        existingFolderIds: [ASSURANCES],
+        newFolderNames: [],
+      });
+    });
+
+    it("refuse une réponse qui ne retient aucun dossier proposé", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolderNames: [] }),
+          ),
+      });
+      const conversations = makeConversationRepository();
+
+      await expect(
+        makeService(suggestions, makeFolderRepository(), conversations).resolve(
+          USER,
+          "sug-1",
+          {
+            action: "accept",
+            folderSelection: { existingFolderIds: [ASSURANCES], newFolderNames: [] },
+          },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+
+      // Le client ne peut que retirer des dossiers de la proposition : un
+      // dossier qu'elle ne portait pas ne rentre pas par cette porte.
+      expect(conversations.setFolders).not.toHaveBeenCalled();
+      expect(suggestions.markResolved).not.toHaveBeenCalled();
+    });
   });
 
   describe("refus d'une proposition", () => {
@@ -464,6 +730,188 @@ describe("AssistantService", () => {
       expect(folders.create).not.toHaveBeenCalled();
       expect(suggestions.markResolved).toHaveBeenCalledWith("sug-1", "dismissed", TOKEN);
       expect(resolved.folders).toEqual([]);
+    });
+  });
+
+  describe("acceptation d'une todoliste (§12.1, A.2)", () => {
+    it("garde les achats et les tâches dans deux listes distinctes", async () => {
+      const tasks = makeTaskRepository();
+
+      await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      // Les fusionner rendrait la liste de courses illisible au milieu du
+      // désherbage — c'est l'exemple même du §12.1.
+      expect(createdLists(tasks).map((list) => [list.title, list.kind])).toEqual([
+        ["Achats jardin", "shopping"],
+        ["Travaux jardin", "todo"],
+      ]);
+    });
+
+    it("ajoute chaque tâche proposée à sa liste, échéance comprise", async () => {
+      const tasks = makeTaskRepository();
+
+      const resolved = await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const created = await tasks.findAll(TOKEN);
+      expect(resolved.taskLists).toHaveLength(2);
+      expect(created.map((list) => list.tasks.map((task) => [task.title, task.dueAt]))).toEqual([
+        [["Terreau", null]],
+        [
+          ["Désherber", DESHERBAGE],
+          ["Tondre", null],
+        ],
+      ]);
+    });
+
+    it("marque les listes comme venant de l'assistant et de leur conversation", async () => {
+      const tasks = makeTaskRepository();
+
+      await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(createdLists(tasks)[0]).toMatchObject({
+        conversationId: "conv-1",
+        createdByAssistant: true,
+      });
+    });
+
+    it("range les listes dans le dossier de la conversation d'origine", async () => {
+      const tasks = makeTaskRepository();
+      const conversations = makeConversationRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation([SANTE, ASSURANCES])),
+      });
+
+      await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        conversations,
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      // Jamais demandé à l'utilisateur (§13.4.1) : la liste hérite du rangement
+      // que la conversation exprime déjà.
+      expect(createdLists(tasks).map((list) => list.folderId)).toEqual([SANTE, SANTE]);
+    });
+
+    it("laisse les listes hors dossier quand la conversation n'est pas rangée", async () => {
+      const tasks = makeTaskRepository();
+
+      await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(createdLists(tasks).map((list) => list.folderId)).toEqual([null, null]);
+    });
+
+    it("enchaîne sur une proposition de créneaux pour les tâches datées", async () => {
+      const resolved = await makeService(makeSuggestionStore(makeJardinSuggestion())).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      // Deuxième temps du §12.1 : une proposition, pas un créneau posé d'office.
+      expect(resolved.next).toMatchObject({
+        kind: "schedule_task",
+        status: "pending",
+        message: "Une de ces tâches porte une date. Je te la pose dans ton agenda ?",
+      });
+      expect(resolved.events).toEqual([]);
+    });
+
+    it("n'enchaîne sur rien quand aucune tâche ne porte de date", async () => {
+      const sansDate = makeSuggestion({
+        kind: "create_task_list",
+        message: "Je te l'organise ?",
+        payload: {
+          lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }],
+        },
+      });
+
+      const resolved = await makeService(makeSuggestionStore(sansDate)).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      expect(resolved.next).toBeNull();
+    });
+
+    it("ne crée aucune liste quand la proposition est ignorée", async () => {
+      const tasks = makeTaskRepository();
+
+      const resolved = await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+
+      expect(resolved.taskLists).toEqual([]);
+      expect(tasks.createList).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("acceptation des créneaux (A.3)", () => {
+    /** Joue les deux temps : les listes d'abord, leurs créneaux ensuite. */
+    async function acceptBothCards() {
+      const tasks = makeTaskRepository();
+      const events = makeCalendarRepository();
+      const service = makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+        events,
+      );
+
+      const first = await service.resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+      if (!first.next) throw new Error("La proposition de créneaux devrait exister");
+
+      const second = await service.resolve(USER, first.next.id, { action: "accept" }, TOKEN);
+      return { second, tasks, events };
+    }
+
+    it("pose un créneau par tâche datée, sans heure de fin inventée", async () => {
+      const { second, events } = await acceptBothCards();
+
+      expect(second.events).toHaveLength(1);
+      expect(events.create).toHaveBeenCalledWith(
+        USER,
+        { title: "Désherber", startsAt: DESHERBAGE, endsAt: null, allDay: false },
+        TOKEN,
+      );
+    });
+
+    it("rattache la tâche à son créneau", async () => {
+      const { second, tasks } = await acceptBothCards();
+
+      const desherber = (await tasks.findAll(TOKEN))
+        .flatMap((list) => list.tasks)
+        .find((task) => task.title === "Désherber");
+
+      // Sans ce lien, le calendrier montrerait deux fois la même échéance : la
+      // tâche datée et le créneau posé pour elle.
+      expect(desherber?.eventId).toBe(second.events[0]?.id);
     });
   });
 

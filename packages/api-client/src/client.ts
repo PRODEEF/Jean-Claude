@@ -147,12 +147,21 @@ export class JeanClaudeClient {
     suggestions: (conversationId: string) =>
       this.http.request<Suggestion[]>("/assistant/suggestions", { query: { conversationId } }),
 
-    /** Accepte ou ignore d'un geste. Rend les dossiers réellement créés. */
+    /**
+     * Accepte ou ignore d'un geste.
+     *
+     * Rend ce que l'acceptation a réellement produit, et `next` quand elle fait
+     * naître la proposition suivante — les dates des todolistes qui viennent
+     * d'être créées (§12.1).
+     */
     resolve: (id: string, input: ResolveSuggestion) =>
-      this.http.request<{ suggestion: Suggestion; folders: Folder[] }>(
-        `/assistant/suggestions/${id}/resolve`,
-        { method: "POST", body: input },
-      ),
+      this.http.request<{
+        suggestion: Suggestion;
+        folders: Folder[];
+        taskLists: TaskList[];
+        events: CalendarEvent[];
+        next: Suggestion | null;
+      }>(`/assistant/suggestions/${id}/resolve`, { method: "POST", body: input }),
   };
 
   /**

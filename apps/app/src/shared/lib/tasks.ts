@@ -10,10 +10,18 @@ import { addDays, startOfDay } from "./dates";
  */
 export type DatedTask = { task: Task; list: TaskList };
 
-/** Tâches portant une échéance, toutes listes confondues. */
+/**
+ * Tâches portant une échéance, toutes listes confondues.
+ *
+ * Celles à qui un créneau a été posé en sont exclues : leur événement les
+ * représente déjà dans le calendrier, et les garder ici ferait apparaître la
+ * même échéance deux fois le même jour (A.3).
+ */
 export function datedTasks(lists: TaskListWithTasks[]): DatedTask[] {
   return lists.flatMap(({ tasks, ...list }) =>
-    tasks.filter((task) => task.dueAt !== null).map((task) => ({ task, list })),
+    tasks
+      .filter((task) => task.dueAt !== null && task.eventId === null)
+      .map((task) => ({ task, list })),
   );
 }
 

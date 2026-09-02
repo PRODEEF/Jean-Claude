@@ -19,6 +19,14 @@ export const SUGGEST_TASK_LIST: LlmTool = {
   inputSchema: {
     type: "object",
     properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « On dirait qu'une liste d'achats et une liste de tâches " +
+          "se dessinent pour le jardin, je te les organise ? ». Ne jamais présenter " +
+          "les listes comme déjà créées. 500 caractères maximum.",
+      },
       lists: {
         type: "array",
         items: {
@@ -49,9 +57,11 @@ export const SUGGEST_TASK_LIST: LlmTool = {
           },
           required: ["title", "kind", "items"],
         },
+        minItems: 1,
+        maxItems: 4,
       },
     },
-    required: ["lists"],
+    required: ["message", "lists"],
   },
 };
 
@@ -78,6 +88,8 @@ export const SUGGEST_FOLDERS: LlmTool = {
         description:
           "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
           "de question — ex. « Je range ça dans Santé et j'ouvre un dossier Assurances ? ». " +
+          "Les dossiers sont proposés ensemble et non comme un choix exclusif : l'utilisateur " +
+          "décoche ceux qu'il ne retient pas. Écrire « dans X et Y ? », jamais « dans X ou Y ? ». " +
           "Ne jamais présenter le rangement comme déjà fait. 500 caractères maximum.",
       },
       existingFolderIds: {

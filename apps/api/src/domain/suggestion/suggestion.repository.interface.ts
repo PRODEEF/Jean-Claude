@@ -22,5 +22,15 @@ export interface ISuggestionRepository {
    * de la conversation, au même titre que ce qu'il a dit.
    */
   listForConversation(conversationId: string, accessToken: string): Promise<Suggestion[]>;
-  markResolved(id: string, status: SuggestionStatus, accessToken: string): Promise<Suggestion>;
+  /**
+   * `payload` n'est fourni que lorsque l'acceptation a restreint la
+   * proposition : la trace qui reste dans le fil doit dire ce qui a été fait,
+   * pas ce qui avait été proposé.
+   */
+  markResolved(
+    id: string,
+    status: SuggestionStatus,
+    accessToken: string,
+    payload?: Record<string, unknown>,
+  ): Promise<Suggestion>;
 }
