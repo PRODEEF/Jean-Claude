@@ -18,7 +18,25 @@ calculer sur quatre plateformes sans risquer quatre résultats. Une migration re
 configuration de recherche `french` par `french_unaccent`, sans quoi « sante » ne trouvait
 pas « santé ».
 
-Dernière mise à jour : **1er septembre 2026** — issue #8 : les appels d'outils du modèle
+Le même jour : issue #8 terminée, le périmètre du mode assistant (A.10) devient une règle
+appliquée par le serveur. Chaque capacité de `assistant_scope` — détection de todolistes,
+planification, aide au rangement, suggestions de structure — commande l'outil
+correspondant : coupée, l'outil n'entre plus dans le jeu remis au modèle, la consigne cesse
+de le réclamer, et un appel qui arriverait malgré tout est écarté avant de devenir une
+proposition. Deux capacités échappent au réglage et c'est volontaire : nommer une
+conversation, et basculer une demande hors périmètre vers une conversation classique —
+désactiver la seconde reviendrait à supprimer A.10.
+
+Le réglage vit donc côté serveur avant d'exister dans l'interface : les interrupteurs de
+la page Réglages restent à l'issue #12, qui n'aura qu'à les brancher sur une règle déjà
+en vigueur sur les quatre plateformes.
+
+Non traité ici, et consigné : les **rappels du matin**. La capacité `morningReminders`
+existe et se lit, mais aucun planificateur n'existe dans le projet. Faire proposer par
+l'assistant un rappel qu'on ne saurait pas délivrer contredirait le §12.1 — la mise en
+œuvre relève des issues #26 et #20.
+
+Auparavant le 1er septembre : issue #8, les appels d'outils du modèle
 deviennent des propositions en attente (`feature/assistant`) au lieu d'être perdus, et le
 §12.1 est appliqué de bout en bout pour la première fois. Depuis le canal permanent,
 Jean-Claude propose une arborescence de dossiers que l'utilisateur crée d'un geste ; une
@@ -99,7 +117,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                          |
 | A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste. Restent la todoliste et les rendez-vous              |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                            |
-| A.10 | Bornage du mode assistant                             |   🟡   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre vers une conversation classique. Restent le rangement du fil ouvert et les réglages |
+| A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre, et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs de réglages → #12 ; rappels du matin → #26  |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                                               |
 | A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                  |
 | A.13 | Onboarding conversationnel                            |   ⬜   | Voir §6.3                                                                                                                                                          |

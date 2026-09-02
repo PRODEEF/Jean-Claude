@@ -6,6 +6,7 @@ import type { IFolderRepository } from "../../domain/folder/folder.repository.in
 import { FolderService } from "../../domain/folder/folder.service.js";
 import type { ISuggestionRepository } from "../../domain/suggestion/suggestion.repository.interface.js";
 import { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
+import type { IUserRepository } from "../../domain/user/user.repository.interface.js";
 import { AssistantService } from "./assistant.service.js";
 
 const TOKEN = "access-token";
@@ -142,6 +143,9 @@ const IDLE_LLM: LlmProvider = {
   stream: jest.fn(),
 };
 
+/** Même raison : le périmètre ne se lit qu'au moment d'appeler le moteur. */
+const IDLE_USERS: IUserRepository = { findById: jest.fn(), update: jest.fn() };
+
 function makeService(
   suggestions: ISuggestionRepository = makeSuggestionRepository(),
   folders: IFolderRepository = makeFolderRepository(),
@@ -153,7 +157,13 @@ function makeService(
   return new AssistantService(
     suggestionService,
     folderService,
-    new ConversationService(conversations, IDLE_LLM, suggestionService, folderService),
+    new ConversationService(
+      conversations,
+      IDLE_LLM,
+      suggestionService,
+      folderService,
+      IDLE_USERS,
+    ),
   );
 }
 

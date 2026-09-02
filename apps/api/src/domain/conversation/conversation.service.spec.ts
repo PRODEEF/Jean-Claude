@@ -1,10 +1,18 @@
 import { DEFAULT_CONVERSATION_TITLE } from "@jc/domain";
-import type { Conversation, Folder, Message, MessageStreamEvent, Suggestion } from "@jc/domain";
+import type {
+  AssistantScope,
+  Conversation,
+  Folder,
+  Message,
+  MessageStreamEvent,
+  Suggestion,
+} from "@jc/domain";
 import type { LlmCompletionRequest, LlmProvider, LlmToolCall } from "../../core/llm/llm.port.js";
 import type { IFolderRepository } from "../folder/folder.repository.interface.js";
 import { FolderService } from "../folder/folder.service.js";
 import type { ISuggestionRepository } from "../suggestion/suggestion.repository.interface.js";
 import { SuggestionService } from "../suggestion/suggestion.service.js";
+import type { IUserRepository, ProfileRecord } from "../user/user.repository.interface.js";
 import { ConversationService } from "./conversation.service.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
 
@@ -151,17 +159,50 @@ function makeFolderRepository(folders: Folder[] = []): IFolderRepository {
   };
 }
 
+/** Profil dont toutes les capacités du périmètre restent actives (A.10). */
+function makeUserRepository(scope: Partial<AssistantScope> = {}): IUserRepository {
+  const profile: ProfileRecord = {
+    id: USER,
+    displayName: "Clarisse",
+    memory: null,
+    onboardingCompletedAt: null,
+    createdAt: "2026-08-31T08:00:00.000Z",
+    preferences: {
+      assistantName: "Jean-Claude",
+      assistantColor: "#6366F1",
+      theme: "system",
+      timezone: "Europe/Paris",
+      speakResponses: false,
+      scope: {
+        morningReminders: true,
+        folderOrganization: true,
+        structureSuggestions: true,
+        proactiveTaskDetection: true,
+        proactiveScheduling: true,
+        ...scope,
+      },
+    },
+  };
+
+  return {
+    findById: jest.fn().mockResolvedValue(profile),
+    update: jest.fn().mockResolvedValue(profile),
+  };
+}
+
 function makeService(
   repo: IConversationRepository = makeRepository(),
   llm: LlmProvider = makeLlm(),
   suggestions: ISuggestionRepository = makeSuggestionRepository(),
   folders: IFolderRepository = makeFolderRepository(),
+  users: IUserRepository = makeUserRepository(),
 ): ConversationService {
   return new ConversationService(
     repo,
     llm,
     new SuggestionService(suggestions),
     new FolderService(folders),
+    users,
   );
 }
 
@@ -602,6 +643,147 @@ describe("ConversationService", () => {
       // Sinon chaque message empilerait une carte sur un geste que
       // l'utilisateur a simplement laissé venir.
       expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_folders");
+    });
+  });
+
+  describe("périmètre du mode assistant (A.10)", () => {
+    it("retire du jeu l'outil dont la capacité est désactivée", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({ proactiveTaskDetection: false }),
+        ),
+        { content: "Il me faut du terreau et des bulbes.", inputMode: "text" },
+      );
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).not.toContain("suggest_task_list");
+      // Les autres capacités restent actives : le réglage est par capacité,
+      // pas un interrupteur général.
+      expect(tools).toContain("suggest_recurring_event");
+    });
+
+    it("cesse de réclamer dans la consigne un outil qu'on ne remet plus", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository({
+            findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          }),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({ structureSuggestions: false }),
+        ),
+        { content: "Aide-moi à ranger mon espace.", inputMode: "text" },
+      );
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_project_folders");
+      expect(lastRequest(llm).system).not.toContain("suggest_project_folders");
+    });
+
+    it("n'offre plus de ranger un fil quand l'aide à l'organisation est coupée", async () => {
+      const llm = makeLlm();
+      const folders = makeFolderRepository([makeFolder({ id: "sante", name: "Santé" })]);
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          folders,
+          makeUserRepository({ folderOrganization: false }),
+        ),
+      );
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_folders");
+      // L'arborescence n'est pas non plus décrite au modèle : elle n'aurait
+      // servi qu'à formuler la proposition qu'on vient de lui retirer.
+      expect(lastRequest(llm).system).not.toContain("Santé");
+    });
+
+    it("laisse la bascule hors périmètre, qui n'est pas une capacité désactivable", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository({
+            findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          }),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({
+            structureSuggestions: false,
+            folderOrganization: false,
+            morningReminders: false,
+          }),
+        ),
+        { content: "Donne-moi une recette de tarte.", inputMode: "text" },
+      );
+
+      // Sans elle, le canal répondrait lui-même hors de son périmètre : A.10
+      // ne tiendrait plus.
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toEqual(["open_new_conversation"]);
+    });
+
+    it("ignore l'appel d'un outil désactivé plutôt que d'en faire une proposition", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        ["Je peux ranger ça."],
+        [
+          {
+            id: "call-1",
+            name: "suggest_folders",
+            input: { message: "Je range ça dans Santé ?", newFolderNames: ["Santé"] },
+          },
+        ],
+      );
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository({ folderOrganization: false }),
+        ),
+      );
+
+      // Une capacité coupée n'est pas seulement masquée dans l'UI : aucune
+      // suggestion correspondante n'est produite, même si le modèle nomme
+      // malgré tout l'outil.
+      expect(suggestions.create).not.toHaveBeenCalled();
+    });
+
+    it("retombe sur le périmètre par défaut quand le profil est illisible", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          { findById: jest.fn().mockResolvedValue(null), update: jest.fn() },
+        ),
+        { content: "Il me faut du terreau.", inputMode: "text" },
+      );
+
+      // Un profil manquant ne doit pas priver l'utilisateur de son tour de
+      // dialogue : on retient le périmètre d'un compte qui n'a jamais ouvert
+      // ses réglages.
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_task_list");
     });
   });
 
