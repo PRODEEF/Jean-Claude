@@ -56,6 +56,10 @@ export class SuggestionService {
     return this.suggestions.listPending(conversationId, accessToken);
   }
 
+  listForConversation(conversationId: string, accessToken: string): Promise<Suggestion[]> {
+    return this.suggestions.listForConversation(conversationId, accessToken);
+  }
+
   /**
    * Suggestion encore en attente, ou l'échec correspondant.
    *

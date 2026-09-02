@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
+import { Check } from "lucide-react-native";
 import {
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
@@ -95,6 +96,38 @@ export function SuggestionCard({
   );
 }
 
+/**
+ * Trace d'une proposition déjà tranchée, rendue à sa place dans le fil.
+ *
+ * Ce que l'assistant a fait reste lisible dans la conversation qui l'a
+ * provoqué : sans elle, des dossiers apparaîtraient dans la barre latérale
+ * sans que rien n'explique d'où ils viennent. En une ligne discrète et non en
+ * carte — c'est de l'historique, plus une action à mener.
+ */
+export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion }) {
+  const { palette } = useTheme();
+  const preview = useSuggestionPreview(suggestion);
+  const accepted = suggestion.status === "accepted";
+  const names = preview.lines.map((line) => line.label).join(", ");
+
+  return (
+    <View style={[styles.note, { borderColor: palette.border }]}>
+      {accepted ? <Check size={14} color={palette.accent} /> : null}
+      <Text style={[styles.noteLabel, { color: palette.textMuted }]}>
+        {outcomeLabel(suggestion)}
+        {accepted && names.length > 0 ? ` — ${names}` : ""}
+      </Text>
+    </View>
+  );
+}
+
+/** Ce qui est arrivé à la proposition, dit du point de vue de l'utilisateur. */
+function outcomeLabel(suggestion: Suggestion): string {
+  if (suggestion.status === "dismissed") return "Proposition ignorée";
+  if (suggestion.status === "expired") return "Proposition expirée";
+  return suggestion.kind === "assign_folders" ? "Conversation rangée" : "Dossiers créés";
+}
+
 type PreviewLine = { key: string; label: string; nested: boolean; hint?: string };
 
 /**
@@ -172,6 +205,18 @@ const styles = StyleSheet.create({
   folder: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   nested: { paddingLeft: spacing.md, fontWeight: fontWeight.regular },
   hint: { fontSize: fontSize.xs, fontWeight: fontWeight.regular },
+  note: {
+    alignSelf: "flex-start",
+    maxWidth: "85%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderRadius: radius.pill,
+  },
+  noteLabel: { fontSize: fontSize.xs, flexShrink: 1 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   action: {
     minHeight: MIN_TOUCH_TARGET,

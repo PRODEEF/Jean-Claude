@@ -25,10 +25,13 @@ const service = new AssistantService(
 export const assistantRoutes = new Hono<AuthEnv>()
   .use(auth)
 
-  /** Propositions encore en attente d'un geste, pour le fil d'une conversation. */
+  /** Propositions de l'assistant sur le fil d'une conversation, tranchées comprises. */
   .get("/suggestions", validate("query", z.object({ conversationId: uuidSchema })), async (c) =>
     c.json(
-      await service.listPending(c.req.valid("query").conversationId, c.get("user").accessToken),
+      await service.listForConversation(
+        c.req.valid("query").conversationId,
+        c.get("user").accessToken,
+      ),
     ),
   )
 

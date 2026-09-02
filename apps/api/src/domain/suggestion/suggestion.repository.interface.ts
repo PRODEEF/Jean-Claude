@@ -16,5 +16,11 @@ export interface ISuggestionRepository {
   findById(id: string, accessToken: string): Promise<Suggestion | null>;
   /** Suggestions encore en attente d'un geste, de la plus ancienne à la plus récente. */
   listPending(conversationId: string, accessToken: string): Promise<Suggestion[]>;
+  /**
+   * Toutes les suggestions du fil, tranchées comprises, de la plus ancienne à
+   * la plus récente : ce que l'assistant a proposé fait partie de l'historique
+   * de la conversation, au même titre que ce qu'il a dit.
+   */
+  listForConversation(conversationId: string, accessToken: string): Promise<Suggestion[]>;
   markResolved(id: string, status: SuggestionStatus, accessToken: string): Promise<Suggestion>;
 }
