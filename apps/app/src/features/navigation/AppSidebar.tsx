@@ -11,10 +11,7 @@ import {
 } from "lucide-react-native";
 import type { Conversation, Folder } from "@jc/domain";
 import { api } from "@/shared/lib/api";
-import {
-  FolderContextMenu,
-  type FolderMenuTarget,
-} from "@/features/folder/FolderContextMenu";
+import { FolderContextMenu, type FolderMenuTarget } from "@/features/folder/FolderContextMenu";
 import { FolderDeleteDialog } from "@/features/folder/FolderDeleteDialog";
 import { FolderNameRow, type FolderNameTarget } from "@/features/folder/FolderNameRow";
 import { Button } from "@/shared/ui/button";

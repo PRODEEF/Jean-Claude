@@ -61,9 +61,10 @@ export const searchRepository: ISearchRepository = {
     if (error) throw new Error(error.message);
 
     const rows = data as unknown as { conversation_id: string; content: string }[];
-    return rows.map(
-      (row): MessageMatch => ({ conversationId: row.conversation_id, content: row.content }),
-    );
+    return rows.map((row): MessageMatch => ({
+      conversationId: row.conversation_id,
+      content: row.content,
+    }));
   },
 
   async findConversations(options: ConversationPageOptions, accessToken) {

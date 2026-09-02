@@ -998,17 +998,11 @@ describe("ConversationService", () => {
       const llm = makeLlm();
 
       await drain(
-        makeService(
-          makeRepository(),
-          llm,
-          makeSuggestionRepository(),
-          makeFolderRepository(),
-          {
-            findById: jest.fn().mockResolvedValue(null),
-            update: jest.fn(),
-            completeOnboarding: jest.fn(),
-          },
-        ),
+        makeService(makeRepository(), llm, makeSuggestionRepository(), makeFolderRepository(), {
+          findById: jest.fn().mockResolvedValue(null),
+          update: jest.fn(),
+          completeOnboarding: jest.fn(),
+        }),
         { content: "Il me faut du terreau.", inputMode: "text" },
       );
 

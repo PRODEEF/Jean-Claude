@@ -30,4 +30,6 @@ export const userRoutes = new Hono<AuthEnv>()
    * n'est pas un réglage, et l'ouvrir à l'écriture reviendrait à laisser le
    * client réafficher l'accueil quand bon lui semble.
    */
-  .post("/onboarding/complete", async (c) => c.json(await service.completeOnboarding(c.get("user"))));
+  .post("/onboarding/complete", async (c) =>
+    c.json(await service.completeOnboarding(c.get("user"))),
+  );

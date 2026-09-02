@@ -36,7 +36,9 @@ export default function ChatHomeScreen() {
       </View>
 
       <Text className="text-center text-xl font-medium text-foreground">
-        {firstName ? `Bonjour ${firstName}, qu'est-ce qu'on fait aujourd'hui ?` : "Qu'est-ce qu'on fait aujourd'hui ?"}
+        {firstName
+          ? `Bonjour ${firstName}, qu'est-ce qu'on fait aujourd'hui ?`
+          : "Qu'est-ce qu'on fait aujourd'hui ?"}
       </Text>
       {/* Formulation neutre : la barre latérale est à gauche sur desktop mais
           en tiroir sur téléphone. */}

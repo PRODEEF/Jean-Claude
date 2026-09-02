@@ -38,15 +38,18 @@ développeur : décrire ce que l'utilisateur peut faire, pas les fichiers touch�
 ## Jour N — <date>
 
 ### Fait aujourd'hui
+
 - On peut maintenant se connecter avec son e-mail et un code reçu par mail.
 - Les dossiers s'affichent dans la barre latérale, avec le nombre de
   conversations qu'ils contiennent.
 
 ### Reste à faire
+
 - Le fil de conversation lui-même — prévu demain.
 - Le rattachement d'une conversation à plusieurs dossiers.
 
 ### Points de blocage
+
 - Il me faut le fichier `maquette-interface-ia.html` pour caler l'écran de
   conversation sur la référence prévue.
 - Choix à valider avec Antonin : service de reconnaissance vocale.
@@ -54,11 +57,11 @@ développeur : décrire ce que l'utilisateur peut faire, pas les fichiers touch�
 
 Règles de rédaction :
 
-| ❌ | ✅ |
-|---|---|
-| « Implémenté `FolderService.getTree()` » | « Les dossiers s'affichent avec leurs compteurs » |
-| « Refacto du repository pattern » | *(ne pas mentionner — invisible pour l'utilisateur)* |
-| « Fixé un bug » | « Le compteur d'un dossier inclut maintenant ses sous-dossiers » |
+| ❌                                       | ✅                                                               |
+| ---------------------------------------- | ---------------------------------------------------------------- |
+| « Implémenté `FolderService.getTree()` » | « Les dossiers s'affichent avec leurs compteurs »                |
+| « Refacto du repository pattern »        | _(ne pas mentionner — invisible pour l'utilisateur)_             |
+| « Fixé un bug »                          | « Le compteur d'un dossier inclut maintenant ses sous-dossiers » |
 
 Un point de blocage sans demande précise n'est pas un point de blocage. Toujours
 formuler ce qui est attendu et de qui.
@@ -92,11 +95,11 @@ jour, et ajouter tout nouveau point à arbitrer.
 
 ## Rappel des cibles du sprint (§0.2)
 
-| Cible | Formulation |
-|---|---|
-| 1 — Adoption | Yann doit basculer naturellement son usage quotidien vers Jean-Claude, en remplacement de Notion et Google Calendar |
-| 2 — Stabilité | Un périmètre réduit et stable vaut mieux qu'un périmètre large et instable |
-| 3 — Mobile et stores | Lancer les apps React Native et engager la procédure App Store / Play Store |
+| Cible                | Formulation                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 1 — Adoption         | Yann doit basculer naturellement son usage quotidien vers Jean-Claude, en remplacement de Notion et Google Calendar |
+| 2 — Stabilité        | Un périmètre réduit et stable vaut mieux qu'un périmètre large et instable                                          |
+| 3 — Mobile et stores | Lancer les apps React Native et engager la procédure App Store / Play Store                                         |
 
 La Cible 1 est le vrai critère de réussite — plus que la couverture du backlog.
 Un report qui aligne des fonctionnalités sans rapprocher de l'usage quotidien

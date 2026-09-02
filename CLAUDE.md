@@ -75,11 +75,11 @@ livrable de fin de stage (§10), à tenir à jour.
 ## Structure
 
 ```md
-apps/api/     Hono — API commune  ·  core/ → domain/ → feature/
-apps/app/     Expo Router — web + iOS + Android
-packages/     domain (Zod) · api-client · design — partagés des deux côtés
-supabase/     Schéma Postgres + RLS
-.claude/      Rules et skills du dépôt
+apps/api/ Hono — API commune · core/ → domain/ → feature/
+apps/app/ Expo Router — web + iOS + Android
+packages/ domain (Zod) · api-client · design — partagés des deux côtés
+supabase/ Schéma Postgres + RLS
+.claude/ Rules et skills du dépôt
 ```
 
 Sens des dépendances côté API : `feature/` → `domain/` → `core/`. Jamais l'inverse.

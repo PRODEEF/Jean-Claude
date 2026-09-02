@@ -107,10 +107,7 @@ function MenuItem({
     <Pressable
       onPress={onPress}
       accessibilityRole="menuitem"
-      style={({ pressed }) => [
-        styles.item,
-        pressed ? { backgroundColor: palette.surface } : null,
-      ]}
+      style={({ pressed }) => [styles.item, pressed ? { backgroundColor: palette.surface } : null]}
     >
       <Text style={[styles.label, { color: destructive ? palette.danger : palette.text }]}>
         {label}

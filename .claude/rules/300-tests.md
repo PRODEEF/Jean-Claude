@@ -2,13 +2,13 @@
 
 ## Ce qui doit être testé
 
-| Élément | Obligation |
-|---|---|
-| Service `domain/` | **Obligatoire** — un `.spec.ts` par service |
-| Fonction pure de `packages/domain` | **Obligatoire** dès qu'elle porte une règle |
-| Repository | Non testé unitairement — il ne contient que du mapping et des requêtes |
-| Fichier de routes | Non testé unitairement — il ne fait que valider et déléguer |
-| Écran | Non testé pour l'instant — priorité au sprint |
+| Élément                            | Obligation                                                             |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| Service `domain/`                  | **Obligatoire** — un `.spec.ts` par service                            |
+| Fonction pure de `packages/domain` | **Obligatoire** dès qu'elle porte une règle                            |
+| Repository                         | Non testé unitairement — il ne contient que du mapping et des requêtes |
+| Fichier de routes                  | Non testé unitairement — il ne fait que valider et déléguer            |
+| Écran                              | Non testé pour l'instant — priorité au sprint                          |
 
 La ligne de partage : **on teste ce qui décide**, pas ce qui transporte.
 

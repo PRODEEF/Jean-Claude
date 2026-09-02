@@ -8,9 +8,7 @@
  */
 function required(name: string, value: string | undefined): string {
   if (!value) {
-    throw new Error(
-      `Variable d'environnement manquante : ${name}. Voir .env.example à la racine.`,
-    );
+    throw new Error(`Variable d'environnement manquante : ${name}. Voir .env.example à la racine.`);
   }
   return value;
 }

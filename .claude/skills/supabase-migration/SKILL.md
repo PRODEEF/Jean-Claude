@@ -34,11 +34,11 @@ Supprimer un compte doit supprimer toutes ses données — exigence RGPD (§8, �
 
 Choisir la cascade selon la **possession**, pas selon la commodité :
 
-| Relation | Comportement | Pourquoi |
-|---|---|---|
-| `tasks` → `task_lists` | `on delete cascade` | Une tâche n'existe pas sans sa liste |
-| `task_lists` → `conversations` | `on delete set null` | Supprimer la conversation ne doit pas détruire la todoliste |
-| `conversation_folders` → les deux | `on delete cascade` | C'est une liaison, pas une donnée |
+| Relation                          | Comportement         | Pourquoi                                                    |
+| --------------------------------- | -------------------- | ----------------------------------------------------------- |
+| `tasks` → `task_lists`            | `on delete cascade`  | Une tâche n'existe pas sans sa liste                        |
+| `task_lists` → `conversations`    | `on delete set null` | Supprimer la conversation ne doit pas détruire la todoliste |
+| `conversation_folders` → les deux | `on delete cascade`  | C'est une liaison, pas une donnée                           |
 
 ### 2. RLS activée
 
@@ -106,12 +106,12 @@ initiale, ou créer le trigger dans la nouvelle migration.
 
 ## Ce qui est interdit
 
-| ❌ | Pourquoi |
-|---|---|
-| Extension propriétaire ou spécifique à Supabase | Casse la portabilité — §8 impose une migration UE possible par `pg_dump` |
-| Colonne `folder_id` sur `conversations` | Casse le rangement matriciel (§5.2, A.1) — passer par `conversation_folders` |
-| Logique métier en fonction SQL | Elle doit être dans l'API, testable et partagée |
-| Table sans RLS | Fuite de données entre utilisateurs |
+| ❌                                              | Pourquoi                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| Extension propriétaire ou spécifique à Supabase | Casse la portabilité — §8 impose une migration UE possible par `pg_dump`     |
+| Colonne `folder_id` sur `conversations`         | Casse le rangement matriciel (§5.2, A.1) — passer par `conversation_folders` |
+| Logique métier en fonction SQL                  | Elle doit être dans l'API, testable et partagée                              |
+| Table sans RLS                                  | Fuite de données entre utilisateurs                                          |
 
 Un trigger reste acceptable pour une **invariante structurelle** qui doit tenir
 quel que soit le chemin d'écriture — la profondeur d'arborescence, la création

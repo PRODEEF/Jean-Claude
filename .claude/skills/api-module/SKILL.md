@@ -178,7 +178,9 @@ export const taskRoutes = new Hono<AuthEnv>()
   })
 
   .patch("/:id", idParam, validate("json", updateTaskSchema), async (c) =>
-    c.json(await service.update(c.req.valid("param").id, c.req.valid("json"), c.get("user").accessToken)),
+    c.json(
+      await service.update(c.req.valid("param").id, c.req.valid("json"), c.get("user").accessToken),
+    ),
   );
 ```
 
@@ -228,12 +230,12 @@ complet quand une seule lecture était réclamée déborde du périmètre — ru
 
 ## Pièges connus
 
-| Piège                                    | Conséquence                                                    |
-| ---------------------------------------- | -------------------------------------------------------------- |
-| `admin` dans un Repository               | Contourne les RLS — fuite de données entre utilisateurs        |
-| Oublier `accessToken`                    | Requête anonyme, RLS bloque, erreur incompréhensible           |
-| `:id` non validé en UUID                 | L'identifiant part jusqu'à Postgres et ressort en 500          |
-| `.get("/:id")` avant `.get("/assistant")` | La route littérale risque de n'être jamais atteinte            |
-| `throw new Error(error.message)` renvoyé au client | Fuite d'une requête SQL dans la réponse HTTP         |
-| Payload d'`update` construit par spread  | Écrase les colonnes non fournies avec `undefined`              |
-| Type `Row` en camelCase                  | Le mapping paraît fonctionner puis renvoie `undefined` partout |
+| Piège                                              | Conséquence                                                    |
+| -------------------------------------------------- | -------------------------------------------------------------- |
+| `admin` dans un Repository                         | Contourne les RLS — fuite de données entre utilisateurs        |
+| Oublier `accessToken`                              | Requête anonyme, RLS bloque, erreur incompréhensible           |
+| `:id` non validé en UUID                           | L'identifiant part jusqu'à Postgres et ressort en 500          |
+| `.get("/:id")` avant `.get("/assistant")`          | La route littérale risque de n'être jamais atteinte            |
+| `throw new Error(error.message)` renvoyé au client | Fuite d'une requête SQL dans la réponse HTTP                   |
+| Payload d'`update` construit par spread            | Écrase les colonnes non fournies avec `undefined`              |
+| Type `Row` en camelCase                            | Le mapping paraît fonctionner puis renvoie `undefined` partout |

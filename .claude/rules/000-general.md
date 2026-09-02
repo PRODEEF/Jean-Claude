@@ -108,10 +108,10 @@ count += childCount;
 
 Deux branches permanentes :
 
-| Branche | Rôle                                                              |
-| ------- | ----------------------------------------------------------------- |
-| `main`  | Production — Vercel y déploie l'API et le web automatiquement      |
-| `dev`   | Intégration — branche par défaut, cible de **toutes** les PR       |
+| Branche | Rôle                                                          |
+| ------- | ------------------------------------------------------------- |
+| `main`  | Production — Vercel y déploie l'API et le web automatiquement |
+| `dev`   | Intégration — branche par défaut, cible de **toutes** les PR  |
 
 Le flux, sans exception :
 

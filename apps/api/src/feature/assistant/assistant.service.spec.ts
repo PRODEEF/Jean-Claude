@@ -160,13 +160,7 @@ function makeService(
   return new AssistantService(
     suggestionService,
     folderService,
-    new ConversationService(
-      conversations,
-      IDLE_LLM,
-      suggestionService,
-      folderService,
-      IDLE_USERS,
-    ),
+    new ConversationService(conversations, IDLE_LLM, suggestionService, folderService, IDLE_USERS),
   );
 }
 
