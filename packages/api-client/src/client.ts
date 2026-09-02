@@ -1,23 +1,37 @@
 import {
   messageStreamEventSchema,
   type AssignFolders,
+  type CalendarEvent,
+  type CalendarRange,
   type Conversation,
+  type CreateCalendarEvent,
   type CreateConversation,
   type CreateFolder,
+  type CreateTask,
+  type CreateTaskList,
+  type EditMessage,
   type Folder,
   type FolderTreeNode,
   type Message,
   type MessageStreamEvent,
   type Paginated,
   type ResolveSuggestion,
+  type SearchFilters,
+  type SearchResult,
   type SendMessage,
+  type Task,
+  type TaskList,
+  type TaskListWithTasks,
   type Suggestion,
+  type UpdateCalendarEvent,
   type UpdateConversation,
+  type UpdateTask,
+  type UpdateTaskList,
   type UpdateFolder,
   type UpdateUserProfile,
   type UserProfile,
 } from "@jc/domain";
-import { HttpClient, type ApiClientOptions } from "./http";
+import { ApiError, HttpClient, type ApiClientOptions, type RequestOptions } from "./http";
 
 /**
  * Client de l'API Jean-Claude.
@@ -48,6 +62,15 @@ export class JeanClaudeClient {
 
     update: (patch: UpdateUserProfile) =>
       this.http.request<UserProfile>("/me", { method: "PATCH", body: patch }),
+
+    /**
+     * Passe la conversation d'accueil (§6.3, A.13).
+     *
+     * Hors de `update` : l'horodatage d'accueil n'est pas un réglage, et le
+     * serveur ne le laisse pas écrire par le client.
+     */
+    completeOnboarding: () =>
+      this.http.request<UserProfile>("/me/onboarding/complete", { method: "POST" }),
   };
 
   readonly folders = {
@@ -63,22 +86,105 @@ export class JeanClaudeClient {
   };
 
   /**
+   * Calendrier (§3 Phase B).
+   *
+   * La fenêtre est bornée par l'appelant : la vue mois et la vue semaine
+   * n'appellent pas deux routes différentes, elles demandent deux fenêtres.
+   */
+  readonly calendar = {
+    list: (range: CalendarRange) =>
+      this.http.request<CalendarEvent[]>("/calendar", { query: range }),
+
+    create: (input: CreateCalendarEvent) =>
+      this.http.request<CalendarEvent>("/calendar", { method: "POST", body: input }),
+
+    update: (id: string, patch: UpdateCalendarEvent) =>
+      this.http.request<CalendarEvent>(`/calendar/${id}`, { method: "PATCH", body: patch }),
+
+    remove: (id: string) => this.http.request<void>(`/calendar/${id}`, { method: "DELETE" }),
+  };
+
+  /**
+   * Todolistes (A.2).
+   *
+   * Une seule lecture rend toutes les listes avec leurs tâches : la vue
+   * hebdomadaire et la vue « toutes mes listes » se dérivent du même
+   * chargement, et basculer de l'une à l'autre ne recharge rien.
+   */
+  readonly tasks = {
+    lists: () => this.http.request<TaskListWithTasks[]>("/tasks"),
+
+    createList: (input: CreateTaskList) =>
+      this.http.request<TaskList>("/tasks", { method: "POST", body: input }),
+
+    updateList: (id: string, patch: UpdateTaskList) =>
+      this.http.request<TaskList>(`/tasks/${id}`, { method: "PATCH", body: patch }),
+
+    removeList: (id: string) => this.http.request<void>(`/tasks/${id}`, { method: "DELETE" }),
+
+    addTask: (listId: string, input: CreateTask) =>
+      this.http.request<Task>(`/tasks/${listId}/items`, { method: "POST", body: input }),
+
+    updateTask: (listId: string, taskId: string, patch: UpdateTask) =>
+      this.http.request<Task>(`/tasks/${listId}/items/${taskId}`, {
+        method: "PATCH",
+        body: patch,
+      }),
+
+    removeTask: (listId: string, taskId: string) =>
+      this.http.request<void>(`/tasks/${listId}/items/${taskId}`, { method: "DELETE" }),
+  };
+
+  /**
    * Canal permanent Jean-Claude (A.10).
    *
    * Les propositions de l'assistant vivent hors du fil des messages : elles
-   * survivent au rechargement tant que l'utilisateur ne les a pas tranchées,
-   * ce qu'un événement de flux ne permettrait pas (§12.1).
+   * survivent au rechargement, ce qu'un événement de flux ne permettrait pas
+   * (§12.1). Le fil les rend toutes, tranchées comprises — une proposition
+   * acceptée a créé des dossiers, et ce qu'elle a fait doit rester lisible.
    */
   readonly assistant = {
     suggestions: (conversationId: string) =>
       this.http.request<Suggestion[]>("/assistant/suggestions", { query: { conversationId } }),
 
-    /** Accepte ou ignore d'un geste. Rend les dossiers réellement créés. */
+    /**
+     * Accepte ou ignore d'un geste.
+     *
+     * Rend ce que l'acceptation a réellement produit, et `next` quand elle fait
+     * naître la proposition suivante — les dates des todolistes qui viennent
+     * d'être créées (§12.1).
+     */
     resolve: (id: string, input: ResolveSuggestion) =>
-      this.http.request<{ suggestion: Suggestion; folders: Folder[] }>(
-        `/assistant/suggestions/${id}/resolve`,
-        { method: "POST", body: input },
-      ),
+      this.http.request<{
+        suggestion: Suggestion;
+        folders: Folder[];
+        taskLists: TaskList[];
+        events: CalendarEvent[];
+        next: Suggestion | null;
+      }>(`/assistant/suggestions/${id}/resolve`, { method: "POST", body: input }),
+  };
+
+  /**
+   * Recherche par filtres (A.6).
+   *
+   * Les listes et les booléens sont mis à plat ici : une chaîne de requête ne
+   * porte que du texte, et `searchQuerySchema` décrit côté serveur exactement
+   * ce format-là.
+   */
+  readonly search = {
+    conversations: (filters: Partial<SearchFilters> & { cursor?: string } = {}) =>
+      this.http.request<Paginated<SearchResult>>("/search", {
+        query: {
+          ...(filters.query ? { query: filters.query } : {}),
+          ...(filters.folderIds?.length ? { folderIds: filters.folderIds.join(",") } : {}),
+          ...(filters.shortcut ? { shortcut: filters.shortcut } : {}),
+          ...(filters.from ? { from: filters.from } : {}),
+          ...(filters.to ? { to: filters.to } : {}),
+          ...(filters.includeArchived ? { includeArchived: "true" } : {}),
+          ...(filters.limit ? { limit: filters.limit } : {}),
+          ...(filters.cursor ? { cursor: filters.cursor } : {}),
+        },
+      }),
   };
 
   readonly conversations = {
@@ -117,26 +223,70 @@ export class JeanClaudeClient {
      * l'instance comme le font les autres entrées de cet objet.
      */
     send: (id: string, input: SendMessage, signal?: AbortSignal) =>
-      this.streamMessage(id, input, signal),
+      this.streamTurn(`/conversations/${id}/messages`, {
+        method: "POST",
+        body: input,
+        ...(signal ? { signal } : {}),
+      }),
+
+    /**
+     * Corrige un message envoyé et rejoue le tour à partir de là.
+     *
+     * Ce qui suivait disparaît côté serveur : c'était la réponse à un texte
+     * qui n'existe plus.
+     */
+    editMessage: (id: string, messageId: string, input: EditMessage, signal?: AbortSignal) =>
+      this.streamTurn(`/conversations/${id}/messages/${messageId}`, {
+        method: "PUT",
+        body: input,
+        ...(signal ? { signal } : {}),
+      }),
+
+    /** Redemande une réponse au modèle sur ce point du fil. */
+    retryMessage: (id: string, messageId: string, signal?: AbortSignal) =>
+      this.streamTurn(`/conversations/${id}/messages/${messageId}/retry`, {
+        method: "POST",
+        ...(signal ? { signal } : {}),
+      }),
+
+    /**
+     * Valide la bascule proposée par le canal permanent (A.10) et rend la
+     * conversation dédiée qui vient d'être ouverte.
+     */
+    switchAside: (id: string, messageId: string) =>
+      this.http.request<Conversation>(`/conversations/${id}/messages/${messageId}/switch`, {
+        method: "POST",
+      }),
   };
+
   /**
    * Les événements sont validés à l'arrivée par le schéma de `@jc/domain` :
    * un flux tronqué, ou un contrat qui aurait divergé entre le serveur et le
    * client, échoue ici plutôt que trois écrans plus loin.
    */
-  private async *streamMessage(
-    id: string,
-    input: SendMessage,
-    signal?: AbortSignal,
+  private async *streamTurn(
+    path: string,
+    init: RequestOptions,
   ): AsyncGenerator<MessageStreamEvent> {
-    const blocks = this.http.stream(`/conversations/${id}/messages`, {
-      method: "POST",
-      body: input,
-      ...(signal ? { signal } : {}),
-    });
-
-    for await (const block of blocks) {
-      yield messageStreamEventSchema.parse(JSON.parse(block));
+    for await (const block of this.http.stream(path, init)) {
+      yield parseEvent(block);
     }
+  }
+}
+
+/**
+ * Un bloc illisible est soit un flux coupé au milieu d'un événement, soit un
+ * contrat qui a divergé entre le serveur et le client.
+ *
+ * Dans les deux cas l'utilisateur n'a que faire du détail : le message d'une
+ * `ZodError` est un pavé JSON, et c'est lui qui s'affichait jusqu'ici sous le
+ * fil. Le détail reste consultable, la phrase rendue est lisible.
+ */
+function parseEvent(block: string): MessageStreamEvent {
+  try {
+    return messageStreamEventSchema.parse(JSON.parse(block));
+  } catch (error) {
+    console.warn("Événement de flux illisible :", error instanceof Error ? error.message : error);
+    throw new ApiError(502, "La réponse a été interrompue avant la fin.");
   }
 }

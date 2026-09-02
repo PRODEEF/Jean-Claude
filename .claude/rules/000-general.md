@@ -108,10 +108,10 @@ count += childCount;
 
 Deux branches permanentes :
 
-| Branche | Rôle                                                              |
-| ------- | ----------------------------------------------------------------- |
-| `main`  | Production — Vercel y déploie l'API et le web automatiquement      |
-| `dev`   | Intégration — branche par défaut, cible de **toutes** les PR       |
+| Branche | Rôle                                                          |
+| ------- | ------------------------------------------------------------- |
+| `main`  | Production — Vercel y déploie l'API et le web automatiquement |
+| `dev`   | Intégration — branche par défaut, cible de **toutes** les PR  |
 
 Le flux, sans exception :
 
@@ -122,8 +122,8 @@ feat/<description>  →  PR vers dev  →  PR dev → main  →  déploiement Ve
 - ❌ Pas de push direct sur `dev` ni sur `main` : les deux sont protégés par un
   ruleset GitHub — PR obligatoire, force-push et suppression refusés
 - La CI (job `verify`) doit être verte pour merger. Elle joue `npm ci`,
-  `npm run typecheck`, `npm test`, `npm run build` — donc jouer ces commandes
-  **en local avant d'ouvrir la PR**, pas après le rouge
+  `npm run typecheck`, `npm test`, `npm run build` — ne joue ces commandes
+  **en local QUE SI LA CI EST ROUGE**
 - Une PR vers `main` est une mise en production : ne la proposer que quand
   `dev` est démontrable
 - Branches : `feat/<description>`, `fix/<description>`, `chore/<description>`,

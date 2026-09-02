@@ -10,7 +10,13 @@ import { httpError } from "../../core/http.js";
 import { forUser } from "../../core/supabase/supabase.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
 
-type ConversationRow = {
+/**
+ * Ligne Postgres d'une conversation — snake_case, telle que renvoyée par
+ * Supabase. Exportée avec son mapper et sa liste de colonnes : la recherche
+ * (`feature/search`) lit la même table, et deux définitions divergeraient à la
+ * première colonne ajoutée.
+ */
+export type ConversationRow = {
   id: string;
   kind: string;
   title: string;
@@ -29,10 +35,13 @@ type MessageRow = {
   input_mode: string;
   provider: string | null;
   model: string | null;
+  choices: string[] | null;
+  redirect_title: string | null;
+  redirect_accepted_at: string | null;
   created_at: string;
 };
 
-function toConversation(row: ConversationRow): Conversation {
+export function toConversation(row: ConversationRow): Conversation {
   return {
     id: row.id,
     kind: row.kind as Conversation["kind"],
@@ -56,14 +65,18 @@ function toMessage(row: MessageRow): Message {
     inputMode: row.input_mode as Message["inputMode"],
     provider: row.provider,
     model: row.model,
+    choices: row.choices,
+    redirectTitle: row.redirect_title,
+    redirectAcceptedAt: row.redirect_accepted_at,
     createdAt: row.created_at,
   };
 }
 
-const CONVERSATION_COLUMNS =
+export const CONVERSATION_COLUMNS =
   "id, kind, title, archived_at, last_message_at, created_at, updated_at, conversation_folders(folder_id)";
 const MESSAGE_COLUMNS =
-  "id, conversation_id, role, content, input_mode, provider, model, created_at";
+  "id, conversation_id, role, content, input_mode, provider, model, choices, " +
+  "redirect_title, redirect_accepted_at, created_at";
 
 export const conversationRepository: IConversationRepository = {
   async findAll(accessToken, options) {
@@ -249,6 +262,8 @@ export const conversationRepository: IConversationRepository = {
       role: Message["role"];
       provider?: string | null;
       model?: string | null;
+      choices?: string[] | null;
+      redirectTitle?: string | null;
     },
     accessToken,
   ) {
@@ -264,6 +279,8 @@ export const conversationRepository: IConversationRepository = {
         input_mode: message.inputMode,
         provider: message.provider ?? null,
         model: message.model ?? null,
+        choices: message.choices ?? null,
+        redirect_title: message.redirectTitle ?? null,
       })
       .select(MESSAGE_COLUMNS)
       .single();
@@ -281,5 +298,58 @@ export const conversationRepository: IConversationRepository = {
     if (touchError) throw new Error(touchError.message);
 
     return created;
+  },
+
+  async findMessage(id, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("messages")
+      .select(MESSAGE_COLUMNS)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data ? toMessage(data as unknown as MessageRow) : null;
+  },
+
+  async updateMessageContent(id, content, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("messages")
+      .update({ content })
+      .eq("id", id)
+      .select(MESSAGE_COLUMNS)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) throw httpError(404, "Message introuvable.");
+    return toMessage(data as unknown as MessageRow);
+  },
+
+  async deleteMessage(id, accessToken) {
+    const { error } = await forUser(accessToken).from("messages").delete().eq("id", id);
+
+    if (error) throw new Error(error.message);
+  },
+
+  async deleteMessagesAfter(conversationId, createdAt, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("messages")
+      .delete()
+      .eq("conversation_id", conversationId)
+      .gt("created_at", createdAt);
+
+    if (error) throw new Error(error.message);
+  },
+
+  async acceptRedirect(id, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("messages")
+      .update({ redirect_accepted_at: new Date().toISOString() })
+      .eq("id", id)
+      .select(MESSAGE_COLUMNS)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) throw httpError(404, "Message introuvable.");
+    return toMessage(data as unknown as MessageRow);
   },
 };

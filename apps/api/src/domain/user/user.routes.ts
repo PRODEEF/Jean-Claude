@@ -21,4 +21,15 @@ export const userRoutes = new Hono<AuthEnv>()
 
   .patch("/", validate("json", updateUserProfileSchema), async (c) =>
     c.json(await service.updateProfile(c.get("user"), c.req.valid("json"))),
+  )
+
+  /**
+   * Passer la conversation d'accueil (§6.3, A.13).
+   *
+   * Une route dédiée plutôt qu'un champ du `PATCH` : l'horodatage d'accueil
+   * n'est pas un réglage, et l'ouvrir à l'écriture reviendrait à laisser le
+   * client réafficher l'accueil quand bon lui semble.
+   */
+  .post("/onboarding/complete", async (c) =>
+    c.json(await service.completeOnboarding(c.get("user"))),
   );

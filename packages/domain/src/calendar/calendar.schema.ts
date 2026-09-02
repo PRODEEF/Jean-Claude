@@ -61,14 +61,3 @@ export const calendarRangeSchema = z
   });
 
 export type CalendarRange = z.infer<typeof calendarRangeSchema>;
-
-/**
- * Occurrence concrète d'un événement après expansion de la RRULE.
- * Les occurrences ne sont pas stockées : elles sont calculées à la volée sur
- * la fenêtre demandée, pour éviter de matérialiser une série infinie.
- */
-export type EventOccurrence = {
-  event: CalendarEvent;
-  startsAt: string;
-  endsAt: string | null;
-};

@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { conversationSchema } from "../conversation/conversation.schema";
-import { isoDateTimeSchema, uuidSchema } from "../shared/primitives";
+import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 
 export const messageRoleSchema = z.enum(["user", "assistant", "system"]);
 export type MessageRole = z.infer<typeof messageRoleSchema>;
@@ -15,6 +14,28 @@ export type MessageRole = z.infer<typeof messageRoleSchema>;
 export const messageInputModeSchema = z.enum(["text", "voice"]);
 export type MessageInputMode = z.infer<typeof messageInputModeSchema>;
 
+/**
+ * Réponse proposée sous une question de l'assistant.
+ *
+ * Brève par construction : c'est un bouton, pas une phrase. Au-delà, la carte
+ * de question devient un pavé et l'utilisateur fait plus vite d'écrire.
+ */
+export const messageChoiceSchema = z.string().trim().min(1).max(80);
+
+/**
+ * Question à réponses proposées, telle que le modèle la renvoie.
+ *
+ * Décrite ici et non dans l'API : c'est la même forme que le client rendra,
+ * et une seconde définition côté serveur aurait dérivé au premier changement
+ * de bornes.
+ */
+export const askedQuestionSchema = z.object({
+  question: z.string().trim().min(1).max(200),
+  choices: z.array(messageChoiceSchema).min(2).max(6),
+});
+
+export type AskedQuestion = z.infer<typeof askedQuestionSchema>;
+
 export const messageSchema = z.object({
   id: uuidSchema,
   conversationId: uuidSchema,
@@ -27,17 +48,62 @@ export const messageSchema = z.object({
    */
   provider: z.string().nullable(),
   model: z.string().nullable(),
+  /**
+   * Réponses proposées quand le message est une question de l'assistant.
+   *
+   * `null` sur tout le reste : la carte de choix ne s'affiche que là où le
+   * modèle a jugé que quelques réponses couvraient la question. Deux au moins,
+   * six au plus — mêmes bornes que la contrainte SQL.
+   */
+  choices: z.array(messageChoiceSchema).min(2).max(6).nullable(),
+  /**
+   * Titre de la conversation dédiée que ce message propose d'ouvrir (A.10).
+   *
+   * `null` partout ailleurs. Porté par le message et non par une suggestion :
+   * la bascule n'écrit rien dans les données de l'utilisateur, elle choisit
+   * seulement où la réponse sera donnée, et la proposition doit rester lisible
+   * à sa place dans le fil après un rechargement.
+   */
+  redirectTitle: labelSchema.nullable(),
+  /**
+   * Instant où l'utilisateur a validé la bascule. Tant qu'il est `null`, la
+   * carte de validation attend son geste ; une fois posé, l'échange sort du
+   * contexte remis au modèle — la réponse se donne dans l'autre fil.
+   */
+  redirectAcceptedAt: isoDateTimeSchema.nullable(),
   createdAt: isoDateTimeSchema,
 });
 
 export type Message = z.infer<typeof messageSchema>;
 
+/**
+ * Longueur maximale d'un message.
+ *
+ * Exportée parce que le champ de saisie doit la borner lui-même : sans elle,
+ * un texte trop long part au serveur, revient en 400 générique, et le
+ * brouillon est perdu en chemin.
+ */
+export const MESSAGE_MAX_LENGTH = 32_000;
+
 export const sendMessageSchema = z.object({
-  content: z.string().trim().min(1).max(32_000),
+  content: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
   inputMode: messageInputModeSchema.default("text"),
 });
 
 export type SendMessage = z.infer<typeof sendMessageSchema>;
+
+/**
+ * Correction d'un message déjà envoyé.
+ *
+ * Même borne que l'envoi : c'est le même texte, relu. Le mode d'entrée n'y
+ * figure pas — corriger à l'écrit un message dicté ne change pas d'où il
+ * venait (§12.3, A.12).
+ */
+export const editMessageSchema = z.object({
+  content: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
+});
+
+export type EditMessage = z.infer<typeof editMessageSchema>;
 
 /**
  * Événements d'un tour de dialogue en flux.
@@ -54,14 +120,13 @@ export const messageStreamEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("message"), message: messageSchema }),
   /** Un fragment de la réponse en cours. */
   z.object({ type: z.literal("text"), text: z.string() }),
-  /** La réponse complète, persistée. Clôt le flux. */
-  z.object({ type: z.literal("done"), message: messageSchema }),
   /**
-   * Le canal permanent a jugé la demande hors de son périmètre (A.10) : la
-   * conversation classique qui doit l'accueillir vient d'être créée, et c'est
-   * là que l'échange se poursuit.
+   * La réponse complète, persistée. Clôt le flux.
+   *
+   * C'est aussi par elle qu'arrive une proposition de bascule (A.10) : le
+   * message porte `redirectTitle`, l'application demande la validation.
    */
-  z.object({ type: z.literal("redirect"), conversation: conversationSchema }),
+  z.object({ type: z.literal("done"), message: messageSchema }),
   /** Échec après le premier octet. Clôt le flux. */
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);

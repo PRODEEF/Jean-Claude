@@ -1,13 +1,19 @@
 import {
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
+  createTaskListsPayloadSchema,
+  uuidSchema,
   type Suggestion,
   type SuggestionKind,
   type SuggestionStatus,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import type { LlmToolCall } from "../../core/llm/llm.port.js";
-import { SUGGEST_FOLDERS, SUGGEST_PROJECT_FOLDERS } from "../../core/llm/llm.tools.js";
+import {
+  SUGGEST_FOLDERS,
+  SUGGEST_PROJECT_FOLDERS,
+  SUGGEST_TASK_LIST,
+} from "../../core/llm/llm.tools.js";
 import type { ISuggestionRepository } from "./suggestion.repository.interface.js";
 
 /** Longueur maximale de `message`, alignée sur la contrainte CHECK de la table. */
@@ -52,8 +58,31 @@ export class SuggestionService {
     );
   }
 
+  /**
+   * Proposition formulée par le serveur, sans passer par le modèle (§12.1).
+   *
+   * Sert le second temps de la détection : une fois les todolistes créées, les
+   * tâches datées sont connues et proposer de leur poser un créneau ne demande
+   * plus d'interpréter quoi que ce soit. Un aller-retour de plus avec le moteur
+   * n'ajouterait qu'une latence et le risque qu'il réponde autre chose qu'une
+   * question. La règle, elle, ne bouge pas : c'est une proposition en attente,
+   * pas une action.
+   */
+  propose(
+    userId: string,
+    conversationId: string,
+    input: { kind: SuggestionKind; message: string; payload: Record<string, unknown> },
+    accessToken: string,
+  ): Promise<Suggestion> {
+    return this.suggestions.create(userId, { conversationId, ...input }, accessToken);
+  }
+
   listPending(conversationId: string, accessToken: string): Promise<Suggestion[]> {
     return this.suggestions.listPending(conversationId, accessToken);
+  }
+
+  listForConversation(conversationId: string, accessToken: string): Promise<Suggestion[]> {
+    return this.suggestions.listForConversation(conversationId, accessToken);
   }
 
   /**
@@ -76,9 +105,16 @@ export class SuggestionService {
     id: string,
     status: SuggestionStatus,
     accessToken: string,
+    payload?: Record<string, unknown>,
   ): Promise<Suggestion> {
     await this.requirePending(id, accessToken);
-    return this.suggestions.markResolved(id, status, accessToken);
+
+    // La charge utile n'est réécrite que si l'acceptation l'a restreinte :
+    // partout ailleurs, la proposition doit rester telle qu'elle a été
+    // formulée.
+    return payload
+      ? this.suggestions.markResolved(id, status, accessToken, payload)
+      : this.suggestions.markResolved(id, status, accessToken);
   }
 }
 
@@ -97,8 +133,11 @@ function translate(
     const payload = createProjectFoldersPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "create_project_folders", payload: payload.data };
   } else if (toolCall.name === SUGGEST_FOLDERS.name) {
-    const payload = assignFoldersPayloadSchema.safeParse(toolCall.input);
+    const payload = assignFoldersPayloadSchema.safeParse(withUuidFolderIds(toolCall.input));
     if (payload.success) return { kind: "assign_folders", payload: payload.data };
+  } else if (toolCall.name === SUGGEST_TASK_LIST.name) {
+    const payload = createTaskListsPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "create_task_list", payload: payload.data };
   } else {
     console.warn(`Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
     return null;
@@ -106,4 +145,29 @@ function translate(
 
   console.warn(`Appel d'outil \`${toolCall.name}\` inexploitable : suggestion ignorée.`);
   return null;
+}
+
+/**
+ * Écarte les identifiants de dossier qui ne sont pas des UUID.
+ *
+ * Le modèle reprend parfois le nom d'un dossier là où la consigne demandait son
+ * identifiant. Sans ce filtre, une seule valeur inventée fait échouer la
+ * validation de la charge entière et la proposition est perdue — alors que
+ * l'acceptation, elle, sait déjà passer outre un dossier qu'elle ne retrouve
+ * pas. Écarter la ligne fautive plutôt que le rangement tout entier.
+ *
+ * Si le filtre ne laisse rien et qu'aucun nouveau dossier n'est proposé, le
+ * schéma échoue à son tour : une proposition sans dossier n'aurait rien à
+ * appliquer.
+ */
+function withUuidFolderIds(input: Record<string, unknown>): Record<string, unknown> {
+  const ids = input["existingFolderIds"];
+  if (!Array.isArray(ids)) return input;
+
+  const kept = ids.filter((id) => uuidSchema.safeParse(id).success);
+  if (kept.length < ids.length) {
+    console.warn("Identifiants de dossier inexploitables écartés du rangement proposé.");
+  }
+
+  return { ...input, existingFolderIds: kept };
 }

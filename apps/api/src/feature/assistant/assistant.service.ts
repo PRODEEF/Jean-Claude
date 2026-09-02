@@ -1,21 +1,50 @@
 import {
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
+  createTaskListsPayloadSchema,
+  scheduleTasksPayloadSchema,
+  type AssignFoldersPayload,
+  type CalendarEvent,
   type Folder,
   type FolderTreeNode,
   type ResolveSuggestion,
+  type ScheduleTasksPayload,
   type Suggestion,
+  type TaskList,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
+import type { CalendarService } from "../../domain/calendar/calendar.service.js";
 import type { ConversationService } from "../../domain/conversation/conversation.service.js";
 import type { FolderService } from "../../domain/folder/folder.service.js";
 import type { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
+import type { TaskService } from "../../domain/task/task.service.js";
 
 export type ResolvedSuggestion = {
   suggestion: Suggestion;
   /** Dossiers réellement créés — vide sur un refus, ou si tout existait déjà. */
   folders: Folder[];
+  /** Todolistes créées, tâches comprises (§12.1, A.2). */
+  taskLists: TaskList[];
+  /** Créneaux posés dans l'agenda (A.3). */
+  events: CalendarEvent[];
+  /**
+   * Proposition que l'acceptation fait naître à son tour (§12.1).
+   *
+   * Accepter des todolistes dont certaines tâches portent une date amène la
+   * question suivante — « je te les pose dans ton agenda ? ». Elle est rendue
+   * ici pour que le client sache qu'une carte vient de s'ajouter au fil, mais
+   * elle est persistée en attente comme les autres : rien n'est exécuté.
+   */
+  next: Suggestion | null;
 };
+
+/** Ce que l'acceptation a produit, hors de la suggestion elle-même. */
+type Applied = Omit<ResolvedSuggestion, "suggestion">;
+
+/** Un refus, ou une proposition qui n'a rien créé. */
+function nothingApplied(): Applied {
+  return { folders: [], taskLists: [], events: [], next: null };
+}
 
 /**
  * Cas d'usage du canal permanent : ce que devient une proposition de
@@ -30,10 +59,20 @@ export class AssistantService {
     private readonly suggestions: SuggestionService,
     private readonly folders: FolderService,
     private readonly conversations: ConversationService,
+    private readonly tasks: TaskService,
+    private readonly calendar: CalendarService,
   ) {}
 
-  listPending(conversationId: string, accessToken: string): Promise<Suggestion[]> {
-    return this.suggestions.listPending(conversationId, accessToken);
+  /**
+   * Ce que l'assistant a proposé sur ce fil, tranché ou non.
+   *
+   * Les propositions déjà réglées ne sont pas retirées : une fois acceptée,
+   * une proposition a créé des dossiers ou rangé la conversation, et
+   * l'utilisateur doit pouvoir relire dans le fil ce qui s'est passé. Les
+   * faire disparaître laisserait des dossiers apparus sans explication.
+   */
+  listForConversation(conversationId: string, accessToken: string): Promise<Suggestion[]> {
+    return this.suggestions.listForConversation(conversationId, accessToken);
   }
 
   async resolve(
@@ -46,30 +85,182 @@ export class AssistantService {
 
     if (input.action === "dismiss") {
       return {
+        ...nothingApplied(),
         suggestion: await this.suggestions.markResolved(id, "dismissed", accessToken),
-        folders: [],
       };
     }
 
-    const folders = await this.apply(userId, suggestion, accessToken);
+    // L'utilisateur a pu décocher des dossiers avant d'accepter : c'est le
+    // rangement retenu qui s'applique, et c'est lui qui est réécrit dans la
+    // proposition — la trace laissée dans le fil doit dire ce qui a été fait.
+    const retained = retainedFolders(suggestion, input.folderSelection);
+    const applied = await this.apply(
+      userId,
+      retained ? { ...suggestion, payload: retained } : suggestion,
+      accessToken,
+    );
 
     return {
-      suggestion: await this.suggestions.markResolved(id, "accepted", accessToken),
-      folders,
+      ...applied,
+      suggestion: await this.suggestions.markResolved(id, "accepted", accessToken, retained),
     };
   }
 
-  private apply(userId: string, suggestion: Suggestion, accessToken: string): Promise<Folder[]> {
+  private async apply(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<Applied> {
     if (suggestion.kind === "create_project_folders") {
-      return this.createFolders(userId, suggestion, accessToken);
+      const folders = await this.createFolders(userId, suggestion, accessToken);
+      return { ...nothingApplied(), folders };
     }
     if (suggestion.kind === "assign_folders") {
-      return this.fileConversation(userId, suggestion, accessToken);
+      const folders = await this.fileConversation(userId, suggestion, accessToken);
+      return { ...nothingApplied(), folders };
+    }
+    if (suggestion.kind === "create_task_list") {
+      const created = await this.createTaskLists(userId, suggestion, accessToken);
+      return { ...nothingApplied(), ...created };
+    }
+    if (suggestion.kind === "schedule_task") {
+      const events = await this.scheduleTasks(userId, suggestion, accessToken);
+      return { ...nothingApplied(), events };
     }
 
-    // Les autres types de suggestion existent au contrat mais n'ont pas encore
-    // de module pour les exécuter (todolistes, rendez-vous).
+    // Reste le rendez-vous récurrent (A.11), inscrit au contrat mais sans
+    // module pour l'exécuter.
     throw httpError(422, "Cette proposition n'est pas encore prise en charge.");
+  }
+
+  /**
+   * Crée les todolistes proposées, puis enchaîne sur leurs dates (§12.1, A.2).
+   *
+   * Les listes naissent dans le dossier de la conversation quand elle en a un :
+   * l'utilisateur ne choisit jamais où ranger au moment de créer (§13.4.1), et
+   * une liste sortie d'une conversation déjà rangée relève du même sujet
+   * qu'elle. Sans dossier, elle reste lisible dans l'onglet TODOLISTE, qui est
+   * de toute façon la vue « tous dossiers confondus ».
+   *
+   * Les tâches sont ajoutées l'une après l'autre plutôt qu'en parallèle : leur
+   * position se calcule à partir de celles déjà prises dans la liste, et deux
+   * insertions concurrentes se verraient attribuer la même.
+   */
+  private async createTaskLists(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<{ taskLists: TaskList[]; next: Suggestion | null }> {
+    const payload = createTaskListsPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success || !suggestion.conversationId) {
+      console.error("Charge utile de todoliste illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    const conversationId = suggestion.conversationId;
+    const conversation = await this.conversations.getById(conversationId, accessToken);
+    const folderId = conversation.folderIds[0] ?? null;
+
+    const taskLists: TaskList[] = [];
+    const dated: ScheduleTasksPayload["tasks"] = [];
+
+    for (const proposed of payload.data.lists) {
+      const list = await this.tasks.createList(
+        userId,
+        {
+          title: proposed.title,
+          kind: proposed.kind,
+          folderId,
+          conversationId,
+          createdByAssistant: true,
+        },
+        accessToken,
+      );
+      taskLists.push(list);
+
+      for (const item of proposed.items) {
+        const task = await this.tasks.addTask(
+          userId,
+          list.id,
+          { title: item.title, dueAt: item.dueAt },
+          accessToken,
+        );
+
+        if (task.dueAt !== null) {
+          dated.push({ listId: list.id, taskId: task.id, title: task.title, dueAt: task.dueAt });
+        }
+      }
+    }
+
+    const next = await this.proposeSchedule(userId, conversationId, dated, accessToken);
+    return { taskLists, next };
+  }
+
+  /**
+   * Deuxième temps du §12.1 : « puis proposer d'y associer des dates ».
+   *
+   * Une proposition et non une création : les créneaux n'apparaissent dans
+   * l'agenda que si l'utilisateur accepte cette seconde carte.
+   */
+  private proposeSchedule(
+    userId: string,
+    conversationId: string,
+    tasks: ScheduleTasksPayload["tasks"],
+    accessToken: string,
+  ): Promise<Suggestion | null> {
+    if (tasks.length === 0) return Promise.resolve(null);
+
+    return this.suggestions.propose(
+      userId,
+      conversationId,
+      { kind: "schedule_task", message: scheduleMessage(tasks.length), payload: { tasks } },
+      accessToken,
+    );
+  }
+
+  /**
+   * Pose dans l'agenda un créneau par tâche datée (A.3).
+   *
+   * L'événement n'a pas de fin : une échéance déduite d'une conversation dit
+   * quand, pas combien de temps. Le calendrier lui donne déjà une durée
+   * implicite à l'affichage — en inventer une ici la ferait passer pour une
+   * information venue de l'utilisateur.
+   */
+  private async scheduleTasks(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<CalendarEvent[]> {
+    const payload = scheduleTasksPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      console.error("Charge utile de créneau illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    const events: CalendarEvent[] = [];
+
+    for (const entry of payload.data.tasks) {
+      const event = await this.calendar.create(
+        userId,
+        { title: entry.title, startsAt: entry.dueAt, endsAt: null, allDay: false },
+        accessToken,
+      );
+
+      try {
+        await this.tasks.linkEvent(entry.listId, entry.taskId, event.id, accessToken);
+      } catch {
+        // Tâche supprimée entre la proposition et son acceptation : le créneau
+        // reste, il porte l'information. Faire échouer l'acceptation entière
+        // annulerait les créneaux déjà posés pour les tâches précédentes.
+        console.warn("Tâche introuvable au moment de poser son créneau", entry.taskId);
+      }
+
+      events.push(event);
+    }
+
+    return events;
   }
 
   /**
@@ -196,6 +387,55 @@ export class AssistantService {
 
     return created;
   }
+}
+
+/**
+ * Phrase de la proposition enchaînée, écrite par le serveur.
+ *
+ * Rédigée ici plutôt que demandée au modèle : à ce stade il n'y a plus rien à
+ * interpréter — les tâches datées sont connues. Un second appel au moteur
+ * n'ajouterait qu'une latence et le risque qu'il réponde autre chose qu'une
+ * question. Elle en reste une, jamais un constat (§12.1).
+ */
+function scheduleMessage(count: number): string {
+  return count === 1
+    ? "Une de ces tâches porte une date. Je te la pose dans ton agenda ?"
+    : count + " de ces tâches portent une date. Je te les pose dans ton agenda ?";
+}
+
+/**
+ * Rangement effectivement retenu par l'utilisateur, ou `undefined` s'il n'y a
+ * rien à restreindre (§5.2, A.1).
+ *
+ * L'intersection se fait ici et non dans le client : celui-ci ne peut que
+ * retirer des dossiers de la proposition, jamais en ajouter un que l'assistant
+ * n'avait pas proposé. Une charge utile illisible passe telle quelle —
+ * `fileConversation` la refuse déjà, et la refuser deux fois donnerait deux
+ * messages différents pour la même panne.
+ */
+function retainedFolders(
+  suggestion: Suggestion,
+  selection: AssignFoldersPayload | undefined,
+): AssignFoldersPayload | undefined {
+  if (suggestion.kind !== "assign_folders" || !selection) return undefined;
+
+  const proposed = assignFoldersPayloadSchema.safeParse(suggestion.payload);
+  if (!proposed.success) return undefined;
+
+  const retained = {
+    existingFolderIds: proposed.data.existingFolderIds.filter((id) =>
+      selection.existingFolderIds.includes(id),
+    ),
+    newFolderNames: proposed.data.newFolderNames.filter((name) =>
+      selection.newFolderNames.some((kept) => sameName(kept, name)),
+    ),
+  };
+
+  if (retained.existingFolderIds.length + retained.newFolderNames.length === 0) {
+    throw httpError(400, "Aucun des dossiers retenus ne figure dans la proposition.");
+  }
+
+  return retained;
 }
 
 /**

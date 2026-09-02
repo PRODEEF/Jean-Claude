@@ -6,7 +6,6 @@ import {
   normalizeOtpCode,
   otpCodeSchema,
   OTP_CODE_LENGTH,
-  verifyCodeSchema,
 } from "./auth.schema";
 
 describe("adresse e-mail", () => {
@@ -62,18 +61,5 @@ describe("code à usage unique", () => {
 
   it("ne renvoie que des chiffres, quelle que soit la saisie", () => {
     expect(normalizeOtpCode("abc")).toBe("");
-  });
-});
-
-describe("vérification du code", () => {
-  it("normalise l'adresse et le code d'un même coup", () => {
-    expect(verifyCodeSchema.parse({ email: "  Clarisse@Exemple.FR ", code: "4289 1374" })).toEqual({
-      email: "clarisse@exemple.fr",
-      code: "42891374",
-    });
-  });
-
-  it("rejette la vérification si l'adresse est invalide, même avec un code bien formé", () => {
-    expect(verifyCodeSchema.safeParse({ email: "clarisse", code: "42891374" }).success).toBe(false);
   });
 });

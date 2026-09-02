@@ -32,6 +32,38 @@ export function useConversationActions(conversationId: string) {
     },
   });
 
+  /**
+   * Renommage seul, pour la rangée de saisie de la barre latérale : le nom s'y
+   * édite là où il se lit, sans ouvrir la fenêtre de la conversation.
+   */
+  const rename = useMutation({
+    mutationFn: (title: string) => api.conversations.update(conversationId, { title }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+        queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] }),
+      ]);
+    },
+  });
+
+  /**
+   * Rangement seul, pour le dépôt d'une conversation sur un dossier.
+   *
+   * L'appelant décide s'il ajoute le dossier aux autres ou s'il remplace tout :
+   * une conversation appartient à plusieurs dossiers à la fois (§5.2, A.1), les
+   * deux gestes existent donc et ne se devinent pas.
+   */
+  const file = useMutation({
+    mutationFn: (folderIds: string[]) =>
+      api.conversations.assignFolders(conversationId, { folderIds, source: "user" }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+        queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] }),
+      ]);
+    },
+  });
+
   const remove = useMutation({
     mutationFn: () => api.conversations.remove(conversationId),
     // Pas d'invalidation de `["conversation", id]` : la conversation n'existe
@@ -39,5 +71,5 @@ export function useConversationActions(conversationId: string) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["conversations"] }),
   });
 
-  return { save, remove };
+  return { save, rename, file, remove };
 }

@@ -1,3 +1,4 @@
+import type { AssistantScope } from "@jc/domain";
 import type { LlmTool } from "./llm.port.js";
 
 /**
@@ -18,6 +19,14 @@ export const SUGGEST_TASK_LIST: LlmTool = {
   inputSchema: {
     type: "object",
     properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « On dirait qu'une liste d'achats et une liste de tâches " +
+          "se dessinent pour le jardin, je te les organise ? ». Ne jamais présenter " +
+          "les listes comme déjà créées. 500 caractères maximum.",
+      },
       lists: {
         type: "array",
         items: {
@@ -48,9 +57,11 @@ export const SUGGEST_TASK_LIST: LlmTool = {
           },
           required: ["title", "kind", "items"],
         },
+        minItems: 1,
+        maxItems: 4,
       },
     },
-    required: ["lists"],
+    required: ["message", "lists"],
   },
 };
 
@@ -62,8 +73,11 @@ export const SUGGEST_FOLDERS: LlmTool = {
     "Une conversation peut légitimement appartenir à plusieurs dossiers à la fois " +
     "(une conversation sur la mutuelle relève à la fois de « Santé » et de " +
     "« Administratif > Assurances ») : proposer tous les dossiers pertinents, pas seulement un. " +
-    "Réutiliser en priorité les dossiers existants listés dans la consigne, avec leur " +
-    "identifiant exact ; n'en proposer un nouveau que si aucun ne convient. " +
+    "Réutiliser en priorité les dossiers existants listés dans la consigne, en recopiant " +
+    "leur identifiant caractère pour caractère — un identifiant reconstitué de mémoire ou " +
+    "remplacé par le nom du dossier fait perdre la ligne correspondante. " +
+    "N'en proposer un nouveau que si aucun ne convient, et remplir au moins l'une des deux " +
+    "listes : une proposition sans aucun dossier n'a rien à ranger. " +
     "S'aligner sur la façon dont l'utilisateur nomme déjà ses dossiers plutôt que d'imposer " +
     "une nomenclature standard.",
   inputSchema: {
@@ -74,6 +88,8 @@ export const SUGGEST_FOLDERS: LlmTool = {
         description:
           "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
           "de question — ex. « Je range ça dans Santé et j'ouvre un dossier Assurances ? ». " +
+          "Les dossiers sont proposés ensemble et non comme un choix exclusif : l'utilisateur " +
+          "décoche ceux qu'il ne retient pas. Écrire « dans X et Y ? », jamais « dans X ou Y ? ». " +
           "Ne jamais présenter le rangement comme déjà fait. 500 caractères maximum.",
       },
       existingFolderIds: {
@@ -211,15 +227,15 @@ export const OPEN_NEW_CONVERSATION: LlmTool = {
     "l'outil (dossiers, rangement, structure), ni la structure du projet de " +
     "l'utilisateur. Une recette, un itinéraire, une explication, une rédaction : " +
     "tout cela relève d'une conversation classique. " +
-    "Ne pas traiter la demande soi-même : annoncer en une phrase l'ouverture de " +
-    "la conversation dédiée, où la réponse sera donnée.",
+    "Ne pas traiter la demande soi-même, et n'écrire aucun texte : l'application " +
+    "annonce la bascule et en demande la validation à l'utilisateur.",
   inputSchema: {
     type: "object",
     properties: {
       title: {
         type: "string",
         description:
-          "Titre de la conversation à ouvrir, tiré de la demande — court et " +
+          "Titre de la conversation proposée, tiré de la demande — court et " +
           "descriptif, 120 caractères maximum. Ex. « Itinéraire de 5 jours en Bretagne ».",
       },
     },
@@ -227,8 +243,79 @@ export const OPEN_NEW_CONVERSATION: LlmTool = {
   },
 };
 
+export const FINISH_ONBOARDING: LlmTool = {
+  name: "finish_onboarding",
+  description:
+    "À appeler dès que la conversation d'accueil a appris l'essentiel sur l'utilisateur : " +
+    "qui il est, où il en est côté professionnel et personnel, les projets ou les idées " +
+    "qu'il a en tête. Trois ou quatre échanges suffisent — mieux vaut clore tôt que " +
+    "transformer l'accueil en interrogatoire. " +
+    "Comme `name_conversation`, cet outil ne demande rien à l'utilisateur : il enregistre " +
+    "aussitôt. Ne pas l'annoncer, et poursuivre la conversation normalement.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      memory: {
+        type: "string",
+        description:
+          "Ce qu'il faut retenir durablement de l'utilisateur, rédigé à la troisième " +
+          "personne, en quelques phrases : situation, activité, projets en cours, façon " +
+          "de s'organiser. Uniquement ce qui sera encore vrai dans six mois — le détail " +
+          "ponctuel appartient à la conversation, pas à la mémoire. " +
+          "2000 caractères au plus.",
+      },
+    },
+    required: ["memory"],
+  },
+};
+
+export const ASK_QUESTION: LlmTool = {
+  name: "ask_question",
+  description:
+    "À appeler en posant une question dont quelques réponses couvrent l'essentiel des " +
+    "cas — « quel type de questions veux-tu ? », « on part sur quel angle ? ». " +
+    "L'utilisateur répond alors d'un appui, sans avoir à écrire ; il garde de toute " +
+    "façon la possibilité de répondre librement ou de passer. " +
+    "Ne pas l'appeler pour une question ouverte, dont la réponse tient dans le récit " +
+    "de l'utilisateur (« raconte-moi ce qui t'occupe ») : lui présenter quatre boutons " +
+    "reviendrait à lui souffler sa réponse. Une seule question à la fois. " +
+    "Comme `name_conversation`, cet outil ne demande rien : les réponses proposées " +
+    "s'affichent aussitôt sous la question. Ne pas les énumérer une seconde fois dans " +
+    "le texte de la réponse.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      question: {
+        type: "string",
+        description:
+          "La question posée, telle qu'elle sera affichée — courte et directe, " +
+          "200 caractères au plus. À reprendre à l'identique si le texte de la " +
+          "réponse la pose déjà.",
+      },
+      choices: {
+        type: "array",
+        description:
+          "Réponses proposées, de la plus probable à la moins probable. " +
+          "Deux au moins, six au plus — au-delà, la liste devient un formulaire.",
+        minItems: 2,
+        maxItems: 6,
+        items: {
+          type: "string",
+          description: "Réponse en quelques mots, 80 caractères au plus.",
+        },
+      },
+    },
+    required: ["question", "choices"],
+  },
+};
+
 /** Outils actifs sur une conversation classique. */
-export const CHAT_TOOLS: LlmTool[] = [SUGGEST_TASK_LIST, SUGGEST_FOLDERS, SUGGEST_RECURRING_EVENT];
+export const CHAT_TOOLS: LlmTool[] = [
+  SUGGEST_TASK_LIST,
+  SUGGEST_FOLDERS,
+  SUGGEST_RECURRING_EVENT,
+  ASK_QUESTION,
+];
 
 /**
  * Outils actifs sur le canal permanent Jean-Claude (A.10).
@@ -237,4 +324,39 @@ export const CHAT_TOOLS: LlmTool[] = [SUGGEST_TASK_LIST, SUGGEST_FOLDERS, SUGGES
  * l'organisation de l'outil et à la structure du projet. Y exposer la détection
  * de todolistes ou de rendez-vous récurrents le ferait déborder de ce périmètre.
  */
-export const ASSISTANT_TOOLS: LlmTool[] = [SUGGEST_PROJECT_FOLDERS, OPEN_NEW_CONVERSATION];
+export const ASSISTANT_TOOLS: LlmTool[] = [
+  SUGGEST_PROJECT_FOLDERS,
+  OPEN_NEW_CONVERSATION,
+  ASK_QUESTION,
+];
+
+/**
+ * Capacité de périmètre dont dépend chaque outil de suggestion (A.10).
+ *
+ * Les outils absents de cette table ne relèvent d'aucun réglage :
+ * `name_conversation` ne fait que poser un libellé, `finish_onboarding` clôt
+ * un accueil qui ne se produit qu'une fois, `ask_question` ne fait que donner
+ * une forme à une question que le modèle poserait de toute façon, et
+ * `open_new_conversation` applique le bornage du canal lui-même — le rendre
+ * désactivable reviendrait à supprimer A.10.
+ */
+const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
+  [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",
+  [SUGGEST_RECURRING_EVENT.name]: "proactiveScheduling",
+  [SUGGEST_FOLDERS.name]: "folderOrganization",
+  [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",
+};
+
+/**
+ * L'outil relève-t-il d'une capacité que l'utilisateur laisse active ?
+ *
+ * Sert deux fois : à retirer l'outil du jeu remis au modèle, et à écarter
+ * l'appel s'il arrive quand même. Une capacité désactivée dans les réglages
+ * n'est pas seulement masquée dans l'UI — le serveur refuse de produire la
+ * suggestion correspondante, ce qui rend le réglage identique sur les quatre
+ * plateformes.
+ */
+export function isAllowedByScope(toolName: string, scope: AssistantScope): boolean {
+  const capability = SCOPE_BY_TOOL_NAME[toolName];
+  return capability === undefined || scope[capability];
+}

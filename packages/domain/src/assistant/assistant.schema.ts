@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { folderPurposeSchema } from "../folder/folder.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
+import { taskListKindSchema } from "../task/task.schema";
 
 /**
  * Périmètre du canal permanent Jean-Claude (A.10).
@@ -71,12 +72,6 @@ export const suggestionSchema = z.object({
 
 export type Suggestion = z.infer<typeof suggestionSchema>;
 
-export const resolveSuggestionSchema = z.object({
-  action: z.enum(["accept", "dismiss"]),
-});
-
-export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
-
 /** Dossier proposé par l'assistant, tel qu'il apparaît dans la carte de suggestion. */
 const proposedFolderSchema = z.object({
   name: labelSchema,
@@ -129,11 +124,77 @@ export const assignFoldersPayloadSchema = z
 export type AssignFoldersPayload = z.infer<typeof assignFoldersPayloadSchema>;
 
 /**
- * Verdict de bornage du canal permanent (A.10).
+ * Réponse de l'utilisateur à une proposition (§12.1).
  *
- * Quand un message adressé au canal permanent sort du périmètre assistant,
- * on ne répond pas dans le canal : on bascule l'échange vers une nouvelle
- * conversation classique, rangée en dossier.
+ * `folderSelection` porte les dossiers cochés dans la carte de rangement :
+ * une conversation appartient à plusieurs dossiers, et l'utilisateur doit
+ * pouvoir n'en retenir qu'une partie sans refuser toute la proposition
+ * (§5.2, A.1). Même forme que la charge utile, parce que c'en est un
+ * sous-ensemble : le serveur n'applique que ce qui avait été proposé, jamais
+ * un dossier venu du client. Absente, la proposition s'applique en entier —
+ * le cas des natures qui n'ont rien à cocher.
  */
-export type ScopeVerdict =
-  { inScope: true } | { inScope: false; reason: string; suggestedTitle: string };
+export const resolveSuggestionSchema = z.object({
+  action: z.enum(["accept", "dismiss"]),
+  folderSelection: assignFoldersPayloadSchema.optional(),
+});
+
+export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
+
+/**
+ * Tâche proposée dans une todoliste (§12.1).
+ *
+ * `dueAt` retombe sur `null` au lieu de faire échouer la validation : le
+ * modèle rend parfois une échéance inexploitable — « lundi prochain » laissé
+ * en clair, une date sans fuseau. Perdre la liste entière pour une ligne mal
+ * datée coûterait plus cher que de la proposer sans échéance.
+ */
+const proposedTaskSchema = z.object({
+  title: labelSchema,
+  dueAt: isoDateTimeSchema.nullable().catch(null),
+});
+
+/**
+ * Charge utile d'une suggestion `create_task_list` (§12.1, A.2).
+ *
+ * Plusieurs listes et non une seule : l'exemple du jardin en produit deux —
+ * les achats et les tâches — et les fusionner reviendrait à rendre une liste
+ * de courses illisible au milieu du désherbage.
+ */
+export const createTaskListsPayloadSchema = z.object({
+  lists: z
+    .array(
+      z.object({
+        title: labelSchema,
+        kind: taskListKindSchema,
+        items: z.array(proposedTaskSchema).min(1).max(30),
+      }),
+    )
+    .min(1)
+    .max(4),
+});
+
+export type CreateTaskListsPayload = z.infer<typeof createTaskListsPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `schedule_task` (A.3).
+ *
+ * Les tâches y sont désignées par leur identifiant : la proposition naît après
+ * la création des listes, quand les lignes existent déjà. Le titre est recopié
+ * pour que la carte reste lisible sans avoir à recharger les listes.
+ */
+export const scheduleTasksPayloadSchema = z.object({
+  tasks: z
+    .array(
+      z.object({
+        listId: uuidSchema,
+        taskId: uuidSchema,
+        title: labelSchema,
+        dueAt: isoDateTimeSchema,
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+
+export type ScheduleTasksPayload = z.infer<typeof scheduleTasksPayloadSchema>;

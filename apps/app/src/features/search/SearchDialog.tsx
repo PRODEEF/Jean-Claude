@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { MessageSquare, Search, X } from "lucide-react-native";
-import type { Conversation, FolderTreeNode } from "@jc/domain";
+import type { Conversation, DateShortcut, FolderTreeNode, SearchFilters } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { api } from "@/shared/lib/api";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -23,29 +23,89 @@ export type SearchDialogProps = {
   onSelect: (conversation: Conversation) => void;
 };
 
-const PANEL_WIDTH = 640;
+/**
+ * Largeur de la fenêtre de recherche.
+ *
+ * Assez large pour que les sept raccourcis de période tiennent en deux rangées
+ * et que les titres de conversation ne se tronquent pas au troisième mot.
+ */
+const PANEL_WIDTH = 780;
 
 /**
- * Recherche de conversation.
+ * Délai avant d'interroger le serveur, en millisecondes.
  *
- * Porte sur les titres, en mémoire : la liste des conversations est déjà en
- * cache pour la barre latérale, et les mêmes clés React Query sont réutilisées —
- * ouvrir la recherche ne déclenche donc aucun appel. Le jour où le contenu des
- * messages devra être fouillé, ce sera un point d'API, pas un filtre ici.
+ * La recherche part sur la frappe et non sur la validation — c'est ce qu'on
+ * attend d'un champ de recherche moderne. Sans ce délai, taper « mutuelle »
+ * déclencherait huit recherches plein texte pour n'en afficher qu'une.
+ */
+const TYPING_DELAY = 250;
+
+/**
+ * Raccourcis de période (A.6). L'ordre va du plus court au plus long : c'est
+ * dans les jours récents qu'on cherche le plus souvent.
+ */
+const DATE_SHORTCUTS: { value: DateShortcut; label: string }[] = [
+  { value: "this_week", label: "Cette semaine" },
+  { value: "last_week", label: "La semaine dernière" },
+  { value: "this_month", label: "Ce mois-ci" },
+  { value: "last_month", label: "Le mois dernier" },
+  { value: "this_year", label: "Cette année" },
+  { value: "last_year", label: "L'année dernière" },
+];
+
+/**
+ * Recherche de conversation par filtres (A.6).
+ *
+ * Le mot-clé porte sur les titres **et** sur le contenu des messages : c'est
+ * le serveur qui cherche, via les index plein texte français. Les périodes,
+ * elles, sont résolues côté serveur dans le fuseau de l'utilisateur — « le
+ * mois dernier » ne peut pas se calculer sur quatre plateformes différentes
+ * sans risquer quatre résultats différents.
  */
 export function SearchDialog({ open, onClose, onSelect }: SearchDialogProps) {
   const { palette } = useTheme();
   const window = useWindowDimensions();
+
   const [query, setQuery] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [shortcut, setShortcut] = useState<DateShortcut | null>(null);
+  const [datesOpen, setDatesOpen] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [folderIds, setFolderIds] = useState<string[]>([]);
+  const [includeArchived, setIncludeArchived] = useState(false);
   // Rangée sous le curseur du clavier. Les flèches la déplacent, Entrée
   // l'ouvre : sans elle, la recherche obligerait à lâcher le clavier pour
   // viser à la souris ce qu'on vient de taper.
   const [highlighted, setHighlighted] = useState(0);
 
-  const conversations = useQuery({
-    queryKey: ["conversations"],
-    queryFn: () => api.conversations.list({ limit: 100 }),
+  useEffect(() => {
+    const timer = setTimeout(() => setKeyword(query.trim()), TYPING_DELAY);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const filters = useMemo((): Partial<SearchFilters> => {
+    const fromDate = toCalendarDate(from);
+    const toDate = toCalendarDate(to);
+    return {
+      ...(keyword.length > 0 ? { query: keyword } : {}),
+      ...(shortcut ? { shortcut } : {}),
+      ...(fromDate ? { from: fromDate } : {}),
+      ...(toDate ? { to: toDate } : {}),
+      ...(folderIds.length > 0 ? { folderIds } : {}),
+      ...(includeArchived ? { includeArchived: true } : {}),
+    };
+  }, [keyword, shortcut, from, to, folderIds, includeArchived]);
+
+  const hasFilters = Object.keys(filters).length > 0;
+
+  const search = useQuery({
+    queryKey: ["search", filters],
+    queryFn: () => api.search.conversations(filters),
     enabled: open,
+    // La liste précédente reste affichée pendant la frappe suivante : sans
+    // cela, chaque lettre viderait la fenêtre puis la remplirait.
+    placeholderData: (previous) => previous,
   });
 
   const folders = useQuery({
@@ -54,33 +114,41 @@ export function SearchDialog({ open, onClose, onSelect }: SearchDialogProps) {
     enabled: open,
   });
 
-  /** Nom de dossier par identifiant — ce qui distingue deux titres identiques. */
-  const folderNames = useMemo(() => {
-    const names = new Map<string, string>();
+  /** Dossiers à plat, dans l'ordre de l'arborescence. */
+  const flatFolders = useMemo(() => {
+    const list: { id: string; name: string }[] = [];
     const walk = (node: FolderTreeNode) => {
-      names.set(node.id, node.name);
+      list.push({ id: node.id, name: node.name });
       node.children.forEach(walk);
     };
     (folders.data ?? []).forEach(walk);
-    return names;
+    return list;
   }, [folders.data]);
 
-  const results = useMemo(() => {
-    const items = conversations.data?.items ?? [];
-    const needle = normalize(query);
-    if (needle.length === 0) return items;
-    return items.filter((item) => normalize(item.title).includes(needle));
-  }, [conversations.data, query]);
+  /** Nom de dossier par identifiant — ce qui distingue deux titres identiques. */
+  const folderNames = useMemo(
+    () => new Map(flatFolders.map((folder) => [folder.id, folder.name])),
+    [flatFolders],
+  );
 
-  // Le curseur revient en tête à chaque frappe : la rangée qu'il désignait
-  // n'est plus forcément dans les résultats.
-  useEffect(() => setHighlighted(0), [query]);
+  const results = search.data?.items ?? [];
+
+  // Le curseur revient en tête à chaque changement de recherche : la rangée
+  // qu'il désignait n'est plus forcément dans les résultats.
+  useEffect(() => setHighlighted(0), [filters]);
 
   // La fenêtre reste montée entre deux ouvertures : sans cette remise à zéro,
   // elle rouvrirait sur la recherche précédente.
   useEffect(() => {
     if (open) {
       setQuery("");
+      setKeyword("");
+      setShortcut(null);
+      setDatesOpen(false);
+      setFrom("");
+      setTo("");
+      setFolderIds([]);
+      setIncludeArchived(false);
       setHighlighted(0);
     }
   }, [open]);
@@ -88,13 +156,31 @@ export function SearchDialog({ open, onClose, onSelect }: SearchDialogProps) {
   if (!open) return null;
 
   const openHighlighted = () => {
-    const conversation = results[highlighted];
-    if (conversation) onSelect(conversation);
+    const result = results[highlighted];
+    if (result) onSelect(result.conversation);
   };
 
   const move = (delta: number) => {
     if (results.length === 0) return;
     setHighlighted((current) => Math.min(results.length - 1, Math.max(0, current + delta)));
+  };
+
+  const toggleFolder = (id: string) =>
+    setFolderIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+    );
+
+  /** Période et dates saisies s'excluent : le serveur ignorerait les secondes. */
+  const pickShortcut = (value: DateShortcut) => {
+    setShortcut((current) => (current === value ? null : value));
+    setFrom("");
+    setTo("");
+    setDatesOpen(false);
+  };
+
+  const openDates = () => {
+    setDatesOpen((current) => !current);
+    setShortcut(null);
   };
 
   return (
@@ -115,20 +201,20 @@ export function SearchDialog({ open, onClose, onSelect }: SearchDialogProps) {
             styles.panel,
             {
               width: Math.min(PANEL_WIDTH, window.width - spacing.xl),
-              maxHeight: window.height * 0.65,
+              maxHeight: window.height * 0.8,
               backgroundColor: palette.surfaceElevated,
               borderColor: palette.border,
             },
           ]}
         >
-          <View style={[styles.field, { borderBottomColor: palette.border }]}>
+          <View style={styles.field}>
             <Search size={18} color={palette.textMuted} />
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Rechercher une conversation"
+              placeholder="Rechercher dans les conversations"
               placeholderTextColor={palette.textMuted}
-              accessibilityLabel="Rechercher une conversation"
+              accessibilityLabel="Rechercher dans les conversations"
               autoFocus
               returnKeyType="search"
               onSubmitEditing={openHighlighted}
@@ -154,28 +240,70 @@ export function SearchDialog({ open, onClose, onSelect }: SearchDialogProps) {
             </Pressable>
           </View>
 
+          <ChipRow>
+            {DATE_SHORTCUTS.map((option) => (
+              <FilterChip
+                key={option.value}
+                label={option.label}
+                active={shortcut === option.value}
+                onPress={() => pickShortcut(option.value)}
+              />
+            ))}
+            <FilterChip label="Dates précises" active={datesOpen} onPress={openDates} />
+          </ChipRow>
+
+          {datesOpen ? (
+            <View style={styles.dates}>
+              <DateField label="Du" value={from} onChange={setFrom} />
+              <DateField label="Au" value={to} onChange={setTo} />
+            </View>
+          ) : null}
+
+          {flatFolders.length > 0 || includeArchived ? (
+            <ChipRow>
+              <FilterChip
+                label="Archivées"
+                active={includeArchived}
+                onPress={() => setIncludeArchived((current) => !current)}
+              />
+              {flatFolders.map((folder) => (
+                <FilterChip
+                  key={folder.id}
+                  label={folder.name}
+                  active={folderIds.includes(folder.id)}
+                  onPress={() => toggleFolder(folder.id)}
+                />
+              ))}
+            </ChipRow>
+          ) : null}
+
+          <View style={[styles.divider, { backgroundColor: palette.border }]} />
+
           <FlatList
             data={results}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item) => item.conversation.id}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.list}
             renderItem={({ item, index }) => (
               <ResultRow
-                conversation={item}
-                folderName={folderNames.get(item.folderIds[0] ?? "")}
+                conversation={item.conversation}
+                excerpt={item.excerpt}
+                folderName={folderNames.get(item.conversation.folderIds[0] ?? "")}
                 highlighted={index === highlighted}
                 onHover={() => setHighlighted(index)}
-                onPress={() => onSelect(item)}
+                onPress={() => onSelect(item.conversation)}
               />
             )}
             ListEmptyComponent={
               <View style={styles.empty}>
                 <Text style={[styles.emptyText, { color: palette.textMuted }]}>
-                  {conversations.isLoading
+                  {search.isPending
                     ? "Chargement…"
-                    : query.trim().length === 0
-                      ? "Aucune conversation pour l'instant."
-                      : `Rien ne correspond à « ${query.trim()} ».`}
+                    : search.isError
+                      ? "La recherche a échoué."
+                      : hasFilters
+                        ? "Rien ne correspond à cette recherche."
+                        : "Aucune conversation pour l'instant."}
                 </Text>
               </View>
             }
@@ -186,14 +314,93 @@ export function SearchDialog({ open, onClose, onSelect }: SearchDialogProps) {
   );
 }
 
+/**
+ * Les filtres passent à la ligne plutôt que de défiler latéralement : un
+ * raccourci de période sorti du cadre ne se devine pas, et personne ne pousse
+ * une rangée de pastilles à la souris pour vérifier ce qu'elle cache.
+ */
+function ChipRow({ children }: { children: React.ReactNode }) {
+  return <View style={styles.chipRow}>{children}</View>;
+}
+
+function FilterChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const { palette } = useTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
+      // La pastille mesure 32 pt pour que deux rangées de filtres ne mangent
+      // pas la liste de résultats ; le débord de 6 pt lui rend la cible
+      // tactile de 44 pt.
+      hitSlop={{ top: 6, bottom: 6 }}
+      style={[
+        styles.chip,
+        {
+          borderColor: active ? palette.accent : palette.border,
+          backgroundColor: active ? palette.accentSoft : "transparent",
+        },
+      ]}
+    >
+      <Text
+        numberOfLines={1}
+        style={[styles.chipText, { color: active ? palette.accentSoftText : palette.textMuted }]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { palette } = useTheme();
+
+  return (
+    <View style={styles.dateField}>
+      <Text style={[styles.dateLabel, { color: palette.textMuted }]}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={(next) => onChange(formatDateInput(next))}
+        placeholder="JJ/MM/AAAA"
+        placeholderTextColor={palette.textMuted}
+        accessibilityLabel={`${label} — date au format jour, mois, année`}
+        keyboardType="number-pad"
+        maxLength={10}
+        className="web:outline-none"
+        style={[styles.dateInput, { color: palette.text, borderColor: palette.border }]}
+      />
+    </View>
+  );
+}
+
 function ResultRow({
   conversation,
+  excerpt,
   folderName,
   highlighted,
   onHover,
   onPress,
 }: {
   conversation: Conversation;
+  excerpt: string | null;
   folderName: string | undefined;
   highlighted: boolean;
   onHover: () => void;
@@ -215,9 +422,14 @@ function ResultRow({
         <Text style={[styles.title, { color: palette.text }]} numberOfLines={1}>
           {conversation.title}
         </Text>
-        {/* Le dossier, faute de quoi deux conversations encore sans titre — donc
-            toutes deux « Nouvelle conversation » — sont indiscernables. */}
-        {folderName ? (
+        {/* L'extrait dit pourquoi la conversation remonte ; à défaut le dossier,
+            faute de quoi deux conversations encore sans titre — donc toutes deux
+            « Nouvelle conversation » — sont indiscernables. */}
+        {excerpt ? (
+          <Text style={[styles.meta, { color: palette.textMuted }]} numberOfLines={2}>
+            {excerpt}
+          </Text>
+        ) : folderName ? (
           <Text style={[styles.meta, { color: palette.textMuted }]} numberOfLines={1}>
             {folderName}
           </Text>
@@ -238,17 +450,33 @@ function ResultRow({
   );
 }
 
+/** Pose les séparateurs à mesure de la frappe : « 03092026 » devient « 03/09/2026 ». */
+function formatDateInput(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)]
+    .filter((part) => part.length > 0)
+    .join("/");
+}
+
 /**
- * Minuscules et accents retirés.
+ * « 03/09/2026 » vers la date de calendrier attendue par l'API.
  *
- * « Santé » doit se trouver en tapant « sante » : sans cela, la recherche
- * échoue sur la moitié des titres en français.
+ * Rend `undefined` tant que la saisie est incomplète ou impossible : le filtre
+ * ne part alors pas, plutôt que de renvoyer une erreur de validation à chaque
+ * chiffre tapé.
  */
-function normalize(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+function toCalendarDate(input: string): string | undefined {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(input);
+  if (!match) return undefined;
+
+  const [, day, month, year] = match;
+  if (!day || !month || !year) return undefined;
+
+  const date = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
+  // Postgres refuserait un 31 février ; le mois roulerait silencieusement.
+  if (Number.isNaN(date.getTime()) || date.getUTCDate() !== Number(day)) return undefined;
+
+  return `${year}-${month}-${day}`;
 }
 
 /**
@@ -295,10 +523,41 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
-    borderBottomWidth: 1,
   },
   input: { flex: 1, minHeight: MIN_TOUCH_TARGET + 12, fontSize: fontSize.md },
   close: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  chip: {
+    height: 32,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.pill,
+  },
+  chipText: { fontSize: fontSize.xs, fontWeight: fontWeight.medium },
+  dates: {
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  dateField: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  dateLabel: { fontSize: fontSize.xs },
+  dateInput: {
+    width: 120,
+    height: 32,
+    paddingHorizontal: spacing.sm,
+    borderWidth: 1,
+    borderRadius: radius.sm,
+    fontSize: fontSize.xs,
+  },
+  divider: { height: 1 },
   list: { padding: spacing.xs },
   row: {
     flexDirection: "row",

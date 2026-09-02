@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { PortalHost } from "@rn-primitives/portal";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { DEFAULT_ACCENT } from "@jc/design";
 import { useProfile } from "@/shared/hooks/use-profile";
 import { AuthProvider, useAuth } from "@/shared/providers/auth-provider";
 import { ThemeProvider, useTheme } from "@/shared/providers/theme-provider";
@@ -67,18 +68,23 @@ function AuthGate() {
 }
 
 /**
- * Alimente le thème avec la préférence enregistrée dans les réglages.
+ * Alimente le thème avec les préférences enregistrées dans les réglages.
  *
- * Sous `AuthProvider` : la préférence est servie par l'API, donc illisible
- * tant que la session n'est pas rétablie. Tant qu'elle ne l'est pas, on suit
- * le réglage du système — c'est ce qui ressemble le plus au choix probable de
- * l'utilisateur.
+ * Sous `AuthProvider` : elles sont servies par l'API, donc illisibles tant que
+ * la session n'est pas rétablie. Tant qu'elles ne le sont pas, on suit le
+ * réglage du système et la couleur par défaut — c'est ce qui ressemble le plus
+ * au choix probable de l'utilisateur.
  */
 function ThemedRoot({ children }: { children: ReactNode }) {
   const { data: profile } = useProfile();
 
   return (
-    <ThemeProvider preference={profile?.preferences.theme ?? "system"}>{children}</ThemeProvider>
+    <ThemeProvider
+      preference={profile?.preferences.theme ?? "system"}
+      accent={profile?.preferences.assistantColor ?? DEFAULT_ACCENT}
+    >
+      {children}
+    </ThemeProvider>
   );
 }
 

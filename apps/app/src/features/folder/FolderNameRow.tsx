@@ -10,8 +10,7 @@ import { useFolderActions } from "./hooks/use-folder-actions";
 /** Ce que la rangée est en train de nommer. */
 export type FolderNameTarget =
   /** `parentId` à `null` pour un dossier racine. */
-  | { kind: "create"; parentId: string | null }
-  | { kind: "rename"; folder: Folder };
+  { kind: "create"; parentId: string | null } | { kind: "rename"; folder: Folder };
 
 export type FolderNameRowProps = {
   target: FolderNameTarget;

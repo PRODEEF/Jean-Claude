@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -11,15 +11,20 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowUp } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import type { Conversation, Message } from "@jc/domain";
+import type { Conversation, Message, Suggestion } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
+import { contentColumn, READING_MAX_WIDTH } from "@/shared/ui/screen-shell";
+import { Composer } from "./Composer";
 import { useConversationThread } from "./hooks/use-conversation-thread";
 import { useSuggestions } from "./hooks/use-suggestions";
-import { SuggestionCard } from "./SuggestionCard";
+import { MessageRow } from "./MessageRow";
+import { QuestionCard } from "./QuestionCard";
+import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
+import { SwitchAsideCard } from "./SwitchAsideCard";
 
 export type ConversationThreadProps = {
   conversationId: string;
@@ -44,28 +49,66 @@ export type ConversationThreadProps = {
 export function ConversationThread({ conversationId, initialDraft }: ConversationThreadProps) {
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
+  // Le fil porte son propre défilement, mais suit la colonne des autres
+  // écrans : sans cela, le shell et le fil borneraient chacun à leur façon.
+  const column = contentColumn(useBreakpoint() === "compact", READING_MAX_WIDTH);
   const router = useRouter();
   const [draft, setDraft] = useState("");
-  const listRef = useRef<FlatList<Message>>(null);
+  const listRef = useRef<FlatList<ThreadItem>>(null);
+  const inputRef = useRef<TextInput>(null);
+  // Question écartée d'un « Passer », retenue par identifiant de message : le
+  // fil se recharge, la carte ne doit pas revenir pour autant.
+  const [skippedQuestion, setSkippedQuestion] = useState<string | null>(null);
 
   // La question voyage jusqu'au nouveau fil, qui s'en charge à l'ouverture :
   // c'est ce qui permet de réutiliser le tour de dialogue ordinaire, réponse
   // en flux comprise, plutôt que d'inventer un second chemin.
-  const goToNewConversation = useCallback(
+  const goToDedicatedConversation = useCallback(
     (conversation: Conversation, content: string) => {
       router.push({ pathname: "/chat/[id]", params: { id: conversation.id, draft: content } });
     },
     [router],
   );
 
-  const { messages, send, submit, streamingText, pendingUserText } = useConversationThread(
-    conversationId,
-    goToNewConversation,
-  );
-  const { suggestions, resolve } = useSuggestions(conversationId);
+  // Le message n'a pas atteint le serveur : le rendre au champ plutôt que de
+  // le laisser disparaître avec l'échec. Sans écraser ce que l'utilisateur a pu
+  // retaper entre-temps.
+  const restoreDraft = useCallback((content: string) => {
+    setDraft((current) => (current.length > 0 ? current : content));
+  }, []);
 
-  const pending = suggestions.data ?? [];
-  const failure = messages.error ?? send.error ?? resolve.error;
+  const { messages, send, submit, edit, retry, stop, switchAside, streamingText, pendingUserText } =
+    useConversationThread(conversationId, goToDedicatedConversation, restoreDraft);
+  const { pending, resolved, resolve } = useSuggestions(conversationId);
+
+  const failure = messages.error ?? send.error ?? resolve.error ?? switchAside.error;
+
+  // Messages et propositions tranchées sont refondus en une seule suite,
+  // ordonnée par date : ce que l'assistant a fait se relit au moment où il l'a
+  // fait, pas empilé au bas du fil. Ce qui attend encore un geste reste en
+  // pied de liste, là où l'utilisateur écrit.
+  const items = useMemo(
+    (): ThreadItem[] =>
+      [
+        ...(messages.data?.items ?? []).map((message): ThreadItem => ({ id: message.id, message })),
+        ...resolved.map((suggestion): ThreadItem => ({ id: suggestion.id, suggestion })),
+      ].sort((a, b) => itemDate(a) - itemDate(b)),
+    [messages.data, resolved],
+  );
+
+  // Réponses proposées sous la dernière question de l'assistant, tant qu'elle
+  // n'a pas reçu de réponse : un message plus récent, une réponse en cours de
+  // frappe ou un « Passer » la referment.
+  const question = useMemo(() => {
+    const items = messages.data?.items ?? [];
+    const last = items[items.length - 1];
+    if (!last || last.role !== "assistant" || !last.choices || last.id === skippedQuestion) {
+      return null;
+    }
+    return { id: last.id, text: last.content, choices: last.choices };
+  }, [messages.data, skippedQuestion]);
+
+  const askable = question !== null && streamingText === null && pendingUserText === null;
 
   // `useRef` et non l'état d'envoi : revenir sur ce fil ne doit pas renvoyer la
   // question une seconde fois, alors que le paramètre de route est toujours là.
@@ -92,35 +135,42 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     submit(content);
   }, [draft, send.isPending, submit]);
 
-  const renderMessage = useCallback(
-    ({ item }: { item: Message }) => {
-      const isUser = item.role === "user";
+  const renderItem = useCallback(
+    ({ item, index }: { item: ThreadItem; index: number }) => {
+      if (!item.message) return <ResolvedSuggestionNote suggestion={item.suggestion} />;
+
+      const message = item.message;
+      const previous = items[index - 1]?.message;
+
       return (
-        <View
-          style={[
-            styles.bubble,
-            isUser
-              ? { alignSelf: "flex-end", backgroundColor: palette.accentSoft }
-              : // La réponse de l'assistant n'a ni fond ni cadre : c'est le
-                // corps du texte, pas une pièce rapportée. Seule la parole de
-                // l'utilisateur est encadrée, ce que font ChatGPT et Claude.
-                styles.plain,
-          ]}
-        >
-          {/* Le message de l'utilisateur reste du texte brut : c'est ce qu'il a
-              tapé, l'interpréter ferait disparaître ses astérisques. Celui du
-              modèle est du Markdown, et se lit criblé de signes sans rendu. */}
-          {isUser ? (
-            <Text style={[styles.bubbleText, { color: palette.accentSoftText }]}>
-              {item.content}
-            </Text>
-          ) : (
-            <Markdown>{item.content}</Markdown>
-          )}
-        </View>
+        <>
+          <MessageRow
+            message={message}
+            answeredQuestion={answeredQuestion(message, previous)}
+            onRetry={() => retry(message.id)}
+            onEdit={(content) => edit(message.id, content)}
+            busy={send.isPending}
+          />
+
+          {/* Le canal permanent propose, l'utilisateur valide (§12.1, A.10). La
+              question restée sans réponse part avec lui : il n'a pas à la
+              retaper dans le fil qui l'accueille. */}
+          {message.redirectTitle !== null && message.redirectAcceptedAt === null ? (
+            <SwitchAsideCard
+              title={message.redirectTitle}
+              isPending={switchAside.isPending}
+              onSwitch={() =>
+                switchAside.mutate({
+                  messageId: message.id,
+                  draft: previous?.role === "user" ? previous.content : "",
+                })
+              }
+            />
+          ) : null}
+        </>
       );
     },
-    [palette],
+    [items, retry, edit, send.isPending, switchAside],
   );
 
   return (
@@ -135,10 +185,10 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
       ) : (
         <FlatList
           ref={listRef}
-          data={messages.data?.items ?? []}
+          data={items}
           keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
-          contentContainerStyle={styles.list}
+          renderItem={renderItem}
+          contentContainerStyle={[styles.list, column]}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
@@ -188,7 +238,13 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
                     key={suggestion.id}
                     suggestion={suggestion}
                     isPending={resolve.isPending && resolve.variables?.id === suggestion.id}
-                    onAccept={() => resolve.mutate({ id: suggestion.id, action: "accept" })}
+                    onAccept={(folderSelection) =>
+                      resolve.mutate({
+                        id: suggestion.id,
+                        action: "accept",
+                        ...(folderSelection ? { folderSelection } : {}),
+                      })
+                    }
                     onDismiss={() => resolve.mutate({ id: suggestion.id, action: "dismiss" })}
                   />
                 ))}
@@ -202,8 +258,10 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
         <View style={[styles.errorBar, { borderColor: palette.border }]}>
           <Text style={[styles.errorText, { color: palette.danger }]}>{errorMessage(failure)}</Text>
           {/* Un échec de chargement se rejoue ; un échec d'envoi, non — le
-              message est déjà enregistré et l'API n'offre pas de relancer le
-              modèle seul. Proposer « Réessayer » dans ce cas mentirait. Une
+              message est le plus souvent déjà enregistré, et l'API n'offre pas
+              de relancer le modèle seul. Proposer « Réessayer » ici le
+              dupliquerait. Quand rien n'a été enregistré, le texte est rendu au
+              champ de saisie et l'utilisateur le renvoie lui-même. Une
               proposition refusée par le serveur se rejoue depuis sa carte. */}
           <Pressable
             onPress={() => {
@@ -213,6 +271,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
               }
               send.reset();
               resolve.reset();
+              switchAside.reset();
             }}
             accessibilityRole="button"
             style={styles.retry}
@@ -224,63 +283,69 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
         </View>
       ) : null}
 
-      <View style={[styles.composer, { paddingBottom: spacing.md + insets.bottom }]}>
-        {/* Le bouton est dans le champ, et le champ seul porte le cadre : la
-            saisie se lit comme un objet unique posé sur le fil, sans bandeau
-            qui la sépare de la conversation. C'est ce que font ChatGPT, Claude
-            et Perplexity. */}
-        <View
-          style={[
-            styles.inputShell,
-            { backgroundColor: palette.surface, borderColor: palette.border },
-          ]}
-        >
-          <TextInput
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Votre message"
-            placeholderTextColor={palette.textMuted}
-            multiline
-            onSubmitEditing={sendDraft}
-            // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde
-            // un retour à la ligne, la saisie multiligne y étant la norme.
-            blurOnSubmit={Platform.OS === "web"}
-            accessibilityLabel="Votre message"
-            // Le cadre est porté par la coque : celui du champ ferait double
-            // trait. `web:` seulement — sur mobile, `outline` n'existe pas et
-            // le retrait du liseré de focus enlèverait le repère de navigation
-            // au clavier, qui est ici la coque elle-même.
-            className="web:outline-none"
-            style={[styles.input, { color: palette.text }]}
-            // Un `textarea` s'ouvre sur deux rangées par défaut : le champ
-            // naissait donc deux fois trop haut, texte collé en haut et flèche
-            // en bas. Sur mobile, `numberOfLines` bornerait au contraire la
-            // saisie à une ligne — d'où la restriction au web.
-            {...(Platform.OS === "web" ? { numberOfLines: 1 } : {})}
+      {askable && question ? (
+        <View style={[styles.question, column]}>
+          <QuestionCard
+            question={question.text}
+            choices={question.choices}
+            onChoose={(choice) => {
+              setSkippedQuestion(question.id);
+              submit(choice);
+            }}
+            onWrite={() => inputRef.current?.focus()}
+            onSkip={() => setSkippedQuestion(question.id)}
           />
-          <Pressable
-            onPress={sendDraft}
-            disabled={draft.trim().length === 0 || send.isPending}
-            accessibilityRole="button"
-            accessibilityLabel="Envoyer le message"
-            // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie,
-            // plus 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
-            // `MIN_TOUCH_TARGET` sans faire grandir le champ.
-            hitSlop={8}
-            style={[
-              styles.sendButton,
-              {
-                backgroundColor: palette.accent,
-                opacity: draft.trim().length === 0 || send.isPending ? 0.4 : 1,
-              },
-            ]}
-          >
-            <ArrowUp size={18} color={palette.accentText} />
-          </Pressable>
         </View>
+      ) : null}
+
+      <View style={[styles.composer, column, { paddingBottom: spacing.md + insets.bottom }]}>
+        <Composer
+          value={draft}
+          onChangeText={setDraft}
+          onSubmit={sendDraft}
+          // Le libellé dit que la carte n'oblige à rien : on peut toujours
+          // répondre à côté de ce qui est proposé.
+          placeholder={askable ? "Ou répondre directement…" : "Votre message"}
+          busy={send.isPending}
+          onStop={stop}
+          inputRef={inputRef}
+        />
+
+        {/* Sous le champ et non dans le fil : la mention vaut pour toutes les
+            réponses, elle ne commente pas la dernière. C'est là que ChatGPT,
+            Claude et Perplexity la posent (§4.2). */}
+        <Text style={[styles.disclaimer, { color: palette.textMuted }]}>
+          Jean-Claude comme tout non-humain peut faire des erreurs. Veuillez vérifier les réponses.
+        </Text>
       </View>
     </KeyboardAvoidingView>
   );
+}
+
+/**
+ * Une entrée du fil : un message, ou la trace d'une proposition tranchée. La
+ * seconde forme n'a pas de `message`, ce qui suffit à les distinguer.
+ */
+type ThreadItem =
+  | { id: string; message: Message; suggestion?: undefined }
+  | { id: string; message?: undefined; suggestion: Suggestion };
+
+/**
+ * La question à laquelle ce message répond, quand la réponse a été choisie
+ * d'un appui sous une carte de questions.
+ *
+ * Reconstituée à l'affichage et non enregistrée : c'est bien la réponse seule
+ * que l'utilisateur a envoyée, et la dupliquer en base ferait deux textes à
+ * tenir cohérents. Relue plus haut dans le fil, « Oui » ne dirait plus à quoi
+ * il répondait.
+ */
+function answeredQuestion(message: Message, previous: Message | undefined): string | null {
+  if (message.role !== "user" || !previous || previous.role !== "assistant") return null;
+  return previous.choices?.includes(message.content) ? previous.content : null;
+}
+
+function itemDate(item: ThreadItem): number {
+  return new Date(item.message ? item.message.createdAt : item.suggestion.createdAt).getTime();
 }
 
 function errorMessage(error: unknown): string {
@@ -290,13 +355,7 @@ function errorMessage(error: unknown): string {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
-  list: {
-    padding: spacing.lg,
-    gap: spacing.md,
-    width: "100%",
-    maxWidth: 900,
-    alignSelf: "center",
-  },
+  list: { padding: spacing.lg, gap: spacing.md },
   bubble: {
     maxWidth: "85%",
     paddingVertical: spacing.md,
@@ -328,34 +387,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   retryText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  composer: {
-    padding: spacing.md,
-    width: "100%",
-    maxWidth: 900,
-    alignSelf: "center",
-  },
-  inputShell: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: spacing.sm,
-    minHeight: MIN_TOUCH_TARGET,
-    paddingLeft: spacing.md,
-    paddingRight: spacing.sm,
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
-    borderRadius: radius.lg,
-  },
-  input: {
-    flex: 1,
-    maxHeight: 140,
-    paddingVertical: spacing.xs,
-    fontSize: fontSize.md,
-  },
-  sendButton: {
-    width: 32,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: radius.pill,
-  },
+  question: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  composer: { padding: spacing.md },
+  disclaimer: { fontSize: fontSize.xs, textAlign: "center", marginTop: spacing.sm },
 });
