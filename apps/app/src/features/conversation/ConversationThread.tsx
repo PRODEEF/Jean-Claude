@@ -15,8 +15,10 @@ import { ArrowUp } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import type { Conversation, Message, Suggestion } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
+import { contentColumn, READING_MAX_WIDTH } from "@/shared/ui/screen-shell";
 import { useConversationThread } from "./hooks/use-conversation-thread";
 import { useSuggestions } from "./hooks/use-suggestions";
 import { QuestionCard } from "./QuestionCard";
@@ -45,6 +47,9 @@ export type ConversationThreadProps = {
 export function ConversationThread({ conversationId, initialDraft }: ConversationThreadProps) {
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
+  // Le fil porte son propre défilement, mais suit la colonne des autres
+  // écrans : sans cela, le shell et le fil borneraient chacun à leur façon.
+  const column = contentColumn(useBreakpoint() === "compact", READING_MAX_WIDTH);
   const router = useRouter();
   const [draft, setDraft] = useState("");
   const listRef = useRef<FlatList<ThreadItem>>(null);
@@ -172,7 +177,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           data={items}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, column]}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
@@ -259,7 +264,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
       ) : null}
 
       {askable && question ? (
-        <View style={styles.question}>
+        <View style={[styles.question, column]}>
           <QuestionCard
             question={question.text}
             choices={question.choices}
@@ -273,7 +278,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
         </View>
       ) : null}
 
-      <View style={[styles.composer, { paddingBottom: spacing.md + insets.bottom }]}>
+      <View style={[styles.composer, column, { paddingBottom: spacing.md + insets.bottom }]}>
         {/* Le bouton est dans le champ, et le champ seul porte le cadre : la
             saisie se lit comme un objet unique posé sur le fil, sans bandeau
             qui la sépare de la conversation. C'est ce que font ChatGPT, Claude
@@ -354,13 +359,7 @@ function errorMessage(error: unknown): string {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
-  list: {
-    padding: spacing.lg,
-    gap: spacing.md,
-    width: "100%",
-    maxWidth: 900,
-    alignSelf: "center",
-  },
+  list: { padding: spacing.lg, gap: spacing.md },
   bubble: {
     maxWidth: "85%",
     paddingVertical: spacing.md,
@@ -392,19 +391,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   retryText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  question: {
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.md,
-    width: "100%",
-    maxWidth: 900,
-    alignSelf: "center",
-  },
-  composer: {
-    padding: spacing.md,
-    width: "100%",
-    maxWidth: 900,
-    alignSelf: "center",
-  },
+  question: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  composer: { padding: spacing.md },
   inputShell: {
     flexDirection: "row",
     alignItems: "flex-end",

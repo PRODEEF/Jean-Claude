@@ -1,9 +1,15 @@
-import { ScreenScaffold, NotBuiltYet } from "@/shared/ui/screen-scaffold";
+import { Text } from "@/shared/ui/text";
+import { NotBuiltYet } from "@/shared/ui/not-built-yet";
+import { ScreenShell } from "@/shared/ui/screen-shell";
 
 /** Vue centralisée des todolistes, tous dossiers confondus (A.2). */
 export default function TodoScreen() {
   return (
-    <ScreenScaffold title="Todoliste" subtitle="Toutes vos listes, tous dossiers confondus.">
+    <ScreenShell title="Todoliste">
+      <Text className="text-muted-foreground text-base">
+        Toutes vos listes, tous dossiers confondus.
+      </Text>
+
       <NotBuiltYet
         phase="Phase B / C"
         items={[
@@ -13,6 +19,6 @@ export default function TodoScreen() {
           "Tâches datées poussées dans le calendrier (A.3)",
         ]}
       />
-    </ScreenScaffold>
+    </ScreenShell>
   );
 }

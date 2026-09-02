@@ -7,7 +7,18 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — questions à réponses proposées, et couleur
+Dernière mise à jour : **2 septembre 2026** — ossature commune des écrans.
+
+Conversation, canal permanent, todoliste et calendrier partagent désormais le même
+`ScreenShell` : un bandeau de tête de hauteur fixe, pleine largeur, titre à gauche et
+commande à droite, puis une colonne centrée à 80 % de la largeur disponible — c'est elle
+qui défile, le bandeau reste en place. La colonne est plafonnée à 900 pt là où on lit du
+texte et à 1100 pt là où on lit une grille : au-delà, l'œil perd sa ligne au retour ;
+en deçà du point de rupture, elle prend toute la largeur moins 16 pt de marge. Le fil de
+conversation garde son propre défilement — une `FlatList` dans un `ScrollView` perdrait sa
+virtualisation — mais suit la même colonne, exportée par le shell.
+
+Auparavant le même jour : questions à réponses proposées, et couleur
 des interrupteurs.
 
 L'assistant peut désormais **poser une question avec quelques réponses à choisir** :

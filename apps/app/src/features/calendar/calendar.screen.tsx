@@ -4,6 +4,7 @@ import { Plus } from "lucide-react-native";
 import type { CalendarEvent } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { Button } from "@/shared/ui/button";
+import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { CalendarToolbar, type CalendarView } from "./CalendarToolbar";
@@ -39,10 +40,10 @@ const DEFAULT_CREATE_MINUTE = 9 * 60;
  * quatre fenêtres à la même. Changer de vue ou de période ne fait donc que
  * déplacer les bornes, et le mois déjà consulté revient du cache.
  *
- * Une seule zone défilante, celle de la page : les grilles se déroulent en
- * entier dedans. Une grille qui défilerait pour son compte emporterait sa
- * barre de défilement dans la largeur de ses colonnes, décalant celles-ci de
- * leurs en-têtes.
+ * Une seule zone défilante, celle du contenu posé par `ScreenShell` : les
+ * grilles se déroulent en entier dedans. Une grille qui défilerait pour son
+ * compte emporterait sa barre de défilement dans la largeur de ses colonnes,
+ * décalant celles-ci de leurs en-têtes.
  */
 export function CalendarScreen() {
   const compact = useBreakpoint() === "compact";
@@ -107,87 +108,83 @@ export function CalendarScreen() {
   const createAt = (day: Date, minute: number) => setDialogTarget({ mode: "create", day, minute });
 
   return (
-    <View className="bg-background flex-1">
-      <ScrollView
-        ref={page}
-        className="flex-1"
-        contentContainerClassName="w-full max-w-[1100px] gap-4 self-center p-6"
-      >
-        <View className="flex-row items-center justify-between gap-3">
-          <Text className="text-2xl font-semibold">Calendrier</Text>
-          <Button
-            size="sm"
-            onPress={() => createAt(selectedDay, DEFAULT_CREATE_MINUTE)}
-            accessibilityRole="button"
-            accessibilityLabel="Nouvel événement"
-          >
-            <Icon as={Plus} className="size-4" />
-            <Text>Événement</Text>
-          </Button>
-        </View>
+    <ScreenShell
+      title="Calendrier"
+      action={
+        <Button
+          size="sm"
+          onPress={() => createAt(selectedDay, DEFAULT_CREATE_MINUTE)}
+          accessibilityRole="button"
+          accessibilityLabel="Nouvel événement"
+        >
+          <Icon as={Plus} className="size-4" />
+          <Text>Événement</Text>
+        </Button>
+      }
+      maxWidth={GRID_MAX_WIDTH}
+      scrollRef={page}
+    >
+      <CalendarToolbar
+        label={periodLabel(view, anchor)}
+        view={view}
+        onViewChange={changeView}
+        onPrevious={() => shift(-1)}
+        onNext={() => shift(1)}
+        onToday={goToToday}
+      />
 
-        <CalendarToolbar
-          label={periodLabel(view, anchor)}
-          view={view}
-          onViewChange={changeView}
-          onPrevious={() => shift(-1)}
-          onNext={() => shift(1)}
-          onToday={goToToday}
-        />
+      {isError ? (
+        <Text className="text-destructive text-sm">
+          Le calendrier n'a pas pu être chargé. Réessayez dans un instant.
+        </Text>
+      ) : null}
 
-        {isError ? (
-          <Text className="text-destructive text-sm">
-            Le calendrier n'a pas pu être chargé. Réessayez dans un instant.
-          </Text>
-        ) : null}
-
-        {view === "month" ? (
-          <>
-            <MonthGrid
-              days={days}
-              anchor={anchor}
-              events={events}
-              selectedDay={selectedDay}
-              onSelectDay={setSelectedDay}
-              onOpenEvent={openEvent}
-              compact={compact}
-            />
-            <DayAgenda day={selectedDay} events={events} onOpenEvent={openEvent} />
-          </>
-        ) : null}
-
-        {view === "year" ? (
-          <YearGrid
+      {view === "month" ? (
+        <>
+          <MonthGrid
+            days={days}
             anchor={anchor}
             events={events}
-            onSelectMonth={(month) => {
-              setAnchor(month);
-              setSelectedDay(startOfDay(month));
-              setView("month");
-            }}
+            selectedDay={selectedDay}
+            onSelectDay={setSelectedDay}
+            onOpenEvent={openEvent}
+            compact={compact}
           />
-        ) : null}
+          <DayAgenda day={selectedDay} events={events} onOpenEvent={openEvent} />
+        </>
+      ) : null}
 
-        {view === "day" || view === "week" ? (
-          <View onLayout={measureGrid}>
-            <TimeGrid
-              days={days}
-              events={events}
-              onOpenEvent={openEvent}
-              onCreateAt={createAt}
-              onMorningOffset={measureMorning}
-            />
-          </View>
-        ) : null}
+      {view === "year" ? (
+        <YearGrid
+          anchor={anchor}
+          events={events}
+          onSelectMonth={(month) => {
+            setAnchor(month);
+            setSelectedDay(startOfDay(month));
+            setView("month");
+          }}
+        />
+      ) : null}
 
-        {/* Sous la grille et non à sa place : le mois déjà chargé reste
-            affiché pendant qu'on en récupère un autre, plutôt que de laisser
-            un écran vide à chaque navigation. */}
-        {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
-      </ScrollView>
+      {view === "day" || view === "week" ? (
+        <View onLayout={measureGrid}>
+          <TimeGrid
+            days={days}
+            events={events}
+            onOpenEvent={openEvent}
+            onCreateAt={createAt}
+            onMorningOffset={measureMorning}
+          />
+        </View>
+      ) : null}
+
+      {/* Sous la grille et non à sa place : le mois déjà chargé reste
+          affiché pendant qu'on en récupère un autre, plutôt que de laisser
+          un écran vide à chaque navigation. */}
+      {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
 
       <EventFormDialog target={dialogTarget} onClose={() => setDialogTarget(null)} />
-    </View>
+    </ScreenShell>
   );
 }
 
