@@ -7,7 +7,45 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — corrections après relecture : calendrier,
+Dernière mise à jour : **2 septembre 2026** — le contexte remis au modèle, et la
+robustesse du tour de dialogue.
+
+**Ce que le modèle ignorait.** La consigne système ne portait ni date, ni heure, ni fuseau :
+le modèle datait au jugé une échéance déduite de « lundi prochain », alors même que le canal
+annonce comme premier sujet ce qui est important _aujourd'hui_. Elle porte désormais l'instant
+du tour dans le fuseau du profil, le nom sous lequel s'adresser à l'utilisateur, et un cadre de
+rédaction — la même réponse se lit sur un téléphone.
+
+**Le canal savait promettre les rappels, pas les tenir.** Il reçoit maintenant l'agenda des
+sept prochains jours, lu par `CalendarService` : « qu'est-ce que j'ai cette semaine ? » ne peut
+plus produire qu'une invention. Choix assumé du contexte injecté plutôt que d'outils de lecture
+— ces derniers imposeraient une boucle outil → résultat → second appel, donc une évolution du
+port `LlmProvider`, hors du périmètre du sprint. Limite consignée : les séries récurrentes n'y
+figurent qu'à leur première occurrence, faute d'expansion (A.11) ; la consigne le dit au modèle
+plutôt que de le lui laisser deviner.
+
+Il reçoit aussi les dossiers déjà créés. Il proposait jusqu'ici « je te crée un dossier Jardin ? »
+alors que Jardin existait : le service ne le dupliquait pas, mais la phrase affichée était
+fausse, ce que le §12.1 interdit précisément.
+
+**Les propositions déjà faites** sur un fil, et leur sort, sont rappelées au modèle. Sans elles,
+il reformulait au tour suivant une proposition que l'utilisateur venait d'écarter — l'inverse du
+« suggestif et non intrusif ». Le garde-fou « une proposition en attente retire l'outil du jeu »
+vaut désormais aussi pour le canal. Et un identifiant de dossier inventé n'emporte plus tout le
+rangement : la ligne fautive est écartée, comme l'acceptation savait déjà le faire.
+
+**Le tour de dialogue côté client** cesse d'être sans recours. Le bouton d'envoi devient un
+bouton d'arrêt pendant la génération — l'`AbortSignal` était plombé de bout en bout depuis le
+début, il n'était simplement pas branché ; rien n'est perdu, le serveur conserve le texte déjà
+produit. Un message qui n'a pas atteint le serveur est rendu au champ de saisie au lieu de
+disparaître avec l'erreur (et seulement celui-là : après enregistrement, le renvoyer le
+dupliquerait). Une réponse tronquée ne se présente plus comme une réponse complète : le flux se
+conclut par `done`, son absence après du texte est signalée. Enfin, un 401 passager n'éjecte
+plus vers l'écran de connexion — la session est renouvelée et la requête rejouée une fois — et
+le renouvellement automatique reprend au retour au premier plan, comme la documentation Supabase
+React Native le demande.
+
+Auparavant le même jour : corrections après relecture : calendrier,
 canal permanent, bannière et historique des propositions.
 
 Le calendrier passe à **quatre vues — jour, semaine, mois (par défaut) et année**, la
@@ -182,22 +220,22 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Annexe A — backlog fonctionnel
 
-| Réf. | Point                                                 | Statut | Note                                                                                                                                                                                                                        |
-| ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                           |
-| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, et proposition de rangement par l'assistant pour un fil non classé                                                                 |
-| A.2  | Conversion conversation → todoliste                   |   🔵   | Tables `task_lists` / `tasks` prêtes, outil `suggest_task_list` défini. Module `domain/task` à écrire                                                                                                                       |
-| A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                                                                                                              |
-| A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                                                                           |
-| A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                          |
-| A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix |
-| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                                                                                   |
-| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées. Restent la todoliste et les rendez-vous                        |
-| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                     |
-| A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre, et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages ; rappels du matin → #26       |
-| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                           |
-| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                                                                           |
-| A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte, vocal renvoyé à #25                                                                                                                                                                              |
+| Réf. | Point                                                 | Statut | Note                                                                                                                                                                                                                                                                                                                                                    |
+| ---- | ----------------------------------------------------- | :----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                                                                                                                       |
+| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                             |
+| A.2  | Conversion conversation → todoliste                   |   🔵   | Tables `task_lists` / `tasks` prêtes, outil `suggest_task_list` défini. Module `domain/task` à écrire                                                                                                                                                                                                                                                   |
+| A.3  | Détection de tâches datées                            |   🔵   | Champ `dueAt` dans l'outil IA. Extraction et création à écrire                                                                                                                                                                                                                                                                                          |
+| A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                                                                                                                                                                                                       |
+| A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                      |
+| A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                                                                             |
+| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                                                                                                                                                                                                               |
+| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées — et que le modèle relit au tour suivant, pour ne pas reproposer ce qui vient d'être écarté. Restent la todoliste et les rendez-vous                                                        |
+| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                                                                                                                                                 |
+| A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre, et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages. Le canal reçoit l'agenda des 7 jours et les dossiers existants — il peut enfin répondre sur le premier de ses trois sujets ; délivrance des rappels → #26 |
+| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                                                                                                                                                       |
+| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                                                                                                                                                                                                       |
+| A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte, vocal renvoyé à #25                                                                                                                                                                                                                                                                                                          |
 
 ---
 
@@ -234,14 +272,20 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Dette technique connue
 
-| Point                                | Détail                                                                                                                                                                                                                                                          |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pagination remontante du fil absente | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                                                                                                   |
-| Rappels du matin non délivrés        | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26, #20)                                                                                                   |
-| Todoliste et rendez-vous non captés  | `feature/assistant` ne traduit que les propositions de dossiers ; `suggest_task_list` reste ignoré faute de `domain/task`, et `suggest_recurring_event` faute d'expansion des séries — `domain/calendar` existe désormais, le raccordement reste à faire (A.11) |
-| Séries récurrentes non déployées     | Une `rrule` se saisit et se stocke, mais les occurrences ne sont pas calculées : l'événement n'apparaît qu'à son premier créneau. La dépendance `rrule` est déjà au `package.json` de l'API (A.11)                                                              |
-| Dates saisies au clavier             | Le formulaire d'événement demande `JJ/MM/AAAA` et `HH:MM` en texte, faute de sélecteur natif partagé par les trois cibles. Fonctionnel, mais en deçà des références du §4.2                                                                                     |
-| Node ≥ 22.12 requis                  | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                                                                                                             |
+| Point                                   | Détail                                                                                                                                                                                                                                                          |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pagination remontante du fil absente    | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                                                                                                   |
+| Rappels du matin non délivrés           | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26, #20)                                                                                                   |
+| Todoliste et rendez-vous non captés     | `feature/assistant` ne traduit que les propositions de dossiers ; `suggest_task_list` reste ignoré faute de `domain/task`, et `suggest_recurring_event` faute d'expansion des séries — `domain/calendar` existe désormais, le raccordement reste à faire (A.11) |
+| Séries récurrentes non déployées        | Une `rrule` se saisit et se stocke, mais les occurrences ne sont pas calculées : l'événement n'apparaît qu'à son premier créneau. La dépendance `rrule` est déjà au `package.json` de l'API (A.11)                                                              |
+| Dates saisies au clavier                | Le formulaire d'événement demande `JJ/MM/AAAA` et `HH:MM` en texte, faute de sélecteur natif partagé par les trois cibles. Fonctionnel, mais en deçà des références du §4.2                                                                                     |
+| Node ≥ 22.12 requis                     | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                                                                                                             |
+| Aucune limite de débit par compte       | `POST /conversations/:id/messages` n'est borné que par la taille d'une réponse (`MAX_OUTPUT_TOKENS`). Rien ne borne le nombre d'appels : un seul compte peut consommer le budget du Gateway                                                                     |
+| Aucun modèle de repli                   | `llm-error.ts` distingue proprement 429 et 402, mais il n'y a qu'un `LLM_MODEL` : un quota atteint tue le tour au lieu de basculer sur un second moteur                                                                                                         |
+| Un timeout se présente en panne         | Les délais de `gateway.provider.ts` (60 s, 15 s au premier jeton) retombent dans le `default` de `toHttpException` : l'utilisateur lit « moteur indisponible » et attend une panne qui n'existe pas                                                             |
+| Erreurs du SDK `ai` non interceptées    | Aucun `onError` n'est posé sur `streamText`. Si le SDK route certaines erreurs vers ce rappel plutôt que par exception, un 429 produirait une réponse vide sans message — à vérifier par un test                                                                |
+| Historique ouvert par un tour assistant | Le canal commence par le message d'accueil, donc l'historique remis au modèle débute par un tour `assistant`. Toléré ou refusé selon le moteur routé par le Gateway — à couvrir avant de changer `LLM_MODEL`                                                    |
+| `listPending` sans appelant             | `ConversationService` lit désormais `listForConversation` et en déduit les propositions en attente. La méthode reste en place le temps que l'implémentation des todolistes atterrisse, pour ne pas conflitter                                                   |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo
 (`app.config.js` / `metro.config.js`).

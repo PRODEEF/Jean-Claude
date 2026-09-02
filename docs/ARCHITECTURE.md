@@ -235,14 +235,19 @@ hors UE.
 
 ## 5. Ce qui n'est pas encore là
 
-Le socle couvre `folder` et `conversation` comme modules de référence. Restent
-à écrire, en suivant exactement le même découpage :
+`domain/folder`, `domain/conversation`, `domain/calendar`, `domain/user`,
+`domain/suggestion`, `feature/assistant` et `feature/search` sont écrits.
+Restent à écrire, en suivant exactement le même découpage :
 
-- `domain/task` — todolistes (A.2)
-- `domain/calendar` — événements et récurrence (A.11) ; le schéma SQL est prêt
-- `domain/user` — préférences et périmètre assistant (A.10)
-- `feature/assistant` — transformation des appels d'outils en suggestions
-  persistées, rappels planifiés
-- `feature/search` — recherche par filtres (A.6) ; les index plein texte existent
+- `domain/task` — todolistes (A.2) et tâches datées (A.3) ; le schéma SQL est prêt
+- l'expansion des séries récurrentes et la délivrance des rappels (A.11), qui
+  demandent un planificateur dont le projet ne dispose pas encore
+
+Le modèle **lit** aujourd'hui l'agenda par contexte injecté dans la consigne du
+canal permanent, et non par appel d'outil : le port `LlmProvider` ne transporte
+pas de résultat d'outil, et lui en faire transporter ouvrirait une boucle
+outil → résultat → second appel. C'est un choix de périmètre, réversible : le
+jour où plusieurs sources devront être interrogées à la demande, c'est le port
+qu'il faudra faire évoluer, pas les services.
 
 Le suivi point par point est dans [SUIVI-BACKLOG.md](SUIVI-BACKLOG.md).

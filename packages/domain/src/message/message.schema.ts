@@ -32,8 +32,17 @@ export const messageSchema = z.object({
 
 export type Message = z.infer<typeof messageSchema>;
 
+/**
+ * Longueur maximale d'un message.
+ *
+ * Exportée parce que le champ de saisie doit la borner lui-même : sans elle,
+ * un texte trop long part au serveur, revient en 400 générique, et le
+ * brouillon est perdu en chemin.
+ */
+export const MESSAGE_MAX_LENGTH = 32_000;
+
 export const sendMessageSchema = z.object({
-  content: z.string().trim().min(1).max(32_000),
+  content: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
   inputMode: messageInputModeSchema.default("text"),
 });
 

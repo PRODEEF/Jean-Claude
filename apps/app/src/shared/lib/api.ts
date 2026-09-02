@@ -16,6 +16,16 @@ export const api = new JeanClaudeClient({
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token ?? null;
   },
+  /**
+   * Tenté une fois avant de conclure à une session perdue. Un échec n'est pas
+   * consigné : il ressort aussitôt en 401, donc sous les yeux de
+   * l'utilisateur, ce qui vaut mieux qu'une ligne dans une console qu'il ne
+   * lira pas.
+   */
+  refreshAccessToken: async () => {
+    const { data } = await supabase.auth.refreshSession();
+    return data.session?.access_token ?? null;
+  },
   onUnauthorized: () => {
     void supabase.auth.signOut();
   },
