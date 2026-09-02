@@ -7,7 +7,25 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — issues #12 et #14 : le paramétrage complet
+Dernière mise à jour : **2 septembre 2026** — issue #9 : le calendrier, vues mois et semaine.
+Le module `domain/calendar` et `/api/calendar` ouvrent la table `calendar_events`, restée
+sans route jusqu'ici : lecture sur une fenêtre bornée par l'appelant, création, modification
+et suppression. Les deux vues n'appellent pas deux routes différentes — elles demandent deux
+fenêtres à la même, ce qui fait revenir du cache un mois déjà consulté.
+
+La vue mois reprend la grille de la maquette web (six semaines fixes, débords atténués sur
+les mois voisins). La vue semaine est une grille horaire à sept colonnes, forme commune au
+Calendrier iOS, à Google Calendar et à Fantastical (§4.2) : les rendez-vous simultanés se
+partagent la largeur du jour au lieu de se masquer, la journée entière sort de l'échelle
+dans un bandeau, et un appui sur un créneau libre ouvre la création à l'heure visée. Sur
+téléphone, la cellule du mois ne porte que des pastilles et le détail passe dans la liste
+du jour sélectionné, comme le font ces mêmes références à cette largeur.
+
+Non traité et consigné : l'**expansion des séries récurrentes**. Une ligne portant une
+`rrule` n'apparaît qu'à la date de son premier créneau — déployer les occurrences et poser
+les rappels relève d'A.11, qui est le point où les deux se tiennent.
+
+Auparavant le même jour : issues #12 et #14 : le paramétrage complet
 et l'accueil conversationnel.
 
 **#12 est close.** La page Réglages porte désormais le nom de l'assistant, sa couleur et
@@ -114,7 +132,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                                                                       |
 | §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                                                                |
 | §5.3 | API commune web + mobile                               |   ✅   | REST sur Hono, arbitrage consigné dans `docs/ARCHITECTURE.md` ; client `@jc/api-client` partagé, l'app ne touche jamais la base directement |
-| §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre — ce dernier désormais choisi par l'utilisateur. Réponses du modèle rendues en Markdown (titres, listes, tableaux, liens) ; barre latérale redimensionnable au geste |
+| §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre — ce dernier désormais choisi par l'utilisateur. Réponses du modèle rendues en Markdown (titres, listes, tableaux, liens) ; barre latérale redimensionnable au geste ; calendrier divergent par point de rupture, pastilles et liste du jour en `compact` |
 | §4.4 | React Native                                           |   ✅   | Expo SDK 57, Expo Router, React 19                                                                                                          |
 | §8   | Postgres portable, migration UE possible               |   ✅   | Aucune extension propriétaire                                                                                                               |
 | §8   | **Créer le projet Supabase en région UE**              |   ⬜   | **À faire avant tout remplissage de données**                                                                                               |
@@ -149,7 +167,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste. Restent la todoliste et les rendez-vous              |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                            |
 | A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre, et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages ; rappels du matin → #26  |
-| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | Colonnes `rrule` et `reminder_minutes_before` posées, outil IA défini. Expansion et rappels à écrire                                                               |
+| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les deux vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels |
 | A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                  |
 | A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte, vocal renvoyé à #25                                                                                                                     |
 
@@ -192,7 +210,9 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pagination remontante du fil absente | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                   |
 | Rappels du matin non délivrés        | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26, #20)                        |
-| Todoliste et rendez-vous non captés  | `feature/assistant` ne traduit que les propositions de dossiers ; `suggest_task_list` et `suggest_recurring_event` restent ignorés, faute de `domain/task` et `domain/calendar` |
+| Todoliste et rendez-vous non captés  | `feature/assistant` ne traduit que les propositions de dossiers ; `suggest_task_list` reste ignoré faute de `domain/task`, et `suggest_recurring_event` faute d'expansion des séries — `domain/calendar` existe désormais, le raccordement reste à faire (A.11) |
+| Séries récurrentes non déployées     | Une `rrule` se saisit et se stocke, mais les occurrences ne sont pas calculées : l'événement n'apparaît qu'à son premier créneau. La dépendance `rrule` est déjà au `package.json` de l'API (A.11)                                                        |
+| Dates saisies au clavier             | Le formulaire d'événement demande `JJ/MM/AAAA` et `HH:MM` en texte, faute de sélecteur natif partagé par les trois cibles. Fonctionnel, mais en deçà des références du §4.2                                                                               |
 | Node ≥ 22.12 requis                  | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                             |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo

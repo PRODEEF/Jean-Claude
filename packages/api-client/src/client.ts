@@ -1,7 +1,10 @@
 import {
   messageStreamEventSchema,
   type AssignFolders,
+  type CalendarEvent,
+  type CalendarRange,
   type Conversation,
+  type CreateCalendarEvent,
   type CreateConversation,
   type CreateFolder,
   type Folder,
@@ -14,6 +17,7 @@ import {
   type SearchResult,
   type SendMessage,
   type Suggestion,
+  type UpdateCalendarEvent,
   type UpdateConversation,
   type UpdateFolder,
   type UpdateUserProfile,
@@ -71,6 +75,25 @@ export class JeanClaudeClient {
       this.http.request<Folder>(`/folders/${id}`, { method: "PATCH", body: patch }),
 
     remove: (id: string) => this.http.request<void>(`/folders/${id}`, { method: "DELETE" }),
+  };
+
+  /**
+   * Calendrier (§3 Phase B).
+   *
+   * La fenêtre est bornée par l'appelant : la vue mois et la vue semaine
+   * n'appellent pas deux routes différentes, elles demandent deux fenêtres.
+   */
+  readonly calendar = {
+    list: (range: CalendarRange) =>
+      this.http.request<CalendarEvent[]>("/calendar", { query: range }),
+
+    create: (input: CreateCalendarEvent) =>
+      this.http.request<CalendarEvent>("/calendar", { method: "POST", body: input }),
+
+    update: (id: string, patch: UpdateCalendarEvent) =>
+      this.http.request<CalendarEvent>(`/calendar/${id}`, { method: "PATCH", body: patch }),
+
+    remove: (id: string) => this.http.request<void>(`/calendar/${id}`, { method: "DELETE" }),
   };
 
   /**
