@@ -34,6 +34,10 @@ export function useSuggestions(conversationId: string) {
         queryClient.invalidateQueries({ queryKey: ["folders"] }),
         // Un rangement change le dossier sous lequel la conversation apparaît.
         queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+        // Accepter une todoliste crée des listes, et poser leurs créneaux des
+        // événements : les deux onglets doivent les montrer sans rechargement.
+        queryClient.invalidateQueries({ queryKey: ["taskLists"] }),
+        queryClient.invalidateQueries({ queryKey: ["calendar"] }),
       ]);
     },
   });

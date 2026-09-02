@@ -19,6 +19,14 @@ export const SUGGEST_TASK_LIST: LlmTool = {
   inputSchema: {
     type: "object",
     properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « On dirait qu'une liste d'achats et une liste de tâches " +
+          "se dessinent pour le jardin, je te les organise ? ». Ne jamais présenter " +
+          "les listes comme déjà créées. 500 caractères maximum.",
+      },
       lists: {
         type: "array",
         items: {
@@ -49,9 +57,11 @@ export const SUGGEST_TASK_LIST: LlmTool = {
           },
           required: ["title", "kind", "items"],
         },
+        minItems: 1,
+        maxItems: 4,
       },
     },
-    required: ["lists"],
+    required: ["message", "lists"],
   },
 };
 

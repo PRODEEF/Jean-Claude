@@ -1,7 +1,7 @@
 import type { CreateTask, CreateTaskList, Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { forUser } from "../../core/supabase/supabase.js";
-import type { ITaskRepository, TaskPatch } from "./task.repository.interface.js";
+import type { ITaskRepository, TaskListOrigin, TaskPatch } from "./task.repository.interface.js";
 
 /** Ligne Postgres — snake_case, telle que renvoyée par Supabase. */
 type TaskListRow = {
@@ -98,7 +98,7 @@ export const taskRepository: ITaskRepository = {
     return data ? toListWithTasks(data as unknown as TaskListRow & { tasks: TaskRow[] }) : null;
   },
 
-  async createList(userId, input: CreateTaskList, accessToken) {
+  async createList(userId, input: CreateTaskList & TaskListOrigin, accessToken) {
     const { data, error } = await forUser(accessToken)
       .from("task_lists")
       .insert({
@@ -106,6 +106,8 @@ export const taskRepository: ITaskRepository = {
         title: input.title,
         kind: input.kind,
         folder_id: input.folderId ?? null,
+        conversation_id: input.conversationId ?? null,
+        created_by_assistant: input.createdByAssistant ?? false,
       })
       .select(LIST_COLUMNS)
       .single();
@@ -165,6 +167,7 @@ export const taskRepository: ITaskRepository = {
     if (patch.done !== undefined) payload["done"] = patch.done;
     if (patch.completedAt !== undefined) payload["completed_at"] = patch.completedAt;
     if (patch.position !== undefined) payload["position"] = patch.position;
+    if (patch.eventId !== undefined) payload["event_id"] = patch.eventId;
 
     const { data, error } = await forUser(accessToken)
       .from("tasks")

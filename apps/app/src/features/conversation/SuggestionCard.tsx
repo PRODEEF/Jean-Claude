@@ -4,10 +4,13 @@ import { Check } from "lucide-react-native";
 import {
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
+  createTaskListsPayloadSchema,
+  scheduleTasksPayloadSchema,
   type Suggestion,
 } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { api } from "@/shared/lib/api";
+import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 export type SuggestionCardProps = {
@@ -108,7 +111,13 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
   const { palette } = useTheme();
   const preview = useSuggestionPreview(suggestion);
   const accepted = suggestion.status === "accepted";
-  const names = preview.lines.map((line) => line.label).join(", ");
+
+  // Les tâches sont laissées de côté : une todoliste se relit dans son onglet,
+  // et déplier ses lignes ici ferait de l'historique du fil une seconde liste.
+  const names = preview.lines
+    .filter((line) => !line.nested || suggestion.kind === "create_project_folders")
+    .map((line) => line.label)
+    .join(", ");
 
   return (
     <View style={[styles.note, { borderColor: palette.border }]}>
@@ -125,7 +134,17 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
 function outcomeLabel(suggestion: Suggestion): string {
   if (suggestion.status === "dismissed") return "Proposition ignorée";
   if (suggestion.status === "expired") return "Proposition expirée";
-  return suggestion.kind === "assign_folders" ? "Conversation rangée" : "Dossiers créés";
+
+  switch (suggestion.kind) {
+    case "assign_folders":
+      return "Conversation rangée";
+    case "create_task_list":
+      return "Todolistes créées";
+    case "schedule_task":
+      return "Créneaux posés";
+    default:
+      return "Dossiers créés";
+  }
 }
 
 type PreviewLine = { key: string; label: string; nested: boolean; hint?: string };
@@ -164,6 +183,49 @@ function useSuggestionPreview(suggestion: Suggestion): {
     };
   }
 
+  // Les listes sont montrées avec leurs tâches : c'est la seule façon de voir
+  // que les achats et le travail à faire n'ont pas été mélangés (§12.1), et
+  // l'aperçu tient lieu de relecture avant de valider.
+  if (suggestion.kind === "create_task_list") {
+    const proposed = createTaskListsPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Créer les listes",
+      lines: proposed.success
+        ? proposed.data.lists.flatMap((list) => [
+            {
+              key: list.title,
+              label: list.title,
+              nested: false,
+              ...(list.kind === "shopping" ? { hint: "achats" } : {}),
+            },
+            ...list.items.map((item) => ({
+              key: `${list.title}/${item.title}`,
+              label: item.title,
+              nested: true,
+              ...(item.dueAt === null ? {} : { hint: dueLabel(item.dueAt) }),
+            })),
+          ])
+        : [],
+    };
+  }
+
+  if (suggestion.kind === "schedule_task") {
+    const proposed = scheduleTasksPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Poser les créneaux",
+      lines: proposed.success
+        ? proposed.data.tasks.map((task) => ({
+            key: task.taskId,
+            label: task.title,
+            nested: false,
+            hint: dueLabel(task.dueAt),
+          }))
+        : [],
+    };
+  }
+
   const acceptLabel = "Ranger la conversation";
   const proposed = assignFoldersPayloadSchema.safeParse(suggestion.payload);
   if (!proposed.success) return { acceptLabel, lines: [] };
@@ -189,6 +251,19 @@ function useSuggestionPreview(suggestion: Suggestion): {
       })),
     ],
   };
+}
+
+/**
+ * Échéance telle qu'elle se lit dans la carte — « lundi 7 septembre, 9h ».
+ *
+ * L'heure est omise à minuit : le modèle la pose faute de mieux quand la
+ * conversation ne dit qu'un jour, et l'afficher ferait passer une date
+ * approximative pour un horaire décidé.
+ */
+function dueLabel(iso: string): string {
+  const date = new Date(iso);
+  const day = formatFullDay(date);
+  return date.getHours() === 0 && date.getMinutes() === 0 ? day : `${day}, ${formatTime(iso)}`;
 }
 
 const styles = StyleSheet.create({

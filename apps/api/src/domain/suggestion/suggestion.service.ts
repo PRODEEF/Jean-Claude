@@ -1,6 +1,7 @@
 import {
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
+  createTaskListsPayloadSchema,
   uuidSchema,
   type Suggestion,
   type SuggestionKind,
@@ -8,7 +9,11 @@ import {
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import type { LlmToolCall } from "../../core/llm/llm.port.js";
-import { SUGGEST_FOLDERS, SUGGEST_PROJECT_FOLDERS } from "../../core/llm/llm.tools.js";
+import {
+  SUGGEST_FOLDERS,
+  SUGGEST_PROJECT_FOLDERS,
+  SUGGEST_TASK_LIST,
+} from "../../core/llm/llm.tools.js";
 import type { ISuggestionRepository } from "./suggestion.repository.interface.js";
 
 /** Longueur maximale de `message`, alignée sur la contrainte CHECK de la table. */
@@ -51,6 +56,25 @@ export class SuggestionService {
       { conversationId, kind: translated.kind, message, payload: translated.payload },
       accessToken,
     );
+  }
+
+  /**
+   * Proposition formulée par le serveur, sans passer par le modèle (§12.1).
+   *
+   * Sert le second temps de la détection : une fois les todolistes créées, les
+   * tâches datées sont connues et proposer de leur poser un créneau ne demande
+   * plus d'interpréter quoi que ce soit. Un aller-retour de plus avec le moteur
+   * n'ajouterait qu'une latence et le risque qu'il réponde autre chose qu'une
+   * question. La règle, elle, ne bouge pas : c'est une proposition en attente,
+   * pas une action.
+   */
+  propose(
+    userId: string,
+    conversationId: string,
+    input: { kind: SuggestionKind; message: string; payload: Record<string, unknown> },
+    accessToken: string,
+  ): Promise<Suggestion> {
+    return this.suggestions.create(userId, { conversationId, ...input }, accessToken);
   }
 
   listPending(conversationId: string, accessToken: string): Promise<Suggestion[]> {
@@ -104,6 +128,9 @@ function translate(
   } else if (toolCall.name === SUGGEST_FOLDERS.name) {
     const payload = assignFoldersPayloadSchema.safeParse(withUuidFolderIds(toolCall.input));
     if (payload.success) return { kind: "assign_folders", payload: payload.data };
+  } else if (toolCall.name === SUGGEST_TASK_LIST.name) {
+    const payload = createTaskListsPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "create_task_list", payload: payload.data };
   } else {
     console.warn(`Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
     return null;
