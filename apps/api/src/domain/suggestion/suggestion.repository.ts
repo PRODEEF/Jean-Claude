@@ -78,6 +78,17 @@ export const suggestionRepository: ISuggestionRepository = {
     return (data as unknown as SuggestionRow[]).map(toEntity);
   },
 
+  async listForConversation(conversationId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("assistant_suggestions")
+      .select(COLUMNS)
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return (data as unknown as SuggestionRow[]).map(toEntity);
+  },
+
   async markResolved(id, status, accessToken) {
     const { data, error } = await forUser(accessToken)
       .from("assistant_suggestions")

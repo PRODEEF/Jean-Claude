@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -13,13 +13,13 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowUp } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import type { Conversation, Message } from "@jc/domain";
+import type { Conversation, Message, Suggestion } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
 import { useConversationThread } from "./hooks/use-conversation-thread";
 import { useSuggestions } from "./hooks/use-suggestions";
-import { SuggestionCard } from "./SuggestionCard";
+import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
 
 export type ConversationThreadProps = {
   conversationId: string;
@@ -46,7 +46,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [draft, setDraft] = useState("");
-  const listRef = useRef<FlatList<Message>>(null);
+  const listRef = useRef<FlatList<ThreadItem>>(null);
 
   // La question voyage jusqu'au nouveau fil, qui s'en charge à l'ouverture :
   // c'est ce qui permet de réutiliser le tour de dialogue ordinaire, réponse
@@ -62,10 +62,22 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     conversationId,
     goToNewConversation,
   );
-  const { suggestions, resolve } = useSuggestions(conversationId);
+  const { pending, resolved, resolve } = useSuggestions(conversationId);
 
-  const pending = suggestions.data ?? [];
   const failure = messages.error ?? send.error ?? resolve.error;
+
+  // Messages et propositions tranchées sont refondus en une seule suite,
+  // ordonnée par date : ce que l'assistant a fait se relit au moment où il l'a
+  // fait, pas empilé au bas du fil. Ce qui attend encore un geste reste en
+  // pied de liste, là où l'utilisateur écrit.
+  const items = useMemo(
+    (): ThreadItem[] =>
+      [
+        ...(messages.data?.items ?? []).map((message): ThreadItem => ({ id: message.id, message })),
+        ...resolved.map((suggestion): ThreadItem => ({ id: suggestion.id, suggestion })),
+      ].sort((a, b) => itemDate(a) - itemDate(b)),
+    [messages.data, resolved],
+  );
 
   // `useRef` et non l'état d'envoi : revenir sur ce fil ne doit pas renvoyer la
   // question une seconde fois, alors que le paramètre de route est toujours là.
@@ -92,9 +104,12 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     submit(content);
   }, [draft, send.isPending, submit]);
 
-  const renderMessage = useCallback(
-    ({ item }: { item: Message }) => {
-      const isUser = item.role === "user";
+  const renderItem = useCallback(
+    ({ item }: { item: ThreadItem }) => {
+      if (!item.message) return <ResolvedSuggestionNote suggestion={item.suggestion} />;
+
+      const message = item.message;
+      const isUser = message.role === "user";
       return (
         <View
           style={[
@@ -112,10 +127,10 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
               modèle est du Markdown, et se lit criblé de signes sans rendu. */}
           {isUser ? (
             <Text style={[styles.bubbleText, { color: palette.accentSoftText }]}>
-              {item.content}
+              {message.content}
             </Text>
           ) : (
-            <Markdown>{item.content}</Markdown>
+            <Markdown>{message.content}</Markdown>
           )}
         </View>
       );
@@ -135,9 +150,9 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
       ) : (
         <FlatList
           ref={listRef}
-          data={messages.data?.items ?? []}
+          data={items}
           keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
+          renderItem={renderItem}
           contentContainerStyle={styles.list}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           keyboardShouldPersistTaps="handled"
@@ -281,6 +296,18 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
       </View>
     </KeyboardAvoidingView>
   );
+}
+
+/**
+ * Une entrée du fil : un message, ou la trace d'une proposition tranchée. La
+ * seconde forme n'a pas de `message`, ce qui suffit à les distinguer.
+ */
+type ThreadItem =
+  | { id: string; message: Message; suggestion?: undefined }
+  | { id: string; message?: undefined; suggestion: Suggestion };
+
+function itemDate(item: ThreadItem): number {
+  return new Date(item.message ? item.message.createdAt : item.suggestion.createdAt).getTime();
 }
 
 function errorMessage(error: unknown): string {

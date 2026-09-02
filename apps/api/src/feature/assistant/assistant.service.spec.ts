@@ -63,6 +63,7 @@ function makeSuggestionRepository(
     create: jest.fn().mockResolvedValue(makeSuggestion()),
     findById: jest.fn().mockResolvedValue(makeSuggestion()),
     listPending: jest.fn().mockResolvedValue([]),
+    listForConversation: jest.fn().mockResolvedValue([]),
     markResolved: jest
       .fn()
       .mockImplementation((id: string, status: Suggestion["status"]) =>
@@ -452,14 +453,16 @@ describe("AssistantService", () => {
       ).rejects.toMatchObject({ status: 404 });
     });
 
-    it("liste celles du fil demandé", async () => {
-      const pending = [makeSuggestion()];
+    it("liste celles du fil demandé, tranchées comprises", async () => {
+      const history = [makeSuggestion({ status: "accepted" }), makeSuggestion({ id: "sug-2" })];
       const suggestions = makeSuggestionRepository({
-        listPending: jest.fn().mockResolvedValue(pending),
+        listForConversation: jest.fn().mockResolvedValue(history),
       });
 
-      await expect(makeService(suggestions).listPending("conv-1", TOKEN)).resolves.toEqual(pending);
-      expect(suggestions.listPending).toHaveBeenCalledWith("conv-1", TOKEN);
+      await expect(makeService(suggestions).listForConversation("conv-1", TOKEN)).resolves.toEqual(
+        history,
+      );
+      expect(suggestions.listForConversation).toHaveBeenCalledWith("conv-1", TOKEN);
     });
   });
 });

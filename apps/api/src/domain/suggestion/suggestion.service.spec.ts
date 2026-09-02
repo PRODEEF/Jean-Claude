@@ -26,6 +26,7 @@ function makeRepository(overrides: Partial<ISuggestionRepository> = {}): ISugges
     create: jest.fn().mockResolvedValue(makeSuggestion()),
     findById: jest.fn().mockResolvedValue(makeSuggestion()),
     listPending: jest.fn().mockResolvedValue([]),
+    listForConversation: jest.fn().mockResolvedValue([]),
     markResolved: jest.fn().mockResolvedValue(makeSuggestion({ status: "accepted" })),
     ...overrides,
   };

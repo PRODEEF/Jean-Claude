@@ -3,7 +3,6 @@ import {
   FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -24,7 +23,13 @@ export type SearchDialogProps = {
   onSelect: (conversation: Conversation) => void;
 };
 
-const PANEL_WIDTH = 640;
+/**
+ * Largeur de la fenêtre de recherche.
+ *
+ * Assez large pour que les sept raccourcis de période tiennent en deux rangées
+ * et que les titres de conversation ne se tronquent pas au troisième mot.
+ */
+const PANEL_WIDTH = 780;
 
 /**
  * Délai avant d'interroger le serveur, en millisecondes.
@@ -196,7 +201,7 @@ export function SearchDialog({ open, onClose, onSelect }: SearchDialogProps) {
             styles.panel,
             {
               width: Math.min(PANEL_WIDTH, window.width - spacing.xl),
-              maxHeight: window.height * 0.75,
+              maxHeight: window.height * 0.8,
               backgroundColor: palette.surfaceElevated,
               borderColor: palette.border,
             },
@@ -309,17 +314,13 @@ export function SearchDialog({ open, onClose, onSelect }: SearchDialogProps) {
   );
 }
 
+/**
+ * Les filtres passent à la ligne plutôt que de défiler latéralement : un
+ * raccourci de période sorti du cadre ne se devine pas, et personne ne pousse
+ * une rangée de pastilles à la souris pour vérifier ce qu'elle cache.
+ */
 function ChipRow({ children }: { children: React.ReactNode }) {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={styles.chipRow}
-    >
-      {children}
-    </ScrollView>
-  );
+  return <View style={styles.chipRow}>{children}</View>;
 }
 
 function FilterChip({
@@ -527,6 +528,7 @@ const styles = StyleSheet.create({
   close: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
   chipRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,

@@ -43,9 +43,6 @@ const MONTH_NAMES = [
 /** Borne haute du placement d'un événement dans la colonne d'une journée. */
 const MINUTES_PER_DAY = 24 * 60;
 
-/** 6 semaines : le maximum qu'un mois puisse occuper, quel que soit son premier jour. */
-const MONTH_GRID_CELLS = 42;
-
 /** Durée prêtée à un événement sans heure de fin, pour lui donner une hauteur. */
 const IMPLICIT_DURATION_MINUTES = 60;
 
@@ -59,6 +56,10 @@ export function addDays(date: Date, days: number): Date {
   const copy = new Date(date);
   copy.setDate(copy.getDate() + days);
   return copy;
+}
+
+export function addYears(date: Date, years: number): Date {
+  return new Date(date.getFullYear() + years, 0, 1);
 }
 
 export function addMonths(date: Date, months: number): Date {
@@ -83,14 +84,35 @@ export function isSameDay(a: Date, b: Date): boolean {
 }
 
 /**
- * 42 jours couvrant le mois de `anchor`, débordant sur les mois voisins.
+ * Semaines couvrant le mois de `anchor`, débordant sur les mois voisins.
  *
- * Un nombre de cellules fixe plutôt que variable : la grille garde la même
- * hauteur d'un mois à l'autre, et la vue ne sursaute pas à la navigation.
+ * Quatre à six semaines selon le mois, et jamais une de plus : une semaine
+ * dont aucun jour n'appartient au mois affiché n'apprend rien et fait croire à
+ * une erreur de navigation.
  */
 export function monthGrid(anchor: Date): Date[] {
-  const first = startOfWeek(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
-  return Array.from({ length: MONTH_GRID_CELLS }, (_, index) => addDays(first, index));
+  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+  const daysInMonth = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
+  const offset = (first.getDay() + 6) % 7;
+  const weeks = Math.ceil((offset + daysInMonth) / 7);
+  const start = startOfWeek(first);
+
+  return Array.from({ length: weeks * 7 }, (_, index) => addDays(start, index));
+}
+
+/** Les douze mois de l'année de `anchor`, chacun ramené à son premier jour. */
+export function monthsOfYear(anchor: Date): Date[] {
+  return Array.from({ length: 12 }, (_, month) => new Date(anchor.getFullYear(), month, 1));
+}
+
+/**
+ * Premier et dernier jour de l'année.
+ *
+ * Deux dates et non les 365 : seules les bornes servent, `rangeOf` ne lit que
+ * les extrémités de ce qu'on lui donne.
+ */
+export function yearBounds(anchor: Date): Date[] {
+  return [new Date(anchor.getFullYear(), 0, 1), new Date(anchor.getFullYear(), 11, 31)];
 }
 
 export function weekDays(anchor: Date): Date[] {
@@ -112,6 +134,15 @@ export function monthLabel(anchor: Date): string {
   return `${MONTH_NAMES[anchor.getMonth()] ?? ""} ${anchor.getFullYear()}`;
 }
 
+/** Nom du mois seul, pour l'en-tête d'une vignette de la vue année. */
+export function monthName(anchor: Date): string {
+  return MONTH_NAMES[anchor.getMonth()] ?? "";
+}
+
+export function yearLabel(anchor: Date): string {
+  return String(anchor.getFullYear());
+}
+
 /** Ex. « Semaine du 7 au 13 septembre 2026 ». */
 export function weekLabel(anchor: Date): string {
   const days = weekDays(anchor);
@@ -123,6 +154,11 @@ export function weekLabel(anchor: Date): string {
     return `Semaine du ${first.getDate()} au ${last.getDate()} ${monthOf(last)} ${last.getFullYear()}`;
   }
   return `Semaine du ${first.getDate()} ${monthOf(first)} au ${last.getDate()} ${monthOf(last)} ${last.getFullYear()}`;
+}
+
+/** Ex. « mercredi 2 septembre 2026 » — la période affichée en vue jour. */
+export function dayLabel(date: Date): string {
+  return `${formatFullDay(date)} ${date.getFullYear()}`;
 }
 
 /** Ex. « 14h30 », « 9h ». Format parlé plutôt que « 14:30 », comme la maquette. */

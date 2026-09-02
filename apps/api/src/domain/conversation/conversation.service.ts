@@ -133,21 +133,25 @@ export class ConversationService {
    */
   async getOrCreateAssistantChannel(userId: string, accessToken: string): Promise<Conversation> {
     const existing = await this.conversations.findAssistantChannel(accessToken);
-    if (existing) return existing;
-
     const context = await this.contextFor(userId, accessToken);
 
-    const channel = await this.conversations.create(
-      userId,
-      { title: context.name, folderIds: [] },
-      "assistant",
-      accessToken,
-    );
+    const channel =
+      existing ??
+      (await this.conversations.create(
+        userId,
+        { title: context.name, folderIds: [] },
+        "assistant",
+        accessToken,
+      ));
 
     // L'accueil conversationnel démarre ici (§6.3) : le canal est le premier
     // écran de l'utilisateur qui vient de s'inscrire, et il doit y trouver une
     // question plutôt qu'un fil vide.
-    if (context.onboarding) {
+    //
+    // Le fil est vérifié vide plutôt que fraîchement créé : un canal ouvert
+    // avant que l'accueil n'existe reste sinon muet pour toujours, alors que
+    // l'écran, lui, continue d'annoncer des questions.
+    if (context.onboarding && (await this.isEmpty(channel.id, accessToken))) {
       await this.conversations.appendMessage(
         channel.id,
         userId,
@@ -157,6 +161,14 @@ export class ConversationService {
     }
 
     return channel;
+  }
+
+  /** Aucun message dans le fil — une page d'un seul élément suffit à le dire. */
+  private async isEmpty(conversationId: string, accessToken: string): Promise<boolean> {
+    const firstPage = await this.conversations.listMessages(conversationId, accessToken, {
+      limit: 1,
+    });
+    return firstPage.items.length === 0;
   }
 
   update(id: string, patch: UpdateConversation, accessToken: string): Promise<Conversation> {

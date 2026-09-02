@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { fontSize, fontWeight, MIN_TOUCH_TARGET, spacing } from "@jc/design";
+import { fontSize, MIN_TOUCH_TARGET, spacing } from "@jc/design";
 import { api } from "@/shared/lib/api";
+import { ConversationHeader } from "@/features/conversation/ConversationHeader";
 import { ConversationThread } from "@/features/conversation/ConversationThread";
 import { useAssistantName, useCompleteOnboarding, useProfile } from "@/shared/hooks/use-profile";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -10,8 +11,9 @@ import { useTheme } from "@/shared/providers/theme-provider";
 /**
  * Canal permanent Jean-Claude (A.10).
  *
- * Même fil que les conversations classiques — c'est la même interaction. Ce
- * qui le distingue est le périmètre des réponses : rappels, organisation de
+ * Même fil et même bandeau de tête que les conversations classiques — c'est la
+ * même interaction, et un en-tête à part la ferait passer pour un autre écran.
+ * Ce qui le distingue est le périmètre des réponses : rappels, organisation de
  * l'outil, structure du projet. Ce bornage est appliqué côté serveur
  * (`buildSystemPrompt`), pas ici : c'est une règle métier, elle doit valoir
  * identiquement sur les quatre plateformes.
@@ -37,22 +39,13 @@ export default function AssistantScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: palette.background }]}>
-      <View style={[styles.header, { borderBottomColor: palette.border }]}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerText}>
-            <Text style={[styles.title, { color: palette.text }]}>{assistantName}</Text>
-            <Text style={[styles.subtitle, { color: palette.textMuted }]}>
-              {onboarding
-                ? "Faisons connaissance — quelques questions, puis on s'y met."
-                : "Rappels, organisation et structure de votre espace."}
-            </Text>
-          </View>
-
-          {/* L'accueil doit rester sautable (§6.3) : la sortie est visible dès
-              le premier écran, pas cachée derrière un menu. En texte discret et
-              non en bouton plein — c'est une échappatoire, pas l'action
-              principale de l'écran. */}
-          {onboarding ? (
+      <ConversationHeader
+        title={assistantName}
+        // L'accueil doit rester sautable (§6.3) : la sortie est visible dès le
+        // premier écran, pas cachée derrière un menu. En texte discret et non
+        // en bouton plein — c'est une échappatoire, pas l'action principale.
+        action={
+          onboarding ? (
             <Pressable
               onPress={() => {
                 completeOnboarding.mutate(undefined, {
@@ -67,9 +60,9 @@ export default function AssistantScreen() {
             >
               <Text style={[styles.skipLabel, { color: palette.textMuted }]}>Passer</Text>
             </Pressable>
-          ) : null}
-        </View>
-      </View>
+          ) : null
+        }
+      />
 
       {channel.data ? (
         <ConversationThread conversationId={channel.data.id} />
@@ -92,18 +85,6 @@ export default function AssistantScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    width: "100%",
-    maxWidth: 900,
-    alignSelf: "center",
-  },
-  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
-  headerText: { flex: 1, gap: spacing.xs },
-  title: { fontSize: fontSize.xl, fontWeight: fontWeight.bold },
-  subtitle: { fontSize: fontSize.sm },
   skip: {
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",

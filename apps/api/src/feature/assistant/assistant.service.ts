@@ -32,8 +32,16 @@ export class AssistantService {
     private readonly conversations: ConversationService,
   ) {}
 
-  listPending(conversationId: string, accessToken: string): Promise<Suggestion[]> {
-    return this.suggestions.listPending(conversationId, accessToken);
+  /**
+   * Ce que l'assistant a proposé sur ce fil, tranché ou non.
+   *
+   * Les propositions déjà réglées ne sont pas retirées : une fois acceptée,
+   * une proposition a créé des dossiers ou rangé la conversation, et
+   * l'utilisateur doit pouvoir relire dans le fil ce qui s'est passé. Les
+   * faire disparaître laisserait des dossiers apparus sans explication.
+   */
+  listForConversation(conversationId: string, accessToken: string): Promise<Suggestion[]> {
+    return this.suggestions.listForConversation(conversationId, accessToken);
   }
 
   async resolve(

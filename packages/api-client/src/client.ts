@@ -100,8 +100,9 @@ export class JeanClaudeClient {
    * Canal permanent Jean-Claude (A.10).
    *
    * Les propositions de l'assistant vivent hors du fil des messages : elles
-   * survivent au rechargement tant que l'utilisateur ne les a pas tranchées,
-   * ce qu'un événement de flux ne permettrait pas (§12.1).
+   * survivent au rechargement, ce qu'un événement de flux ne permettrait pas
+   * (§12.1). Le fil les rend toutes, tranchées comprises — une proposition
+   * acceptée a créé des dossiers, et ce qu'elle a fait doit rester lisible.
    */
   readonly assistant = {
     suggestions: (conversationId: string) =>
