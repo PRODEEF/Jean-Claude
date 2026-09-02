@@ -123,6 +123,7 @@ function makeSuggestionRepository(
     create: jest.fn().mockResolvedValue(suggestion),
     findById: jest.fn().mockResolvedValue(suggestion),
     listPending: jest.fn().mockResolvedValue([]),
+    listForConversation: jest.fn().mockResolvedValue([]),
     markResolved: jest.fn().mockResolvedValue(suggestion),
     ...overrides,
   };
@@ -327,6 +328,52 @@ describe("ConversationService", () => {
       // demande une étape brève et sautable.
       expect(message.content).toContain("Jean-Claude");
       expect(message.content).toContain("passer cette étape");
+    });
+
+    it("accueille aussi dans un canal déjà ouvert mais resté vide (§6.3)", async () => {
+      const repo = makeRepository({
+        findAssistantChannel: jest
+          .fn()
+          .mockResolvedValue(makeConversation({ id: "canal", kind: "assistant" })),
+      });
+
+      await makeService(
+        repo,
+        makeLlm(),
+        makeSuggestionRepository(),
+        makeFolderRepository(),
+        makeUserRepository({}, { onboardingCompletedAt: null }),
+      ).getOrCreateAssistantChannel(USER, TOKEN);
+
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(repo.appendMessage).toHaveBeenCalledWith(
+        "canal",
+        USER,
+        expect.objectContaining({ role: "assistant" }),
+        TOKEN,
+      );
+    });
+
+    it("n'accueille pas deux fois un canal où l'accueil a déjà commencé", async () => {
+      const repo = makeRepository({
+        findAssistantChannel: jest
+          .fn()
+          .mockResolvedValue(makeConversation({ id: "canal", kind: "assistant" })),
+        listMessages: jest.fn().mockResolvedValue({
+          items: [makeMessage({ id: "m1", role: "assistant", content: "Bonjour, moi c'est…" })],
+          nextCursor: null,
+        }),
+      });
+
+      await makeService(
+        repo,
+        makeLlm(),
+        makeSuggestionRepository(),
+        makeFolderRepository(),
+        makeUserRepository({}, { onboardingCompletedAt: null }),
+      ).getOrCreateAssistantChannel(USER, TOKEN);
+
+      expect(repo.appendMessage).not.toHaveBeenCalled();
     });
 
     it("n'accueille pas une seconde fois un utilisateur déjà passé par là", async () => {
