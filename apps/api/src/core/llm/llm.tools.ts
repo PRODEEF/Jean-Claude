@@ -227,15 +227,15 @@ export const OPEN_NEW_CONVERSATION: LlmTool = {
     "l'outil (dossiers, rangement, structure), ni la structure du projet de " +
     "l'utilisateur. Une recette, un itinéraire, une explication, une rédaction : " +
     "tout cela relève d'une conversation classique. " +
-    "Ne pas traiter la demande soi-même : annoncer en une phrase l'ouverture de " +
-    "la conversation dédiée, où la réponse sera donnée.",
+    "Ne pas traiter la demande soi-même, et n'écrire aucun texte : l'application " +
+    "annonce la bascule et en demande la validation à l'utilisateur.",
   inputSchema: {
     type: "object",
     properties: {
       title: {
         type: "string",
         description:
-          "Titre de la conversation à ouvrir, tiré de la demande — court et " +
+          "Titre de la conversation proposée, tiré de la demande — court et " +
           "descriptif, 120 caractères maximum. Ex. « Itinéraire de 5 jours en Bretagne ».",
       },
     },

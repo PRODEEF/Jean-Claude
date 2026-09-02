@@ -166,6 +166,11 @@ function makeConversationRepository(
     setFolders: jest.fn().mockResolvedValue([]),
     listMessages: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
     appendMessage: jest.fn(),
+    findMessage: jest.fn().mockResolvedValue(null),
+    updateMessageContent: jest.fn(),
+    deleteMessage: jest.fn().mockResolvedValue(undefined),
+    deleteMessagesAfter: jest.fn().mockResolvedValue(undefined),
+    acceptRedirect: jest.fn(),
     ...overrides,
   };
 }

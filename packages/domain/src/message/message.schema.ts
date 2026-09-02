@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { conversationSchema } from "../conversation/conversation.schema";
-import { isoDateTimeSchema, uuidSchema } from "../shared/primitives";
+import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 
 export const messageRoleSchema = z.enum(["user", "assistant", "system"]);
 export type MessageRole = z.infer<typeof messageRoleSchema>;
@@ -57,6 +56,21 @@ export const messageSchema = z.object({
    * six au plus — mêmes bornes que la contrainte SQL.
    */
   choices: z.array(messageChoiceSchema).min(2).max(6).nullable(),
+  /**
+   * Titre de la conversation dédiée que ce message propose d'ouvrir (A.10).
+   *
+   * `null` partout ailleurs. Porté par le message et non par une suggestion :
+   * la bascule n'écrit rien dans les données de l'utilisateur, elle choisit
+   * seulement où la réponse sera donnée, et la proposition doit rester lisible
+   * à sa place dans le fil après un rechargement.
+   */
+  redirectTitle: labelSchema.nullable(),
+  /**
+   * Instant où l'utilisateur a validé la bascule. Tant qu'il est `null`, la
+   * carte de validation attend son geste ; une fois posé, l'échange sort du
+   * contexte remis au modèle — la réponse se donne dans l'autre fil.
+   */
+  redirectAcceptedAt: isoDateTimeSchema.nullable(),
   createdAt: isoDateTimeSchema,
 });
 
@@ -79,6 +93,19 @@ export const sendMessageSchema = z.object({
 export type SendMessage = z.infer<typeof sendMessageSchema>;
 
 /**
+ * Correction d'un message déjà envoyé.
+ *
+ * Même borne que l'envoi : c'est le même texte, relu. Le mode d'entrée n'y
+ * figure pas — corriger à l'écrit un message dicté ne change pas d'où il
+ * venait (§12.3, A.12).
+ */
+export const editMessageSchema = z.object({
+  content: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
+});
+
+export type EditMessage = z.infer<typeof editMessageSchema>;
+
+/**
  * Événements d'un tour de dialogue en flux.
  *
  * L'envoi d'un message ne renvoie pas une réponse mais une suite d'événements,
@@ -93,14 +120,13 @@ export const messageStreamEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("message"), message: messageSchema }),
   /** Un fragment de la réponse en cours. */
   z.object({ type: z.literal("text"), text: z.string() }),
-  /** La réponse complète, persistée. Clôt le flux. */
-  z.object({ type: z.literal("done"), message: messageSchema }),
   /**
-   * Le canal permanent a jugé la demande hors de son périmètre (A.10) : la
-   * conversation classique qui doit l'accueillir vient d'être créée, et c'est
-   * là que l'échange se poursuit.
+   * La réponse complète, persistée. Clôt le flux.
+   *
+   * C'est aussi par elle qu'arrive une proposition de bascule (A.10) : le
+   * message porte `redirectTitle`, l'application demande la validation.
    */
-  z.object({ type: z.literal("redirect"), conversation: conversationSchema }),
+  z.object({ type: z.literal("done"), message: messageSchema }),
   /** Échec après le premier octet. Clôt le flux. */
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);

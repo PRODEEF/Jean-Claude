@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Pencil, X } from "lucide-react-native";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
@@ -52,16 +53,7 @@ export function QuestionCard({ question, choices, onChoose, onWrite, onSkip }: Q
       </View>
 
       {choices.map((choice, index) => (
-        <Pressable
-          key={choice}
-          onPress={() => onChoose(choice)}
-          accessibilityRole="button"
-          accessibilityLabel={choice}
-          style={[styles.choice, { borderTopColor: palette.border }]}
-        >
-          <Text style={[styles.rank, { color: palette.textMuted }]}>{index + 1}</Text>
-          <Text style={[styles.choiceLabel, { color: palette.text }]}>{choice}</Text>
-        </Pressable>
+        <ChoiceRow key={choice} rank={index + 1} choice={choice} onChoose={onChoose} />
       ))}
 
       <View style={[styles.footer, { borderTopColor: palette.border }]}>
@@ -88,6 +80,45 @@ export function QuestionCard({ question, choices, onChoose, onWrite, onSkip }: Q
         </Pressable>
       </View>
     </View>
+  );
+}
+
+/**
+ * Une réponse proposée.
+ *
+ * Le survol l'éclaire du même ton que les rangées de la barre latérale : sans
+ * ce retour, rien ne distingue à la souris une liste de boutons d'un simple
+ * texte à puces. `onHoverIn` ne se déclenche pas au doigt — l'appui, lui, a
+ * son propre retour.
+ */
+function ChoiceRow({
+  rank,
+  choice,
+  onChoose,
+}: {
+  rank: number;
+  choice: string;
+  onChoose: (choice: string) => void;
+}) {
+  const { palette } = useTheme();
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <Pressable
+      onPress={() => onChoose(choice)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      accessibilityRole="button"
+      accessibilityLabel={choice}
+      style={({ pressed }) => [
+        styles.choice,
+        { borderTopColor: palette.border },
+        hovered || pressed ? { backgroundColor: palette.surface } : null,
+      ]}
+    >
+      <Text style={[styles.rank, { color: palette.textMuted }]}>{rank}</Text>
+      <Text style={[styles.choiceLabel, { color: palette.text }]}>{choice}</Text>
+    </Pressable>
   );
 }
 

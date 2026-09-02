@@ -17,6 +17,13 @@ export type SidebarData = {
   groups: SidebarGroup[];
   /** Conversations rattachées à aucun dossier — capture sans friction (§13.4.1). */
   unfiled: Conversation[];
+  /**
+   * Toutes les conversations de la barre, à plat.
+   *
+   * Un dépôt ne transporte qu'un identifiant : c'est ici qu'on retrouve la
+   * conversation, et notamment les dossiers où elle est déjà rangée.
+   */
+  all: Conversation[];
   isLoading: boolean;
   error: Error | null;
 };
@@ -65,6 +72,7 @@ export function useSidebarData(): SidebarData {
     return {
       groups: (folders.data ?? []).filter((node) => node.parentId === null).map(build),
       unfiled: items.filter((item) => item.folderIds.length === 0),
+      all: items,
       isLoading: folders.isLoading || conversations.isLoading,
       error: (folders.error ?? conversations.error) as Error | null,
     };

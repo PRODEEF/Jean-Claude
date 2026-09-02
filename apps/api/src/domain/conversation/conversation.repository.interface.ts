@@ -53,7 +53,31 @@ export interface IConversationRepository {
       model?: string | null;
       /** Réponses proposées sous une question de l'assistant. */
       choices?: string[] | null;
+      /** Titre de la conversation dédiée que le message propose d'ouvrir (A.10). */
+      redirectTitle?: string | null;
     },
     accessToken: string,
   ): Promise<Message>;
+
+  findMessage(id: string, accessToken: string): Promise<Message | null>;
+
+  /** Corrige le texte d'un message déjà envoyé, sans toucher au reste. */
+  updateMessageContent(id: string, content: string, accessToken: string): Promise<Message>;
+
+  deleteMessage(id: string, accessToken: string): Promise<void>;
+
+  /**
+   * Efface la suite du fil à partir de `createdAt`, exclu.
+   *
+   * Sert à rejouer un tour : ce qui suivait répondait au texte d'avant, et le
+   * garder ferait un fil qui se contredit.
+   */
+  deleteMessagesAfter(
+    conversationId: string,
+    createdAt: string,
+    accessToken: string,
+  ): Promise<void>;
+
+  /** Horodate la validation de la bascule proposée par ce message (A.10). */
+  acceptRedirect(id: string, accessToken: string): Promise<Message>;
 }

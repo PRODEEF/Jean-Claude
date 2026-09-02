@@ -9,6 +9,7 @@ import {
   type CreateFolder,
   type CreateTask,
   type CreateTaskList,
+  type EditMessage,
   type Folder,
   type FolderTreeNode,
   type Message,
@@ -30,7 +31,7 @@ import {
   type UpdateUserProfile,
   type UserProfile,
 } from "@jc/domain";
-import { ApiError, HttpClient, type ApiClientOptions } from "./http";
+import { ApiError, HttpClient, type ApiClientOptions, type RequestOptions } from "./http";
 
 /**
  * Client de l'API Jean-Claude.
@@ -222,25 +223,52 @@ export class JeanClaudeClient {
      * l'instance comme le font les autres entrées de cet objet.
      */
     send: (id: string, input: SendMessage, signal?: AbortSignal) =>
-      this.streamMessage(id, input, signal),
+      this.streamTurn(`/conversations/${id}/messages`, {
+        method: "POST",
+        body: input,
+        ...(signal ? { signal } : {}),
+      }),
+
+    /**
+     * Corrige un message envoyé et rejoue le tour à partir de là.
+     *
+     * Ce qui suivait disparaît côté serveur : c'était la réponse à un texte
+     * qui n'existe plus.
+     */
+    editMessage: (id: string, messageId: string, input: EditMessage, signal?: AbortSignal) =>
+      this.streamTurn(`/conversations/${id}/messages/${messageId}`, {
+        method: "PUT",
+        body: input,
+        ...(signal ? { signal } : {}),
+      }),
+
+    /** Redemande une réponse au modèle sur ce point du fil. */
+    retryMessage: (id: string, messageId: string, signal?: AbortSignal) =>
+      this.streamTurn(`/conversations/${id}/messages/${messageId}/retry`, {
+        method: "POST",
+        ...(signal ? { signal } : {}),
+      }),
+
+    /**
+     * Valide la bascule proposée par le canal permanent (A.10) et rend la
+     * conversation dédiée qui vient d'être ouverte.
+     */
+    switchAside: (id: string, messageId: string) =>
+      this.http.request<Conversation>(`/conversations/${id}/messages/${messageId}/switch`, {
+        method: "POST",
+      }),
   };
+
   /**
    * Les événements sont validés à l'arrivée par le schéma de `@jc/domain` :
    * un flux tronqué, ou un contrat qui aurait divergé entre le serveur et le
    * client, échoue ici plutôt que trois écrans plus loin.
    */
-  private async *streamMessage(
-    id: string,
-    input: SendMessage,
-    signal?: AbortSignal,
+  private async *streamTurn(
+    path: string,
+    init: RequestOptions,
   ): AsyncGenerator<MessageStreamEvent> {
-    const blocks = this.http.stream(`/conversations/${id}/messages`, {
-      method: "POST",
-      body: input,
-      ...(signal ? { signal } : {}),
-    });
-
-    for await (const block of blocks) {
+    for await (const block of this.http.stream(path, init)) {
       yield parseEvent(block);
     }
   }
