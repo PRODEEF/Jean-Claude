@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { PanelLeft, Search } from "lucide-react-native";
 import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
@@ -61,12 +61,25 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
         </Button>
       </View>
 
-      <Text className="shrink text-center text-sm text-accent-soft-foreground" numberOfLines={1}>
-        <Text className="text-sm font-bold uppercase text-accent-soft-foreground">
-          {assistantName}
+      {/* Le titre ouvre le canal permanent : c'est la destination que la
+          signature désigne, et l'atteindre depuis n'importe quel écran évite
+          d'aller la chercher dans une barre latérale repliée. */}
+      <Pressable
+        onPress={() => router.push("/assistant")}
+        accessibilityRole="button"
+        accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+        // La ligne de titre ne fait qu'une vingtaine de points de haut : le
+        // débord lui rend la cible tactile de 44 pt sans épaissir la bannière.
+        hitSlop={12}
+        className="shrink"
+      >
+        <Text className="text-center text-sm text-accent-soft-foreground" numberOfLines={1}>
+          <Text className="text-sm font-bold uppercase text-accent-soft-foreground">
+            {assistantName}
+          </Text>
+          , ton assistant perso
         </Text>
-        , ton assistant perso
-      </Text>
+      </Pressable>
 
       <View className="min-w-0 flex-1 flex-row items-center justify-end">
         {UTILITY_LINKS.map((link) => (
