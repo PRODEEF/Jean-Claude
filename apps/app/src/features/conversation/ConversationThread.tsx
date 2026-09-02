@@ -365,6 +365,13 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
             )}
           </Pressable>
         </View>
+
+        {/* Sous le champ et non dans le fil : la mention vaut pour toutes les
+            réponses, elle ne commente pas la dernière. C'est là que ChatGPT,
+            Claude et Perplexity la posent (§4.2). */}
+        <Text style={[styles.disclaimer, { color: palette.textMuted }]}>
+          Jean-Claude comme tout non-humain peut faire des erreurs. Veuillez vérifier les réponses.
+        </Text>
       </View>
     </KeyboardAvoidingView>
   );
@@ -423,6 +430,7 @@ const styles = StyleSheet.create({
   retryText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   question: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
   composer: { padding: spacing.md },
+  disclaimer: { fontSize: fontSize.xs, textAlign: "center", marginTop: spacing.sm },
   inputShell: {
     flexDirection: "row",
     alignItems: "flex-end",
