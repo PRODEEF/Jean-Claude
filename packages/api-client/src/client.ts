@@ -10,6 +10,8 @@ import {
   type MessageStreamEvent,
   type Paginated,
   type ResolveSuggestion,
+  type SearchFilters,
+  type SearchResult,
   type SendMessage,
   type Suggestion,
   type UpdateConversation,
@@ -79,6 +81,29 @@ export class JeanClaudeClient {
         `/assistant/suggestions/${id}/resolve`,
         { method: "POST", body: input },
       ),
+  };
+
+  /**
+   * Recherche par filtres (A.6).
+   *
+   * Les listes et les booléens sont mis à plat ici : une chaîne de requête ne
+   * porte que du texte, et `searchQuerySchema` décrit côté serveur exactement
+   * ce format-là.
+   */
+  readonly search = {
+    conversations: (filters: Partial<SearchFilters> & { cursor?: string } = {}) =>
+      this.http.request<Paginated<SearchResult>>("/search", {
+        query: {
+          ...(filters.query ? { query: filters.query } : {}),
+          ...(filters.folderIds?.length ? { folderIds: filters.folderIds.join(",") } : {}),
+          ...(filters.shortcut ? { shortcut: filters.shortcut } : {}),
+          ...(filters.from ? { from: filters.from } : {}),
+          ...(filters.to ? { to: filters.to } : {}),
+          ...(filters.includeArchived ? { includeArchived: "true" } : {}),
+          ...(filters.limit ? { limit: filters.limit } : {}),
+          ...(filters.cursor ? { cursor: filters.cursor } : {}),
+        },
+      }),
   };
 
   readonly conversations = {
