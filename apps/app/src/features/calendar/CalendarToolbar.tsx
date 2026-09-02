@@ -1,6 +1,7 @@
 import { View } from "react-native";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { MIN_TOUCH_TARGET } from "@jc/design";
+import { cn } from "@/shared/lib/utils";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
@@ -51,21 +52,34 @@ export function CalendarToolbar({
     </Text>
   );
 
+  // La vue courante prend l'aplat atténué de la couleur d'assistant — clair en
+  // thème clair, sombre en thème sombre. Le `secondary` de shadcn s'en
+  // approchait trop : sur le rail `muted`, la sélection ne se voyait pas.
   const switcher = (
     <View className="bg-muted flex-row gap-1 rounded-full p-1">
-      {VIEWS.map((item) => (
-        <Button
-          key={item.value}
-          size="sm"
-          variant={view === item.value ? "secondary" : "ghost"}
-          className="rounded-full"
-          onPress={() => onViewChange(item.value)}
-          accessibilityRole="button"
-          accessibilityState={{ selected: view === item.value }}
-        >
-          <Text>{item.label}</Text>
-        </Button>
-      ))}
+      {VIEWS.map((item) => {
+        const selected = view === item.value;
+
+        return (
+          <Button
+            key={item.value}
+            size="sm"
+            variant="ghost"
+            className={cn("rounded-full", selected && "bg-accent-soft")}
+            onPress={() => onViewChange(item.value)}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+          >
+            <Text
+              className={
+                selected ? "text-accent-soft-foreground font-semibold" : "text-muted-foreground"
+              }
+            >
+              {item.label}
+            </Text>
+          </Button>
+        );
+      })}
     </View>
   );
 
