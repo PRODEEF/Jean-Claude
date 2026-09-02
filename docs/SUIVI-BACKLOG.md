@@ -7,7 +7,18 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — issue #10 : les todolistes.
+Dernière mise à jour : **2 septembre 2026** — ossature commune des écrans.
+
+Conversation, canal permanent, todoliste et calendrier partagent désormais le même
+`ScreenShell` : un bandeau de tête de hauteur fixe, pleine largeur, titre à gauche et
+commande à droite, puis une colonne centrée à 80 % de la largeur disponible — c'est elle
+qui défile, le bandeau reste en place. La colonne est plafonnée à 900 pt là où on lit du
+texte et à 1100 pt là où on lit une grille : au-delà, l'œil perd sa ligne au retour ;
+en deçà du point de rupture, elle prend toute la largeur moins 16 pt de marge. Le fil de
+conversation garde son propre défilement — une `FlatList` dans un `ScrollView` perdrait sa
+virtualisation — mais suit la même colonne, exportée par le shell.
+
+Auparavant le même jour : issue #10 : les todolistes.
 
 Le module `domain/task` et `/api/tasks` ouvrent les tables `task_lists` / `tasks`,
 restées sans route jusqu'ici : une seule lecture rend **toutes les listes avec leurs
@@ -233,22 +244,22 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Annexe A — backlog fonctionnel
 
-| Réf. | Point                                                 | Statut | Note                                                                                                                                                                                                                        |
-| ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                           |
-| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, et proposition de rangement par l'assistant pour un fil non classé                                                                 |
+| Réf. | Point                                                 | Statut | Note                                                                                                                                                                                                                                             |
+| ---- | ----------------------------------------------------- | :----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                |
+| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, et proposition de rangement par l'assistant pour un fil non classé                                                                                      |
 | A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (semaine + toutes les listes), todolistes visibles dans leur dossier. Reste la conversion depuis une conversation → #17 |
-| A.3  | Détection de tâches datées                            |   🔵   | `dueAt` se saisit et se lit désormais de bout en bout — semaine, calendrier. Reste l'extraction automatique depuis la conversation → #18                                                                                     |
-| A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                                                                           |
-| A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                          |
-| A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix |
-| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                                                                                   |
-| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées. Restent la todoliste et les rendez-vous                        |
-| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                     |
-| A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre, et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages ; rappels du matin → #26       |
-| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                           |
-| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                                                                           |
-| A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte, vocal renvoyé à #25                                                                                                                                                                              |
+| A.3  | Détection de tâches datées                            |   🔵   | `dueAt` se saisit et se lit désormais de bout en bout — semaine, calendrier. Reste l'extraction automatique depuis la conversation → #18                                                                                                         |
+| A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                                                                                                |
+| A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                               |
+| A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                      |
+| A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                                                                                                        |
+| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées. Restent la todoliste et les rendez-vous                                             |
+| A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                                          |
+| A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule automatique hors périmètre, et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages ; rappels du matin → #26                            |
+| A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                                                |
+| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                                                                                                |
+| A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte, vocal renvoyé à #25                                                                                                                                                                                                   |
 
 ---
 

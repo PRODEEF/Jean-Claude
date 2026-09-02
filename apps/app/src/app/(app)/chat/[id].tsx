@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MoreHorizontal } from "lucide-react-native";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet } from "react-native";
 import { api } from "@/shared/lib/api";
 import { ConversationDialog } from "@/features/conversation/ConversationDialog";
-import { ConversationHeader } from "@/features/conversation/ConversationHeader";
 import { ConversationThread } from "@/features/conversation/ConversationThread";
+import { ScreenShell } from "@/shared/ui/screen-shell";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
 
@@ -24,31 +24,32 @@ export default function ConversationScreen() {
   });
 
   return (
-    <View style={[styles.root, { backgroundColor: palette.background }]}>
-      <ConversationHeader
-        title={conversation.data?.title ?? ""}
-        // Le retour n'a de sens que lorsque la barre latérale est escamotée :
-        // au-delà du point de rupture, elle reste visible à gauche et le lien
-        // ferait double emploi.
-        onBack={breakpoint === "compact" ? () => router.back() : undefined}
-        // Le « … » de la maquette. Il n'apparaît qu'une fois la conversation
-        // chargée : sans elle, la fenêtre n'aurait ni titre ni rangement à
-        // présenter.
-        action={
-          conversation.data ? (
-            <Pressable
-              onPress={() => setActionsOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Renommer, ranger ou supprimer la conversation"
-              hitSlop={8}
-              style={styles.actions}
-            >
-              <MoreHorizontal size={20} color={palette.textMuted} />
-            </Pressable>
-          ) : null
-        }
-      />
-
+    <ScreenShell
+      title={conversation.data?.title ?? ""}
+      // Le retour n'a de sens que lorsque la barre latérale est escamotée :
+      // au-delà du point de rupture, elle reste visible à gauche et le lien
+      // ferait double emploi.
+      onBack={breakpoint === "compact" ? () => router.back() : undefined}
+      // Le « … » de la maquette. Il n'apparaît qu'une fois la conversation
+      // chargée : sans elle, la fenêtre n'aurait ni titre ni rangement à
+      // présenter.
+      action={
+        conversation.data ? (
+          <Pressable
+            onPress={() => setActionsOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Renommer, ranger ou supprimer la conversation"
+            hitSlop={8}
+            style={styles.actions}
+          >
+            <MoreHorizontal size={20} color={palette.textMuted} />
+          </Pressable>
+        ) : null
+      }
+      // Le fil porte son propre défilement : sa `FlatList` perdrait sa
+      // virtualisation dans le `ScrollView` du shell.
+      scrolls={false}
+    >
       <ConversationThread conversationId={id} initialDraft={draft} />
 
       <ConversationDialog
@@ -61,12 +62,11 @@ export default function ConversationScreen() {
           router.replace("/chat");
         }}
       />
-    </View>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
   actions: {
     width: 32,
     height: 32,

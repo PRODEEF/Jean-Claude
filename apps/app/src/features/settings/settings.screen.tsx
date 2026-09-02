@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, Switch, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
 import type { AssistantScope, Theme } from "@jc/domain";
@@ -10,6 +10,7 @@ import { api } from "@/shared/lib/api";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Separator } from "@/shared/ui/separator";
+import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -239,13 +240,6 @@ export function SettingsScreen() {
                   updateProfile.mutate({ scope: { [capability.key]: value } })
                 }
                 disabled={!scope || updateProfile.isPending}
-                // Le bouton porte la couleur de l'assistant, le rail son aplat
-                // atténué — clair en thème clair, sombre en thème sombre. Sans
-                // `thumbColor`, React Native pose son vert par défaut, qui ne
-                // vient d'aucune palette et jure avec la couleur choisie (§4.5).
-                thumbColor={palette.accent}
-                trackColor={{ true: palette.accentSoft, false: palette.border }}
-                ios_backgroundColor={palette.border}
                 accessibilityLabel={capability.label}
               />
             </View>

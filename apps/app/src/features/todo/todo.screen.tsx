@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ScrollView, View } from "react-native";
+import { View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react-native";
 import type { Task, TaskList } from "@jc/domain";
@@ -9,7 +9,9 @@ import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { addDays, startOfWeek, weekDays, weekLabel } from "@/shared/lib/dates";
 import { datedTasks } from "@/shared/lib/tasks";
 import { Button } from "@/shared/ui/button";
+import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
+import { SegmentedControl, type SegmentedOption } from "@/shared/ui/segmented-control";
 import { Text } from "@/shared/ui/text";
 import { ListsBoard } from "./ListsBoard";
 import { TaskDialog } from "./TaskDialog";
@@ -18,7 +20,7 @@ import { WeekBoard } from "./WeekBoard";
 
 type TodoView = "week" | "lists";
 
-const VIEWS: { value: TodoView; label: string }[] = [
+const VIEWS: SegmentedOption<TodoView>[] = [
   { value: "week", label: "Semaine" },
   { value: "lists", label: "Mes listes" },
 ];
@@ -60,27 +62,9 @@ export function TodoScreen() {
   const editedTask =
     openedTask === null
       ? null
-      : (lists
-          .flatMap((list) => list.tasks)
-          .find((task) => task.id === openedTask.id) ?? null);
+      : (lists.flatMap((list) => list.tasks).find((task) => task.id === openedTask.id) ?? null);
 
-  const switcher = (
-    <View className="bg-muted flex-row gap-1 rounded-full p-1">
-      {VIEWS.map((item) => (
-        <Button
-          key={item.value}
-          size="sm"
-          variant={view === item.value ? "secondary" : "ghost"}
-          className="rounded-full"
-          onPress={() => setView(item.value)}
-          accessibilityRole="button"
-          accessibilityState={{ selected: view === item.value }}
-        >
-          <Text>{item.label}</Text>
-        </Button>
-      ))}
-    </View>
-  );
+  const switcher = <SegmentedControl options={VIEWS} value={view} onChange={setView} />;
 
   const navigation = (
     <View className="flex-row items-center gap-1">
@@ -116,72 +100,68 @@ export function TodoScreen() {
   );
 
   return (
-    <View className="bg-background flex-1">
-      <ScrollView
-        className="flex-1"
-        contentContainerClassName="w-full max-w-[900px] gap-4 self-center p-6"
-      >
-        <View className="flex-row items-center justify-between gap-3">
-          <Text className="text-2xl font-semibold">Todoliste</Text>
-          <Button
-            size="sm"
-            onPress={() => setListTarget({ mode: "create", folderId: null })}
-            accessibilityRole="button"
-            accessibilityLabel="Nouvelle liste"
-          >
-            <Icon as={Plus} className="size-4" />
-            <Text>Liste</Text>
-          </Button>
-        </View>
-
-        {/* Sous le point de rupture, la bascule et la navigation ne tiennent
-            pas sur la même ligne que la période affichée. */}
-        {view === "week" ? (
-          compact ? (
-            <View className="gap-3">
-              <Text className="text-base font-medium">{weekLabel(anchor)}</Text>
-              <View className="flex-row items-center justify-between gap-2">
-                {switcher}
-                {navigation}
-              </View>
-            </View>
-          ) : (
-            <View className="flex-row items-center gap-3">
-              <View className="min-w-0 flex-1">
-                <Text className="text-base font-medium" numberOfLines={1}>
-                  {weekLabel(anchor)}
-                </Text>
-              </View>
+    <ScreenShell
+      title="Todoliste"
+      action={
+        <Button
+          size="sm"
+          onPress={() => setListTarget({ mode: "create", folderId: null })}
+          accessibilityRole="button"
+          accessibilityLabel="Nouvelle liste"
+        >
+          <Icon as={Plus} className="size-4" />
+          <Text>Liste</Text>
+        </Button>
+      }
+      maxWidth={GRID_MAX_WIDTH}
+    >
+      {/* Sous le point de rupture, la bascule et la navigation ne tiennent
+          pas sur la même ligne que la période affichée. */}
+      {view === "week" ? (
+        compact ? (
+          <View className="gap-3">
+            <Text className="text-base font-medium">{weekLabel(anchor)}</Text>
+            <View className="flex-row items-center justify-between gap-2">
               {switcher}
-              <View className="min-w-0 flex-1 flex-row justify-end">{navigation}</View>
+              {navigation}
             </View>
-          )
+          </View>
         ) : (
-          <View className="flex-row items-center justify-between gap-3">{switcher}</View>
-        )}
+          <View className="flex-row items-center gap-3">
+            <View className="min-w-0 flex-1">
+              <Text className="text-base font-medium" numberOfLines={1}>
+                {weekLabel(anchor)}
+              </Text>
+            </View>
+            {switcher}
+            <View className="min-w-0 flex-1 flex-row justify-end">{navigation}</View>
+          </View>
+        )
+      ) : (
+        <View className="flex-row items-center justify-between gap-3">{switcher}</View>
+      )}
 
-        {isError ? (
-          <Text className="text-destructive text-sm">
-            Les todolistes n'ont pas pu être chargées. Réessayez dans un instant.
-          </Text>
-        ) : null}
+      {isError ? (
+        <Text className="text-destructive text-sm">
+          Les todolistes n'ont pas pu être chargées. Réessayez dans un instant.
+        </Text>
+      ) : null}
 
-        {view === "week" ? (
-          <WeekBoard days={days} tasks={tasks} />
-        ) : (
-          <ListsBoard
-            lists={lists}
-            {...(openedList ? { highlightedId: openedList } : {})}
-            onEditList={(list: TaskList) => setListTarget({ mode: "edit", list })}
-            onOpenTask={setOpenedTask}
-          />
-        )}
+      {view === "week" ? (
+        <WeekBoard days={days} tasks={tasks} />
+      ) : (
+        <ListsBoard
+          lists={lists}
+          {...(openedList ? { highlightedId: openedList } : {})}
+          onEditList={(list: TaskList) => setListTarget({ mode: "edit", list })}
+          onOpenTask={setOpenedTask}
+        />
+      )}
 
-        {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
-      </ScrollView>
+      {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
 
       <TaskListDialog target={listTarget} onClose={() => setListTarget(null)} />
       <TaskDialog task={editedTask} onClose={() => setOpenedTask(null)} />
-    </View>
+    </ScreenShell>
   );
 }
