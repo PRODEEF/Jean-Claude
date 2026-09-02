@@ -18,6 +18,7 @@ export type FolderContextMenuProps = {
   onClose: () => void;
   onRename: (target: FolderMenuTarget) => void;
   onAddChild: (target: FolderMenuTarget) => void;
+  onAddTaskList: (target: FolderMenuTarget) => void;
   onDelete: (target: FolderMenuTarget) => void;
 };
 
@@ -39,6 +40,7 @@ export function FolderContextMenu({
   onClose,
   onRename,
   onAddChild,
+  onAddTaskList,
   onDelete,
 }: FolderContextMenuProps) {
   const { palette } = useTheme();
@@ -48,7 +50,7 @@ export function FolderContextMenu({
 
   // Le menu s'ouvre au curseur, sauf s'il devait déborder : il se replie alors
   // vers l'intérieur plutôt que de sortir de l'écran.
-  const height = target.depth < MAX_FOLDER_DEPTH ? 168 : 124;
+  const height = target.depth < MAX_FOLDER_DEPTH ? 212 : 168;
   const left = Math.max(EDGE, Math.min(target.x, window.width - MENU_WIDTH - EDGE));
   const top = Math.max(EDGE, Math.min(target.y, window.height - height - EDGE));
 
@@ -83,6 +85,10 @@ export function FolderContextMenu({
         {target.depth < MAX_FOLDER_DEPTH ? (
           <MenuItem label="Ajouter un sous-dossier" onPress={() => onAddChild(target)} />
         ) : null}
+
+        {/* Une todoliste créée d'ici naît déjà rangée : elle restera visible
+            dans ce dossier comme dans l'onglet Todoliste (A.2). */}
+        <MenuItem label="Nouvelle todoliste" onPress={() => onAddTaskList(target)} />
 
         <View style={[styles.separator, { backgroundColor: palette.border }]} />
 

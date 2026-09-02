@@ -1,12 +1,15 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Conversation, FolderTreeNode } from "@jc/domain";
+import type { Conversation, FolderTreeNode, TaskList } from "@jc/domain";
+import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { api } from "@/shared/lib/api";
 
 export type SidebarGroup = {
   folder: FolderTreeNode;
   /** Rattachées à ce dossier précisément, pas à l'un de ses descendants. */
   conversations: Conversation[];
+  /** Todolistes rangées dans ce dossier — la liste y reste visible (A.2). */
+  taskLists: TaskList[];
   children: SidebarGroup[];
 };
 
@@ -40,14 +43,22 @@ export function useSidebarData(): SidebarData {
     queryFn: () => api.conversations.list({ limit: 100 }),
   });
 
+  const taskLists = useTaskLists();
+
   return useMemo(() => {
     // Le canal permanent a son entrée dédiée en haut de la barre (A.10) : le
     // laisser aussi dans la liste le ferait apparaître deux fois.
     const items = (conversations.data?.items ?? []).filter((item) => item.kind !== "assistant");
 
+    // Les todolistes ne pèsent ni sur `isLoading` ni sur `error` : une panne
+    // de leur côté ne doit pas effacer l'arborescence des conversations, qui
+    // est la raison d'être de la barre.
+    const lists = taskLists.data ?? [];
+
     const build = (node: FolderTreeNode): SidebarGroup => ({
       folder: node,
       conversations: items.filter((item) => item.folderIds.includes(node.id)),
+      taskLists: lists.filter((list) => list.folderId === node.id),
       children: node.children.map(build),
     });
 
@@ -64,5 +75,6 @@ export function useSidebarData(): SidebarData {
     conversations.data,
     conversations.isLoading,
     conversations.error,
+    taskLists.data,
   ]);
 }

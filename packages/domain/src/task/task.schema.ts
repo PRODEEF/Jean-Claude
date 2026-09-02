@@ -60,3 +60,22 @@ export const updateTaskSchema = createTaskSchema.partial().extend({
 export type UpdateTask = z.infer<typeof updateTaskSchema>;
 
 export type TaskListWithTasks = TaskList & { tasks: Task[] };
+
+/**
+ * Création d'une liste.
+ *
+ * `folderId` est facultatif et le restera : l'utilisateur ne choisit jamais où
+ * ranger au moment où il crée (§13.4.1). Le champ n'est renseigné que lorsque
+ * la liste naît depuis un dossier, où le rangement est déjà exprimé.
+ */
+export const createTaskListSchema = z.object({
+  title: labelSchema,
+  kind: taskListKindSchema.default("todo"),
+  folderId: uuidSchema.nullable().optional(),
+});
+
+export type CreateTaskList = z.infer<typeof createTaskListSchema>;
+
+export const updateTaskListSchema = createTaskListSchema.partial();
+
+export type UpdateTaskList = z.infer<typeof updateTaskListSchema>;
