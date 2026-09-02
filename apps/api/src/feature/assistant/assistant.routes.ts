@@ -10,6 +10,7 @@ import { folderRepository } from "../../domain/folder/folder.repository.js";
 import { FolderService } from "../../domain/folder/folder.service.js";
 import { suggestionRepository } from "../../domain/suggestion/suggestion.repository.js";
 import { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
+import { userRepository } from "../../domain/user/user.repository.js";
 import { AssistantService } from "./assistant.service.js";
 
 const suggestions = new SuggestionService(suggestionRepository);
@@ -18,7 +19,7 @@ const folders = new FolderService(folderRepository);
 const service = new AssistantService(
   suggestions,
   folders,
-  new ConversationService(conversationRepository, llm, suggestions, folders),
+  new ConversationService(conversationRepository, llm, suggestions, folders, userRepository),
 );
 
 export const assistantRoutes = new Hono<AuthEnv>()

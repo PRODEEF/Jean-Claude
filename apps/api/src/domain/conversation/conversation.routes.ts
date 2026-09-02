@@ -18,6 +18,7 @@ import { folderRepository } from "../folder/folder.repository.js";
 import { FolderService } from "../folder/folder.service.js";
 import { suggestionRepository } from "../suggestion/suggestion.repository.js";
 import { SuggestionService } from "../suggestion/suggestion.service.js";
+import { userRepository } from "../user/user.repository.js";
 import { conversationRepository } from "./conversation.repository.js";
 import { ConversationService } from "./conversation.service.js";
 
@@ -26,6 +27,7 @@ const service = new ConversationService(
   llm,
   new SuggestionService(suggestionRepository),
   new FolderService(folderRepository),
+  userRepository,
 );
 
 const idParam = validate("param", z.object({ id: uuidSchema }));
