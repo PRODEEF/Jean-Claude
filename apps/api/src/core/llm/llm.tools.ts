@@ -1,3 +1,4 @@
+import type { AssistantScope } from "@jc/domain";
 import type { LlmTool } from "./llm.port.js";
 
 /**
@@ -238,3 +239,32 @@ export const CHAT_TOOLS: LlmTool[] = [SUGGEST_TASK_LIST, SUGGEST_FOLDERS, SUGGES
  * de todolistes ou de rendez-vous récurrents le ferait déborder de ce périmètre.
  */
 export const ASSISTANT_TOOLS: LlmTool[] = [SUGGEST_PROJECT_FOLDERS, OPEN_NEW_CONVERSATION];
+
+/**
+ * Capacité de périmètre dont dépend chaque outil de suggestion (A.10).
+ *
+ * Les outils absents de cette table ne relèvent d'aucun réglage :
+ * `name_conversation` ne fait que poser un libellé, et `open_new_conversation`
+ * applique le bornage du canal lui-même — le rendre désactivable reviendrait à
+ * supprimer A.10.
+ */
+const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
+  [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",
+  [SUGGEST_RECURRING_EVENT.name]: "proactiveScheduling",
+  [SUGGEST_FOLDERS.name]: "folderOrganization",
+  [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",
+};
+
+/**
+ * L'outil relève-t-il d'une capacité que l'utilisateur laisse active ?
+ *
+ * Sert deux fois : à retirer l'outil du jeu remis au modèle, et à écarter
+ * l'appel s'il arrive quand même. Une capacité désactivée dans les réglages
+ * n'est pas seulement masquée dans l'UI — le serveur refuse de produire la
+ * suggestion correspondante, ce qui rend le réglage identique sur les quatre
+ * plateformes.
+ */
+export function isAllowedByScope(toolName: string, scope: AssistantScope): boolean {
+  const capability = SCOPE_BY_TOOL_NAME[toolName];
+  return capability === undefined || scope[capability];
+}

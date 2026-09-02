@@ -1,6 +1,7 @@
-import { DEFAULT_CONVERSATION_TITLE, labelSchema } from "@jc/domain";
+import { assistantScopeSchema, DEFAULT_CONVERSATION_TITLE, labelSchema } from "@jc/domain";
 import type {
   AssignFolders,
+  AssistantScope,
   Conversation,
   CreateConversation,
   CursorPagination,
@@ -16,12 +17,15 @@ import type { LlmProvider, LlmTool, LlmToolCall } from "../../core/llm/llm.port.
 import {
   ASSISTANT_TOOLS,
   CHAT_TOOLS,
+  isAllowedByScope,
   NAME_CONVERSATION,
   OPEN_NEW_CONVERSATION,
   SUGGEST_FOLDERS,
+  SUGGEST_PROJECT_FOLDERS,
 } from "../../core/llm/llm.tools.js";
 import type { FolderService } from "../folder/folder.service.js";
 import type { SuggestionService } from "../suggestion/suggestion.service.js";
+import type { IUserRepository } from "../user/user.repository.interface.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
 
 /** Nombre de messages de contexte envoyés au modèle à chaque tour. */
@@ -50,6 +54,7 @@ export class ConversationService {
     private readonly llm: LlmProvider,
     private readonly suggestions: SuggestionService,
     private readonly folders: FolderService,
+    private readonly users: IUserRepository,
   ) {}
 
   list(
@@ -166,9 +171,10 @@ export class ConversationService {
     let model: string | null = null;
     const toolCalls: LlmToolCall[] = [];
 
-    // Ce que le fil laisse encore à faire : le nommer, le ranger. Résolu avant
-    // l'appel au modèle, parce que cela décide des outils qu'on lui expose.
-    const todo = await this.pendingHousekeeping(conversation, accessToken);
+    // Périmètre autorisé et entretien du fil : résolus avant l'appel au modèle,
+    // parce que les deux décident des outils qu'on lui expose.
+    const scope = await this.scopeFor(userId, accessToken);
+    const todo = await this.pendingHousekeeping(conversation, scope, accessToken);
 
     try {
       const stream = this.llm.stream({
@@ -213,6 +219,14 @@ export class ConversationService {
       // définitivement — le modèle ne sera pas rejoué.
       for (const toolCall of toolCalls) {
         if (APPLIED_DIRECTLY.has(toolCall.name)) continue;
+        // Retirer l'outil du jeu remis au modèle suffit en pratique, mais rien
+        // ne garantit qu'il n'en nommera pas un autre. Une capacité coupée dans
+        // les réglages ne doit produire aucune suggestion, quel que soit le
+        // chemin par lequel l'appel arrive (A.10).
+        if (!isAllowedByScope(toolCall.name, scope)) {
+          console.warn(`Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
+          continue;
+        }
         await this.suggestions.capture(userId, conversationId, toolCall, accessToken);
       }
 
@@ -226,6 +240,21 @@ export class ConversationService {
   }
 
   /**
+   * Périmètre que l'utilisateur laisse à l'assistant (A.10).
+   *
+   * Un profil illisible retombe sur le périmètre par défaut plutôt que de faire
+   * échouer le tour de dialogue : c'est celui d'un compte qui n'a jamais ouvert
+   * ses réglages, donc le plus proche de ce que l'utilisateur attend.
+   */
+  private async scopeFor(userId: string, accessToken: string): Promise<AssistantScope> {
+    const profile = await this.users.findById(userId, accessToken);
+    if (profile) return profile.preferences.scope;
+
+    console.warn("Profil introuvable au moment de borner l'assistant : périmètre par défaut.");
+    return assistantScopeSchema.parse({});
+  }
+
+  /**
    * Outils du tour, et arborescence à injecter dans la consigne.
    *
    * Le canal permanent a son propre jeu (A.10). Une conversation classique
@@ -233,20 +262,29 @@ export class ConversationService {
    * de quoi se ranger tant qu'elle n'est dans aucun dossier — mais pas si une
    * proposition de rangement attend déjà une réponse : la relancer à chaque
    * message empilerait les cartes sur un geste que l'utilisateur a laissé venir.
+   *
+   * Le périmètre s'applique en amont de tout le reste : un outil dont la
+   * capacité est désactivée n'entre pas dans le jeu, et la consigne cesse du
+   * même coup de le réclamer.
    */
   private async pendingHousekeeping(
     conversation: Conversation,
+    scope: AssistantScope,
     accessToken: string,
   ): Promise<Housekeeping> {
-    if (conversation.kind === "assistant") return { tools: ASSISTANT_TOOLS, filing: null };
+    if (conversation.kind === "assistant") {
+      return { tools: allowed(ASSISTANT_TOOLS, scope), filing: null };
+    }
 
     // `SUGGEST_FOLDERS` n'est rendu qu'aux conversations non classées : il n'a
     // rien à proposer sur un fil déjà rangé.
-    const tools = CHAT_TOOLS.filter((tool) => tool !== SUGGEST_FOLDERS);
+    const tools = allowed(CHAT_TOOLS, scope).filter((tool) => tool !== SUGGEST_FOLDERS);
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
 
-    if (conversation.folderIds.length > 0) return { tools, filing: null };
+    if (conversation.folderIds.length > 0 || !scope.folderOrganization) {
+      return { tools, filing: null };
+    }
 
     const pending = await this.suggestions.listPending(conversation.id, accessToken);
     if (pending.some((suggestion) => suggestion.kind === "assign_folders")) {
@@ -326,7 +364,7 @@ export class ConversationService {
  */
 function buildSystemPrompt(kind: Conversation["kind"], todo: Housekeeping): string {
   if (kind === "assistant") {
-    return [
+    const channel = [
       "Tu es Jean-Claude, l'assistant d'organisation personnelle de l'utilisateur.",
       "Ce canal est réservé à trois sujets : les rappels (ce qui est important",
       "aujourd'hui ou cette semaine), l'organisation interne de l'outil (dossiers,",
@@ -340,25 +378,40 @@ function buildSystemPrompt(kind: Conversation["kind"], todo: Housekeeping): stri
       "Prends les devants : quand un échange laisse deviner une action à faire,",
       "propose-la plutôt que d'attendre qu'on te la demande. Reste suggestif —",
       "une proposition courte que l'utilisateur accepte ou ignore d'un geste.",
-      "",
-      "Quand l'échange fait apparaître un besoin de rangement — un projet qui",
-      "démarre, un sujet qui revient, un espace mal structuré — appelle",
-      "`suggest_project_folders` pour proposer les dossiers correspondants.",
-      "L'outil ne crée rien : il affiche une proposition que l'utilisateur",
-      "valide. Ne dis donc jamais que les dossiers sont créés, demande.",
-    ].join("\n");
+    ];
+
+    if (todo.tools.includes(SUGGEST_PROJECT_FOLDERS)) {
+      channel.push(
+        "",
+        "Quand l'échange fait apparaître un besoin de rangement — un projet qui",
+        "démarre, un sujet qui revient, un espace mal structuré — appelle",
+        "`suggest_project_folders` pour proposer les dossiers correspondants.",
+        "L'outil ne crée rien : il affiche une proposition que l'utilisateur",
+        "valide. Ne dis donc jamais que les dossiers sont créés, demande.",
+      );
+    }
+
+    return channel.join("\n");
   }
 
   const lines = [
     "Tu es Jean-Claude, un assistant conversationnel personnel.",
     "Réponds de façon utile, directe et naturelle, en français.",
-    "",
-    "Au fil de l'échange, repère si la conversation produit quelque chose",
-    "d'actionnable : une liste de tâches, une liste d'achats, une échéance,",
-    "un rendez-vous récurrent. Le cas échéant, appelle l'outil correspondant",
-    "pour le proposer — sans interrompre le fil de la conversation, et sans",
-    "jamais présenter la chose comme déjà faite : c'est une proposition.",
   ];
+
+  // Réclamée seulement si le tour a de quoi y répondre : sans outil de
+  // proposition, la consigne pousserait le modèle à annoncer en clair une
+  // todoliste que personne ne créerait — exactement ce que le §12.1 interdit.
+  if (todo.tools.some((tool) => tool !== NAME_CONVERSATION && tool !== SUGGEST_FOLDERS)) {
+    lines.push(
+      "",
+      "Au fil de l'échange, repère si la conversation produit quelque chose",
+      "d'actionnable : une liste de tâches, une liste d'achats, une échéance,",
+      "un rendez-vous récurrent. Le cas échéant, appelle l'outil correspondant",
+      "pour le proposer — sans interrompre le fil de la conversation, et sans",
+      "jamais présenter la chose comme déjà faite : c'est une proposition.",
+    );
+  }
 
   // Exposer l'outil ne suffit pas : sa description est lue au moment de choisir,
   // pas au moment de décider s'il y a lieu de choisir. Les deux gestes
@@ -389,6 +442,11 @@ function buildSystemPrompt(kind: Conversation["kind"], todo: Housekeeping): stri
   }
 
   return lines.join("\n");
+}
+
+/** Les outils du jeu dont la capacité reste active dans les réglages (A.10). */
+function allowed(tools: LlmTool[], scope: AssistantScope): LlmTool[] {
+  return tools.filter((tool) => isAllowedByScope(tool.name, scope));
 }
 
 /**
