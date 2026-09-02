@@ -127,13 +127,3 @@ export const assignFoldersPayloadSchema = z
   );
 
 export type AssignFoldersPayload = z.infer<typeof assignFoldersPayloadSchema>;
-
-/**
- * Verdict de bornage du canal permanent (A.10).
- *
- * Quand un message adressé au canal permanent sort du périmètre assistant,
- * on ne répond pas dans le canal : on bascule l'échange vers une nouvelle
- * conversation classique, rangée en dossier.
- */
-export type ScopeVerdict =
-  { inScope: true } | { inScope: false; reason: string; suggestedTitle: string };

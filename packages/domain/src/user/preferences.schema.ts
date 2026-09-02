@@ -27,12 +27,6 @@ export const userPreferencesSchema = z.object({
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
 
-export const updateUserPreferencesSchema = userPreferencesSchema.partial().extend({
-  scope: assistantScopeSchema.partial().optional(),
-});
-
-export type UpdateUserPreferences = z.infer<typeof updateUserPreferencesSchema>;
-
 /**
  * Contexte stable retenu sur l'utilisateur (§13.4.2).
  *
@@ -62,10 +56,10 @@ export type UserProfile = z.infer<typeof userProfileSchema>;
 /**
  * Ce que la page de réglages sait modifier aujourd'hui.
  *
- * Volontairement plus étroit que `updateUserPreferencesSchema` : accepter des
- * champs que le serveur ignorerait ferait croire au client qu'ils ont été
- * enregistrés. `timezone` et `speakResponses` en restent dehors tant qu'aucun
- * écran ne les pilote.
+ * Volontairement plus étroit que `userPreferencesSchema` : accepter des champs
+ * que le serveur ignorerait ferait croire au client qu'ils ont été enregistrés.
+ * `timezone` et `speakResponses` en restent dehors tant qu'aucun écran ne les
+ * pilote.
  *
  * `memory` et `onboardingCompletedAt` n'y entreront jamais : ils sont écrits
  * par le serveur au terme de la conversation d'accueil (§6.3), pas saisis.

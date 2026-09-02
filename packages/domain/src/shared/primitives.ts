@@ -24,13 +24,6 @@ export const cursorPaginationSchema = z.object({
 export type CursorPagination = z.infer<typeof cursorPaginationSchema>;
 
 /** Enveloppe de réponse paginée, identique pour toutes les collections de l'API. */
-export function paginatedSchema<T extends z.ZodTypeAny>(item: T) {
-  return z.object({
-    items: z.array(item),
-    nextCursor: isoDateTimeSchema.nullable(),
-  });
-}
-
 export type Paginated<T> = {
   items: T[];
   nextCursor: string | null;
