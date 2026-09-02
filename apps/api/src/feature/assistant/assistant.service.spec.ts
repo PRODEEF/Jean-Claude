@@ -1,5 +1,7 @@
 import type { Conversation, Folder, Suggestion } from "@jc/domain";
 import type { LlmProvider } from "../../core/llm/llm.port.js";
+import type { ICalendarRepository } from "../../domain/calendar/calendar.repository.interface.js";
+import { CalendarService } from "../../domain/calendar/calendar.service.js";
 import type { IConversationRepository } from "../../domain/conversation/conversation.repository.interface.js";
 import { ConversationService } from "../../domain/conversation/conversation.service.js";
 import type { IFolderRepository } from "../../domain/folder/folder.repository.interface.js";
@@ -150,6 +152,15 @@ const IDLE_USERS: IUserRepository = {
   completeOnboarding: jest.fn(),
 };
 
+/** Même raison : l'agenda n'est lu que par le canal permanent, hors de ces tests. */
+const IDLE_CALENDAR: ICalendarRepository = {
+  findInRange: jest.fn(),
+  findById: jest.fn(),
+  create: jest.fn(),
+  update: jest.fn(),
+  delete: jest.fn(),
+};
+
 function makeService(
   suggestions: ISuggestionRepository = makeSuggestionRepository(),
   folders: IFolderRepository = makeFolderRepository(),
@@ -161,7 +172,14 @@ function makeService(
   return new AssistantService(
     suggestionService,
     folderService,
-    new ConversationService(conversations, IDLE_LLM, suggestionService, folderService, IDLE_USERS),
+    new ConversationService(
+      conversations,
+      IDLE_LLM,
+      suggestionService,
+      folderService,
+      IDLE_USERS,
+      new CalendarService(IDLE_CALENDAR),
+    ),
   );
 }
 

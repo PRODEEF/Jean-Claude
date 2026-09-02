@@ -1,3 +1,4 @@
+import { AppState, Platform } from "react-native";
 import { createClient } from "@supabase/supabase-js";
 import { env } from "./env";
 import { tokenStorage } from "./token-storage";
@@ -23,3 +24,23 @@ export const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
+
+/**
+ * Le renouvellement automatique du jeton ne tourne qu'application au premier
+ * plan.
+ *
+ * C'est ce que demande la documentation Supabase pour React Native : les
+ * minuteurs d'un processus mis en veille par le système ne se déclenchent pas,
+ * et sans reprise explicite au retour, la session est périmée alors que le SDK
+ * se croit à jour — l'utilisateur est déconnecté au premier appel.
+ *
+ * Rien à faire sur web : un onglet garde ses minuteurs, et `AppState` n'y a
+ * pas d'équivalent. Il ne s'agit pas ici d'un écart de taille d'écran mais
+ * d'une capacité de plateforme, seul cas où le test est légitime.
+ */
+if (Platform.OS !== "web") {
+  AppState.addEventListener("change", (state) => {
+    if (state === "active") void supabase.auth.startAutoRefresh();
+    else void supabase.auth.stopAutoRefresh();
+  });
+}

@@ -4,6 +4,8 @@ import { resolveSuggestionSchema, uuidSchema } from "@jc/domain";
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { validate } from "../../core/http.js";
 import { llm } from "../../core/llm/providers/gateway.provider.js";
+import { calendarRepository } from "../../domain/calendar/calendar.repository.js";
+import { CalendarService } from "../../domain/calendar/calendar.service.js";
 import { conversationRepository } from "../../domain/conversation/conversation.repository.js";
 import { ConversationService } from "../../domain/conversation/conversation.service.js";
 import { folderRepository } from "../../domain/folder/folder.repository.js";
@@ -19,7 +21,14 @@ const folders = new FolderService(folderRepository);
 const service = new AssistantService(
   suggestions,
   folders,
-  new ConversationService(conversationRepository, llm, suggestions, folders, userRepository),
+  new ConversationService(
+    conversationRepository,
+    llm,
+    suggestions,
+    folders,
+    userRepository,
+    new CalendarService(calendarRepository),
+  ),
 );
 
 export const assistantRoutes = new Hono<AuthEnv>()

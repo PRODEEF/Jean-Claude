@@ -14,6 +14,8 @@ import {
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { validate } from "../../core/http.js";
 import { llm } from "../../core/llm/providers/gateway.provider.js";
+import { calendarRepository } from "../calendar/calendar.repository.js";
+import { CalendarService } from "../calendar/calendar.service.js";
 import { folderRepository } from "../folder/folder.repository.js";
 import { FolderService } from "../folder/folder.service.js";
 import { suggestionRepository } from "../suggestion/suggestion.repository.js";
@@ -28,6 +30,7 @@ const service = new ConversationService(
   new SuggestionService(suggestionRepository),
   new FolderService(folderRepository),
   userRepository,
+  new CalendarService(calendarRepository),
 );
 
 const idParam = validate("param", z.object({ id: uuidSchema }));

@@ -1,6 +1,7 @@
 import {
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
+  uuidSchema,
   type Suggestion,
   type SuggestionKind,
   type SuggestionStatus,
@@ -101,7 +102,7 @@ function translate(
     const payload = createProjectFoldersPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "create_project_folders", payload: payload.data };
   } else if (toolCall.name === SUGGEST_FOLDERS.name) {
-    const payload = assignFoldersPayloadSchema.safeParse(toolCall.input);
+    const payload = assignFoldersPayloadSchema.safeParse(withUuidFolderIds(toolCall.input));
     if (payload.success) return { kind: "assign_folders", payload: payload.data };
   } else {
     console.warn(`Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
@@ -110,4 +111,29 @@ function translate(
 
   console.warn(`Appel d'outil \`${toolCall.name}\` inexploitable : suggestion ignorée.`);
   return null;
+}
+
+/**
+ * Écarte les identifiants de dossier qui ne sont pas des UUID.
+ *
+ * Le modèle reprend parfois le nom d'un dossier là où la consigne demandait son
+ * identifiant. Sans ce filtre, une seule valeur inventée fait échouer la
+ * validation de la charge entière et la proposition est perdue — alors que
+ * l'acceptation, elle, sait déjà passer outre un dossier qu'elle ne retrouve
+ * pas. Écarter la ligne fautive plutôt que le rangement tout entier.
+ *
+ * Si le filtre ne laisse rien et qu'aucun nouveau dossier n'est proposé, le
+ * schéma échoue à son tour : une proposition sans dossier n'aurait rien à
+ * appliquer.
+ */
+function withUuidFolderIds(input: Record<string, unknown>): Record<string, unknown> {
+  const ids = input["existingFolderIds"];
+  if (!Array.isArray(ids)) return input;
+
+  const kept = ids.filter((id) => uuidSchema.safeParse(id).success);
+  if (kept.length < ids.length) {
+    console.warn("Identifiants de dossier inexploitables écartés du rangement proposé.");
+  }
+
+  return { ...input, existingFolderIds: kept };
 }

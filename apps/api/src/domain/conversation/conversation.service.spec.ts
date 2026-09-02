@@ -1,6 +1,7 @@
 import { DEFAULT_CONVERSATION_TITLE } from "@jc/domain";
 import type {
   AssistantScope,
+  CalendarEvent,
   Conversation,
   Folder,
   Message,
@@ -9,6 +10,8 @@ import type {
   UserPreferences,
 } from "@jc/domain";
 import type { LlmCompletionRequest, LlmProvider, LlmToolCall } from "../../core/llm/llm.port.js";
+import type { ICalendarRepository } from "../calendar/calendar.repository.interface.js";
+import { CalendarService } from "../calendar/calendar.service.js";
 import type { IFolderRepository } from "../folder/folder.repository.interface.js";
 import { FolderService } from "../folder/folder.service.js";
 import type { ISuggestionRepository } from "../suggestion/suggestion.repository.interface.js";
@@ -161,6 +164,36 @@ function makeFolderRepository(folders: Folder[] = []): IFolderRepository {
   };
 }
 
+function makeEvent(
+  overrides: Partial<CalendarEvent> & Pick<CalendarEvent, "title">,
+): CalendarEvent {
+  return {
+    id: "evt-1",
+    notes: null,
+    startsAt: "2026-09-03T16:00:00.000Z",
+    endsAt: null,
+    allDay: false,
+    rrule: null,
+    reminderMinutesBefore: null,
+    folderId: null,
+    conversationId: null,
+    createdByAssistant: false,
+    createdAt: "2026-09-01T08:00:00.000Z",
+    updatedAt: "2026-09-01T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeCalendarRepository(events: CalendarEvent[] = []): ICalendarRepository {
+  return {
+    findInRange: jest.fn().mockResolvedValue(events),
+    findById: jest.fn().mockResolvedValue(null),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
 function makePreferences(
   overrides: Partial<UserPreferences> = {},
   scope: Partial<AssistantScope> = {},
@@ -216,6 +249,7 @@ function makeService(
   suggestions: ISuggestionRepository = makeSuggestionRepository(),
   folders: IFolderRepository = makeFolderRepository(),
   users: IUserRepository = makeUserRepository(),
+  calendar: ICalendarRepository = makeCalendarRepository(),
 ): ConversationService {
   return new ConversationService(
     repo,
@@ -223,6 +257,7 @@ function makeService(
     new SuggestionService(suggestions),
     new FolderService(folders),
     users,
+    new CalendarService(calendar),
   );
 }
 
@@ -244,7 +279,23 @@ async function drain(
   return events;
 }
 
+/**
+ * Horloge figée : la consigne système porte désormais la date du tour, et un
+ * test qui la lirait sur l'horloge réelle changerait de verdict chaque jour.
+ * 14 h 30 à Paris, 2 h 30 à Tahiti — de quoi vérifier que le fuseau du profil
+ * l'emporte sur celui du serveur.
+ */
+const NOW = new Date("2026-09-02T12:30:00.000Z");
+
 describe("ConversationService", () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: NOW, doNotFake: ["nextTick", "queueMicrotask", "setImmediate"] });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   describe("getById", () => {
     it("signale une conversation introuvable plutôt que de renvoyer null", async () => {
       const service = makeService(
@@ -751,6 +802,79 @@ describe("ConversationService", () => {
       expect(lastRequest(llm).system ?? "").toContain("Menuisier à son compte.");
     });
 
+    it("date le tour de dialogue dans le fuseau du profil", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      // Sans ce repère, une échéance déduite de « lundi prochain » tombe sur
+      // l'horizon d'entraînement du modèle plutôt que sur le calendrier réel.
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("mercredi 2 septembre 2026 à 14:30");
+      expect(system).toContain("Europe/Paris");
+    });
+
+    it("annonce l'heure du fuseau choisi, pas celle du serveur", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({}, { preferences: makePreferences({ timezone: "Pacific/Tahiti" }) }),
+        ),
+      );
+
+      expect(lastRequest(llm).system ?? "").toContain("Pacific/Tahiti");
+      expect(lastRequest(llm).system ?? "").not.toContain("à 14:30");
+    });
+
+    it("garde le tour de dialogue quand le fuseau enregistré est illisible", async () => {
+      const llm = makeLlm();
+      const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({}, { preferences: makePreferences({ timezone: "Terre/Milieu" }) }),
+        ),
+      );
+
+      // Une consigne datée sur le fuseau par défaut vaut mieux qu'un tour perdu.
+      expect(lastRequest(llm).system ?? "").toContain("2 septembre 2026");
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it("donne au modèle le nom sous lequel s'adresser à l'utilisateur", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      expect(lastRequest(llm).system ?? "").toContain("L'utilisateur s'appelle Clarisse.");
+    });
+
+    it("n'annonce aucun nom quand le profil n'en porte pas", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({}, { displayName: null }),
+        ),
+      );
+
+      expect(lastRequest(llm).system ?? "").not.toContain("L'utilisateur s'appelle");
+    });
+
     it("laisse une conversation classique sans bornage de périmètre", async () => {
       const llm = makeLlm();
 
@@ -992,7 +1116,7 @@ describe("ConversationService", () => {
     it("ne relance pas un rangement tant que la proposition précédente attend", async () => {
       const llm = makeLlm();
       const suggestions = makeSuggestionRepository({
-        listPending: jest
+        listForConversation: jest
           .fn()
           .mockResolvedValue([{ id: "sug-1", kind: "assign_folders", status: "pending" }]),
       });
@@ -1002,6 +1126,152 @@ describe("ConversationService", () => {
       // Sinon chaque message empilerait une carte sur un geste que
       // l'utilisateur a simplement laissé venir.
       expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_folders");
+    });
+  });
+
+  describe("contexte du canal permanent (A.10)", () => {
+    /** Le canal, tel que la route le remet au service. */
+    function channel(): IConversationRepository {
+      return makeRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeConversation({ id: "canal", kind: "assistant", title: "Jean-Claude" }),
+          ),
+      });
+    }
+
+    it("remet au canal l'agenda des jours qui viennent", async () => {
+      const llm = makeLlm();
+      const calendar = makeCalendarRepository([
+        makeEvent({ title: "Kiné", startsAt: "2026-09-03T16:00:00.000Z" }),
+      ]);
+
+      await drain(
+        makeService(
+          channel(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository(),
+          calendar,
+        ),
+      );
+
+      // Le canal annonce les rappels comme premier de ses trois sujets : sans
+      // cette lecture, « qu'est-ce que j'ai cette semaine ? » ne pouvait
+      // produire qu'une invention.
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("Kiné");
+      expect(system).toContain("jeudi 3 septembre 2026 à 18:00");
+    });
+
+    it("borne la fenêtre d'agenda à sept jours à partir du tour", async () => {
+      const calendar = makeCalendarRepository();
+
+      await drain(
+        makeService(
+          channel(),
+          makeLlm(),
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository(),
+          calendar,
+        ),
+      );
+
+      expect(calendar.findInRange).toHaveBeenCalledWith(
+        { from: "2026-09-02T12:30:00.000Z", to: "2026-09-09T12:30:00.000Z" },
+        TOKEN,
+      );
+    });
+
+    it("ne mentionne pas d'agenda quand rien n'est prévu", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(channel(), llm, makeSuggestionRepository(), makeFolderRepository()));
+
+      // Une section vide pousserait le modèle à commenter un agenda dont
+      // personne ne lui a parlé.
+      expect(lastRequest(llm).system ?? "").not.toContain("Agenda des");
+    });
+
+    it("ne lit pas l'agenda pour une conversation classique", async () => {
+      const llm = makeLlm();
+      const calendar = makeCalendarRepository([makeEvent({ title: "Kiné" })]);
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository(),
+          calendar,
+        ),
+      );
+
+      expect(calendar.findInRange).not.toHaveBeenCalled();
+      expect(lastRequest(llm).system ?? "").not.toContain("Kiné");
+    });
+
+    it("donne au canal les dossiers déjà créés, pour qu'il n'en propose pas d'homonyme", async () => {
+      const llm = makeLlm();
+      const folders = makeFolderRepository([makeFolder({ id: "folder-1", name: "Jardin" })]);
+
+      await drain(makeService(channel(), llm, makeSuggestionRepository(), folders));
+
+      // Sans cette liste, le canal annonçait « je te crée un dossier Jardin ? »
+      // alors que Jardin existait : le service ne le dupliquait pas, mais la
+      // phrase affichée à l'utilisateur était fausse (§12.1).
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("- Jardin (folder-1)");
+      expect(system).toContain("Ne propose jamais de créer l'un");
+    });
+
+    it("ne relance pas une structure de dossiers tant que la précédente attend", async () => {
+      const llm = makeLlm();
+      const suggestions = makeSuggestionRepository({
+        listForConversation: jest
+          .fn()
+          .mockResolvedValue([{ id: "sug-1", kind: "create_project_folders", status: "pending" }]),
+      });
+
+      await drain(makeService(channel(), llm, suggestions));
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_project_folders");
+    });
+  });
+
+  describe("propositions déjà tranchées (§12.1)", () => {
+    it("rappelle au modèle ce qu'il a proposé et ce qu'il en est advenu", async () => {
+      const llm = makeLlm();
+      const suggestions = makeSuggestionRepository({
+        listForConversation: jest.fn().mockResolvedValue([
+          {
+            id: "sug-1",
+            kind: "assign_folders",
+            status: "dismissed",
+            message: "Je range ça dans Santé ?",
+          },
+        ]),
+      });
+
+      await drain(makeService(makeRepository(), llm, suggestions));
+
+      // Sans cette trace, le modèle ne relit que sa propre prose et reformule
+      // au tour suivant une proposition que l'utilisateur vient d'écarter.
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("Je range ça dans Santé ?");
+      expect(system).toContain("écartée par l'utilisateur");
+    });
+
+    it("ne parle d'aucune proposition sur un fil qui n'en a pas reçu", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      expect(lastRequest(llm).system ?? "").not.toContain("Propositions que tu as déjà faites");
     });
   });
 

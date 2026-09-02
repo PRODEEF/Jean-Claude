@@ -27,6 +27,11 @@ export type ApiClientOptions = {
    * mécanismes que ce package n'a pas à connaître.
    */
   getAccessToken: () => Promise<string | null> | string | null;
+  /**
+   * Renouvelle la session et rend le nouveau jeton, ou `null` s'il n'y arrive
+   * pas. Appelé au premier 401 seulement, avant de conclure à une déconnexion.
+   */
+  refreshAccessToken?: () => Promise<string | null>;
   /** Appelé sur 401, pour déclencher une reconnexion côté application. */
   onUnauthorized?: () => void;
   /**
@@ -102,12 +107,24 @@ export class HttpClient {
           separator = buffer.indexOf("\n\n");
         }
       }
+
+      // Le dernier bloc peut arriver sans sa ligne vide de fin — flux coupé,
+      // ou intermédiaire qui la mange. L'abandonner ferait passer une réponse
+      // tronquée pour une réponse complète : mieux vaut le rendre et laisser
+      // l'appelant conclure sur ce qu'il en lit.
+      const rest = (buffer + decoder.decode()).trim();
+      if (rest.startsWith("data: ")) yield rest.slice(6);
     } finally {
       reader.releaseLock();
     }
   }
 
-  private async send(path: string, accept: string, init: RequestOptions): Promise<Response> {
+  private async send(
+    path: string,
+    accept: string,
+    init: RequestOptions,
+    renewed = false,
+  ): Promise<Response> {
     const { method = "GET", body, query, signal } = init;
 
     const url = new URL(`${this.options.baseUrl.replace(/\/$/, "")}/api${path}`);
@@ -128,6 +145,17 @@ export class HttpClient {
     });
 
     if (response.status === 401) {
+      // Un jeton peut expirer entre sa lecture et sa vérification par le
+      // serveur — décalage d'horloge, requête partie juste avant l'échéance.
+      // Déconnecter sur ce seul signe renverrait l'utilisateur à l'écran de
+      // connexion en lui faisant perdre la conversation en cours : on
+      // renouvelle et on rejoue une fois. Le serveur n'a rien traité, rejouer
+      // ne peut donc rien dupliquer.
+      if (!renewed && this.options.refreshAccessToken) {
+        const token = await this.options.refreshAccessToken();
+        if (token) return this.send(path, accept, init, true);
+      }
+
       this.options.onUnauthorized?.();
       throw new ApiError(401, "Session expirée. Reconnexion nécessaire.");
     }

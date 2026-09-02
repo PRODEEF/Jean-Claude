@@ -30,7 +30,7 @@ import {
   type UpdateUserProfile,
   type UserProfile,
 } from "@jc/domain";
-import { HttpClient, type ApiClientOptions } from "./http";
+import { ApiError, HttpClient, type ApiClientOptions } from "./http";
 
 /**
  * Client de l'API Jean-Claude.
@@ -232,7 +232,24 @@ export class JeanClaudeClient {
     });
 
     for await (const block of blocks) {
-      yield messageStreamEventSchema.parse(JSON.parse(block));
+      yield parseEvent(block);
     }
+  }
+}
+
+/**
+ * Un bloc illisible est soit un flux coupé au milieu d'un événement, soit un
+ * contrat qui a divergé entre le serveur et le client.
+ *
+ * Dans les deux cas l'utilisateur n'a que faire du détail : le message d'une
+ * `ZodError` est un pavé JSON, et c'est lui qui s'affichait jusqu'ici sous le
+ * fil. Le détail reste consultable, la phrase rendue est lisible.
+ */
+function parseEvent(block: string): MessageStreamEvent {
+  try {
+    return messageStreamEventSchema.parse(JSON.parse(block));
+  } catch (error) {
+    console.warn("Événement de flux illisible :", error instanceof Error ? error.message : error);
+    throw new ApiError(502, "La réponse a été interrompue avant la fin.");
   }
 }

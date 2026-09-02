@@ -11,9 +11,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowUp } from "lucide-react-native";
+import { ArrowUp, Square } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import type { Conversation, Message, Suggestion } from "@jc/domain";
+import { MESSAGE_MAX_LENGTH, type Conversation, type Message, type Suggestion } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -68,9 +68,17 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     [router],
   );
 
-  const { messages, send, submit, streamingText, pendingUserText } = useConversationThread(
+  // Le message n'a pas atteint le serveur : le rendre au champ plutôt que de
+  // le laisser disparaître avec l'échec. Sans écraser ce que l'utilisateur a pu
+  // retaper entre-temps.
+  const restoreDraft = useCallback((content: string) => {
+    setDraft((current) => (current.length > 0 ? current : content));
+  }, []);
+
+  const { messages, send, submit, stop, streamingText, pendingUserText } = useConversationThread(
     conversationId,
     goToNewConversation,
+    restoreDraft,
   );
   const { pending, resolved, resolve } = useSuggestions(conversationId);
 
@@ -241,8 +249,10 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
         <View style={[styles.errorBar, { borderColor: palette.border }]}>
           <Text style={[styles.errorText, { color: palette.danger }]}>{errorMessage(failure)}</Text>
           {/* Un échec de chargement se rejoue ; un échec d'envoi, non — le
-              message est déjà enregistré et l'API n'offre pas de relancer le
-              modèle seul. Proposer « Réessayer » dans ce cas mentirait. Une
+              message est le plus souvent déjà enregistré, et l'API n'offre pas
+              de relancer le modèle seul. Proposer « Réessayer » ici le
+              dupliquerait. Quand rien n'a été enregistré, le texte est rendu au
+              champ de saisie et l'utilisateur le renvoie lui-même. Une
               proposition refusée par le serveur se rejoue depuis sa carte. */}
           <Pressable
             onPress={() => {
@@ -298,6 +308,10 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
             placeholder={askable ? "Ou répondre directement…" : "Votre message"}
             placeholderTextColor={palette.textMuted}
             multiline
+            // Bornée ici comme elle l'est au contrat partagé : sans cela, un
+            // texte trop long partait au serveur, revenait en 400 générique, et
+            // le brouillon était perdu en chemin.
+            maxLength={MESSAGE_MAX_LENGTH}
             onSubmitEditing={sendDraft}
             // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde
             // un retour à la ligne, la saisie multiligne y étant la norme.
@@ -315,11 +329,17 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
             // saisie à une ligne — d'où la restriction au web.
             {...(Platform.OS === "web" ? { numberOfLines: 1 } : {})}
           />
+          {/* Pendant la génération, le même bouton arrête la réponse plutôt
+              que de rester grisé : c'est ce que font ChatGPT, Claude et
+              Perplexity (§4.2), et rien n'est perdu — le serveur conserve le
+              texte déjà produit. */}
           <Pressable
-            onPress={sendDraft}
-            disabled={draft.trim().length === 0 || send.isPending}
+            onPress={send.isPending ? stop : sendDraft}
+            disabled={!send.isPending && draft.trim().length === 0}
             accessibilityRole="button"
-            accessibilityLabel="Envoyer le message"
+            accessibilityLabel={
+              send.isPending ? "Arrêter la réponse en cours" : "Envoyer le message"
+            }
             // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie,
             // plus 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
             // `MIN_TOUCH_TARGET` sans faire grandir le champ.
@@ -328,11 +348,15 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
               styles.sendButton,
               {
                 backgroundColor: palette.accent,
-                opacity: draft.trim().length === 0 || send.isPending ? 0.4 : 1,
+                opacity: !send.isPending && draft.trim().length === 0 ? 0.4 : 1,
               },
             ]}
           >
-            <ArrowUp size={18} color={palette.accentText} />
+            {send.isPending ? (
+              <Square size={14} fill={palette.accentText} color={palette.accentText} />
+            ) : (
+              <ArrowUp size={18} color={palette.accentText} />
+            )}
           </Pressable>
         </View>
       </View>
