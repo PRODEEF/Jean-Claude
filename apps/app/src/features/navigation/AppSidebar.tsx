@@ -3,11 +3,9 @@ import { PanResponder, Platform, ScrollView, View } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
 import {
-  CalendarDays,
   ChevronDown,
   ChevronRight,
   Folder as FolderIcon,
-  ListChecks,
   Plus,
   Sparkles,
 } from "lucide-react-native";
@@ -26,12 +24,7 @@ import { Separator } from "@/shared/ui/separator";
 import { Text } from "@/shared/ui/text";
 import { useAssistantName } from "@/shared/hooks/use-profile";
 import { useSidebarData, type SidebarGroup } from "./use-sidebar-data";
-
-/** Rangées de navigation vers les vues qui ne sont pas des conversations. */
-const UTILITY_LINKS = [
-  { href: "/todo", label: "Todoliste", icon: ListChecks },
-  { href: "/calendar", label: "Calendrier", icon: CalendarDays },
-] as const;
+import { UTILITY_LINKS } from "./utility-links";
 
 /** Largeur de la barre latérale avant tout ajustement — les 256 pt de `w-64`. */
 export const SIDEBAR_DEFAULT_WIDTH = 256;
@@ -300,6 +293,17 @@ function cx(base: string, active: boolean): string {
   return active ? `${base} bg-accent` : base;
 }
 
+/**
+ * Libellé d'une rangée de la barre : gris tant que la sélection est ailleurs,
+ * pour que l'œil trouve d'un coup la branche ouverte au milieu de
+ * l'arborescence. Dossiers et conversations suivent la même règle.
+ */
+function rowLabel(active: boolean): string {
+  return active
+    ? "flex-1 text-sm font-medium text-foreground"
+    : "flex-1 text-sm text-muted-foreground";
+}
+
 function SectionLabel({
   children,
   action,
@@ -443,17 +447,7 @@ function FolderGroup({
               size={16}
               className="text-muted-foreground"
             />
-            {/* Même traitement que les conversations : gris tant que la
-                sélection est ailleurs, pour que l'œil trouve d'un coup la
-                branche ouverte au milieu de l'arborescence. */}
-            <Text
-              className={
-                active
-                  ? "flex-1 text-sm font-medium text-foreground"
-                  : "flex-1 text-sm text-muted-foreground"
-              }
-              numberOfLines={1}
-            >
+            <Text className={rowLabel(active)} numberOfLines={1}>
               {group.folder.name}
             </Text>
           </Button>
@@ -587,14 +581,7 @@ function ConversationRow({
       onPress={() => onOpen(`/chat/${conversation.id}`)}
       className={cx("w-full justify-start px-2", active)}
     >
-      <Text
-        className={
-          active
-            ? "flex-1 text-sm font-medium text-foreground"
-            : "flex-1 text-sm text-muted-foreground"
-        }
-        numberOfLines={1}
-      >
+      <Text className={rowLabel(active)} numberOfLines={1}>
         {conversation.title}
       </Text>
     </Button>
