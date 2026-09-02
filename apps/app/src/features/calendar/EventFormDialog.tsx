@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { ScrollView, Switch, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import type { CalendarEvent } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
+import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
-import { useTheme } from "@/shared/providers/theme-provider";
 import { useCalendarActions } from "./hooks/use-calendar-events";
 import {
   emptyForm,
@@ -64,7 +64,6 @@ function initialValues(target: EventDialogTarget): EventFormValues {
 }
 
 function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: () => void }) {
-  const { palette } = useTheme();
   const { create, update, remove } = useCalendarActions();
   const [values, setValues] = useState(() => initialValues(target));
   const [error, setError] = useState<string | null>(null);
@@ -123,11 +122,6 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
           <Switch
             value={values.allDay}
             onValueChange={(next) => patch("allDay", next)}
-            // Mêmes couleurs que les interrupteurs des réglages : sans elles,
-            // React Native pose son vert par défaut, étranger à la palette.
-            thumbColor={palette.accent}
-            trackColor={{ true: palette.accentSoft, false: palette.border }}
-            ios_backgroundColor={palette.border}
             accessibilityLabel="Journée entière"
           />
         </View>
