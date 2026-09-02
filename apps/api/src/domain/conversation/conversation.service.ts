@@ -58,6 +58,21 @@ const RECENT_DECISIONS = 5;
 const DEFAULT_TIMEZONE = userPreferencesSchema.shape.timezone.parse(undefined);
 
 /**
+ * Cadre de rédaction commun aux deux registres.
+ *
+ * La même réponse s'affiche sur un téléphone et sur un écran large : un modèle
+ * laissé libre y déroule des titres et des tableaux là où deux phrases
+ * suffisaient. Le Markdown est bien rendu par l'application — c'est son usage
+ * systématique qu'on borne, pas sa disponibilité.
+ */
+const FORMAT_RULES = [
+  "",
+  "Va au fait : quelques phrases suffisent le plus souvent. Le Markdown est",
+  "rendu — titres, listes, tableaux — mais réserve-le à ce qui en a réellement",
+  "besoin, la même réponse se lit sur un téléphone.",
+];
+
+/**
  * Outils que le serveur applique lui-même, et qui ne deviennent donc pas des
  * propositions à valider. Ils ne touchent pas aux données de l'utilisateur :
  * l'un nomme la conversation, l'autre choisit où la réponse sera donnée.
@@ -715,21 +730,6 @@ function buildOnboardingPrompt(assistantName: string, preamble: string[]): strin
     "Ne présente donc jamais les dossiers comme déjà créés.",
   ].join("\n");
 }
-
-/**
- * Cadre de rédaction commun aux deux registres.
- *
- * La même réponse s'affiche sur un téléphone et sur un écran large : un modèle
- * laissé libre y déroule des titres et des tableaux là où deux phrases
- * suffisaient. Le Markdown est bien rendu par l'application — c'est son usage
- * systématique qu'on borne, pas sa disponibilité.
- */
-const FORMAT_RULES = [
-  "",
-  "Va au fait : quelques phrases suffisent le plus souvent. Le Markdown est",
-  "rendu — titres, listes, tableaux — mais réserve-le à ce qui en a réellement",
-  "besoin, la même réponse se lit sur un téléphone.",
-];
 
 /**
  * Repère temporel du tour, dans le fuseau de l'utilisateur.
