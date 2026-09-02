@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { MoreHorizontal } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { fontSize, fontWeight, MIN_TOUCH_TARGET, spacing } from "@jc/design";
+import { Pressable, StyleSheet, View } from "react-native";
 import { api } from "@/shared/lib/api";
 import { ConversationDialog } from "@/features/conversation/ConversationDialog";
+import { ConversationHeader } from "@/features/conversation/ConversationHeader";
 import { ConversationThread } from "@/features/conversation/ConversationThread";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -25,29 +25,17 @@ export default function ConversationScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: palette.background }]}>
-      <View style={[styles.header, { borderBottomColor: palette.border }]}>
-        {/* Le retour n'a de sens que lorsque la barre latérale est escamotée :
-            au-delà du point de rupture, elle reste visible à gauche et le lien
-            ferait double emploi. */}
-        {breakpoint === "compact" ? (
-          <Pressable
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel="Revenir à la liste des conversations"
-            style={styles.back}
-          >
-            <Text style={[styles.backLabel, { color: palette.accent }]}>Conversations</Text>
-          </Pressable>
-        ) : null}
-
-        <View style={styles.titleRow}>
-          <Text numberOfLines={1} style={[styles.title, { color: palette.text }]}>
-            {conversation.data?.title ?? ""}
-          </Text>
-          {/* Le « … » de la maquette. Il n'apparaît qu'une fois la conversation
-              chargée : sans elle, la fenêtre n'aurait ni titre ni rangement à
-              présenter. */}
-          {conversation.data ? (
+      <ConversationHeader
+        title={conversation.data?.title ?? ""}
+        // Le retour n'a de sens que lorsque la barre latérale est escamotée :
+        // au-delà du point de rupture, elle reste visible à gauche et le lien
+        // ferait double emploi.
+        onBack={breakpoint === "compact" ? () => router.back() : undefined}
+        // Le « … » de la maquette. Il n'apparaît qu'une fois la conversation
+        // chargée : sans elle, la fenêtre n'aurait ni titre ni rangement à
+        // présenter.
+        action={
+          conversation.data ? (
             <Pressable
               onPress={() => setActionsOpen(true)}
               accessibilityRole="button"
@@ -57,9 +45,9 @@ export default function ConversationScreen() {
             >
               <MoreHorizontal size={20} color={palette.textMuted} />
             </Pressable>
-          ) : null}
-        </View>
-      </View>
+          ) : null
+        }
+      />
 
       <ConversationThread conversationId={id} initialDraft={draft} />
 
@@ -79,23 +67,6 @@ export default function ConversationScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  /**
-   * Pleine largeur, et non bornée à 900 pt comme le fil.
-   *
-   * L'en-tête est un bandeau d'écran : le titre se cale au bord gauche et le
-   * « … » au bord droit. Le suivre sur la largeur du fil les ramènerait tous
-   * deux vers le centre sur grand écran, sans rien y gagner.
-   */
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    width: "100%",
-  },
-  back: { minHeight: MIN_TOUCH_TARGET, justifyContent: "center" },
-  backLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  title: { flex: 1, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
   actions: {
     width: 32,
     height: 32,
