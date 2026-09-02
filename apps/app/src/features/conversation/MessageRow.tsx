@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type ViewProps,
+} from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { Check, Copy, Pencil, RotateCcw } from "lucide-react-native";
 import type { Message } from "@jc/domain";
@@ -36,8 +44,8 @@ export type MessageRowProps = {
  * quand elles sont invisibles — sinon le fil se décale sous le curseur à chaque
  * passage de souris.
  *
- * Sans souris, `onHoverIn` ne se déclenche jamais : l'appui long prend le
- * relais, comme partout ailleurs dans l'application.
+ * Sans souris, rien ne survole : l'appui long prend le relais, comme partout
+ * ailleurs dans l'application.
  */
 export function MessageRow({
   message,
@@ -77,13 +85,20 @@ export function MessageRow({
   }
 
   return (
-    <Pressable
-      onHoverIn={() => setRevealed(true)}
-      onHoverOut={() => setRevealed(false)}
-      onLongPress={() => setRevealed((current) => !current)}
+    <View
+      // Le survol est écouté ici, en événements de pointeur, et non par le
+      // `onHoverIn` d'un `Pressable` : react-native-web pose sur chaque
+      // `Pressable` un « verrou » de survol qui remonte l'arbre, si bien
+      // qu'entrer dans un bouton enfant met fin au survol du parent — les
+      // commandes disparaissaient à l'instant où l'on allait les cliquer.
+      // `pointerleave`, lui, ignore les descendants.
+      {...hoverProps(setRevealed)}
       style={isUser ? styles.rowEnd : styles.rowStart}
     >
-      <View
+      <Pressable
+        // L'appui long est l'équivalent tactile du survol : sans souris,
+        // `pointerenter` ne dit rien de plus qu'un doigt posé sur l'écran.
+        onLongPress={() => setRevealed((current) => !current)}
         style={[
           styles.bubble,
           isUser
@@ -111,7 +126,7 @@ export function MessageRow({
         ) : (
           <Markdown>{message.content}</Markdown>
         )}
-      </View>
+      </Pressable>
 
       {/* Emplacement toujours présent : rendu conditionnellement, il ferait
           sauter le fil d'une trentaine de points à chaque survol. */}
@@ -142,8 +157,25 @@ export function MessageRow({
           </>
         ) : null}
       </View>
-    </Pressable>
+    </View>
   );
+}
+
+/**
+ * Écoute du survol, sur web uniquement.
+ *
+ * Sur mobile, les événements de pointeur se déclenchent aussi au doigt : un
+ * simple appui ferait apparaître puis disparaître les commandes. C'est l'appui
+ * long qui les ouvre là-bas.
+ */
+function hoverProps(
+  setRevealed: (revealed: boolean) => void,
+): Pick<ViewProps, "onPointerEnter" | "onPointerLeave"> {
+  if (Platform.OS !== "web") return {};
+  return {
+    onPointerEnter: () => setRevealed(true),
+    onPointerLeave: () => setRevealed(false),
+  };
 }
 
 /** Saisie qui prend la place du message le temps de le corriger. */
