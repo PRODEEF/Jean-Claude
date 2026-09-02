@@ -622,6 +622,92 @@ describe("AssistantService", () => {
       expect(suggestions.markResolved).not.toHaveBeenCalled();
       jest.restoreAllMocks();
     });
+
+    it("ne range que dans les dossiers restés cochés", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolderNames: ["Assurances"] }),
+          ),
+      });
+      const folders = makeFolderRepository([makeFolder({ id: SANTE, name: "Santé" })]);
+      const conversations = makeConversationRepository();
+
+      await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        {
+          action: "accept",
+          folderSelection: { existingFolderIds: [SANTE], newFolderNames: [] },
+        },
+        TOKEN,
+      );
+
+      // Le dossier décoché n'est pas créé : l'utilisateur retient une partie de
+      // la proposition sans avoir à la refuser en entier (§5.2, A.1).
+      expect(folders.create).not.toHaveBeenCalled();
+      expect(assignedFolders(conversations)).toEqual([SANTE]);
+    });
+
+    it("ne laisse dans le fil que la trace des dossiers retenus", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolderNames: [] }),
+          ),
+      });
+      const folders = makeFolderRepository([
+        makeFolder({ id: SANTE, name: "Santé" }),
+        makeFolder({ id: ASSURANCES, name: "Assurances" }),
+      ]);
+
+      await makeService(suggestions, folders).resolve(
+        USER,
+        "sug-1",
+        {
+          action: "accept",
+          folderSelection: { existingFolderIds: [ASSURANCES], newFolderNames: [] },
+        },
+        TOKEN,
+      );
+
+      // La ligne « Conversation rangée » se relit dans le fil : elle doit dire
+      // ce qui a été fait, pas ce qui avait été proposé.
+      expect(suggestions.markResolved).toHaveBeenCalledWith("sug-1", "accepted", TOKEN, {
+        existingFolderIds: [ASSURANCES],
+        newFolderNames: [],
+      });
+    });
+
+    it("refuse une réponse qui ne retient aucun dossier proposé", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolderNames: [] }),
+          ),
+      });
+      const conversations = makeConversationRepository();
+
+      await expect(
+        makeService(suggestions, makeFolderRepository(), conversations).resolve(
+          USER,
+          "sug-1",
+          {
+            action: "accept",
+            folderSelection: { existingFolderIds: [ASSURANCES], newFolderNames: [] },
+          },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+
+      // Le client ne peut que retirer des dossiers de la proposition : un
+      // dossier qu'elle ne portait pas ne rentre pas par cette porte.
+      expect(conversations.setFolders).not.toHaveBeenCalled();
+      expect(suggestions.markResolved).not.toHaveBeenCalled();
+    });
   });
 
   describe("refus d'une proposition", () => {

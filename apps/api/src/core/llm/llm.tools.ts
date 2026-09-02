@@ -88,6 +88,8 @@ export const SUGGEST_FOLDERS: LlmTool = {
         description:
           "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
           "de question — ex. « Je range ça dans Santé et j'ouvre un dossier Assurances ? ». " +
+          "Les dossiers sont proposés ensemble et non comme un choix exclusif : l'utilisateur " +
+          "décoche ceux qu'il ne retient pas. Écrire « dans X et Y ? », jamais « dans X ou Y ? ». " +
           "Ne jamais présenter le rangement comme déjà fait. 500 caractères maximum.",
       },
       existingFolderIds: {

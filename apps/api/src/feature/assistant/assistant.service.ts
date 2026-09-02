@@ -3,6 +3,7 @@ import {
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
   scheduleTasksPayloadSchema,
+  type AssignFoldersPayload,
   type CalendarEvent,
   type Folder,
   type FolderTreeNode,
@@ -89,11 +90,19 @@ export class AssistantService {
       };
     }
 
-    const applied = await this.apply(userId, suggestion, accessToken);
+    // L'utilisateur a pu décocher des dossiers avant d'accepter : c'est le
+    // rangement retenu qui s'applique, et c'est lui qui est réécrit dans la
+    // proposition — la trace laissée dans le fil doit dire ce qui a été fait.
+    const retained = retainedFolders(suggestion, input.folderSelection);
+    const applied = await this.apply(
+      userId,
+      retained ? { ...suggestion, payload: retained } : suggestion,
+      accessToken,
+    );
 
     return {
       ...applied,
-      suggestion: await this.suggestions.markResolved(id, "accepted", accessToken),
+      suggestion: await this.suggestions.markResolved(id, "accepted", accessToken, retained),
     };
   }
 
@@ -392,6 +401,41 @@ function scheduleMessage(count: number): string {
   return count === 1
     ? "Une de ces tâches porte une date. Je te la pose dans ton agenda ?"
     : count + " de ces tâches portent une date. Je te les pose dans ton agenda ?";
+}
+
+/**
+ * Rangement effectivement retenu par l'utilisateur, ou `undefined` s'il n'y a
+ * rien à restreindre (§5.2, A.1).
+ *
+ * L'intersection se fait ici et non dans le client : celui-ci ne peut que
+ * retirer des dossiers de la proposition, jamais en ajouter un que l'assistant
+ * n'avait pas proposé. Une charge utile illisible passe telle quelle —
+ * `fileConversation` la refuse déjà, et la refuser deux fois donnerait deux
+ * messages différents pour la même panne.
+ */
+function retainedFolders(
+  suggestion: Suggestion,
+  selection: AssignFoldersPayload | undefined,
+): AssignFoldersPayload | undefined {
+  if (suggestion.kind !== "assign_folders" || !selection) return undefined;
+
+  const proposed = assignFoldersPayloadSchema.safeParse(suggestion.payload);
+  if (!proposed.success) return undefined;
+
+  const retained = {
+    existingFolderIds: proposed.data.existingFolderIds.filter((id) =>
+      selection.existingFolderIds.includes(id),
+    ),
+    newFolderNames: proposed.data.newFolderNames.filter((name) =>
+      selection.newFolderNames.some((kept) => sameName(kept, name)),
+    ),
+  };
+
+  if (retained.existingFolderIds.length + retained.newFolderNames.length === 0) {
+    throw httpError(400, "Aucun des dossiers retenus ne figure dans la proposition.");
+  }
+
+  return retained;
 }
 
 /**

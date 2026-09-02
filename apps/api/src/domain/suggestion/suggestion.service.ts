@@ -105,9 +105,16 @@ export class SuggestionService {
     id: string,
     status: SuggestionStatus,
     accessToken: string,
+    payload?: Record<string, unknown>,
   ): Promise<Suggestion> {
     await this.requirePending(id, accessToken);
-    return this.suggestions.markResolved(id, status, accessToken);
+
+    // La charge utile n'est réécrite que si l'acceptation l'a restreinte :
+    // partout ailleurs, la proposition doit rester telle qu'elle a été
+    // formulée.
+    return payload
+      ? this.suggestions.markResolved(id, status, accessToken, payload)
+      : this.suggestions.markResolved(id, status, accessToken);
   }
 }
 

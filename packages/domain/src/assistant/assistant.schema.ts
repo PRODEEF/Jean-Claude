@@ -72,12 +72,6 @@ export const suggestionSchema = z.object({
 
 export type Suggestion = z.infer<typeof suggestionSchema>;
 
-export const resolveSuggestionSchema = z.object({
-  action: z.enum(["accept", "dismiss"]),
-});
-
-export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
-
 /** Dossier proposé par l'assistant, tel qu'il apparaît dans la carte de suggestion. */
 const proposedFolderSchema = z.object({
   name: labelSchema,
@@ -128,6 +122,24 @@ export const assignFoldersPayloadSchema = z
   );
 
 export type AssignFoldersPayload = z.infer<typeof assignFoldersPayloadSchema>;
+
+/**
+ * Réponse de l'utilisateur à une proposition (§12.1).
+ *
+ * `folderSelection` porte les dossiers cochés dans la carte de rangement :
+ * une conversation appartient à plusieurs dossiers, et l'utilisateur doit
+ * pouvoir n'en retenir qu'une partie sans refuser toute la proposition
+ * (§5.2, A.1). Même forme que la charge utile, parce que c'en est un
+ * sous-ensemble : le serveur n'applique que ce qui avait été proposé, jamais
+ * un dossier venu du client. Absente, la proposition s'applique en entier —
+ * le cas des natures qui n'ont rien à cocher.
+ */
+export const resolveSuggestionSchema = z.object({
+  action: z.enum(["accept", "dismiss"]),
+  folderSelection: assignFoldersPayloadSchema.optional(),
+});
+
+export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
 
 /**
  * Tâche proposée dans une todoliste (§12.1).

@@ -89,10 +89,14 @@ export const suggestionRepository: ISuggestionRepository = {
     return (data as unknown as SuggestionRow[]).map(toEntity);
   },
 
-  async markResolved(id, status, accessToken) {
+  async markResolved(id, status, accessToken, payload) {
     const { data, error } = await forUser(accessToken)
       .from("assistant_suggestions")
-      .update({ status, resolved_at: new Date().toISOString() })
+      .update({
+        status,
+        resolved_at: new Date().toISOString(),
+        ...(payload ? { payload } : {}),
+      })
       .eq("id", id)
       .select(COLUMNS)
       .maybeSingle();
