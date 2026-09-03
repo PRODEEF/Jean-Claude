@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
@@ -12,7 +12,7 @@ import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
-import { Separator } from "@/shared/ui/separator";
+import { FORM_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 
@@ -72,6 +72,10 @@ const CAPABILITIES: { key: keyof AssistantScope; label: string; hint: string }[]
  * Une liste de lignes « libellé / contrôle » : ChatGPT, Claude et Perplexity
  * présentent tous leurs réglages ainsi (§4.2), et une page de préférences n'a
  * pas à attirer l'œil.
+ *
+ * Même ossature que les autres écrans : le titre vit dans le bandeau, et la
+ * déconnexion en est la commande de droite — c'est la place des actions
+ * d'écran ici, et un bouton perdu au bas d'une page longue se cherche.
  */
 export function SettingsScreen() {
   const { signOut } = useAuth();
@@ -107,10 +111,22 @@ export function SettingsScreen() {
   const activeModel = chosenModel ?? servedModel;
 
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="p-6">
-      <View className="w-full max-w-2xl gap-8 self-center">
-        <Text className="text-2xl font-semibold text-foreground">Réglages</Text>
-
+    <ScreenShell
+      title="Réglages"
+      maxWidth={FORM_MAX_WIDTH}
+      action={
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={() => void signOut()}
+          accessibilityRole="button"
+          accessibilityLabel="Se déconnecter"
+        >
+          <Text className="text-destructive">Se déconnecter</Text>
+        </Button>
+      }
+    >
+      <View className="gap-8">
         <Section title="Compte">
           <Field label="Adresse e-mail" hint="Non modifiable">
             <Input
@@ -306,14 +322,8 @@ export function SettingsScreen() {
             Vos réglages n'ont pas pu être enregistrés. Réessayez.
           </Text>
         ) : null}
-
-        <Separator />
-
-        <Button variant="outline" onPress={() => void signOut()} accessibilityRole="button">
-          <Text className="text-destructive">Se déconnecter</Text>
-        </Button>
       </View>
-    </ScrollView>
+    </ScreenShell>
   );
 }
 

@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { ScrollView, View } from "react-native";
+import { View } from "react-native";
 import type { CreateTaskList, TaskList, TaskListKind, UpdateTaskList } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
+import { Modal } from "@/shared/ui/modal";
 import { Text } from "@/shared/ui/text";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
@@ -43,24 +43,15 @@ const KINDS: { value: TaskListKind; label: string }[] = [
 ];
 
 export function TaskListDialog({ target, onClose, onCreated }: TaskListDialogProps) {
+  if (!target) return null;
+
   return (
-    <Dialog
-      open={target !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent>
-        {target ? (
-          <ListForm
-            key={keyOf(target)}
-            target={target}
-            onClose={onClose}
-            {...(onCreated ? { onCreated } : {})}
-          />
-        ) : null}
-      </DialogContent>
-    </Dialog>
+    <ListForm
+      key={keyOf(target)}
+      target={target}
+      onClose={onClose}
+      {...(onCreated ? { onCreated } : {})}
+    />
   );
 }
 
@@ -141,136 +132,133 @@ function ListForm({
   };
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle>{editing ? "Modifier la liste" : "Nouvelle liste"}</DialogTitle>
-      </DialogHeader>
+    <Modal
+      open
+      onClose={onClose}
+      title={editing ? "Modifier la liste" : "Nouvelle liste"}
+      error={error}
+      {...(editing
+        ? {
+            destructiveAction: {
+              label: confirmingDelete ? "Confirmer la suppression" : "Supprimer",
+              variant: confirmingDelete ? "destructive" : "ghost",
+              disabled: pending,
+              onPress: () => {
+                if (!confirmingDelete) {
+                  setConfirmingDelete(true);
+                  return;
+                }
+                removeList.mutate(target.list.id, {
+                  onSuccess: onClose,
+                  onError: (cause: Error) => setError(toMessage(cause)),
+                });
+              },
+            },
+          }
+        : {})}
+      actions={[
+        { label: "Annuler", onPress: onClose, disabled: pending },
+        {
+          label: editing ? "Enregistrer" : "Créer",
+          variant: "default",
+          onPress: submit,
+          disabled: pending,
+        },
+      ]}
+    >
+      <Field label="Titre">
+        <Input
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Courses du week-end"
+          autoFocus={!editing}
+          accessibilityLabel="Titre de la liste"
+        />
+      </Field>
 
-      <ScrollView style={{ maxHeight: 360 }} contentContainerClassName="gap-3">
-        <Field label="Titre">
-          <Input
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Courses du week-end"
-            autoFocus={!editing}
-            accessibilityLabel="Titre de la liste"
-          />
-        </Field>
+      {/* Deux natures et non une : une liste d'achats et une liste de tâches
+          issues d'un même sujet ne se fusionnent pas (§12.1). */}
+      <Field label="Nature">
+        <View className="flex-row gap-2">
+          {KINDS.map((choice) => (
+            <Button
+              key={choice.value}
+              variant={kind === choice.value ? "secondary" : "outline"}
+              onPress={() => setKind(choice.value)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: kind === choice.value }}
+              className="flex-1"
+            >
+              <Text>{choice.label}</Text>
+            </Button>
+          ))}
+        </View>
+      </Field>
 
-        {/* Deux natures et non une : une liste d'achats et une liste de tâches
-            issues d'un même sujet ne se fusionnent pas (§12.1). */}
-        <Field label="Nature">
-          <View className="flex-row gap-1">
-            {KINDS.map((choice) => (
+      {/* L'échéance porte sur la liste entière — « les courses avant samedi »
+          date la liste, pas la farine. Elle est proposée dès la création parce
+          qu'une liste ouverte depuis le calendrier naît sur un jour donné. */}
+      <View className="flex-row gap-3">
+        <View className="flex-1">
+          <Field label="Échéance">
+            <Input
+              value={date}
+              onChangeText={setDate}
+              placeholder="JJ/MM/AAAA"
+              keyboardType="numbers-and-punctuation"
+              accessibilityLabel="Date d'échéance de la liste"
+            />
+          </Field>
+        </View>
+        <View className="flex-1">
+          <Field label="Heure">
+            <Input
+              value={time}
+              onChangeText={setTime}
+              placeholder="HH:MM"
+              keyboardType="numbers-and-punctuation"
+              accessibilityLabel="Heure de l'échéance"
+            />
+          </Field>
+        </View>
+      </View>
+
+      {/* Sans heure, la liste se range dans « Dans la journée » : c'est le cas
+          le plus courant, et l'imposer obligerait à inventer un horaire. */}
+      <Text className="text-muted-foreground -mt-2 text-xs">
+        Une date sans heure place la liste dans la journée, sans créneau.
+      </Text>
+
+      {/* Le rangement n'est proposé qu'à la modification : au moment de créer,
+          on n'a pas encore à savoir où la liste ira (§13.4.1). */}
+      {editing && folders.length > 0 ? (
+        <Field label="Dossier">
+          <View className="flex-row flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant={folderId === null ? "secondary" : "outline"}
+              onPress={() => setFolderId(null)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: folderId === null }}
+            >
+              <Text>Aucun</Text>
+            </Button>
+            {folders.map((folder) => (
               <Button
-                key={choice.value}
+                key={folder.id}
                 size="sm"
-                variant={kind === choice.value ? "secondary" : "outline"}
-                onPress={() => setKind(choice.value)}
+                variant={folderId === folder.id ? "secondary" : "outline"}
+                onPress={() => setFolderId(folder.id)}
                 accessibilityRole="button"
-                accessibilityState={{ selected: kind === choice.value }}
+                accessibilityState={{ selected: folderId === folder.id }}
               >
-                <Text>{choice.label}</Text>
+                <Text>{folder.name}</Text>
               </Button>
             ))}
           </View>
         </Field>
-
-        {/* L'échéance porte sur la liste entière — « les courses avant
-            samedi » date la liste, pas la farine. Elle est proposée dès la
-            création parce qu'une liste ouverte depuis le calendrier naît sur
-            un jour donné. */}
-        <View className="flex-row gap-3">
-          <View className="flex-1">
-            <Field label="Échéance">
-              <Input
-                value={date}
-                onChangeText={setDate}
-                placeholder="JJ/MM/AAAA"
-                keyboardType="numbers-and-punctuation"
-                accessibilityLabel="Date d'échéance de la liste"
-              />
-            </Field>
-          </View>
-          <View className="flex-1">
-            <Field label="Heure">
-              <Input
-                value={time}
-                onChangeText={setTime}
-                placeholder="HH:MM"
-                keyboardType="numbers-and-punctuation"
-                accessibilityLabel="Heure de l'échéance"
-              />
-            </Field>
-          </View>
-        </View>
-
-        {/* Sans heure, la liste se range dans « Dans la journée » : c'est le
-            cas le plus courant, et l'imposer obligerait à inventer un horaire. */}
-        <Text className="text-muted-foreground text-xs">
-          Une date sans heure place la liste dans la journée, sans créneau.
-        </Text>
-
-        {/* Le rangement n'est proposé qu'à la modification : au moment de
-            créer, on n'a pas encore à savoir où la liste ira (§13.4.1). */}
-        {editing && folders.length > 0 ? (
-          <Field label="Dossier">
-            <View className="flex-row flex-wrap gap-1">
-              <Button
-                size="sm"
-                variant={folderId === null ? "secondary" : "outline"}
-                onPress={() => setFolderId(null)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: folderId === null }}
-              >
-                <Text>Aucun</Text>
-              </Button>
-              {folders.map((folder) => (
-                <Button
-                  key={folder.id}
-                  size="sm"
-                  variant={folderId === folder.id ? "secondary" : "outline"}
-                  onPress={() => setFolderId(folder.id)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: folderId === folder.id }}
-                >
-                  <Text>{folder.name}</Text>
-                </Button>
-              ))}
-            </View>
-          </Field>
-        ) : null}
-
-        {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-      </ScrollView>
-
-      <DialogFooter>
-        {editing ? (
-          <Button
-            variant="destructive"
-            disabled={pending}
-            onPress={() => {
-              if (!confirmingDelete) {
-                setConfirmingDelete(true);
-                return;
-              }
-              removeList.mutate(target.list.id, {
-                onSuccess: onClose,
-                onError: (cause: Error) => setError(toMessage(cause)),
-              });
-            }}
-          >
-            <Text>{confirmingDelete ? "Confirmer la suppression" : "Supprimer"}</Text>
-          </Button>
-        ) : null}
-        <Button variant="outline" onPress={onClose} disabled={pending}>
-          <Text>Annuler</Text>
-        </Button>
-        <Button onPress={submit} disabled={pending}>
-          <Text>{editing ? "Enregistrer" : "Créer"}</Text>
-        </Button>
-      </DialogFooter>
-    </>
+      ) : null}
+    </Modal>
   );
 }
 

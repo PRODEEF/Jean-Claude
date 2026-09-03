@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { ScrollView, View } from "react-native";
+import { View } from "react-native";
 import type { CalendarEvent } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
+import { Modal } from "@/shared/ui/modal";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 import { useCalendarActions } from "./hooks/use-calendar-events";
@@ -32,18 +32,9 @@ export type EventFormDialogProps = {
  * de zéro à chaque ouverture, sans effet de synchronisation à écrire.
  */
 export function EventFormDialog({ target, onClose }: EventFormDialogProps) {
-  return (
-    <Dialog
-      open={target !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent>
-        {target ? <EventForm key={keyOf(target)} target={target} onClose={onClose} /> : null}
-      </DialogContent>
-    </Dialog>
-  );
+  if (!target) return null;
+
+  return <EventForm key={keyOf(target)} target={target} onClose={onClose} />;
 }
 
 function keyOf(target: EventDialogTarget): string {
@@ -67,6 +58,7 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
   const { create, update, remove } = useCalendarActions();
   const [values, setValues] = useState(() => initialValues(target));
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const editing = target.mode === "edit";
   const pending = create.isPending || update.isPending || remove.isPending;
@@ -91,121 +83,126 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
   };
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle>{editing ? "Modifier l'événement" : "Nouvel événement"}</DialogTitle>
-      </DialogHeader>
+    <Modal
+      open
+      onClose={onClose}
+      title={editing ? "Modifier l'événement" : "Nouvel événement"}
+      error={error}
+      // Bascule du libellé plutôt que suppression au premier appui : le bouton
+      // voisine désormais avec « Enregistrer », et un événement supprimé par
+      // mégarde ne se rattrape pas. Même geste que sur une todoliste.
+      {...(editing
+        ? {
+            destructiveAction: {
+              label: confirmingDelete ? "Confirmer la suppression" : "Supprimer",
+              variant: confirmingDelete ? "destructive" : "ghost",
+              disabled: pending,
+              onPress: () => {
+                if (!confirmingDelete) {
+                  setConfirmingDelete(true);
+                  return;
+                }
+                remove.mutate(target.event.id, {
+                  onSuccess: onClose,
+                  onError: (cause: Error) => setError(toMessage(cause)),
+                });
+              },
+            },
+          }
+        : {})}
+      actions={[
+        { label: "Annuler", onPress: onClose, disabled: pending },
+        {
+          label: editing ? "Enregistrer" : "Ajouter",
+          variant: "default",
+          onPress: submit,
+          disabled: pending,
+        },
+      ]}
+    >
+      <Field label="Titre">
+        <Input
+          value={values.title}
+          onChangeText={(text) => patch("title", text)}
+          placeholder="Rendez-vous chez le kiné"
+          autoFocus={!editing}
+          accessibilityLabel="Titre de l'événement"
+        />
+      </Field>
 
-      <ScrollView style={{ maxHeight: 400 }} contentContainerClassName="gap-3">
-        <Field label="Titre">
-          <Input
-            value={values.title}
-            onChangeText={(text) => patch("title", text)}
-            placeholder="Rendez-vous chez le kiné"
-            autoFocus={!editing}
-            accessibilityLabel="Titre de l'événement"
-          />
-        </Field>
+      <Field label="Date">
+        <Input
+          value={values.date}
+          onChangeText={(text) => patch("date", text)}
+          placeholder="JJ/MM/AAAA"
+          keyboardType="numbers-and-punctuation"
+          accessibilityLabel="Date de l'événement"
+        />
+      </Field>
 
-        <Field label="Date">
-          <Input
-            value={values.date}
-            onChangeText={(text) => patch("date", text)}
-            placeholder="JJ/MM/AAAA"
-            keyboardType="numbers-and-punctuation"
-            accessibilityLabel="Date de l'événement"
-          />
-        </Field>
+      <View className="flex-row items-center justify-between">
+        <Text className="text-foreground text-sm">Journée entière</Text>
+        <Switch
+          value={values.allDay}
+          onValueChange={(next) => patch("allDay", next)}
+          accessibilityLabel="Journée entière"
+        />
+      </View>
 
-        <View className="flex-row items-center justify-between">
-          <Text className="text-sm">Journée entière</Text>
-          <Switch
-            value={values.allDay}
-            onValueChange={(next) => patch("allDay", next)}
-            accessibilityLabel="Journée entière"
-          />
+      {values.allDay ? null : (
+        <View className="flex-row gap-3">
+          <View className="flex-1">
+            <Field label="Début">
+              <Input
+                value={values.startTime}
+                onChangeText={(text) => patch("startTime", text)}
+                placeholder="HH:MM"
+                keyboardType="numbers-and-punctuation"
+                accessibilityLabel="Heure de début"
+              />
+            </Field>
+          </View>
+          <View className="flex-1">
+            <Field label="Fin">
+              <Input
+                value={values.endTime}
+                onChangeText={(text) => patch("endTime", text)}
+                placeholder="HH:MM"
+                keyboardType="numbers-and-punctuation"
+                accessibilityLabel="Heure de fin"
+              />
+            </Field>
+          </View>
         </View>
+      )}
 
-        {values.allDay ? null : (
-          <View className="flex-row gap-3">
-            <View className="flex-1">
-              <Field label="Début">
-                <Input
-                  value={values.startTime}
-                  onChangeText={(text) => patch("startTime", text)}
-                  placeholder="HH:MM"
-                  keyboardType="numbers-and-punctuation"
-                  accessibilityLabel="Heure de début"
-                />
-              </Field>
-            </View>
-            <View className="flex-1">
-              <Field label="Fin">
-                <Input
-                  value={values.endTime}
-                  onChangeText={(text) => patch("endTime", text)}
-                  placeholder="HH:MM"
-                  keyboardType="numbers-and-punctuation"
-                  accessibilityLabel="Heure de fin"
-                />
-              </Field>
-            </View>
-          </View>
-        )}
+      <Field label="Rappel">
+        <View className="flex-row flex-wrap gap-2">
+          {REMINDER_CHOICES.map((choice) => (
+            <Button
+              key={choice.label}
+              size="sm"
+              variant={values.reminderMinutesBefore === choice.minutes ? "secondary" : "outline"}
+              onPress={() => patch("reminderMinutesBefore", choice.minutes)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: values.reminderMinutesBefore === choice.minutes }}
+            >
+              <Text>{choice.label}</Text>
+            </Button>
+          ))}
+        </View>
+      </Field>
 
-        <Field label="Rappel">
-          <View className="flex-row flex-wrap gap-1">
-            {REMINDER_CHOICES.map((choice) => (
-              <Button
-                key={choice.label}
-                size="sm"
-                variant={values.reminderMinutesBefore === choice.minutes ? "secondary" : "outline"}
-                onPress={() => patch("reminderMinutesBefore", choice.minutes)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: values.reminderMinutesBefore === choice.minutes }}
-              >
-                <Text>{choice.label}</Text>
-              </Button>
-            ))}
-          </View>
-        </Field>
-
-        <Field label="Notes">
-          <Input
-            value={values.notes}
-            onChangeText={(text) => patch("notes", text)}
-            multiline
-            className="h-20"
-            accessibilityLabel="Notes"
-          />
-        </Field>
-
-        {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-      </ScrollView>
-
-      <DialogFooter>
-        {editing ? (
-          <Button
-            variant="destructive"
-            disabled={pending}
-            onPress={() =>
-              remove.mutate(target.event.id, {
-                onSuccess: onClose,
-                onError: (cause: Error) => setError(toMessage(cause)),
-              })
-            }
-          >
-            <Text>Supprimer</Text>
-          </Button>
-        ) : null}
-        <Button variant="outline" onPress={onClose} disabled={pending}>
-          <Text>Annuler</Text>
-        </Button>
-        <Button onPress={submit} disabled={pending}>
-          <Text>{editing ? "Enregistrer" : "Ajouter"}</Text>
-        </Button>
-      </DialogFooter>
-    </>
+      <Field label="Notes">
+        <Input
+          value={values.notes}
+          onChangeText={(text) => patch("notes", text)}
+          multiline
+          className="h-24"
+          accessibilityLabel="Notes"
+        />
+      </Field>
+    </Modal>
   );
 }
 

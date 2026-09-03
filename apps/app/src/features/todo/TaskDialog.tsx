@@ -2,9 +2,8 @@ import { useState } from "react";
 import { View } from "react-native";
 import type { Task, UpdateTask } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
-import { Button } from "@/shared/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
+import { Modal } from "@/shared/ui/modal";
 import { Text } from "@/shared/ui/text";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
 
@@ -22,18 +21,9 @@ export type TaskDialogProps = {
  * existe (§13.4.1). Cette fenêtre sert à ce qui ne tient pas sur une ligne.
  */
 export function TaskDialog({ task, onClose }: TaskDialogProps) {
-  return (
-    <Dialog
-      open={task !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent>
-        {task ? <TaskForm key={task.id} task={task} onClose={onClose} /> : null}
-      </DialogContent>
-    </Dialog>
-  );
+  if (!task) return null;
+
+  return <TaskForm key={task.id} task={task} onClose={onClose} />;
 }
 
 type TaskFormValues = { title: string; notes: string };
@@ -65,42 +55,39 @@ function TaskForm({ task, onClose }: { task: Task; onClose: () => void }) {
   };
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle>Modifier la tâche</DialogTitle>
-      </DialogHeader>
+    <Modal
+      open
+      onClose={onClose}
+      title="Modifier la tâche"
+      error={error}
+      actions={[
+        { label: "Annuler", onPress: onClose, disabled: updateTask.isPending },
+        {
+          label: "Enregistrer",
+          variant: "default",
+          onPress: submit,
+          disabled: updateTask.isPending,
+        },
+      ]}
+    >
+      <Field label="Titre">
+        <Input
+          value={values.title}
+          onChangeText={(text) => patch("title", text)}
+          accessibilityLabel="Titre de la tâche"
+        />
+      </Field>
 
-      <View className="gap-3">
-        <Field label="Titre">
-          <Input
-            value={values.title}
-            onChangeText={(text) => patch("title", text)}
-            accessibilityLabel="Titre de la tâche"
-          />
-        </Field>
-
-        <Field label="Notes">
-          <Input
-            value={values.notes}
-            onChangeText={(text) => patch("notes", text)}
-            multiline
-            className="h-20"
-            accessibilityLabel="Notes"
-          />
-        </Field>
-
-        {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-      </View>
-
-      <DialogFooter>
-        <Button variant="outline" onPress={onClose} disabled={updateTask.isPending}>
-          <Text>Annuler</Text>
-        </Button>
-        <Button onPress={submit} disabled={updateTask.isPending}>
-          <Text>Enregistrer</Text>
-        </Button>
-      </DialogFooter>
-    </>
+      <Field label="Notes">
+        <Input
+          value={values.notes}
+          onChangeText={(text) => patch("notes", text)}
+          multiline
+          className="h-24"
+          accessibilityLabel="Notes"
+        />
+      </Field>
+    </Modal>
   );
 }
 
