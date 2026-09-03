@@ -1,4 +1,4 @@
-import type { AssistantScope, Theme } from "@jc/domain";
+import { toAssistantModel, type AssistantScope, type Theme } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { forUser } from "../../core/supabase/supabase.js";
 import type { IUserRepository, ProfilePatch, ProfileRecord } from "./user.repository.interface.js";
@@ -14,6 +14,7 @@ type ProfileRow = {
   theme: string;
   timezone: string;
   speak_responses: boolean;
+  llm_model: string | null;
   assistant_scope: AssistantScope;
   created_at: string;
 };
@@ -38,13 +39,16 @@ function toEntity(row: ProfileRow): ProfileRecord {
       theme: row.theme as Theme,
       timezone: row.timezone,
       speakResponses: row.speak_responses,
+      // Un modèle retiré du catalogue depuis le choix de l'utilisateur est relu
+      // comme « celui du serveur », plutôt que de rendre le profil illisible.
+      llmModel: toAssistantModel(row.llm_model),
       scope: row.assistant_scope,
     },
   };
 }
 
 const COLUMNS =
-  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, speak_responses, assistant_scope, created_at";
+  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, speak_responses, llm_model, assistant_scope, created_at";
 
 export const userRepository: IUserRepository = {
   async findById(userId, accessToken) {
@@ -66,6 +70,9 @@ export const userRepository: IUserRepository = {
     if (patch.theme !== undefined) payload["theme"] = patch.theme;
     if (patch.assistantName !== undefined) payload["assistant_name"] = patch.assistantName;
     if (patch.assistantColor !== undefined) payload["assistant_color"] = patch.assistantColor;
+    // `null` est ici une valeur choisie — « rends la main au serveur » — et non
+    // l'absence de réglage : elle doit donc bien être écrite.
+    if (patch.llmModel !== undefined) payload["llm_model"] = patch.llmModel;
     // Le périmètre arrive complet du Service : l'écrire remplace le `jsonb`
     // entier, ce qui est la sémantique attendue ici.
     if (patch.scope !== undefined) payload["assistant_scope"] = patch.scope;

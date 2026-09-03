@@ -10,6 +10,7 @@ import {
 import type {
   AskedQuestion,
   AssignFolders,
+  AssistantModel,
   AssistantScope,
   CalendarEvent,
   CalendarRange,
@@ -126,6 +127,8 @@ type AssistantContext = {
   memory: string | null;
   /** L'accueil n'a pas encore été mené à son terme (§6.3, A.13). */
   onboarding: boolean;
+  /** Modèle choisi dans les réglages, ou `null` pour celui du serveur (§5.1). */
+  model: AssistantModel | null;
 };
 
 /**
@@ -461,6 +464,9 @@ export class ConversationService {
           content: m.content,
         })),
         tools: todo.tools,
+        // Le modèle du profil ne remplace celui du serveur que s'il existe :
+        // `null` veut dire « celui que le serveur a retenu », et non « aucun ».
+        ...(context.model ? { model: context.model } : {}),
       });
 
       for await (const chunk of stream) {
@@ -555,6 +561,7 @@ export class ConversationService {
         scope: assistantScopeSchema.parse({}),
         memory: null,
         onboarding: false,
+        model: null,
       };
     }
 
@@ -565,6 +572,7 @@ export class ConversationService {
       scope: profile.preferences.scope,
       memory: profile.memory,
       onboarding: profile.onboardingCompletedAt === null,
+      model: profile.preferences.llmModel,
     };
   }
 

@@ -28,6 +28,30 @@ LLM_MODEL=anthropic/claude-opus-5    # défaut
 Mistral, et un adaptateur de plus serait du code mort. La suite de ce document
 ne concerne que le cas — encore hypothétique — d'un moteur _hors_ Gateway.
 
+## Ce que l'utilisateur, lui, peut choisir (§5.1)
+
+`LLM_MODEL` n'est plus que le repli : il sert tant que l'utilisateur n'a rien
+choisi dans ses réglages. Son choix, lui, se limite au catalogue de
+`packages/domain/src/user/preferences.schema.ts` — trois modèles, chacun avec
+la phrase qui dit à quoi il sert. Y ajouter un modèle, c'est deux endroits que
+le compilateur garde synchronisés :
+
+```ts
+const ASSISTANT_MODEL_IDS = [, /* ... */ "qwen/qwen-max"] as const;
+
+const ASSISTANT_MODEL_DETAILS: Record<AssistantModel, { label: string; benefit: string }> = {
+  // ...
+  "qwen/qwen-max": { label: "Qwen", benefit: "..." },
+};
+```
+
+`benefit` s'adresse à quelqu'un qui ne connaît rien aux modèles de langage
+(§13.4.4) : ce que ça change pour lui, pas la taille du modèle ni son éditeur.
+
+Le modèle voyage ensuite sur `LlmCompletionRequest.model`, jamais sur
+l'instance : le port reste unique, et `provider` remonté dans la réponse est
+l'éditeur qui a réellement répondu — il change d'un message à l'autre.
+
 ## La règle absolue
 
 **Un seul fichier de l'application importe le SDK d'un fournisseur :

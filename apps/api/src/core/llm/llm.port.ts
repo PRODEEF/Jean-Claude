@@ -45,6 +45,15 @@ export type LlmCompletionRequest = {
   system?: string;
   messages: LlmMessage[];
   tools?: LlmTool[];
+  /**
+   * Modèle souhaité pour ce tour, au format `éditeur/modèle` (§5.1).
+   *
+   * Porté par la requête et non par l'implémentation : le choix appartient à
+   * l'utilisateur, il change d'un tour à l'autre, et une instance par
+   * utilisateur reviendrait à reconstruire l'adaptateur à chaque message.
+   * Absent, le moteur répond avec le modèle retenu par le serveur.
+   */
+  model?: string;
 };
 
 /** Réponse complète, telle que l'événement `done` du flux la porte. */
@@ -62,20 +71,21 @@ export interface LlmProvider {
   readonly name: string;
 
   /**
-   * Hébergement et opérateur en France/UE (§5.1).
+   * Hébergement et opérateur en France/UE du modèle **par défaut** (§5.1).
    *
    * Exposé dans l'API pour pouvoir afficher à l'utilisateur si le modèle qui
    * traite ses données est souverain — Mistral l'est, Claude ne l'est pas.
-   * Nécessaire à la transparence exigée au §13.4.6.
+   * Nécessaire à la transparence exigée au §13.4.6. Pour un modèle choisi par
+   * l'utilisateur, la même réponse se lit sur le catalogue de `@jc/domain`,
+   * qui porte la règle.
    */
   readonly isSovereign: boolean;
 
   /**
-   * Modèle actif, au format `éditeur/modèle`.
+   * Modèle par défaut, au format `éditeur/modèle`.
    *
-   * Exposé pour que les réglages puissent montrer ce qui répond réellement,
-   * plutôt que de le réécrire en dur côté client. Il reste choisi par le
-   * serveur : le choix par l'utilisateur (§5.1) n'existe pas encore.
+   * Celui qui répond quand la requête n'en demande aucun — c'est-à-dire tant
+   * que l'utilisateur n'a rien choisi dans ses réglages (§5.1).
    */
   readonly model: string;
 
