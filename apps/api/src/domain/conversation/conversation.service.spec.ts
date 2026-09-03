@@ -1584,12 +1584,12 @@ describe("ConversationService", () => {
       const llm = makeLlm();
       const users = makeUserRepository(
         {},
-        { preferences: makePreferences({ llmModel: "mistral/mistral-large" }) },
+        { preferences: makePreferences({ llmModel: "mistral/mistral-small" }) },
       );
 
       await drain(makeService(makeRepository(), llm, undefined, undefined, users));
 
-      expect(lastRequest(llm).model).toBe("mistral/mistral-large");
+      expect(lastRequest(llm).model).toBe("mistral/mistral-small");
     });
 
     it("laisse répondre le modèle du serveur tant que rien n'est choisi", async () => {

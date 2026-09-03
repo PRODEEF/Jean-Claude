@@ -35,11 +35,26 @@ export function isSovereignModel(model: string): boolean {
  * Gateway est du jargon, et le §13.4.4 tient le produit hors du vocabulaire
  * technique. Ajouter un modèle se fait ici, en deux endroits que le
  * compilateur garde synchronisés.
+ *
+ * Cinq éditeurs plutôt que cinq variantes d'un même : la liste se lit alors
+ * comme cinq choix distincts, là où « Mistral Small » et « Mistral Medium »
+ * demanderaient de savoir ce qui les sépare.
+ *
+ * Deux critères ont écarté des modèles plus capables. Aucun modèle de
+ * raisonnement : ils gardent le silence plusieurs dizaines de secondes avant
+ * le premier mot, ce que le délai d'attente du flux refuse — et ce qu'une
+ * conversation supporte mal. Aucun modèle de codage non plus, malgré leur
+ * disponibilité : ils écrivent mal en français courant.
+ *
+ * Les identifiants sont ceux du catalogue du Gateway, à ne pas composer de
+ * mémoire — `mistral/mistral-large` par exemple n'existe pas.
  */
 const ASSISTANT_MODEL_IDS = [
-  "anthropic/claude-sonnet-5",
-  "mistral/mistral-large",
-  "deepseek/deepseek-chat",
+  "mistral/mistral-small",
+  "google/gemini-3.5-flash",
+  "anthropic/claude-haiku-4.5",
+  "openai/gpt-5-mini",
+  "deepseek/deepseek-v3.2",
 ] as const;
 
 export const assistantModelSchema = z.enum(ASSISTANT_MODEL_IDS);
@@ -57,17 +72,25 @@ export type AssistantModel = z.infer<typeof assistantModelSchema>;
  * entre dans la liste sans qu'on ait écrit ce qu'il apporte.
  */
 const ASSISTANT_MODEL_DETAILS: Record<AssistantModel, { label: string; benefit: string }> = {
-  "anthropic/claude-sonnet-5": {
-    label: "Claude",
-    benefit: "Le plus à l'aise sur les échanges longs et les demandes détaillées.",
-  },
-  "mistral/mistral-large": {
+  "mistral/mistral-small": {
     label: "Mistral",
-    benefit: "Vos conversations restent hébergées en Europe. Rapide au quotidien.",
+    benefit: "Vif et léger, il convient à la plupart des échanges.",
   },
-  "deepseek/deepseek-chat": {
+  "google/gemini-3.5-flash": {
+    label: "Gemini",
+    benefit: "Répond très vite, même au bout d'une longue conversation.",
+  },
+  "anthropic/claude-haiku-4.5": {
+    label: "Claude",
+    benefit: "Suit de près les demandes détaillées, et écrit posément.",
+  },
+  "openai/gpt-5-mini": {
+    label: "GPT",
+    benefit: "Polyvalent : il s'en sort sur à peu près tout.",
+  },
+  "deepseek/deepseek-v3.2": {
     label: "DeepSeek",
-    benefit: "Le plus économique, pour un usage courant sans exigence particulière.",
+    benefit: "Économe, pour un usage courant sans exigence particulière.",
   },
 };
 

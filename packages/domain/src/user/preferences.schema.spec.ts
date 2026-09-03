@@ -18,13 +18,13 @@ describe("catalogue des modèles", () => {
   });
 
   it("marque comme hébergé en Europe le seul éditeur qui l'est", () => {
-    expect(isSovereignModel("mistral/mistral-large")).toBe(true);
-    expect(isSovereignModel("anthropic/claude-sonnet-5")).toBe(false);
-    expect(isSovereignModel("deepseek/deepseek-chat")).toBe(false);
+    expect(isSovereignModel("mistral/mistral-small")).toBe(true);
+    expect(isSovereignModel("anthropic/claude-haiku-4.5")).toBe(false);
+    expect(isSovereignModel("google/gemini-3.5-flash")).toBe(false);
   });
 
   it("ne déduit pas la souveraineté d'un identifiant sans éditeur", () => {
-    expect(isSovereignModel("mistral-large")).toBe(false);
+    expect(isSovereignModel("mistral-small")).toBe(false);
     expect(isSovereignModel("")).toBe(false);
   });
 
@@ -37,7 +37,7 @@ describe("catalogue des modèles", () => {
 
 describe("toAssistantModel", () => {
   it("retient un modèle du catalogue", () => {
-    expect(toAssistantModel("mistral/mistral-large")).toBe("mistral/mistral-large");
+    expect(toAssistantModel("mistral/mistral-small")).toBe("mistral/mistral-small");
   });
 
   it("rend la main au serveur quand le modèle enregistré n'est plus proposé", () => {
@@ -58,5 +58,16 @@ describe("préférences", () => {
 
   it("refuse un modèle absent du catalogue", () => {
     expect(updateUserProfileSchema.safeParse({ llmModel: "openai/gpt-4" }).success).toBe(false);
+  });
+
+  it("propose cinq modèles, un par éditeur", () => {
+    expect(ASSISTANT_MODELS).toHaveLength(5);
+
+    const creators = ASSISTANT_MODELS.map((model) => model.id.split("/")[0]);
+    expect(new Set(creators).size).toBe(creators.length);
+  });
+
+  it("propose au moins un modèle hébergé en Europe (§8, §13.4.6)", () => {
+    expect(ASSISTANT_MODELS.some((model) => model.sovereign)).toBe(true);
   });
 });

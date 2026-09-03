@@ -10,11 +10,13 @@ schéma prêts, comportement à écrire)
 Dernière mise à jour : **3 septembre 2026** — le modèle qui répond se choisit
 dans les réglages.
 
-**Le choix du modèle passe à l'utilisateur** (§5.1). Trois modèles sont proposés dans les
-réglages, chacun présenté par ce qu'il apporte plutôt que par ce qu'il est : la page ne
-demande pas de savoir ce qu'est un modèle de langage pour en changer (§13.4.4). Mistral
-porte la mention « hébergé en Europe », déduite de l'éditeur et non écrite à la main, pour
-que la promesse affichée soit exactement celle que `/api/health` calcule (§13.4.6).
+**Le choix du modèle passe à l'utilisateur** (§5.1). Cinq modèles sont proposés dans les
+réglages — un par éditeur, chacun présenté par ce qu'il apporte plutôt que par ce qu'il
+est : la page ne demande pas de savoir ce qu'est un modèle de langage pour en changer
+(§13.4.4). Mistral porte la mention « hébergé en Europe », déduite de l'éditeur et non
+écrite à la main, pour que la promesse affichée soit exactement celle que `/api/health`
+calcule (§13.4.6). Ni modèle de raisonnement — leur silence avant le premier mot dépasse
+le délai d'attente du flux — ni modèle de codage, qui écrit mal en français courant.
 
 La préférence vit sur le profil (`profiles.llm_model`), et `LLM_MODEL` devient le repli :
 `null` n'est pas une absence de réglage mais la valeur « celui que le serveur a retenu »,

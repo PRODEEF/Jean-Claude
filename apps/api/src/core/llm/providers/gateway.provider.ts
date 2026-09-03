@@ -18,7 +18,7 @@ import type {
  *
  * Le Gateway expose des centaines de modèles derrière une clé unique et un
  * identifiant de la forme `éditeur/modèle`. Conséquence directe : changer de
- * moteur — `anthropic/claude-opus-5` → `mistral/mistral-large` — ne demande
+ * moteur — `anthropic/claude-opus-5` → `mistral/mistral-small` — ne demande
  * plus d'écrire un adaptateur, seulement de changer `LLM_MODEL`. C'est plus
  * fort que ce que le §5.1 exigeait, qui se contentait de « sans réécriture
  * majeure ».

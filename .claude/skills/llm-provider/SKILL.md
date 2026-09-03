@@ -19,10 +19,14 @@ clé unique.
 ## Changer de moteur : une variable, zéro ligne de code
 
 ```bash
-LLM_MODEL=mistral/mistral-large      # souverain (§8, §13.4.6)
-LLM_MODEL=deepseek/deepseek-chat
+LLM_MODEL=mistral/mistral-small      # souverain (§8, §13.4.6)
+LLM_MODEL=deepseek/deepseek-v3.2
 LLM_MODEL=anthropic/claude-opus-5    # défaut
 ```
+
+Les identifiants ne se composent pas de mémoire : `mistral/mistral-large`
+n'existe pas. Le catalogue exact est celui que le SDK embarque —
+`node_modules/@ai-sdk/gateway/dist/index.d.ts` en porte la liste.
 
 **C'est tout.** N'écris pas de `MistralProvider` : le Gateway route déjà vers
 Mistral, et un adaptateur de plus serait du code mort. La suite de ce document
@@ -37,11 +41,11 @@ la phrase qui dit à quoi il sert. Y ajouter un modèle, c'est deux endroits que
 le compilateur garde synchronisés :
 
 ```ts
-const ASSISTANT_MODEL_IDS = [, /* ... */ "qwen/qwen-max"] as const;
+const ASSISTANT_MODEL_IDS = [/* ... */ "alibaba/qwen3.8-flash"] as const;
 
 const ASSISTANT_MODEL_DETAILS: Record<AssistantModel, { label: string; benefit: string }> = {
   // ...
-  "qwen/qwen-max": { label: "Qwen", benefit: "..." },
+  "alibaba/qwen3.8-flash": { label: "Qwen", benefit: "..." },
 };
 ```
 
