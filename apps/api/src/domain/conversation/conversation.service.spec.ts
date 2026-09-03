@@ -140,6 +140,53 @@ function makeLlm(
   };
 }
 
+/**
+ * Moteur dont chaque appel rend le tour suivant de `turns` — le dernier se
+ * répète ensuite.
+ *
+ * Nécessaire au rattrapage : le premier tour peut n'être qu'un appel d'outil,
+ * le second doit alors écrire la réponse. `makeLlm` rejoue au contraire les
+ * mêmes fragments à chaque appel.
+ */
+function makeLlmTurns(
+  turns: { chunks?: string[]; toolCalls?: LlmToolCall[]; fails?: boolean }[],
+): LlmProvider {
+  let index = 0;
+
+  const stream = jest.fn(() => {
+    const turn = turns[Math.min(index, turns.length - 1)] ?? {};
+    index += 1;
+
+    return (async function* () {
+      if (turn.fails) throw new Error("moteur indisponible");
+
+      const chunks = turn.chunks ?? [];
+      const toolCalls = turn.toolCalls ?? [];
+      let text = "";
+
+      for (const chunk of chunks) {
+        text += chunk;
+        yield { type: "text" as const, text: chunk };
+      }
+      for (const toolCall of toolCalls) {
+        yield { type: "tool_call" as const, toolCall };
+      }
+      yield {
+        type: "done" as const,
+        response: {
+          text,
+          toolCalls,
+          provider: "anthropic",
+          model: "claude-opus-5",
+          usage: { inputTokens: 12, outputTokens: 34 },
+        },
+      };
+    })();
+  });
+
+  return { name: "gateway", model: "anthropic/claude-sonnet-5", isSovereign: false, stream };
+}
+
 function makeSuggestionRepository(
   overrides: Partial<ISuggestionRepository> = {},
 ): ISuggestionRepository {
@@ -297,6 +344,17 @@ function makeService(
 function lastRequest(llm: LlmProvider): LlmCompletionRequest {
   const stream = llm.stream as jest.Mock;
   return stream.mock.calls[0]?.[0] as LlmCompletionRequest;
+}
+
+/** Requête transmise au moteur lors de l'appel de rang `index`, à partir de 0. */
+function requestAt(llm: LlmProvider, index: number): LlmCompletionRequest {
+  const stream = llm.stream as jest.Mock;
+  return stream.mock.calls[index]?.[0] as LlmCompletionRequest;
+}
+
+/** Nombre d'appels réellement passés au moteur pendant le tour. */
+function callCount(llm: LlmProvider): number {
+  return (llm.stream as jest.Mock).mock.calls.length;
 }
 
 /** Déroule le tour de dialogue en entier, comme le fait le controller. */
@@ -1183,6 +1241,120 @@ describe("ConversationService", () => {
       expect(lastRequest(llm).messages).toEqual([
         { role: "user", content: "Qu'est-ce que j'ai cette semaine ?" },
       ]);
+    });
+  });
+
+  describe("réponse écrite malgré un appel d'outil (§12.1)", () => {
+    /** Une proposition de todoliste valide, telle que le modèle la rend. */
+    const SUGGESTION: LlmToolCall = {
+      id: "call-1",
+      name: "suggest_task_list",
+      input: {
+        message: "Je te fais la liste du rempotage ?",
+        lists: [{ title: "Rempotage", kind: "todo", items: [{ title: "Acheter du terreau" }] }],
+      },
+    };
+
+    it("répond quand le modèle s'en est tenu à son appel d'outil", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const repo = makeRepository();
+      const llm = makeLlmTurns([
+        { toolCalls: [SUGGESTION] },
+        { chunks: ["Il te faut ", "du terreau."] },
+      ]);
+
+      await drain(makeService(repo, llm), {
+        content: "Que faut-il pour rempoter ?",
+        inputMode: "text",
+      });
+
+      // Sans ce second tour, la carte s'affichait seule et la question restait
+      // sans réponse : l'utilisateur voyait sa demande ignorée.
+      expect(callCount(llm)).toBe(2);
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({ content: "Il te faut du terreau." }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("rappelle au second tour la proposition déjà affichée, sans lui rendre les outils", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const llm = makeLlmTurns([{ toolCalls: [SUGGESTION] }, { chunks: ["Voilà."] }]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      const retry = requestAt(llm, 1);
+      // Sans outils : la proposition du premier tour sera captée de toute
+      // façon, la rejouer afficherait deux cartes pour un seul geste.
+      expect(retry.tools).toEqual([]);
+      expect(retry.system ?? "").toContain("Je te fais la liste du rempotage ?");
+      jest.restoreAllMocks();
+    });
+
+    it("ne rappelle pas le modèle quand il a déjà écrit sa réponse", async () => {
+      const llm = makeLlmTurns([{ chunks: ["Bien sûr."], toolCalls: [SUGGESTION] }]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      expect(callCount(llm)).toBe(1);
+    });
+
+    it("ne rappelle pas le modèle quand la question porte déjà les réponses", async () => {
+      const llm = makeLlmTurns([
+        {
+          toolCalls: [
+            {
+              id: "call-1",
+              name: "ask_question",
+              input: { question: "On part sur quel angle ?", choices: ["Le mien", "Le vôtre"] },
+            },
+          ],
+        },
+      ]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      // La question est affichée telle quelle : un second tour la doublerait.
+      expect(callCount(llm)).toBe(1);
+    });
+
+    it("ne rappelle pas le modèle quand la bascule est annoncée (A.10)", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+      const llm = makeLlmTurns([
+        {
+          toolCalls: [
+            { id: "call-1", name: "open_new_conversation", input: { title: "Recette de tarte" } },
+          ],
+        },
+      ]);
+
+      await drain(makeService(repo, llm));
+
+      // L'annonce de bascule vient du serveur : le modèle doit justement se
+      // taire, et la réponse sera donnée dans l'autre fil.
+      expect(callCount(llm)).toBe(1);
+    });
+
+    it("garde la proposition quand le rattrapage échoue", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      jest.spyOn(console, "error").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const repo = makeRepository();
+      const llm = makeLlmTurns([{ toolCalls: [SUGGESTION] }, { fails: true }]);
+
+      await drain(makeService(repo, llm, suggestions));
+
+      // Le tour reste exploitable sans le second texte ; le faire échouer
+      // perdrait la proposition avec lui.
+      expect(suggestions.create).toHaveBeenCalled();
+      expect(repo.appendMessage).toHaveBeenCalledTimes(1);
+      jest.restoreAllMocks();
     });
   });
 
