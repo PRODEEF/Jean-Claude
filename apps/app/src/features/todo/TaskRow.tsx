@@ -13,7 +13,12 @@ export type TaskRowProps = {
   meta?: string;
   /** Ouvre le détail. Absent, l'appui sur le titre coche comme la case. */
   onOpen?: () => void;
-  /** Fourni là où la tâche se supprime — pas depuis la semaine, qui n'est qu'une lecture. */
+  /**
+   * Fourni là où la tâche se supprime : jamais depuis la semaine, qui n'est
+   * qu'une lecture, et dans sa liste seulement quand le mode suppression est
+   * actif — une corbeille à demeure à côté de la case à cocher se touchait par
+   * erreur.
+   */
   onRemove?: () => void;
 };
 
@@ -57,7 +62,7 @@ export function TaskRow({ task, meta, onOpen, onRemove }: TaskRowProps) {
         accessibilityRole="button"
         accessibilityLabel={onOpen ? `Modifier ${task.title}` : task.title}
         style={{ minHeight: MIN_TOUCH_TARGET }}
-        className="flex-1 justify-center py-1"
+        className="flex-1 justify-center"
       >
         <Text
           numberOfLines={2}

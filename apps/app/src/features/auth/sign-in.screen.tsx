@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { CodeStep } from "./components/CodeStep";
 import { EmailStep } from "./components/EmailStep";
@@ -124,15 +125,20 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     alignSelf: "center",
   },
-  title: { fontSize: fontSize.xxl, fontWeight: fontWeight.bold, textAlign: "center" },
-  subtitle: { fontSize: fontSize.md, textAlign: "center", lineHeight: 22 },
-  message: { fontSize: fontSize.sm, textAlign: "center", lineHeight: 20 },
+  title: {
+    fontFamily: FONT_FAMILY,
+    fontSize: fontSize.xxl,
+    fontWeight: fontWeight.bold,
+    textAlign: "center",
+  },
+  subtitle: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, textAlign: "center", lineHeight: 22 },
+  message: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, textAlign: "center", lineHeight: 20 },
   button: {
     height: MIN_TOUCH_TARGET + 4,
     borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  buttonLabel: { fontSize: fontSize.md, fontWeight: fontWeight.semibold },
-  legal: { fontSize: fontSize.xs, textAlign: "center", lineHeight: 18 },
+  buttonLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, fontWeight: fontWeight.semibold },
+  legal: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, textAlign: "center", lineHeight: 18 },
 });

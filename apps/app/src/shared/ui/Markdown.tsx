@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Linking, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { fontSize, fontWeight, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import {
   parseMarkdown,
   type InlineNode,
@@ -227,13 +228,13 @@ function Inline({ nodes }: { nodes: InlineNode[] }) {
 
 const styles = StyleSheet.create({
   root: { gap: spacing.sm },
-  heading: { fontWeight: fontWeight.semibold, marginTop: spacing.xs },
-  paragraph: { fontSize: fontSize.md, lineHeight: 22 },
+  heading: { fontFamily: FONT_FAMILY, fontWeight: fontWeight.semibold, marginTop: spacing.xs },
+  paragraph: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22 },
   rule: { height: 1, marginVertical: spacing.xs },
   list: { gap: spacing.xs },
   item: { gap: spacing.xs },
   itemRow: { flexDirection: "row", gap: spacing.sm },
-  bullet: { fontSize: fontSize.md, lineHeight: 22, minWidth: 22 },
+  bullet: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22, minWidth: 22 },
   itemText: { flex: 1 },
   nested: { paddingLeft: spacing.lg },
   quote: { borderLeftWidth: 3, paddingLeft: spacing.md, gap: spacing.sm },
@@ -247,6 +248,7 @@ const styles = StyleSheet.create({
   table: { marginVertical: spacing.xs },
   tableRow: { flexDirection: "row", borderTopWidth: StyleSheet.hairlineWidth },
   tableCell: {
+    fontFamily: FONT_FAMILY,
     width: 160,
     padding: spacing.sm,
     fontSize: fontSize.sm,

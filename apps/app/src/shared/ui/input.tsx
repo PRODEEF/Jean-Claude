@@ -1,8 +1,10 @@
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
 import { Platform, TextInput } from "react-native";
 
 function Input({
   className,
+  style,
   ...props
 }: React.ComponentProps<typeof TextInput> & React.RefAttributes<TextInput>) {
   return (
@@ -25,6 +27,7 @@ function Input({
         className,
       )}
       {...props}
+      style={[{ fontFamily: FONT_FAMILY }, style]}
     />
   );
 }

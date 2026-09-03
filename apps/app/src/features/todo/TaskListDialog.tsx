@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/shared/ui/input";
 import { Text } from "@/shared/ui/text";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
-import { useFolderChoices } from "./hooks/use-folder-choices";
+import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
 
 /**
  * Création — éventuellement depuis un dossier, qui exprime déjà le rangement —

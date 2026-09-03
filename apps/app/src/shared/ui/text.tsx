@@ -1,3 +1,4 @@
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
 import { Slot } from "@rn-primitives/slot";
 import { cva, type VariantProps } from "class-variance-authority";
@@ -68,6 +69,7 @@ function Text({
   className,
   asChild = false,
   variant = "default",
+  style,
   ...props
 }: React.ComponentProps<typeof RNText> &
   React.RefAttributes<typeof RNText> &
@@ -82,6 +84,12 @@ function Text({
       role={variant ? ROLE[variant] : undefined}
       aria-level={variant ? ARIA_LEVEL[variant] : undefined}
       {...props}
+      // Posé après l'étalement des propriétés, et sous forme de tableau : le
+      // style de l'appelant s'empile par-dessus au lieu d'être écrasé.
+      // Le variant `code` porte `font-mono`, que ce style neutraliserait — il
+      // n'a aucun appelant aujourd'hui ; le jour où il en aura un, il lui
+      // faudra sa propre famille.
+      style={[{ fontFamily: FONT_FAMILY }, style]}
     />
   );
 }

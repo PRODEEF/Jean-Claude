@@ -1,6 +1,7 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { ArrowRight } from "lucide-react-native";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 export type SwitchAsideCardProps = {
@@ -65,7 +66,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.lg,
   },
-  title: { flex: 1, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
+  title: { fontFamily: FONT_FAMILY, flex: 1, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
   action: {
     flexDirection: "row",
     alignItems: "center",
@@ -74,5 +75,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: radius.md,
   },
-  actionLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  actionLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
 });

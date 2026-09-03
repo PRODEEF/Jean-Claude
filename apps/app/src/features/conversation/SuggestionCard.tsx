@@ -11,6 +11,7 @@ import {
   type Suggestion,
 } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -396,7 +397,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.lg,
   },
-  message: { fontSize: fontSize.md, lineHeight: 22 },
+  message: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22 },
   tree: { gap: spacing.xs, paddingLeft: spacing.md, borderLeftWidth: 2 },
   // Pas de filet vertical ici : les cases alignent déjà les lignes entre elles.
   choices: { gap: spacing.xs },
@@ -414,9 +415,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.sm,
   },
-  folder: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  folder: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   nested: { paddingLeft: spacing.md, fontWeight: fontWeight.regular },
-  hint: { fontSize: fontSize.xs, fontWeight: fontWeight.regular },
+  hint: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.regular },
   note: {
     alignSelf: "flex-start",
     maxWidth: "85%",
@@ -428,7 +429,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.pill,
   },
-  noteLabel: { fontSize: fontSize.xs, flexShrink: 1 },
+  noteLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, flexShrink: 1 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   action: {
     minHeight: MIN_TOUCH_TARGET,
@@ -437,5 +438,5 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   secondary: { borderWidth: 1 },
-  actionLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  actionLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
 });

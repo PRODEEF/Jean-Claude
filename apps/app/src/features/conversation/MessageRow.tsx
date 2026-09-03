@@ -4,6 +4,7 @@ import * as Clipboard from "expo-clipboard";
 import { Check, Copy, Pencil, RotateCcw } from "lucide-react-native";
 import type { Message } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { Markdown } from "@/shared/ui/Markdown";
 import { formatRelativeTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -282,8 +283,13 @@ const styles = StyleSheet.create({
    * colonne, alignée sur les autres textes de l'écran.
    */
   plain: { alignSelf: "flex-start", maxWidth: "100%", paddingHorizontal: 0 },
-  bubbleText: { fontSize: fontSize.md, lineHeight: 22 },
-  question: { fontSize: fontSize.sm, lineHeight: 20, marginBottom: spacing.xs },
+  bubbleText: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22 },
+  question: {
+    fontFamily: FONT_FAMILY,
+    fontSize: fontSize.sm,
+    lineHeight: 20,
+    marginBottom: spacing.xs,
+  },
   actions: {
     height: 28,
     flexDirection: "row",
@@ -292,7 +298,7 @@ const styles = StyleSheet.create({
   },
   actionsStart: { justifyContent: "flex-start" },
   actionsEnd: { justifyContent: "flex-end" },
-  elapsed: { fontSize: fontSize.xs, marginRight: spacing.xs },
+  elapsed: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, marginRight: spacing.xs },
   iconAction: {
     width: 28,
     height: 28,
@@ -302,6 +308,7 @@ const styles = StyleSheet.create({
   },
   editor: { gap: spacing.sm, alignSelf: "stretch" },
   editorInput: {
+    fontFamily: FONT_FAMILY,
     minHeight: MIN_TOUCH_TARGET,
     maxHeight: 220,
     padding: spacing.md,
@@ -318,5 +325,5 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
     borderRadius: radius.md,
   },
-  editorLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
+  editorLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
 });

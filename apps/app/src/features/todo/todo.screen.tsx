@@ -5,16 +5,19 @@ import { ChevronLeft, ChevronRight, Plus } from "lucide-react-native";
 import type { Task, TaskList } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { addDays, startOfWeek, weekDays, weekLabel } from "@/shared/lib/dates";
-import { datedTasks } from "@/shared/lib/tasks";
+import { datedTasks, filterListsByFolder, usedFolderIds } from "@/shared/lib/tasks";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
 import { SegmentedControl, type SegmentedOption } from "@/shared/ui/segmented-control";
 import { Text } from "@/shared/ui/text";
+import { FolderFilterBar } from "./FolderFilterBar";
 import { ListsBoard } from "./ListsBoard";
 import { TaskDialog } from "./TaskDialog";
+import { TaskListDeleteDialog } from "./TaskListDeleteDialog";
 import { TaskListDialog, type TaskListTarget } from "./TaskListDialog";
 import { WeekBoard } from "./WeekBoard";
 
@@ -43,18 +46,37 @@ export function TodoScreen() {
   const [view, setView] = useState<TodoView>(openedList ? "lists" : "week");
   const [anchor, setAnchor] = useState(() => startOfWeek(new Date()));
   const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
+  const [deletingList, setDeletingList] = useState<TaskList | null>(null);
   const [openedTask, setOpenedTask] = useState<Task | null>(null);
+  /** Dossier retenu : `undefined` = tous, `null` = les listes sans dossier. */
+  const [folderId, setFolderId] = useState<string | null | undefined>(undefined);
 
   // Arriver depuis la barre latérale ouvre la liste visée : l'écran est déjà
-  // monté quand le paramètre change, et l'état initial ne suffit donc pas.
+  // monté quand le paramètre change, et l'état initial ne suffit donc pas. Le
+  // filtre est relâché au passage — on a demandé cette liste-là, elle ne doit
+  // pas rester masquée par un filtre posé plus tôt.
   useEffect(() => {
-    if (openedList) setView("lists");
+    if (openedList) {
+      setView("lists");
+      setFolderId(undefined);
+    }
   }, [openedList]);
 
   const { data, isPending, isError } = useTaskLists();
   const lists = useMemo(() => data ?? [], [data]);
-  const tasks = useMemo(() => datedTasks(lists), [lists]);
+  const folders = useFolderChoices();
+
+  // Le filtre s'applique aux listes, donc aux deux vues d'un coup : la semaine
+  // n'est qu'une autre lecture des mêmes tâches.
+  const visibleLists = useMemo(() => filterListsByFolder(lists, folderId), [lists, folderId]);
+  const tasks = useMemo(() => datedTasks(visibleLists), [visibleLists]);
   const days = useMemo(() => weekDays(anchor), [anchor]);
+
+  const used = useMemo(() => usedFolderIds(lists), [lists]);
+  const filterFolders = useMemo(
+    () => folders.filter((folder) => used.has(folder.id)),
+    [folders, used],
+  );
 
   // La tâche affichée dans la fenêtre est relue à chaque chargement : sans
   // cela, cocher une tâche depuis son détail laisserait la fenêtre montrer
@@ -141,6 +163,13 @@ export function TodoScreen() {
         <View className="flex-row items-center justify-between gap-3">{switcher}</View>
       )}
 
+      <FolderFilterBar
+        folders={filterFolders}
+        hasUnfiled={used.has(null)}
+        value={folderId}
+        onChange={setFolderId}
+      />
+
       {isError ? (
         <Text className="text-destructive text-sm">
           Les todolistes n'ont pas pu être chargées. Réessayez dans un instant.
@@ -149,11 +178,16 @@ export function TodoScreen() {
 
       {view === "week" ? (
         <WeekBoard days={days} tasks={tasks} />
+      ) : visibleLists.length === 0 && lists.length > 0 ? (
+        // Le message d'accueil de `ListsBoard` mentirait ici : il y a bien des
+        // listes, c'est le filtre qui les écarte.
+        <Text className="text-muted-foreground text-sm">Aucune liste dans ce dossier.</Text>
       ) : (
         <ListsBoard
-          lists={lists}
+          lists={visibleLists}
           {...(openedList ? { highlightedId: openedList } : {})}
           onEditList={(list: TaskList) => setListTarget({ mode: "edit", list })}
+          onDeleteList={setDeletingList}
           onOpenTask={setOpenedTask}
         />
       )}
@@ -161,6 +195,7 @@ export function TodoScreen() {
       {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
 
       <TaskListDialog target={listTarget} onClose={() => setListTarget(null)} />
+      <TaskListDeleteDialog list={deletingList} onClose={() => setDeletingList(null)} />
       <TaskDialog task={editedTask} onClose={() => setOpenedTask(null)} />
     </ScreenShell>
   );

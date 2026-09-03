@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import type { Conversation, Message, Suggestion } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
@@ -369,8 +370,13 @@ const styles = StyleSheet.create({
    * colonne, alignée sur les autres textes de l'écran.
    */
   plain: { alignSelf: "flex-start", maxWidth: "100%", paddingHorizontal: 0 },
-  bubbleText: { fontSize: fontSize.md, lineHeight: 22 },
-  empty: { fontSize: fontSize.sm, textAlign: "center", marginTop: spacing.xxl },
+  bubbleText: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22 },
+  empty: {
+    fontFamily: FONT_FAMILY,
+    fontSize: fontSize.sm,
+    textAlign: "center",
+    marginTop: spacing.xxl,
+  },
   errorBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -380,14 +386,19 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderTopWidth: 1,
   },
-  errorText: { fontSize: fontSize.sm, flexShrink: 1 },
+  errorText: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, flexShrink: 1 },
   retry: {
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",
     paddingHorizontal: spacing.sm,
   },
-  retryText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  retryText: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   question: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
   composer: { padding: spacing.md },
-  disclaimer: { fontSize: fontSize.xs, textAlign: "center", marginTop: spacing.sm },
+  disclaimer: {
+    fontFamily: FONT_FAMILY,
+    fontSize: fontSize.xs,
+    textAlign: "center",
+    marginTop: spacing.sm,
+  },
 });
