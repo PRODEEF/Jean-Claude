@@ -1,48 +1,46 @@
-import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
+import type { TaskListWithTasks } from "@jc/domain";
 import { addDays, startOfDay } from "./dates";
 
 /**
- * Une tâche datée et la liste dont elle vient.
+ * Listes portant une échéance, tous dossiers confondus.
  *
- * La vue hebdomadaire comme le calendrier sortent les tâches de leurs listes
- * pour les replacer dans le temps : la liste d'origine doit les suivre, sans
- * quoi « Appeler le garage » n'apprend plus de quel projet il relève.
+ * L'échéance appartient à la liste et non à ses lignes : « les courses avant
+ * samedi » date la liste, pas la farine. La semaine et le calendrier lisent
+ * donc des listes replacées dans le temps, pas des tâches éparpillées.
  */
-export type DatedTask = { task: Task; list: TaskList };
-
-/**
- * Tâches portant une échéance, toutes listes confondues.
- *
- * Celles à qui un créneau a été posé en sont exclues : leur événement les
- * représente déjà dans le calendrier, et les garder ici ferait apparaître la
- * même échéance deux fois le même jour (A.3).
- */
-export function datedTasks(lists: TaskListWithTasks[]): DatedTask[] {
-  return lists.flatMap(({ tasks, ...list }) =>
-    tasks
-      .filter((task) => task.dueAt !== null && task.eventId === null)
-      .map((task) => ({ task, list })),
-  );
+export function datedLists(lists: TaskListWithTasks[]): TaskListWithTasks[] {
+  return lists.filter((list) => list.dueAt !== null);
 }
 
-export function tasksOfDay(tasks: DatedTask[], day: Date): DatedTask[] {
+/**
+ * Ce que le calendrier montre des todolistes.
+ *
+ * Les listes à qui un créneau a été posé en sont exclues : leur événement les
+ * représente déjà, et les garder ferait apparaître la même échéance deux fois
+ * le même jour (A.3).
+ */
+export function unscheduledLists(lists: TaskListWithTasks[]): TaskListWithTasks[] {
+  return datedLists(lists).filter((list) => list.eventId === null);
+}
+
+export function listsOfDay(lists: TaskListWithTasks[], day: Date): TaskListWithTasks[] {
   const start = startOfDay(day).getTime();
   const end = addDays(startOfDay(day), 1).getTime();
 
-  return tasks.filter(({ task }) => {
-    const due = task.dueAt === null ? null : new Date(task.dueAt).getTime();
+  return lists.filter((list) => {
+    const due = list.dueAt === null ? null : new Date(list.dueAt).getTime();
     return due !== null && due >= start && due < end;
   });
 }
 
 /**
- * Tâches restant à faire ce jour-là.
+ * Tâches restant à faire dans une liste.
  *
  * Ce qui est coché ne charge plus la journée : c'est ce décompte-là que le
  * calendrier affiche pour dire qu'un jour est chargé.
  */
-export function openTasksOfDay(tasks: DatedTask[], day: Date): DatedTask[] {
-  return tasksOfDay(tasks, day).filter(({ task }) => !task.done);
+export function openTaskCount(list: TaskListWithTasks): number {
+  return list.tasks.filter((task) => !task.done).length;
 }
 
 /**
@@ -51,30 +49,30 @@ export function openTasksOfDay(tasks: DatedTask[], day: Date): DatedTask[] {
  * Comparaison de chaînes et non de dates : deux horodatages ISO du même fuseau
  * s'ordonnent déjà lexicographiquement, et l'API les rend tous en UTC.
  */
-export function byDueDate(a: DatedTask, b: DatedTask): number {
-  return (a.task.dueAt ?? "").localeCompare(b.task.dueAt ?? "");
+export function byDueDate(a: TaskListWithTasks, b: TaskListWithTasks): number {
+  return (a.dueAt ?? "").localeCompare(b.dueAt ?? "");
 }
 
-/** Tâches d'un même dossier. `folderId` à `null` : listes rangées nulle part. */
-export type FolderTaskGroup = { folderId: string | null; tasks: DatedTask[] };
+/** Listes d'un même dossier. `folderId` à `null` : listes rangées nulle part. */
+export type FolderListGroup = { folderId: string | null; lists: TaskListWithTasks[] };
 
 /**
- * Tâches regroupées par dossier de leur liste.
+ * Listes regroupées par dossier.
  *
- * L'ordre d'arrivée des dossiers est conservé — les tâches sont déjà triées par
+ * L'ordre d'arrivée des dossiers est conservé — les listes sont déjà triées par
  * échéance quand elles arrivent ici — et « sans dossier » passe en dernier :
  * c'est un reste, pas un dossier.
  */
-export function groupByFolder(tasks: DatedTask[]): FolderTaskGroup[] {
-  const byFolder = new Map<string | null, DatedTask[]>();
+export function groupByFolder(lists: TaskListWithTasks[]): FolderListGroup[] {
+  const byFolder = new Map<string | null, TaskListWithTasks[]>();
 
-  for (const dated of tasks) {
-    const existing = byFolder.get(dated.list.folderId);
-    if (existing) existing.push(dated);
-    else byFolder.set(dated.list.folderId, [dated]);
+  for (const list of lists) {
+    const existing = byFolder.get(list.folderId);
+    if (existing) existing.push(list);
+    else byFolder.set(list.folderId, [list]);
   }
 
-  const groups = Array.from(byFolder, ([folderId, grouped]) => ({ folderId, tasks: grouped }));
+  const groups = Array.from(byFolder, ([folderId, grouped]) => ({ folderId, lists: grouped }));
   return [
     ...groups.filter((group) => group.folderId !== null),
     ...groups.filter((group) => group.folderId === null),
@@ -104,4 +102,36 @@ export function filterListsByFolder(
  */
 export function usedFolderIds(lists: TaskListWithTasks[]): Set<string | null> {
   return new Set(lists.map((list) => list.folderId));
+}
+
+/**
+ * Forme comparable d'un libellé : minuscules, sans accent.
+ *
+ * Chercher « reglement » doit trouver « Règlement ». La recherche se fait sur
+ * ce qui est déjà chargé — toutes les listes tiennent dans un seul appel —
+ * donc sans passer par le serveur : la réponse arrive à la frappe.
+ */
+function comparable(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+/** Listes dont le titre, ou celui d'une de leurs tâches, contient la recherche. */
+export function filterListsByQuery(lists: TaskListWithTasks[], query: string): TaskListWithTasks[] {
+  const needle = comparable(query.trim());
+  if (needle.length === 0) return lists;
+
+  return lists.filter(
+    (list) =>
+      comparable(list.title).includes(needle) ||
+      list.tasks.some((task) => comparable(task.title).includes(needle)),
+  );
+}
+
+/** Un libellé répond-il à la recherche ? Sert à mettre une ligne en avant dans sa liste. */
+export function titleMatchesQuery(title: string, query: string): boolean {
+  const needle = comparable(query.trim());
+  return needle.length > 0 && comparable(title).includes(needle);
 }

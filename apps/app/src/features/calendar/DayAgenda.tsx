@@ -1,20 +1,20 @@
 import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ListChecks } from "lucide-react-native";
-import type { CalendarEvent } from "@jc/domain";
+import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
 import { eventsOfDay } from "./lib/calendar-dates";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
-import { openTasksOfDay, byDueDate, groupByFolder, type DatedTask } from "@/shared/lib/tasks";
+import { byDueDate, groupByFolder, listsOfDay, openTaskCount } from "@/shared/lib/tasks";
 
 export type DayAgendaProps = {
   day: Date;
   events: CalendarEvent[];
-  /** Tâches datées à faire ce jour-là, listées sous les rendez-vous (A.2). */
-  tasks: DatedTask[];
+  /** Todolistes échues ce jour-là, listées sous les rendez-vous (A.2). */
+  lists: TaskListWithTasks[];
   onOpenEvent: (event: CalendarEvent) => void;
 };
 
@@ -25,11 +25,11 @@ export type DayAgendaProps = {
  * qu'une pastille, le contenu se lit ici (§4.2 — Calendrier iOS, Google
  * Calendar).
  */
-export function DayAgenda({ day, events, tasks, onOpenEvent }: DayAgendaProps) {
+export function DayAgenda({ day, events, lists, onOpenEvent }: DayAgendaProps) {
   const router = useRouter();
   const folders = useFolderChoices();
   const dayEvents = eventsOfDay(events, day);
-  const groups = groupByFolder(openTasksOfDay(tasks, day).sort(byDueDate));
+  const groups = groupByFolder(listsOfDay(lists, day).sort(byDueDate));
 
   // Un seul groupe se passe d'intitulé : sans dossier, ou tout dans le même,
   // l'en-tête ne distinguerait rien de ce qui est déjà sous les yeux.
@@ -76,7 +76,7 @@ export function DayAgenda({ day, events, tasks, onOpenEvent }: DayAgendaProps) {
         ))
       )}
 
-      {/* Les tâches se cochent dans l'onglet Todoliste, pas ici : le calendrier
+      {/* Les listes se cochent dans l'onglet Todoliste, pas ici : le calendrier
           dit ce que porte la journée, il n'est pas un second endroit où gérer
           les mêmes listes. L'appui y conduit, sur la liste concernée.
           Regroupées par dossier, parce qu'une journée mélange le jardin et les
@@ -89,22 +89,22 @@ export function DayAgenda({ day, events, tasks, onOpenEvent }: DayAgendaProps) {
             </Text>
           ) : null}
 
-          {group.tasks.map(({ task, list }) => (
+          {group.lists.map((list) => (
             <Pressable
-              key={task.id}
+              key={list.id}
               onPress={() => router.push(`/todo?list=${list.id}` as never)}
               accessibilityRole="button"
-              accessibilityLabel={`Ouvrir ${task.title} dans ${list.title}`}
+              accessibilityLabel={`Ouvrir la liste ${list.title}`}
               style={{ minHeight: MIN_TOUCH_TARGET }}
               className="border-border flex-row items-center gap-3 rounded-lg border border-dashed px-3 py-2"
             >
               <Icon as={ListChecks} size={14} className="text-muted-foreground w-14" />
               <View className="flex-1">
                 <Text numberOfLines={1} className="text-sm font-medium">
-                  {task.title}
+                  {list.title}
                 </Text>
                 <Text numberOfLines={1} className="text-muted-foreground text-xs">
-                  {list.title}
+                  {remainingLabel(openTaskCount(list))}
                 </Text>
               </View>
             </Pressable>
@@ -113,4 +113,10 @@ export function DayAgenda({ day, events, tasks, onOpenEvent }: DayAgendaProps) {
       ))}
     </View>
   );
+}
+
+/** Ce qu'il reste à faire dans une liste échue aujourd'hui. */
+function remainingLabel(remaining: number): string {
+  if (remaining === 0) return "Tout est coché";
+  return remaining === 1 ? "1 tâche à faire" : `${remaining} tâches à faire`;
 }

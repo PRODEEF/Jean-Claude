@@ -1,5 +1,5 @@
 import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
-import type { ITaskRepository } from "./task.repository.interface.js";
+import type { ITaskRepository, TaskRowInput } from "./task.repository.interface.js";
 import { TaskService } from "./task.service.js";
 
 const TOKEN = "access-token";
@@ -14,8 +14,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     notes: null,
     done: false,
     completedAt: null,
-    dueAt: null,
-    eventId: null,
+    parentId: null,
     position: 0,
     createdAt: "2026-09-01T08:00:00.000Z",
     updatedAt: "2026-09-01T08:00:00.000Z",
@@ -28,6 +27,8 @@ function makeList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithTasks
     id: LIST,
     title: "Jardin",
     kind: "todo",
+    dueAt: null,
+    eventId: null,
     conversationId: null,
     folderId: null,
     createdByAssistant: false,
@@ -54,6 +55,11 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
       ),
     updateTask: jest.fn().mockResolvedValue(makeTask()),
     deleteTask: jest.fn().mockResolvedValue(undefined),
+    replaceTasks: jest
+      .fn()
+      .mockImplementation((_userId, listId: string, rows: TaskRowInput[]) =>
+        Promise.resolve(rows.map((row) => makeTask({ ...row, listId }))),
+      ),
     ...overrides,
   };
 }
@@ -83,11 +89,118 @@ describe("TaskService", () => {
       );
 
       expect(created.folderId).toBeNull();
-      expect(repo.createList).toHaveBeenCalledWith(
+      expect(repo.createList).toHaveBeenCalledWith(USER, { title: "Jardin", kind: "todo" }, TOKEN);
+    });
+
+    it("date la liste entière et non ses lignes", async () => {
+      const repo = makeRepository();
+
+      const created = await new TaskService(repo).createList(
         USER,
-        { title: "Jardin", kind: "todo" },
+        { title: "Courses", kind: "shopping", dueAt: "2026-09-05T00:00:00.000Z" },
         TOKEN,
       );
+
+      expect(created.dueAt).toBe("2026-09-05T00:00:00.000Z");
+    });
+  });
+
+  describe("linkEvent", () => {
+    it("rattache la liste au créneau posé pour elle", async () => {
+      const repo = makeRepository();
+
+      await new TaskService(repo).linkEvent(LIST, "event-1", TOKEN);
+
+      expect(repo.updateList).toHaveBeenCalledWith(LIST, { eventId: "event-1" }, TOKEN);
+    });
+
+    it("refuse de rattacher un créneau à une liste introuvable", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
+
+      await expect(new TaskService(repo).linkEvent(LIST, "event-1", TOKEN)).rejects.toMatchObject({
+        status: 404,
+      });
+      expect(repo.updateList).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("replaceTasks", () => {
+    it("range une ligne indentée sous la dernière ligne de premier niveau", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
+      });
+
+      await new TaskService(repo).replaceTasks(
+        USER,
+        LIST,
+        {
+          items: [
+            { id: "task-1", title: "Peindre la chambre", depth: 0 },
+            { title: "Acheter un rouleau", depth: 1 },
+            { title: "Poncer", depth: 1 },
+          ],
+        },
+        TOKEN,
+      );
+
+      const rows = (repo.replaceTasks as jest.Mock).mock.calls[0][2] as TaskRowInput[];
+      expect(rows[0]).toMatchObject({ id: "task-1", parentId: null, position: 0 });
+      expect(rows[1]).toMatchObject({ parentId: "task-1", position: 1 });
+      expect(rows[2]).toMatchObject({ parentId: "task-1", position: 2 });
+    });
+
+    it("remonte au premier niveau une liste qui commence par une ligne indentée", async () => {
+      const repo = makeRepository();
+
+      await new TaskService(repo).replaceTasks(
+        USER,
+        LIST,
+        { items: [{ title: "Poncer", depth: 1 }] },
+        TOKEN,
+      );
+
+      const rows = (repo.replaceTasks as jest.Mock).mock.calls[0][2] as TaskRowInput[];
+      expect(rows[0]?.parentId).toBeNull();
+    });
+
+    it("traite comme neuve une ligne dont l'identifiant vient d'une autre liste", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
+      });
+
+      await new TaskService(repo).replaceTasks(
+        USER,
+        LIST,
+        { items: [{ id: "00000000-0000-4000-8000-000000000099", title: "Semer", depth: 0 }] },
+        TOKEN,
+      );
+
+      const rows = (repo.replaceTasks as jest.Mock).mock.calls[0][2] as TaskRowInput[];
+      expect(rows[0]?.id).not.toBe("00000000-0000-4000-8000-000000000099");
+    });
+
+    it("accepte de vider entièrement une liste", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
+      });
+
+      await new TaskService(repo).replaceTasks(USER, LIST, { items: [] }, TOKEN);
+
+      expect(repo.replaceTasks).toHaveBeenCalledWith(USER, LIST, [], TOKEN);
+    });
+
+    it("refuse de réécrire une liste introuvable", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
+
+      await expect(
+        new TaskService(repo).replaceTasks(
+          USER,
+          LIST,
+          { items: [{ title: "Semer", depth: 0 }] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(repo.replaceTasks).not.toHaveBeenCalled();
     });
   });
 
@@ -158,7 +271,9 @@ describe("TaskService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeList({ tasks: [makeTask({ done: true, completedAt: "2026-09-01T09:00:00.000Z" })] }),
+            makeList({
+              tasks: [makeTask({ done: true, completedAt: "2026-09-01T09:00:00.000Z" })],
+            }),
           ),
       });
 
@@ -213,9 +328,9 @@ describe("TaskService", () => {
     it("refuse de supprimer une tâche introuvable", async () => {
       const repo = makeRepository();
 
-      await expect(
-        new TaskService(repo).deleteTask(LIST, "task-1", TOKEN),
-      ).rejects.toMatchObject({ status: 404 });
+      await expect(new TaskService(repo).deleteTask(LIST, "task-1", TOKEN)).rejects.toMatchObject({
+        status: 404,
+      });
       expect(repo.deleteTask).not.toHaveBeenCalled();
     });
   });

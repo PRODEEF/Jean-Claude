@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CreateTask, CreateTaskList, UpdateTask, UpdateTaskList } from "@jc/domain";
+import type {
+  CreateTask,
+  CreateTaskList,
+  ReplaceTasks,
+  UpdateTask,
+  UpdateTaskList,
+} from "@jc/domain";
 import { api } from "@/shared/lib/api";
 
 /**
@@ -54,5 +60,17 @@ export function useTaskActions() {
     onSuccess: refresh,
   });
 
-  return { createList, updateList, removeList, addTask, updateTask, removeTask };
+  /**
+   * Réécriture du contenu d'une liste depuis l'éditeur.
+   *
+   * Le rechargement n'a lieu qu'au succès : l'éditeur tient déjà l'état
+   * affiché, et rafraîchir à chaque frappe lui reprendrait sa ligne en cours.
+   */
+  const replaceTasks = useMutation({
+    mutationFn: (variables: { listId: string; input: ReplaceTasks }) =>
+      api.tasks.replaceTasks(variables.listId, variables.input),
+    onSuccess: refresh,
+  });
+
+  return { createList, updateList, removeList, addTask, updateTask, removeTask, replaceTasks };
 }

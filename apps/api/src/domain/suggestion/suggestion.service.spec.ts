@@ -147,12 +147,14 @@ describe("SuggestionService", () => {
               {
                 title: "Achats jardin",
                 kind: "shopping",
-                items: [{ title: "Terreau", dueAt: null }],
+                dueAt: null,
+                items: [{ title: "Terreau" }],
               },
               {
                 title: "Travaux jardin",
                 kind: "todo",
-                items: [{ title: "Désherber", dueAt: null }],
+                dueAt: null,
+                items: [{ title: "Désherber" }],
               },
             ],
           },
@@ -174,7 +176,8 @@ describe("SuggestionService", () => {
               {
                 title: "Travaux jardin",
                 kind: "todo",
-                items: [{ title: "Désherber", dueAt: "lundi prochain" }],
+                dueAt: "lundi prochain",
+                items: [{ title: "Désherber" }],
               },
             ],
           },
@@ -183,12 +186,12 @@ describe("SuggestionService", () => {
         TOKEN,
       );
 
-      // Le modèle laisse parfois l'échéance en clair : la tâche vaut mieux sans
+      // Le modèle laisse parfois l'échéance en clair : la liste vaut mieux sans
       // date que pas de liste du tout.
       const input = (repo.create as jest.Mock).mock.calls[0]?.[1] as { payload: unknown };
       expect(input.payload).toEqual({
         lists: [
-          { title: "Travaux jardin", kind: "todo", items: [{ title: "Désherber", dueAt: null }] },
+          { title: "Travaux jardin", kind: "todo", dueAt: null, items: [{ title: "Désherber" }] },
         ],
       });
     });
