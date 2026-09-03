@@ -26,6 +26,7 @@ import { MessageRow } from "./MessageRow";
 import { QuestionCard } from "./QuestionCard";
 import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
 import { SwitchAsideCard } from "./SwitchAsideCard";
+import { ThinkingIndicator } from "./ThinkingIndicator";
 
 export type ConversationThreadProps = {
   conversationId: string;
@@ -221,11 +222,11 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
 
                 {streamingText === null ? null : (
                   <View style={[styles.bubble, styles.plain]}>
-                    {/* Tant qu'aucun jeton n'est arrivé, la barre d'attente dit
-                        que la demande est partie ; ensuite le texte parle de
-                        lui-même. */}
+                    {/* Tant qu'aucun jeton n'est arrivé, le compteur dit que la
+                        demande est partie et depuis combien de temps ; ensuite
+                        le texte parle de lui-même. */}
                     {streamingText.length === 0 ? (
-                      <ActivityIndicator color={palette.textMuted} />
+                      <ThinkingIndicator />
                     ) : (
                       <Markdown>{streamingText}</Markdown>
                     )}
