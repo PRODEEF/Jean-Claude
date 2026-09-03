@@ -38,19 +38,21 @@ export const SUGGEST_TASK_LIST: LlmTool = {
               enum: ["todo", "shopping"],
               description: "todo = tâches à faire, shopping = achats à prévoir",
             },
+            dueAt: {
+              type: "string",
+              description:
+                "Échéance ISO 8601 de la liste entière si la conversation en mentionne " +
+                "une ou la rend déductible (« lundi prochain », « avant le week-end »), " +
+                "sinon omettre. La date vaut pour toute la liste, pas pour une de ses " +
+                "lignes : « les courses avant samedi » date la liste, pas la farine. " +
+                "Sans heure précise, viser minuit — c'est ce qui signifie « dans la " +
+                "journée » plutôt qu'un créneau décidé.",
+            },
             items: {
               type: "array",
               items: {
                 type: "object",
-                properties: {
-                  title: { type: "string" },
-                  dueAt: {
-                    type: "string",
-                    description:
-                      "Échéance ISO 8601 si une date est mentionnée ou déductible " +
-                      "(« lundi prochain », « dans deux semaines »), sinon omettre.",
-                  },
-                },
+                properties: { title: { type: "string" } },
                 required: ["title"],
               },
             },

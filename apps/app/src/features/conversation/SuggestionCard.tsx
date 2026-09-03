@@ -6,7 +6,7 @@ import {
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
-  scheduleTasksPayloadSchema,
+  scheduleListsPayloadSchema,
   type AssignFoldersPayload,
   type Suggestion,
 } from "@jc/domain";
@@ -316,13 +316,12 @@ function useSuggestionPreview(suggestion: Suggestion): {
               key: list.title,
               label: list.title,
               nested: false,
-              ...(list.kind === "shopping" ? { hint: "achats" } : {}),
+              ...hintOf(list.kind, list.dueAt),
             },
             ...list.items.map((item) => ({
               key: `${list.title}/${item.title}`,
               label: item.title,
               nested: true,
-              ...(item.dueAt === null ? {} : { hint: dueLabel(item.dueAt) }),
             })),
           ])
         : [],
@@ -330,16 +329,16 @@ function useSuggestionPreview(suggestion: Suggestion): {
   }
 
   if (suggestion.kind === "schedule_task") {
-    const proposed = scheduleTasksPayloadSchema.safeParse(suggestion.payload);
+    const proposed = scheduleListsPayloadSchema.safeParse(suggestion.payload);
 
     return {
-      acceptLabel: "Poser les créneaux",
+      acceptLabel: "Bloquer les créneaux",
       lines: proposed.success
-        ? proposed.data.tasks.map((task) => ({
-            key: task.taskId,
-            label: task.title,
+        ? proposed.data.lists.map((list) => ({
+            key: list.listId,
+            label: list.title,
             nested: false,
-            hint: dueLabel(task.dueAt),
+            hint: dueLabel(list.dueAt),
           }))
         : [],
     };
@@ -373,6 +372,20 @@ function useSuggestionPreview(suggestion: Suggestion): {
       })),
     ],
   };
+}
+
+/**
+ * Ce que la carte dit d'une liste proposée : sa nature, puis son échéance.
+ *
+ * L'échéance est celle de la liste entière — c'est ce que la conversation a
+ * donné, et l'accrocher à une de ses lignes ferait croire à une date par item.
+ */
+function hintOf(kind: "todo" | "shopping", dueAt: string | null): { hint?: string } {
+  const parts = [
+    ...(kind === "shopping" ? ["achats"] : []),
+    ...(dueAt === null ? [] : [dueLabel(dueAt)]),
+  ];
+  return parts.length === 0 ? {} : { hint: parts.join(" · ") };
 }
 
 /**

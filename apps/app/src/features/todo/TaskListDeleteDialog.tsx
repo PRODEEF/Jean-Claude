@@ -1,14 +1,5 @@
 import type { TaskList } from "@jc/domain";
-import { Button } from "@/shared/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/dialog";
-import { Text } from "@/shared/ui/text";
+import { Modal } from "@/shared/ui/modal";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
 
 export type TaskListDeleteDialogProps = {
@@ -26,48 +17,33 @@ export type TaskListDeleteDialogProps = {
  * faut dire avant, pas découvrir après.
  */
 export function TaskListDeleteDialog({ list, onClose }: TaskListDeleteDialogProps) {
+  if (!list) return null;
+
+  return <DeleteConfirmation key={list.id} list={list} onClose={onClose} />;
+}
+
+function DeleteConfirmation({ list, onClose }: { list: TaskList; onClose: () => void }) {
   const { removeList } = useTaskActions();
 
   return (
-    <Dialog
-      open={list !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent>
-        {list ? (
-          <>
-            <DialogHeader>
-              <DialogTitle>Supprimer « {list.title} » ?</DialogTitle>
-              <DialogDescription>
-                Les tâches de cette liste seront supprimées avec elle.
-              </DialogDescription>
-            </DialogHeader>
-
-            {/* Message fixe, et non `error.message` : une erreur remontée du
-                serveur peut porter des fragments de requête. */}
-            {removeList.isError ? (
-              <Text className="text-destructive text-sm">
-                La suppression a échoué. Réessayez dans un instant.
-              </Text>
-            ) : null}
-
-            <DialogFooter>
-              <Button variant="outline" onPress={onClose} disabled={removeList.isPending}>
-                <Text>Annuler</Text>
-              </Button>
-              <Button
-                variant="destructive"
-                onPress={() => removeList.mutate(list.id, { onSuccess: onClose })}
-                disabled={removeList.isPending}
-              >
-                <Text>Supprimer</Text>
-              </Button>
-            </DialogFooter>
-          </>
-        ) : null}
-      </DialogContent>
-    </Dialog>
+    <Modal
+      open
+      onClose={onClose}
+      variant="confirm"
+      title={`Supprimer « ${list.title} » ?`}
+      description="Les tâches de cette liste seront supprimées avec elle."
+      // Message fixe, et non `error.message` : une erreur remontée du serveur
+      // peut porter des fragments de requête.
+      error={removeList.isError ? "La suppression a échoué. Réessayez dans un instant." : null}
+      actions={[
+        { label: "Annuler", onPress: onClose, disabled: removeList.isPending },
+        {
+          label: "Supprimer",
+          variant: "destructive",
+          disabled: removeList.isPending,
+          onPress: () => removeList.mutate(list.id, { onSuccess: onClose }),
+        },
+      ]}
+    />
   );
 }

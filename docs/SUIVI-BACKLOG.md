@@ -7,11 +7,11 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **3 septembre 2026** — le modèle qui répond se choisit dans les
-réglages ; les dossiers se déplacent au geste, les todolistes se rangent et se replient,
-et l'interface tient sur une seule police. Le contexte remis au modèle a été repris :
-une proposition ne fait plus taire la réponse, et un dossier hors sujet ne se glisse
-plus dans un rangement.
+Dernière mise à jour : **3 septembre 2026** — le contexte remis au modèle a été repris :
+une proposition ne fait plus taire la réponse, et un dossier hors sujet ne se glisse plus
+dans un rangement. Plus tôt dans la journée : l'échéance est passée de la tâche à la liste,
+les todolistes s'écrivent comme un texte, et le calendrier sait ouvrir une liste sur le
+jour affiché.
 
 **Une carte ne remplace plus la réponse.** Un tour où le modèle s'en tenait à son appel
 d'outil n'écrivait aucun message : la carte s'affichait seule et la question posée restait
@@ -41,6 +41,33 @@ ensemble : deux allers-retours de base en moins avant le premier mot.
 ChatGPT, Claude et Perplexity posent les leurs (§4.2), mais porte la couleur d'accent et
 non le gris des bordures ordinaires : discrète, elle se lisait comme un pied d'écran et se
 traversait sans être vue.
+
+**L'échéance appartient à la liste, plus à ses lignes** (A.2, A.3). « Les courses avant
+samedi » date la liste, pas le paquet de farine : `due_at` quitte `tasks` pour
+`task_lists`, et `event_id` suit le même déplacement — le créneau posé dans l'agenda vaut
+désormais pour la liste entière. La migration ne perd rien : chaque liste hérite de la
+plus proche des échéances que portaient ses tâches. Conséquence en cascade — la semaine
+pose des listes sur leurs jours plutôt que des tâches éparpillées, le calendrier compte
+ce qu'il reste à faire dans les listes échues, et l'assistant date la liste qu'il propose
+puis n'offre plus qu'un créneau par liste au lieu d'un par ligne.
+
+**Les todolistes s'écrivent comme on écrit un texte** (§13.4.1). Chaque ligne est un
+champ : Entrée ouvre la suivante, Retour arrière sur une ligne vide la referme,
+Tabulation la range sous la précédente — le modèle de Things 3, de Todoist et de Notion
+(§4.2). Deux niveaux, pas trois : `tasks.parent_id` et une règle tenue par le service,
+une tâche qui a un parent ne peut pas en être un. La liste part au serveur en un appel
+(`PUT /api/tasks/:id/items`) plutôt qu'un geste à la fois : insérer une ligne au milieu
+décale toutes les suivantes, et une suite d'appels unitaires laisserait la liste
+incohérente entre deux d'entre eux. Le mode « supprimer des éléments » disparaît, devenu
+redondant avec Retour arrière.
+
+**Trois ajustements d'interface.** « Mes listes » passe devant « Semaine » — c'est la
+lecture complète, la semaine n'en est qu'un filtre daté — et une loupe s'ouvre à
+l'extrême droite, qui filtre listes et tâches sur ce qui est déjà chargé, sans aller au
+serveur. L'icône de dossier qui coiffait une todoliste est remplacée par celle de la
+barre latérale : une liste n'est pas un dossier. Dans le calendrier, un bouton
+« + Tâches » ouvre une liste datée sur le jour affiché puis conduit à son éditeur —
+plutôt que d'y reproduire une seconde saisie.
 
 **Le choix du modèle passe à l'utilisateur** (§5.1). Cinq modèles sont proposés dans les
 réglages — un par éditeur, chacun présenté par ce qu'il apporte plutôt que par ce qu'il
@@ -452,8 +479,8 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                                                                                                                                                                                           |
 | A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer d'une conversation sur un dossier (ajouter ou déplacer, au choix) **et d'un dossier dans un autre**, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                 |
-| A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (semaine + toutes les listes, filtrables par dossier), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Tâches groupées par dossier dans l'agenda du calendrier. L'assistant propose désormais les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation. Restent la conversion à la demande et l'édition avant validation → #17                              |
-| A.3  | Détection de tâches datées                            |   🟡   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit désormais de la conversation : les échéances portées par les tâches proposées sont conservées, puis une seconde proposition pose un créneau d'agenda pour chacune. Reste le parsing des dates relatives, laissé au modèle pour l'instant → #18                                                                                             |
+| A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (« Mes listes » puis « Semaine », filtrables par dossier, cherchables à la loupe), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Le contenu s'édite comme un texte — une ligne par tâche, deux niveaux d'indentation, réécrit en un appel. Listes groupées par dossier dans l'agenda du calendrier, où « + Tâches » en ouvre une sur le jour affiché. L'assistant propose désormais les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation. Restent la conversion à la demande et l'édition avant validation → #17                              |
+| A.3  | Détection de tâches datées                            |   🟡   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte désormais sur la **liste** et non sur ses lignes : le modèle date la liste qu'il propose, puis une seconde proposition bloque un créneau d'agenda par liste datée. Reste le parsing des dates relatives, laissé au modèle pour l'instant → #18                                                                                             |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                                                                                                                                                                                                                                                                           |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                                                                                          |
 | A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                                                                                                                                                 |
@@ -505,7 +532,8 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Pagination remontante du fil absente    | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                                                           |
 | Rappels du matin non délivrés           | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26, #20)                                                           |
 | Rendez-vous récurrent non capté         | `suggest_task_list` est désormais traduit et exécuté. `suggest_recurring_event` part toujours en `console.warn` : le modèle est invité à proposer une série et aucune carte n'apparaît. Raccordement à faire (→ A.11)   |
-| Créneaux posés à l'heure de l'échéance  | Un créneau reprend le `dueAt` de sa tâche, sans durée : le calendrier lui en donne une implicite à l'affichage. Une échéance déduite d'une conversation dit quand, pas combien de temps — la durée réelle relève de #18 |
+| Créneaux posés à l'heure de l'échéance  | Un créneau reprend le `dueAt` de sa liste, sans durée : le calendrier lui en donne une implicite à l'affichage. Une échéance déduite d'une conversation dit quand, pas combien de temps — la durée réelle relève de #18 |
+| Sauvegarde de liste en écrasement       | `PUT /tasks/:id/items` réécrit la liste entière depuis ce que l'éditeur tient. Deux appareils ouverts sur la même liste se recouvrent donc l'un l'autre — le dernier à écrire gagne. Sans effet à un seul utilisateur, à revoir si l'édition partagée arrive       |
 | Séries récurrentes non déployées        | Une `rrule` se saisit et se stocke, mais les occurrences ne sont pas calculées : l'événement n'apparaît qu'à son premier créneau. La dépendance `rrule` est déjà au `package.json` de l'API (A.11)                      |
 | Dates saisies au clavier                | Le formulaire d'événement demande `JJ/MM/AAAA` et `HH:MM` en texte, faute de sélecteur natif partagé par les trois cibles. Fonctionnel, mais en deçà des références du §4.2                                             |
 | Node ≥ 22.12 requis                     | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                                                                     |
