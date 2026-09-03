@@ -2,6 +2,7 @@ import type { ReactNode, RefObject } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 import { ChevronLeft } from "lucide-react-native";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
 
@@ -14,6 +15,12 @@ import { useTheme } from "@/shared/providers/theme-provider";
  */
 export const READING_MAX_WIDTH = 900;
 export const GRID_MAX_WIDTH = 1100;
+/**
+ * Un formulaire se tient plus court encore : un champ de 900 pt oblige l'œil à
+ * balayer la ligne entre son libellé et sa saisie. C'est la largeur des
+ * réglages.
+ */
+export const FORM_MAX_WIDTH = 640;
 
 /** Hauteur du bandeau, alignée sur celle de la bannière de l'application. */
 const HEADER_HEIGHT = 56;
@@ -153,7 +160,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  title: { flex: 1, fontSize: fontSize.md, fontWeight: fontWeight.semibold },
+  title: {
+    fontFamily: FONT_FAMILY,
+    flex: 1,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
   scroll: { flex: 1 },
   content: { paddingVertical: spacing.lg, gap: spacing.lg },
 });

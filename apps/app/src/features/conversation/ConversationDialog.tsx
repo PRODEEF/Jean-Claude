@@ -1,14 +1,13 @@
 import { useState } from "react";
-import { ScrollView, View } from "react-native";
+import { View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Trash2 } from "lucide-react-native";
+import { Check } from "lucide-react-native";
 import type { Conversation, Folder, FolderTreeNode } from "@jc/domain";
 import { api } from "@/shared/lib/api";
 import { Button } from "@/shared/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
-import { Separator } from "@/shared/ui/separator";
+import { Modal } from "@/shared/ui/modal";
 import { Text } from "@/shared/ui/text";
 import { useConversationActions } from "./hooks/use-conversation-actions";
 
@@ -29,24 +28,15 @@ export type ConversationDialogProps = {
  * deux endroits, pas une copie (§5.2, A.1).
  */
 export function ConversationDialog({ conversation, onClose, onDeleted }: ConversationDialogProps) {
+  if (!conversation) return null;
+
   return (
-    <Dialog
-      open={conversation !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent>
-        {conversation ? (
-          <ConversationForm
-            key={conversation.id}
-            conversation={conversation}
-            onClose={onClose}
-            onDeleted={onDeleted}
-          />
-        ) : null}
-      </DialogContent>
-    </Dialog>
+    <ConversationForm
+      key={conversation.id}
+      conversation={conversation}
+      onClose={onClose}
+      onDeleted={onDeleted}
+    />
   );
 }
 
@@ -83,89 +73,73 @@ function ConversationForm({
   };
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle>Conversation</DialogTitle>
-      </DialogHeader>
+    <Modal
+      open
+      onClose={onClose}
+      title="Conversation"
+      description="Renommez-la, et cochez tous les dossiers dont elle relève."
+      // Message fixe, et non `error.message` : une erreur remontée du serveur
+      // peut porter des fragments de requête, donc des données utilisateur.
+      error={
+        save.isError || remove.isError ? "L'opération a échoué. Réessayez dans un instant." : null
+      }
+      // Une bascule du libellé plutôt qu'une seconde fenêtre par-dessus
+      // celle-ci : deux modales superposées ne disent plus laquelle répond à
+      // quoi. C'est déjà la forme retenue pour supprimer une todoliste.
+      destructiveAction={{
+        label: confirmingDelete ? "Confirmer la suppression" : "Supprimer la conversation",
+        variant: confirmingDelete ? "destructive" : "ghost",
+        disabled: pending,
+        onPress: () => {
+          if (!confirmingDelete) {
+            setConfirmingDelete(true);
+            return;
+          }
+          remove.mutate(undefined, { onSuccess: onDeleted });
+        },
+      }}
+      actions={[
+        { label: "Annuler", onPress: onClose, disabled: pending },
+        {
+          label: "Enregistrer",
+          variant: "default",
+          onPress: submit,
+          disabled: trimmed.length === 0 || pending,
+        },
+      ]}
+    >
+      <View className="gap-2">
+        <Text className="text-muted-foreground text-xs">Titre</Text>
+        <Input
+          value={title}
+          onChangeText={setTitle}
+          placeholder="Titre de la conversation"
+          accessibilityLabel="Titre de la conversation"
+          returnKeyType="done"
+          onSubmitEditing={submit}
+          editable={!pending}
+        />
+      </View>
 
-      <Input
-        value={title}
-        onChangeText={setTitle}
-        placeholder="Titre de la conversation"
-        accessibilityLabel="Titre de la conversation"
-        returnKeyType="done"
-        onSubmitEditing={submit}
-        editable={!pending}
-      />
-
-      <View className="gap-1">
-        <Text className="text-xs font-medium text-muted-foreground">Ranger dans des dossiers</Text>
+      <View className="gap-2">
+        <Text className="text-muted-foreground text-xs">Ranger dans des dossiers</Text>
 
         {roots.length === 0 ? (
-          <Text className="py-1 text-xs italic text-muted-foreground">
+          <Text className="text-muted-foreground text-sm italic">
             Aucun dossier pour le moment. Créez-en un depuis la liste des dossiers.
           </Text>
         ) : (
-          <ScrollView className="max-h-52">
+          <View className="border-border overflow-hidden rounded-md border">
             <FolderChecklist
               nodes={roots}
               selected={selected}
               onToggle={toggle}
               disabled={pending}
             />
-          </ScrollView>
+          </View>
         )}
       </View>
-
-      {/* Message fixe, et non `error.message` : une erreur remontée du serveur
-          peut porter des fragments de requête, donc des données utilisateur. */}
-      {save.isError || remove.isError ? (
-        <Text className="text-sm text-destructive">
-          L'opération a échoué. Réessayez dans un instant.
-        </Text>
-      ) : null}
-
-      <DialogFooter>
-        <Button variant="outline" onPress={onClose} disabled={pending}>
-          <Text>Annuler</Text>
-        </Button>
-        <Button onPress={submit} disabled={trimmed.length === 0 || pending}>
-          <Text>Enregistrer</Text>
-        </Button>
-      </DialogFooter>
-
-      <Separator />
-
-      {confirmingDelete ? (
-        <View className="gap-2">
-          <Text className="text-sm text-muted-foreground">
-            Supprimer « {conversation.title} » ? Les messages seront perdus.
-          </Text>
-          <View className="flex-row justify-end gap-2">
-            <Button variant="outline" onPress={() => setConfirmingDelete(false)} disabled={pending}>
-              <Text>Annuler</Text>
-            </Button>
-            <Button
-              variant="destructive"
-              onPress={() => remove.mutate(undefined, { onSuccess: onDeleted })}
-              disabled={pending}
-            >
-              <Text>Supprimer</Text>
-            </Button>
-          </View>
-        </View>
-      ) : (
-        <Button
-          variant="ghost"
-          onPress={() => setConfirmingDelete(true)}
-          disabled={pending}
-          className="justify-start gap-2 px-2"
-        >
-          <Icon as={Trash2} size={16} className="text-destructive" />
-          <Text className="text-sm text-destructive">Supprimer la conversation</Text>
-        </Button>
-      )}
-    </>
+    </Modal>
   );
 }
 
@@ -198,7 +172,7 @@ function FolderChecklist({
             disabled={disabled}
           />
           {node.children.length > 0 ? (
-            <View className="ml-4 border-l border-border pl-1">
+            <View className="border-border ml-5 border-l pl-1">
               <FolderChecklist
                 nodes={node.children}
                 selected={selected}
@@ -236,18 +210,18 @@ function FolderCheck({
       role="checkbox"
       accessibilityState={{ checked }}
       accessibilityLabel={folder.name}
-      className="h-11 justify-start gap-3 px-2"
+      className="h-11 justify-start gap-3 rounded-none px-3 sm:h-11"
     >
       <View
         className={
           checked
-            ? "size-5 items-center justify-center rounded border border-primary bg-primary"
-            : "size-5 items-center justify-center rounded border border-border"
+            ? "border-primary bg-primary size-5 items-center justify-center rounded border"
+            : "border-border size-5 items-center justify-center rounded border"
         }
       >
         {checked ? <Icon as={Check} size={14} className="text-primary-foreground" /> : null}
       </View>
-      <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
+      <Text className="text-foreground flex-1 text-sm" numberOfLines={1}>
         {folder.name}
       </Text>
     </Button>

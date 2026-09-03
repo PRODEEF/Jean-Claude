@@ -15,6 +15,7 @@ import {
   type Message,
   type MessageStreamEvent,
   type Paginated,
+  type ReplaceTasks,
   type ResolveSuggestion,
   type SearchFilters,
   type SearchResult,
@@ -133,6 +134,16 @@ export class JeanClaudeClient {
 
     removeTask: (listId: string, taskId: string) =>
       this.http.request<void>(`/tasks/${listId}/items/${taskId}`, { method: "DELETE" }),
+
+    /**
+     * Réécrit le contenu d'une liste en un appel.
+     *
+     * L'éditeur se tient comme une zone de texte : insérer une ligne au milieu
+     * décale toutes les suivantes, et une suite d'appels unitaires laisserait
+     * la liste incohérente entre deux d'entre eux.
+     */
+    replaceTasks: (listId: string, input: ReplaceTasks) =>
+      this.http.request<Task[]>(`/tasks/${listId}/items`, { method: "PUT", body: input }),
   };
 
   /**

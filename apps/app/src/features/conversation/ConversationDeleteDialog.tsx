@@ -1,14 +1,5 @@
 import type { Conversation } from "@jc/domain";
-import { Button } from "@/shared/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/dialog";
-import { Text } from "@/shared/ui/text";
+import { Modal } from "@/shared/ui/modal";
 import { useConversationActions } from "./hooks/use-conversation-actions";
 
 export type ConversationDeleteDialogProps = {
@@ -31,28 +22,19 @@ export function ConversationDeleteDialog({
   onClose,
   onDeleted,
 }: ConversationDeleteDialogProps) {
+  if (!conversation) return null;
+
   return (
-    <Dialog
-      open={conversation !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent>
-        {conversation ? (
-          <DeleteForm
-            key={conversation.id}
-            conversation={conversation}
-            onClose={onClose}
-            onDeleted={onDeleted}
-          />
-        ) : null}
-      </DialogContent>
-    </Dialog>
+    <DeleteConfirmation
+      key={conversation.id}
+      conversation={conversation}
+      onClose={onClose}
+      onDeleted={onDeleted}
+    />
   );
 }
 
-function DeleteForm({
+function DeleteConfirmation({
   conversation,
   onClose,
   onDeleted,
@@ -64,32 +46,24 @@ function DeleteForm({
   const { remove } = useConversationActions(conversation.id);
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle>Supprimer « {conversation.title} » ?</DialogTitle>
-        <DialogDescription>Les messages de cette conversation seront perdus.</DialogDescription>
-      </DialogHeader>
-
-      {/* Message fixe, et non `error.message` : une erreur remontée du serveur
-          peut porter des fragments de requête. */}
-      {remove.isError ? (
-        <Text className="text-sm text-destructive">
-          La suppression a échoué. Réessayez dans un instant.
-        </Text>
-      ) : null}
-
-      <DialogFooter>
-        <Button variant="outline" onPress={onClose} disabled={remove.isPending}>
-          <Text>Annuler</Text>
-        </Button>
-        <Button
-          variant="destructive"
-          onPress={() => remove.mutate(undefined, { onSuccess: () => onDeleted(conversation) })}
-          disabled={remove.isPending}
-        >
-          <Text>Supprimer</Text>
-        </Button>
-      </DialogFooter>
-    </>
+    <Modal
+      open
+      onClose={onClose}
+      variant="confirm"
+      title={`Supprimer « ${conversation.title} » ?`}
+      description="Les messages de cette conversation seront perdus."
+      // Message fixe, et non `error.message` : une erreur remontée du serveur
+      // peut porter des fragments de requête.
+      error={remove.isError ? "La suppression a échoué. Réessayez dans un instant." : null}
+      actions={[
+        { label: "Annuler", onPress: onClose, disabled: remove.isPending },
+        {
+          label: "Supprimer",
+          variant: "destructive",
+          disabled: remove.isPending,
+          onPress: () => remove.mutate(undefined, { onSuccess: () => onDeleted(conversation) }),
+        },
+      ]}
+    />
   );
 }

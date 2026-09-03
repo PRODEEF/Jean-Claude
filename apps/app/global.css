@@ -10,6 +10,10 @@
  * elles, la page apparaîtrait un instant sans couleurs.
  */
 :root {
+  /* Le premier rendu web, avant que react-native-web ne pose sa propre police
+     sur chaque texte : sans cette ligne, la page clignote de Times à Arial. */
+  font-family: Arial, Helvetica, sans-serif;
+
   --background: #ffffff;
   --foreground: #18181b;
   --card: #ffffff;

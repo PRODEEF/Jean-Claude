@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type {
   CreateTask,
   CreateTaskList,
+  ReplaceTasks,
   Task,
   TaskList,
   TaskListWithTasks,
@@ -8,7 +10,12 @@ import type {
   UpdateTaskList,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
-import type { ITaskRepository, TaskListOrigin, TaskPatch } from "./task.repository.interface.js";
+import type {
+  ITaskRepository,
+  TaskListOrigin,
+  TaskPatch,
+  TaskRowInput,
+} from "./task.repository.interface.js";
 
 export class TaskService {
   constructor(private readonly lists: ITaskRepository) {}
@@ -23,6 +30,19 @@ export class TaskService {
    */
   list(accessToken: string): Promise<TaskListWithTasks[]> {
     return this.lists.findAll(accessToken);
+  }
+
+  /**
+   * Listes nées d'une conversation.
+   *
+   * Sert la consigne système : le modèle ne peut compléter une liste que s'il
+   * sait laquelle existe et ce qu'elle contient. Bornées à la conversation
+   * courante plutôt qu'à tout le compte — « complète la liste » désigne celle
+   * dont on vient de parler, et verser toutes les listes de l'utilisateur dans
+   * la consigne la ferait grossir à chaque tour.
+   */
+  listForConversation(conversationId: string, accessToken: string): Promise<TaskListWithTasks[]> {
+    return this.lists.findByConversation(conversationId, accessToken);
   }
 
   createList(
@@ -85,20 +105,52 @@ export class TaskService {
   }
 
   /**
-   * Rattache la tâche au créneau posé pour elle (A.3).
+   * Rattache la liste au créneau posé pour elle (A.3).
    *
-   * Méthode à part de `updateTask` : `eventId` ne fait pas partie de ce qu'un
+   * Méthode à part de `updateList` : `eventId` ne fait pas partie de ce qu'un
    * client peut modifier, et le calendrier s'appuie sur ce lien pour ne pas
-   * afficher deux fois la même échéance — la tâche et son créneau.
+   * afficher deux fois la même échéance — la liste et son créneau.
    */
-  async linkEvent(
+  async linkEvent(listId: string, eventId: string, accessToken: string): Promise<TaskList> {
+    await this.requireList(listId, accessToken);
+    return this.lists.updateList(listId, { eventId }, accessToken);
+  }
+
+  /**
+   * Réécrit le contenu d'une liste, tel que l'éditeur le tient (§13.4.1).
+   *
+   * L'éditeur envoie des profondeurs ; la filiation se résout ici, dans le
+   * service, parce que c'est une règle métier : une ligne indentée appartient
+   * à la dernière ligne de premier niveau qui la précède, et une liste qui
+   * commencerait par une ligne indentée n'a pas de parent à lui donner — elle
+   * remonte au premier niveau plutôt que de faire échouer la sauvegarde.
+   *
+   * Les identifiants des lignes nouvelles sont posés ici et non par Postgres :
+   * une sous-tâche doit pouvoir désigner un parent créé dans la même passe.
+   */
+  async replaceTasks(
+    userId: string,
     listId: string,
-    taskId: string,
-    eventId: string,
+    input: ReplaceTasks,
     accessToken: string,
-  ): Promise<Task> {
-    await this.requireTask(listId, taskId, accessToken);
-    return this.lists.updateTask(listId, taskId, { eventId }, accessToken);
+  ): Promise<Task[]> {
+    const list = await this.requireList(listId, accessToken);
+    const known = new Set(list.tasks.map((task) => task.id));
+
+    const rows: TaskRowInput[] = [];
+    let parentId: string | null = null;
+
+    input.items.forEach((item, position) => {
+      // Un identifiant venu d'une autre liste rattacherait une tâche étrangère
+      // à celle-ci : il est traité comme une ligne nouvelle.
+      const id = item.id && known.has(item.id) ? item.id : randomUUID();
+      const nested = item.depth > 0 && parentId !== null;
+
+      rows.push({ id, title: item.title, parentId: nested ? parentId : null, position });
+      if (!nested) parentId = id;
+    });
+
+    return this.lists.replaceTasks(userId, listId, rows, accessToken);
   }
 
   async deleteTask(listId: string, taskId: string, accessToken: string): Promise<void> {

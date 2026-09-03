@@ -1,15 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { Check, Copy, Pencil, RotateCcw } from "lucide-react-native";
 import type { Message } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { Markdown } from "@/shared/ui/Markdown";
 import { formatRelativeTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 /** Retour visuel après une copie réussie, avant de revenir à l'icône normale. */
 const COPIED_FEEDBACK_MS = 1500;
+
+/**
+ * Délai de grâce avant de masquer les commandes.
+ *
+ * Le curseur qui descend du texte vers une icône traverse plusieurs zones
+ * survolables, et chaque frontière franchie produit une sortie de survol. Sans
+ * ce délai, la commande disparaissait sous le curseur juste avant le clic.
+ */
+const HOVER_GRACE_MS = 150;
 
 export type MessageRowProps = {
   message: Message;
@@ -36,6 +46,10 @@ export type MessageRowProps = {
  * quand elles sont invisibles — sinon le fil se décale sous le curseur à chaque
  * passage de souris.
  *
+ * Le survol vaut pour la rangée entière, horodatage et commandes compris, et
+ * non pour le seul texte : viser une icône revient sinon à quitter la zone qui
+ * l'a fait apparaître.
+ *
  * Sans souris, `onHoverIn` ne se déclenche jamais : l'appui long prend le
  * relais, comme partout ailleurs dans l'application.
  */
@@ -50,8 +64,22 @@ export function MessageRow({
   const [revealed, setRevealed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isUser = message.role === "user";
+
+  const reveal = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = null;
+    setRevealed(true);
+  }, []);
+
+  const scheduleHide = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setRevealed(false), HOVER_GRACE_MS);
+  }, []);
+
+  useEffect(() => () => (hideTimer.current ? clearTimeout(hideTimer.current) : undefined), []);
 
   if (editing) {
     return (
@@ -78,8 +106,8 @@ export function MessageRow({
 
   return (
     <Pressable
-      onHoverIn={() => setRevealed(true)}
-      onHoverOut={() => setRevealed(false)}
+      onHoverIn={reveal}
+      onHoverOut={scheduleHide}
       onLongPress={() => setRevealed((current) => !current)}
       style={isUser ? styles.rowEnd : styles.rowStart}
     >
@@ -122,7 +150,14 @@ export function MessageRow({
               {formatRelativeTime(message.createdAt)}
             </Text>
 
-            <IconAction icon={RotateCcw} label="Réessayer" onPress={onRetry} disabled={busy} />
+            <IconAction
+              icon={RotateCcw}
+              label="Réessayer"
+              onPress={onRetry}
+              disabled={busy}
+              onHoverIn={reveal}
+              onHoverOut={scheduleHide}
+            />
 
             {/* Corriger n'a de sens que sur sa propre parole : le fil est la
                 trace de ce que l'assistant a répondu, pas un brouillon. */}
@@ -135,10 +170,12 @@ export function MessageRow({
                   setEditing(true);
                 }}
                 disabled={busy}
+                onHoverIn={reveal}
+                onHoverOut={scheduleHide}
               />
             ) : null}
 
-            <CopyAction content={message.content} />
+            <CopyAction content={message.content} onHoverIn={reveal} onHoverOut={scheduleHide} />
           </>
         ) : null}
       </View>
@@ -204,7 +241,15 @@ function MessageEditor({
  * L'icône se change en coche le temps d'un battement : sans ce retour, rien à
  * l'écran ne dit que l'appui a fait quelque chose.
  */
-function CopyAction({ content }: { content: string }) {
+function CopyAction({
+  content,
+  onHoverIn,
+  onHoverOut,
+}: {
+  content: string;
+  onHoverIn: () => void;
+  onHoverOut: () => void;
+}) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -215,6 +260,8 @@ function CopyAction({ content }: { content: string }) {
       icon={copied ? Check : Copy}
       label={copied ? "Message copié" : "Copier"}
       disabled={false}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
       onPress={() => {
         Clipboard.setStringAsync(content)
           .then(() => {
@@ -239,17 +286,24 @@ function CopyAction({ content }: { content: string }) {
  *
  * 28 pt de côté pour ne pas alourdir le fil, plus 8 pt de `hitSlop` : la zone
  * réellement touchable atteint les 44 pt de `MIN_TOUCH_TARGET`.
+ *
+ * Elle relaie le survol à la rangée : la survoler, c'est encore survoler le
+ * message, et c'est ce qui la maintient affichée le temps du clic.
  */
 function IconAction({
   icon: Glyph,
   label,
   onPress,
   disabled,
+  onHoverIn,
+  onHoverOut,
 }: {
   icon: typeof Copy;
   label: string;
   onPress: () => void;
   disabled: boolean;
+  onHoverIn: () => void;
+  onHoverOut: () => void;
 }) {
   const { palette } = useTheme();
 
@@ -257,6 +311,8 @@ function IconAction({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -282,8 +338,13 @@ const styles = StyleSheet.create({
    * colonne, alignée sur les autres textes de l'écran.
    */
   plain: { alignSelf: "flex-start", maxWidth: "100%", paddingHorizontal: 0 },
-  bubbleText: { fontSize: fontSize.md, lineHeight: 22 },
-  question: { fontSize: fontSize.sm, lineHeight: 20, marginBottom: spacing.xs },
+  bubbleText: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22 },
+  question: {
+    fontFamily: FONT_FAMILY,
+    fontSize: fontSize.sm,
+    lineHeight: 20,
+    marginBottom: spacing.xs,
+  },
   actions: {
     height: 28,
     flexDirection: "row",
@@ -292,7 +353,7 @@ const styles = StyleSheet.create({
   },
   actionsStart: { justifyContent: "flex-start" },
   actionsEnd: { justifyContent: "flex-end" },
-  elapsed: { fontSize: fontSize.xs, marginRight: spacing.xs },
+  elapsed: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, marginRight: spacing.xs },
   iconAction: {
     width: 28,
     height: 28,
@@ -302,6 +363,7 @@ const styles = StyleSheet.create({
   },
   editor: { gap: spacing.sm, alignSelf: "stretch" },
   editorInput: {
+    fontFamily: FONT_FAMILY,
     minHeight: MIN_TOUCH_TARGET,
     maxHeight: 220,
     padding: spacing.md,
@@ -318,5 +380,5 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
     borderRadius: radius.md,
   },
-  editorLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
+  editorLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
 });

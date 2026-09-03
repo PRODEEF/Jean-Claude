@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { MessageSquare, Search, X } from "lucide-react-native";
 import type { Conversation, DateShortcut, FolderTreeNode, SearchFilters } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { useTheme } from "@/shared/providers/theme-provider";
 
@@ -512,11 +513,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.lg,
     overflow: "hidden",
-    elevation: 12,
-    shadowColor: "#000000",
-    shadowOpacity: 0.24,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
+    // `boxShadow` plutôt que les `shadow*` + `elevation` d'autrefois : ces
+    // derniers sont dépréciés par react-native-web, et la nouvelle
+    // architecture rend `boxShadow` sur les trois plateformes.
+    boxShadow: "0px 8px 24px rgba(0, 0, 0, 0.24)",
   },
   field: {
     flexDirection: "row",
@@ -524,7 +524,12 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
   },
-  input: { flex: 1, minHeight: MIN_TOUCH_TARGET + 12, fontSize: fontSize.md },
+  input: {
+    fontFamily: FONT_FAMILY,
+    flex: 1,
+    minHeight: MIN_TOUCH_TARGET + 12,
+    fontSize: fontSize.md,
+  },
   close: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
   chipRow: {
     flexDirection: "row",
@@ -540,7 +545,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.pill,
   },
-  chipText: { fontSize: fontSize.xs, fontWeight: fontWeight.medium },
+  chipText: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.medium },
   dates: {
     flexDirection: "row",
     gap: spacing.md,
@@ -548,8 +553,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   dateField: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  dateLabel: { fontSize: fontSize.xs },
+  dateLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs },
   dateInput: {
+    fontFamily: FONT_FAMILY,
     width: 120,
     height: 32,
     paddingHorizontal: spacing.sm,
@@ -569,9 +575,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   rowText: { flex: 1, gap: 2 },
-  title: { fontSize: fontSize.sm, fontWeight: fontWeight.medium },
-  meta: { fontSize: fontSize.xs },
+  title: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
+  meta: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs },
   enter: {
+    fontFamily: FONT_FAMILY,
     fontSize: fontSize.xs,
     borderWidth: 1,
     borderRadius: radius.sm,
@@ -579,5 +586,5 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
   },
   empty: { padding: spacing.xl },
-  emptyText: { fontSize: fontSize.sm, textAlign: "center" },
+  emptyText: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, textAlign: "center" },
 });

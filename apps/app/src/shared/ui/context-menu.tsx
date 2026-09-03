@@ -1,5 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 /** Une entrée du menu. */
@@ -106,11 +107,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     // Ombre portée : le menu flotte au-dessus de la barre latérale, dont il
     // reprendrait sinon le fond à un ton près.
-    elevation: 8,
-    shadowColor: "#000000",
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
+    // `boxShadow` plutôt que les `shadow*` + `elevation` d'autrefois : ces
+    // derniers sont dépréciés par react-native-web, et la nouvelle
+    // architecture rend `boxShadow` sur les trois plateformes.
+    boxShadow: "0px 4px 16px rgba(0, 0, 0, 0.18)",
   },
   item: {
     minHeight: MIN_TOUCH_TARGET,
@@ -118,6 +118,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderRadius: radius.sm,
   },
-  label: { fontSize: fontSize.sm },
+  label: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm },
   separator: { height: 1, marginVertical: spacing.xs },
 });

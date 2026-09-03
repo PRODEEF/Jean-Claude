@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { Pencil, X } from "lucide-react-native";
+import { MessageCircleQuestion, Pencil, X } from "lucide-react-native";
+import { FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
+import { NativeOnlyAnimatedView } from "@/shared/ui/native-only-animated-view";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 export type QuestionCardProps = {
@@ -26,60 +29,71 @@ export type QuestionCardProps = {
  *
  * Aucune n'est imposée : « Autre chose » rend la main à la saisie et
  * « Passer » referme la carte. L'assistant propose, il n'enferme pas (§12.1).
+ *
+ * Elle porte la couleur d'accent, et non le gris des bordures ordinaires :
+ * posée entre le fil et la saisie, une carte discrète se lit comme un pied
+ * d'écran et se traverse sans être vue — c'est ce qui s'est produit. La
+ * question est ce qui attend une réponse à cet instant, elle doit se distinguer
+ * de tout ce qui l'entoure.
  */
 export function QuestionCard({ question, choices, onChoose, onWrite, onSkip }: QuestionCardProps) {
   const { palette } = useTheme();
 
   return (
-    <View
-      style={[
-        styles.card,
-        { backgroundColor: palette.surfaceElevated, borderColor: palette.border },
-      ]}
-    >
-      <View style={styles.header}>
-        <Text numberOfLines={2} style={[styles.question, { color: palette.text }]}>
-          {question}
-        </Text>
-        <Pressable
-          onPress={onSkip}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel="Fermer les réponses proposées"
-          style={styles.close}
-        >
-          <X size={16} color={palette.textMuted} />
-        </Pressable>
+    // L'apparition glissée signale la carte sans la faire clignoter. Le web
+    // n'anime pas — la bordure d'accent y porte seule la distinction.
+    <NativeOnlyAnimatedView entering={FadeInDown.duration(180).reduceMotion(ReduceMotion.System)}>
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: palette.surfaceElevated, borderColor: palette.accent },
+        ]}
+      >
+        <View style={[styles.header, { backgroundColor: palette.accentSoft }]}>
+          <MessageCircleQuestion size={16} color={palette.accent} />
+          <Text numberOfLines={2} style={[styles.question, { color: palette.accentSoftText }]}>
+            {question}
+          </Text>
+          <Pressable
+            onPress={onSkip}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Fermer les réponses proposées"
+            style={styles.close}
+          >
+            <X size={16} color={palette.accentSoftText} />
+          </Pressable>
+        </View>
+
+        {choices.map((choice, index) => (
+          <ChoiceRow key={choice} rank={index + 1} choice={choice} onChoose={onChoose} />
+        ))}
+
+        <View style={[styles.footer, { borderTopColor: palette.border }]}>
+          <Pressable
+            onPress={onWrite}
+            accessibilityRole="button"
+            accessibilityLabel="Répondre autre chose"
+            style={styles.write}
+          >
+            <Pencil size={14} color={palette.textMuted} />
+            <Text style={[styles.writeLabel, { color: palette.textMuted }]}>Autre chose</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={onSkip}
+            accessibilityRole="button"
+            accessibilityLabel="Passer la question"
+            // 32 pt de haut pour ne pas alourdir le pied de carte ; le débord lui
+            // rend la cible tactile de 44 pt.
+            hitSlop={{ top: 6, bottom: 6 }}
+            style={[styles.skip, { borderColor: palette.border }]}
+          >
+            <Text style={[styles.skipLabel, { color: palette.textMuted }]}>Passer</Text>
+          </Pressable>
+        </View>
       </View>
-
-      {choices.map((choice, index) => (
-        <ChoiceRow key={choice} rank={index + 1} choice={choice} onChoose={onChoose} />
-      ))}
-
-      <View style={[styles.footer, { borderTopColor: palette.border }]}>
-        <Pressable
-          onPress={onWrite}
-          accessibilityRole="button"
-          accessibilityLabel="Répondre autre chose"
-          style={styles.write}
-        >
-          <Pencil size={14} color={palette.textMuted} />
-          <Text style={[styles.writeLabel, { color: palette.textMuted }]}>Autre chose</Text>
-        </Pressable>
-
-        <Pressable
-          onPress={onSkip}
-          accessibilityRole="button"
-          accessibilityLabel="Passer la question"
-          // 32 pt de haut pour ne pas alourdir le pied de carte ; le débord lui
-          // rend la cible tactile de 44 pt.
-          hitSlop={{ top: 6, bottom: 6 }}
-          style={[styles.skip, { borderColor: palette.border }]}
-        >
-          <Text style={[styles.skipLabel, { color: palette.textMuted }]}>Passer</Text>
-        </Pressable>
-      </View>
-    </View>
+    </NativeOnlyAnimatedView>
   );
 }
 
@@ -138,7 +152,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  question: { flex: 1, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  question: {
+    fontFamily: FONT_FAMILY,
+    flex: 1,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
   close: { width: 24, height: 24, alignItems: "center", justifyContent: "center" },
   choice: {
     flexDirection: "row",
@@ -150,8 +169,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   /** Le rang tient sa propre colonne : les libellés restent alignés entre eux. */
-  rank: { width: 16, fontSize: fontSize.xs },
-  choiceLabel: { flex: 1, fontSize: fontSize.sm },
+  rank: { fontFamily: FONT_FAMILY, width: 16, fontSize: fontSize.xs },
+  choiceLabel: { fontFamily: FONT_FAMILY, flex: 1, fontSize: fontSize.sm },
   footer: {
     flexDirection: "row",
     alignItems: "center",
@@ -168,7 +187,7 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
     flexShrink: 1,
   },
-  writeLabel: { fontSize: fontSize.sm },
+  writeLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm },
   skip: {
     minHeight: 32,
     justifyContent: "center",
@@ -176,5 +195,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.md,
   },
-  skipLabel: { fontSize: fontSize.xs, fontWeight: fontWeight.medium },
+  skipLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.medium },
 });

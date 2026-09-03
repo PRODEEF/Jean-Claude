@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   createTaskListSchema,
   createTaskSchema,
+  replaceTasksSchema,
   updateTaskListSchema,
   updateTaskSchema,
   uuidSchema,
@@ -47,10 +48,15 @@ export const taskRoutes = new Hono<AuthEnv>()
   .post("/:id/items", idParam, validate("json", createTaskSchema), async (c) => {
     const user = c.get("user");
     const { id } = c.req.valid("param");
-    return c.json(
-      await service.addTask(user.id, id, c.req.valid("json"), user.accessToken),
-      201,
-    );
+    return c.json(await service.addTask(user.id, id, c.req.valid("json"), user.accessToken), 201);
+  })
+
+  // Avant la route paramétrée : `/items` doit être lu comme la collection
+  // entière, pas comme une tâche dont l'identifiant serait « items ».
+  .put("/:id/items", idParam, validate("json", replaceTasksSchema), async (c) => {
+    const user = c.get("user");
+    const { id } = c.req.valid("param");
+    return c.json(await service.replaceTasks(user.id, id, c.req.valid("json"), user.accessToken));
   })
 
   .patch("/:id/items/:itemId", itemParams, validate("json", updateTaskSchema), async (c) => {

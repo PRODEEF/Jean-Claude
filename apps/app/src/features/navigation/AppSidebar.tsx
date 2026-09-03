@@ -7,11 +7,13 @@ import {
   ChevronRight,
   Folder as FolderIcon,
   ListChecks,
+  MoreHorizontal,
   Plus,
   Sparkles,
 } from "lucide-react-native";
 import type { Conversation, Folder, FolderTreeNode, TaskList } from "@jc/domain";
 import { api } from "@/shared/lib/api";
+import { cn } from "@/shared/lib/utils";
 import {
   ConversationContextMenu,
   type ConversationMenuTarget,
@@ -25,9 +27,14 @@ import {
 import { ConversationNameRow } from "@/features/conversation/ConversationNameRow";
 import { FolderContextMenu, type FolderMenuTarget } from "@/features/folder/FolderContextMenu";
 import { FolderDeleteDialog } from "@/features/folder/FolderDeleteDialog";
+import { moveErrorMessage, useFolderActions } from "@/features/folder/hooks/use-folder-actions";
 import { FolderNameRow, type FolderNameTarget } from "@/features/folder/FolderNameRow";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
-import { useConversationDragSource, useFolderDropTarget } from "./conversation-drag";
+import {
+  useConversationDragSource,
+  useFolderDragSource,
+  useFolderDropTarget,
+} from "./sidebar-drag";
 import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { Icon } from "@/shared/ui/icon";
@@ -94,6 +101,9 @@ export function AppSidebar({
   const [deletingConversation, setDeletingConversation] = useState<Conversation | null>(null);
   /** Conversation lâchée sur un dossier, en attente du choix de rangement. */
   const [drop, setDrop] = useState<ConversationDrop | null>(null);
+  /** Ce qu'a répondu le serveur au dernier déplacement raté, `null` sinon. */
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const { move } = useFolderActions();
 
   const go = (href: string) => {
     router.push(href as never);
@@ -128,6 +138,35 @@ export function AppSidebar({
     setDrop({ conversation, folder });
   };
 
+  /**
+   * Dossier lâché sur un autre, ou sur l'en-tête de section pour le remonter à
+   * la racine. Sa branche entière le suit — sous-dossiers, conversations et
+   * todolistes gardent leur rangement relatif.
+   *
+   * Les trois refus se lisent depuis l'arborescence déjà chargée. Le serveur
+   * les refuse aussi, mais un aller-retour pour un geste sans effet afficherait
+   * une erreur là où il ne s'est rien passé. La profondeur et les homonymes,
+   * eux, restent à sa charge : la barre n'a pas de quoi les trancher.
+   */
+  const moveFolder = (targetId: string | null, movedId: string) => {
+    if (movedId === targetId) return;
+
+    const moved = findGroup(groups, movedId);
+    if (!moved) return;
+    if (moved.folder.parentId === targetId) return;
+    if (targetId !== null && findGroup(moved.children, targetId)) return;
+
+    setMoveError(null);
+    move.mutate(
+      { id: movedId, parentId: targetId },
+      { onError: (cause) => setMoveError(moveErrorMessage(cause)) },
+    );
+  };
+
+  const { ref: rootDropRef, isOver: isOverRoot } = useFolderDropTarget({
+    onFolder: (folderId) => moveFolder(null, folderId),
+  });
+
   return (
     <View className="h-full border-r border-border bg-secondary" style={{ width }}>
       <View className="gap-2 p-3">
@@ -146,7 +185,7 @@ export function AppSidebar({
           </View>
           <View className="flex-1">
             <Text className="text-sm font-semibold text-foreground">{assistantName}</Text>
-            <Text className="text-xs text-muted-foreground">Canal permanent</Text>
+            <Text className="text-xs font-normal text-muted-foreground">Canal permanent</Text>
           </View>
         </Button>
 
@@ -163,9 +202,16 @@ export function AppSidebar({
       </View>
 
       <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
-        <SectionLabel action={{ label: "Créer un dossier", onPress: createRootFolder }}>
-          Dossiers
-        </SectionLabel>
+        {/* L'en-tête fait office de zone racine : y déposer un dossier le sort
+            de son parent. Sans elle, le geste serait à sens unique — on saurait
+            ranger un dossier, jamais l'en ressortir. */}
+        <View ref={rootDropRef} className={cx("rounded-md", isOverRoot)}>
+          <SectionLabel action={{ label: "Créer un dossier", onPress: createRootFolder }}>
+            Dossiers
+          </SectionLabel>
+        </View>
+
+        {moveError ? <Text className="text-destructive px-2 py-1 text-xs">{moveError}</Text> : null}
 
         {/* Message fixe, et non `error.message` : une erreur brute de fetch ou
             du serveur peut porter des fragments de requête, donc des données
@@ -179,7 +225,9 @@ export function AppSidebar({
         {!error && !isLoading && groups.length === 0 && naming === null ? (
           <Button variant="ghost" onPress={createRootFolder} className="justify-start gap-2 px-2">
             <Icon as={Plus} size={14} className="text-muted-foreground" />
-            <Text className="text-xs text-muted-foreground">Créer un premier dossier</Text>
+            <Text className="text-xs font-normal text-muted-foreground">
+              Créer un premier dossier
+            </Text>
           </Button>
         ) : null}
 
@@ -198,6 +246,7 @@ export function AppSidebar({
             onConversationMenu={setConversationMenu}
             onCloseRenaming={() => setRenaming(null)}
             onDropConversation={dropOnFolder}
+            onDropFolder={moveFolder}
           />
         ))}
 
@@ -240,7 +289,15 @@ export function AppSidebar({
             className={cx("justify-start gap-3 px-2", pathname === link.href)}
           >
             <Icon as={link.icon} size={16} className="text-muted-foreground" />
-            <Text className="text-sm text-foreground">{link.label}</Text>
+            <Text
+              className={
+                pathname === link.href
+                  ? "text-sm font-medium text-foreground"
+                  : "text-sm font-normal text-foreground"
+              }
+            >
+              {link.label}
+            </Text>
           </Button>
         ))}
       </View>
@@ -395,11 +452,15 @@ function cx(base: string, active: boolean): string {
  * Libellé d'une rangée de la barre : gris tant que la sélection est ailleurs,
  * pour que l'œil trouve d'un coup la branche ouverte au milieu de
  * l'arborescence. Dossiers et conversations suivent la même règle.
+ *
+ * `font-normal` est explicite et non omis : `Button` publie `font-medium` par
+ * son `TextClassContext`, dont toute rangée hériterait sinon — l'arborescence
+ * entière paraissait alors sélectionnée.
  */
 function rowLabel(active: boolean): string {
   return active
     ? "flex-1 text-sm font-medium text-foreground"
-    : "flex-1 text-sm text-muted-foreground";
+    : "flex-1 text-sm font-normal text-muted-foreground";
 }
 
 function SectionLabel({
@@ -448,6 +509,41 @@ function RowAction({
 }
 
 /**
+ * Le menu d'une rangée, atteignable à la souris.
+ *
+ * Le clic droit reste le geste principal, mais il ne s'apprend pas : rien
+ * n'indique qu'une rangée en porte un. Ce bouton le montre au survol, et ouvre
+ * exactement le même menu — c'est ce que font Notion et Apple Notes (§4.2).
+ *
+ * Web seulement, et l'opacité plutôt que le montage : un bouton qui
+ * n'existerait qu'au survol de la rangée disparaîtrait à l'instant où le
+ * curseur le vise. Au doigt, où il n'y a pas de survol, il volerait 32 pt au
+ * nom de la conversation — l'appui long y tient déjà ce rôle.
+ */
+function RowMenuButton({
+  label,
+  onOpen,
+}: {
+  label: string;
+  onOpen: (x: number, y: number) => void;
+}) {
+  if (Platform.OS !== "web") return null;
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      hitSlop={8}
+      onPress={(event) => onOpen(event.nativeEvent.pageX, event.nativeEvent.pageY)}
+      accessibilityLabel={label}
+      className={cn("size-8 opacity-0", Platform.select({ web: "group-hover:opacity-100" }))}
+    >
+      <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
+    </Button>
+  );
+}
+
+/**
  * Un dossier, ses sous-dossiers et leurs conversations, repliables d'un geste.
  *
  * Récursif, et repliable à chaque niveau : avec 5 niveaux possibles, un cran
@@ -468,6 +564,7 @@ function FolderGroup({
   onConversationMenu,
   onCloseRenaming,
   onDropConversation,
+  onDropFolder,
 }: {
   group: SidebarGroup;
   depth: number;
@@ -483,6 +580,8 @@ function FolderGroup({
   onConversationMenu: (target: ConversationMenuTarget) => void;
   onCloseRenaming: () => void;
   onDropConversation: (folder: FolderTreeNode, conversationId: string) => void;
+  /** Dossier lâché sur celui-ci : `(cible, déplacé)`. */
+  onDropFolder: (targetId: string, movedId: string) => void;
 }) {
   const isEmpty = isFolderEmpty(group);
   // Un dossier est « courant » quand la conversation ouverte est chez lui ou
@@ -493,9 +592,11 @@ function FolderGroup({
   // défaut allongerait la barre sans rien apprendre.
   const [open, setOpen] = useState(!isEmpty);
   const [hovered, setHovered] = useState(false);
-  const { ref: dropRef, isOver } = useFolderDropTarget((conversationId) =>
-    onDropConversation(group.folder, conversationId),
-  );
+  const dragRef = useFolderDragSource(group.folder.id);
+  const { ref: dropRef, isOver } = useFolderDropTarget({
+    onConversation: (conversationId) => onDropConversation(group.folder, conversationId),
+    onFolder: (folderId) => onDropFolder(group.folder.id, folderId),
+  });
   // Le dossier se déplie de force le temps de la saisie : le sous-dossier
   // qu'on est en train de nommer doit être visible pendant qu'on le nomme.
   const drafting = naming?.kind === "create" && naming.parentId === group.folder.id;
@@ -522,6 +623,7 @@ function FolderGroup({
             onConversationMenu={onConversationMenu}
             onCloseRenaming={onCloseRenaming}
             onDropConversation={onDropConversation}
+            onDropFolder={onDropFolder}
           />
         </CollapsibleContent>
       </Collapsible>
@@ -530,44 +632,55 @@ function FolderGroup({
 
   return (
     <Collapsible open={open || drafting} onOpenChange={setOpen}>
-      {/* La rangée entière est la cible de dépôt, pas seulement son libellé :
-          viser un mot de trois lettres à la souris serait intenable. */}
-      <View ref={dropRef} className={cx("flex-row items-center rounded-md", isOver)}>
-        <CollapsibleTrigger asChild>
-          <Button
-            variant="ghost"
-            className="flex-1 justify-start gap-2 px-2"
-            onHoverIn={() => setHovered(true)}
-            onHoverOut={() => setHovered(false)}
-            // L'appui long est l'équivalent tactile du clic droit : sans lui,
-            // renommer un dossier serait impossible sur téléphone.
-            onLongPress={(event) =>
-              onMenu({
-                folder: group.folder,
-                depth,
-                x: event.nativeEvent.pageX,
-                y: event.nativeEvent.pageY,
-              })
-            }
-            {...contextMenuProps((x, y) => onMenu({ folder: group.folder, depth, x, y }))}
-          >
-            {/* Le chevron prend la place de l'icône de dossier au survol, il ne
+      {/* Deux vues imbriquées parce qu'une seule ne porte qu'une référence, et
+          que la rangée est à la fois ce qu'on saisit et ce sur quoi on lâche.
+          C'est la rangée entière et pas seulement son libellé : viser un mot de
+          trois lettres à la souris serait intenable. Le contenu du dossier, lui,
+          reste hors de la zone — sinon glisser une conversation déplacerait son
+          dossier. */}
+      <View ref={dragRef}>
+        <View ref={dropRef} className={cx("group flex-row items-center rounded-md", isOver)}>
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              className="flex-1 justify-start gap-2 px-2"
+              onHoverIn={() => setHovered(true)}
+              onHoverOut={() => setHovered(false)}
+              // L'appui long est l'équivalent tactile du clic droit : sans lui,
+              // renommer un dossier serait impossible sur téléphone.
+              onLongPress={(event) =>
+                onMenu({
+                  folder: group.folder,
+                  depth,
+                  x: event.nativeEvent.pageX,
+                  y: event.nativeEvent.pageY,
+                })
+              }
+              {...contextMenuProps((x, y) => onMenu({ folder: group.folder, depth, x, y }))}
+            >
+              {/* Le chevron prend la place de l'icône de dossier au survol, il ne
                 s'ajoute pas à côté : deux glyphes pour une même rangée volaient
                 de la largeur au nom, déjà tronqué dès le 3e niveau. C'est le
                 geste de Notion et d'Apple Notes.
                 Sans souris, `onHoverIn` ne se déclenche jamais : l'icône reste
                 celle du dossier, et l'état plié se lit au contenu affiché
                 dessous. */}
-            <Icon
-              as={hovered ? (open ? ChevronDown : ChevronRight) : FolderIcon}
-              size={16}
-              className="text-muted-foreground"
-            />
-            <Text className={rowLabel(active)} numberOfLines={1}>
-              {group.folder.name}
-            </Text>
-          </Button>
-        </CollapsibleTrigger>
+              <Icon
+                as={hovered ? (open ? ChevronDown : ChevronRight) : FolderIcon}
+                size={16}
+                className="text-muted-foreground"
+              />
+              <Text className={rowLabel(active)} numberOfLines={1}>
+                {group.folder.name}
+              </Text>
+            </Button>
+          </CollapsibleTrigger>
+
+          <RowMenuButton
+            label={`Actions pour ${group.folder.name}`}
+            onOpen={(x, y) => onMenu({ folder: group.folder, depth, x, y })}
+          />
+        </View>
       </View>
 
       <CollapsibleContent>
@@ -584,6 +697,7 @@ function FolderGroup({
           onConversationMenu={onConversationMenu}
           onCloseRenaming={onCloseRenaming}
           onDropConversation={onDropConversation}
+          onDropFolder={onDropFolder}
         />
       </CollapsibleContent>
     </Collapsible>
@@ -610,6 +724,7 @@ function FolderChildren({
   onConversationMenu,
   onCloseRenaming,
   onDropConversation,
+  onDropFolder,
 }: {
   group: SidebarGroup;
   depth: number;
@@ -623,6 +738,8 @@ function FolderChildren({
   onConversationMenu: (target: ConversationMenuTarget) => void;
   onCloseRenaming: () => void;
   onDropConversation: (folder: FolderTreeNode, conversationId: string) => void;
+  /** Dossier lâché sur celui-ci : `(cible, déplacé)`. */
+  onDropFolder: (targetId: string, movedId: string) => void;
 }) {
   const isEmpty = isFolderEmpty(group);
   const drafting = naming?.kind === "create" && naming.parentId === group.folder.id;
@@ -673,6 +790,7 @@ function FolderChildren({
           onConversationMenu={onConversationMenu}
           onCloseRenaming={onCloseRenaming}
           onDropConversation={onDropConversation}
+          onDropFolder={onDropFolder}
         />
       ))}
 
@@ -683,6 +801,16 @@ function FolderChildren({
       ) : null}
     </View>
   );
+}
+
+/** Le sous-arbre du dossier visé, où qu'il se trouve dans l'arborescence. */
+function findGroup(groups: SidebarGroup[], id: string): SidebarGroup | null {
+  for (const group of groups) {
+    if (group.folder.id === id) return group;
+    const found = findGroup(group.children, id);
+    if (found) return found;
+  }
+  return null;
 }
 
 /** Le dossier, ou l'un de ses descendants, porte-t-il la conversation ouverte ? */
@@ -705,7 +833,7 @@ function NewConversationRow({ onPress }: { onPress: () => void }) {
   return (
     <Button variant="ghost" size="sm" onPress={onPress} className="justify-start gap-2 px-2">
       <Icon as={Plus} size={14} className="text-muted-foreground" />
-      <Text className="text-xs text-muted-foreground">Nouvelle conversation</Text>
+      <Text className="text-xs font-normal text-muted-foreground">Nouvelle conversation</Text>
     </Button>
   );
 }
@@ -758,7 +886,7 @@ function ConversationRow({
     // La poignée de déplacement est portée par une vue et non par le bouton :
     // c'est elle qui reçoit la référence DOM, et le bouton garde la sienne pour
     // l'appui.
-    <View ref={dragRef}>
+    <View ref={dragRef} className={cx("group flex-row items-center rounded-md", active)}>
       <Button
         variant="ghost"
         size="sm"
@@ -774,12 +902,17 @@ function ConversationRow({
           })
         }
         {...contextMenuProps((x, y) => onMenu({ conversation, x, y }))}
-        className={cx("w-full justify-start px-2", active)}
+        className="min-w-0 flex-1 justify-start px-2"
       >
         <Text className={rowLabel(active)} numberOfLines={1}>
           {conversation.title}
         </Text>
       </Button>
+
+      <RowMenuButton
+        label={`Actions pour ${conversation.title}`}
+        onOpen={(x, y) => onMenu({ conversation, x, y })}
+      />
     </View>
   );
 }

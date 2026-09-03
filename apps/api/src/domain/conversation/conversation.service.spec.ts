@@ -7,6 +7,8 @@ import type {
   Message,
   MessageStreamEvent,
   Suggestion,
+  Task,
+  TaskListWithTasks,
   UserPreferences,
 } from "@jc/domain";
 import type { LlmCompletionRequest, LlmProvider, LlmToolCall } from "../../core/llm/llm.port.js";
@@ -16,6 +18,8 @@ import type { IFolderRepository } from "../folder/folder.repository.interface.js
 import { FolderService } from "../folder/folder.service.js";
 import type { ISuggestionRepository } from "../suggestion/suggestion.repository.interface.js";
 import { SuggestionService } from "../suggestion/suggestion.service.js";
+import type { ITaskRepository } from "../task/task.repository.interface.js";
+import { TaskService } from "../task/task.service.js";
 import type { IUserRepository, ProfileRecord } from "../user/user.repository.interface.js";
 import { ConversationService } from "./conversation.service.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
@@ -140,10 +144,55 @@ function makeLlm(
   };
 }
 
-function makeSuggestionRepository(
-  overrides: Partial<ISuggestionRepository> = {},
-): ISuggestionRepository {
-  const suggestion: Suggestion = {
+/**
+ * Moteur dont chaque appel rend le tour suivant de `turns` — le dernier se
+ * répète ensuite.
+ *
+ * Nécessaire au rattrapage : le premier tour peut n'être qu'un appel d'outil,
+ * le second doit alors écrire la réponse. `makeLlm` rejoue au contraire les
+ * mêmes fragments à chaque appel.
+ */
+function makeLlmTurns(
+  turns: { chunks?: string[]; toolCalls?: LlmToolCall[]; fails?: boolean }[],
+): LlmProvider {
+  let index = 0;
+
+  const stream = jest.fn(() => {
+    const turn = turns[Math.min(index, turns.length - 1)] ?? {};
+    index += 1;
+
+    return (async function* () {
+      if (turn.fails) throw new Error("moteur indisponible");
+
+      const chunks = turn.chunks ?? [];
+      const toolCalls = turn.toolCalls ?? [];
+      let text = "";
+
+      for (const chunk of chunks) {
+        text += chunk;
+        yield { type: "text" as const, text: chunk };
+      }
+      for (const toolCall of toolCalls) {
+        yield { type: "tool_call" as const, toolCall };
+      }
+      yield {
+        type: "done" as const,
+        response: {
+          text,
+          toolCalls,
+          provider: "anthropic",
+          model: "claude-opus-5",
+          usage: { inputTokens: 12, outputTokens: 34 },
+        },
+      };
+    })();
+  });
+
+  return { name: "gateway", model: "anthropic/claude-sonnet-5", isSovereign: false, stream };
+}
+
+function makeSuggestion(overrides: Partial<Suggestion> = {}): Suggestion {
+  return {
     id: "sug-1",
     kind: "create_project_folders",
     status: "pending",
@@ -152,7 +201,14 @@ function makeSuggestionRepository(
     payload: {},
     createdAt: "2026-09-01T08:00:00.000Z",
     resolvedAt: null,
+    ...overrides,
   };
+}
+
+function makeSuggestionRepository(
+  overrides: Partial<ISuggestionRepository> = {},
+): ISuggestionRepository {
+  const suggestion = makeSuggestion();
 
   return {
     create: jest.fn().mockResolvedValue(suggestion),
@@ -235,6 +291,7 @@ function makePreferences(
     theme: "system",
     timezone: "Europe/Paris",
     speakResponses: false,
+    llmModel: null,
     ...overrides,
     scope: {
       morningReminders: true,
@@ -274,6 +331,60 @@ function makeUserRepository(
   };
 }
 
+/**
+ * Todolistes du fil, telles que la consigne les lira.
+ *
+ * Seule `findByConversation` est appelée depuis le tour de dialogue : le reste
+ * de l'interface ne sert qu'à satisfaire le type.
+ */
+function makeTaskRepository(lists: TaskListWithTasks[] = []): ITaskRepository {
+  return {
+    findAll: jest.fn().mockResolvedValue(lists),
+    findById: jest.fn().mockResolvedValue(null),
+    findByConversation: jest.fn().mockResolvedValue(lists),
+    createList: jest.fn(),
+    updateList: jest.fn(),
+    deleteList: jest.fn(),
+    createTask: jest.fn(),
+    updateTask: jest.fn(),
+    deleteTask: jest.fn(),
+    replaceTasks: jest.fn(),
+  };
+}
+
+function makeTaskListItem(overrides: Partial<Task> = {}): Task {
+  return {
+    id: "task-1",
+    listId: "11111111-1111-4111-8111-111111111111",
+    title: "Pain",
+    notes: null,
+    done: false,
+    completedAt: null,
+    parentId: null,
+    position: 0,
+    createdAt: "2026-09-03T08:00:00.000Z",
+    updatedAt: "2026-09-03T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeTaskList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithTasks {
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    title: "Courses de samedi",
+    kind: "shopping",
+    dueAt: null,
+    eventId: null,
+    conversationId: "conv-1",
+    folderId: null,
+    createdByAssistant: true,
+    createdAt: "2026-09-03T08:00:00.000Z",
+    updatedAt: "2026-09-03T08:00:00.000Z",
+    tasks: [],
+    ...overrides,
+  };
+}
+
 function makeService(
   repo: IConversationRepository = makeRepository(),
   llm: LlmProvider = makeLlm(),
@@ -281,6 +392,7 @@ function makeService(
   folders: IFolderRepository = makeFolderRepository(),
   users: IUserRepository = makeUserRepository(),
   calendar: ICalendarRepository = makeCalendarRepository(),
+  tasks: ITaskRepository = makeTaskRepository(),
 ): ConversationService {
   return new ConversationService(
     repo,
@@ -289,6 +401,7 @@ function makeService(
     new FolderService(folders),
     users,
     new CalendarService(calendar),
+    new TaskService(tasks),
   );
 }
 
@@ -296,6 +409,17 @@ function makeService(
 function lastRequest(llm: LlmProvider): LlmCompletionRequest {
   const stream = llm.stream as jest.Mock;
   return stream.mock.calls[0]?.[0] as LlmCompletionRequest;
+}
+
+/** Requête transmise au moteur lors de l'appel de rang `index`, à partir de 0. */
+function requestAt(llm: LlmProvider, index: number): LlmCompletionRequest {
+  const stream = llm.stream as jest.Mock;
+  return stream.mock.calls[index]?.[0] as LlmCompletionRequest;
+}
+
+/** Nombre d'appels réellement passés au moteur pendant le tour. */
+function callCount(llm: LlmProvider): number {
+  return (llm.stream as jest.Mock).mock.calls.length;
 }
 
 /** Déroule le tour de dialogue en entier, comme le fait le controller. */
@@ -933,6 +1057,78 @@ describe("ConversationService", () => {
       expect(repo.appendMessage).toHaveBeenCalledTimes(2);
     });
 
+    it("ne propose pas de compléter une liste quand le fil n'en a produit aucune", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm), {
+        content: "Il me faut des courses pour samedi.",
+        inputMode: "text",
+      });
+
+      // Sans liste à compléter, l'outil n'aurait aucun identifiant à recevoir
+      // et le modèle en inventerait un.
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).toContain("suggest_task_list");
+      expect(tools).not.toContain("suggest_task_list_items");
+    });
+
+    it("donne au modèle de quoi compléter une liste déjà née du fil", async () => {
+      const llm = makeLlm();
+      const list = makeTaskList({
+        tasks: [
+          makeTaskListItem({ id: "task-1", title: "Pain" }),
+          makeTaskListItem({ id: "task-2", title: "Lait", parentId: "task-1" }),
+        ],
+      });
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([list]),
+        ),
+        { content: "Complète la liste.", inputMode: "text" },
+      );
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).toContain("suggest_task_list_items");
+
+      // Sans le contenu ni l'identifiant, « complète la liste » n'a rien à
+      // désigner : le modèle rappelle l'outil de création et propose une
+      // seconde liste homonyme.
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain(list.id);
+      expect(system).toContain("Pain");
+      expect(system).toContain("> Lait");
+    });
+
+    it("rappelle au modèle de ne pas reproposer ce qui a déjà été accepté", async () => {
+      const llm = makeLlm();
+      const suggestions = makeSuggestionRepository({
+        listForConversation: jest
+          .fn()
+          .mockResolvedValue([
+            makeSuggestion({
+              kind: "create_task_list",
+              status: "accepted",
+              message: "Je te l'organise ?",
+            }),
+          ]),
+      });
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Complète la liste.",
+        inputMode: "text",
+      });
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("Ne repropose ni ce qui a été accepté");
+    });
+
     it("n'expose au canal permanent que les outils de son périmètre (A.10)", async () => {
       const llm = makeLlm();
       const repo = makeRepository({
@@ -1185,6 +1381,120 @@ describe("ConversationService", () => {
     });
   });
 
+  describe("réponse écrite malgré un appel d'outil (§12.1)", () => {
+    /** Une proposition de todoliste valide, telle que le modèle la rend. */
+    const SUGGESTION: LlmToolCall = {
+      id: "call-1",
+      name: "suggest_task_list",
+      input: {
+        message: "Je te fais la liste du rempotage ?",
+        lists: [{ title: "Rempotage", kind: "todo", items: [{ title: "Acheter du terreau" }] }],
+      },
+    };
+
+    it("répond quand le modèle s'en est tenu à son appel d'outil", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const repo = makeRepository();
+      const llm = makeLlmTurns([
+        { toolCalls: [SUGGESTION] },
+        { chunks: ["Il te faut ", "du terreau."] },
+      ]);
+
+      await drain(makeService(repo, llm), {
+        content: "Que faut-il pour rempoter ?",
+        inputMode: "text",
+      });
+
+      // Sans ce second tour, la carte s'affichait seule et la question restait
+      // sans réponse : l'utilisateur voyait sa demande ignorée.
+      expect(callCount(llm)).toBe(2);
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({ content: "Il te faut du terreau." }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("rappelle au second tour la proposition déjà affichée, sans lui rendre les outils", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const llm = makeLlmTurns([{ toolCalls: [SUGGESTION] }, { chunks: ["Voilà."] }]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      const retry = requestAt(llm, 1);
+      // Sans outils : la proposition du premier tour sera captée de toute
+      // façon, la rejouer afficherait deux cartes pour un seul geste.
+      expect(retry.tools).toEqual([]);
+      expect(retry.system ?? "").toContain("Je te fais la liste du rempotage ?");
+      jest.restoreAllMocks();
+    });
+
+    it("ne rappelle pas le modèle quand il a déjà écrit sa réponse", async () => {
+      const llm = makeLlmTurns([{ chunks: ["Bien sûr."], toolCalls: [SUGGESTION] }]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      expect(callCount(llm)).toBe(1);
+    });
+
+    it("ne rappelle pas le modèle quand la question porte déjà les réponses", async () => {
+      const llm = makeLlmTurns([
+        {
+          toolCalls: [
+            {
+              id: "call-1",
+              name: "ask_question",
+              input: { question: "On part sur quel angle ?", choices: ["Le mien", "Le vôtre"] },
+            },
+          ],
+        },
+      ]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      // La question est affichée telle quelle : un second tour la doublerait.
+      expect(callCount(llm)).toBe(1);
+    });
+
+    it("ne rappelle pas le modèle quand la bascule est annoncée (A.10)", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+      const llm = makeLlmTurns([
+        {
+          toolCalls: [
+            { id: "call-1", name: "open_new_conversation", input: { title: "Recette de tarte" } },
+          ],
+        },
+      ]);
+
+      await drain(makeService(repo, llm));
+
+      // L'annonce de bascule vient du serveur : le modèle doit justement se
+      // taire, et la réponse sera donnée dans l'autre fil.
+      expect(callCount(llm)).toBe(1);
+    });
+
+    it("garde la proposition quand le rattrapage échoue", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      jest.spyOn(console, "error").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const repo = makeRepository();
+      const llm = makeLlmTurns([{ toolCalls: [SUGGESTION] }, { fails: true }]);
+
+      await drain(makeService(repo, llm, suggestions));
+
+      // Le tour reste exploitable sans le second texte ; le faire échouer
+      // perdrait la proposition avec lui.
+      expect(suggestions.create).toHaveBeenCalled();
+      expect(repo.appendMessage).toHaveBeenCalledTimes(1);
+      jest.restoreAllMocks();
+    });
+  });
+
   describe("correction et reprise d'un tour", () => {
     /** Déroule un générateur de tour, comme le fait le controller. */
     async function collect(
@@ -1432,6 +1742,114 @@ describe("ConversationService", () => {
     });
   });
 
+  describe("dossiers proposés au rangement (§5.2, A.1)", () => {
+    // De vrais UUID : la charge utile écarte tout identifiant qui n'en est pas
+    // un, et un libellé de fixture passerait pour un dossier inventé.
+    const TAXES = "11111111-1111-4111-8111-111111111111";
+    const OTHER = "22222222-2222-4222-8222-222222222222";
+
+    /** Le rangement tel que le modèle le rend, dossiers existants compris. */
+    function filing(existingFolders: unknown, newFolderNames: string[] = []): LlmToolCall {
+      return {
+        id: "call-1",
+        name: "suggest_folders",
+        input: { message: "Je range ça où il faut ?", existingFolders, newFolderNames },
+      };
+    }
+
+    /** Charge utile de la proposition effectivement enregistrée. */
+    function capturedPayload(suggestions: ISuggestionRepository): Record<string, unknown> {
+      const call = (suggestions.create as jest.Mock).mock.calls[0] as [
+        string,
+        { payload: Record<string, unknown> },
+        string,
+      ];
+      return call[1].payload;
+    }
+
+    it("écarte le dossier dont le nom contredit l'identifiant", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const folders = makeFolderRepository([
+        makeFolder({ id: TAXES, name: "Impôts" }),
+        makeFolder({ id: OTHER, name: "Environnement" }),
+      ]);
+      const llm = makeLlm(
+        ["Je te range ça."],
+        [
+          filing([
+            { id: TAXES, name: "Impôts" },
+            { id: OTHER, name: "Impôts" },
+          ]),
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions, folders), {
+        content: "C'est quand la date de déclaration ?",
+        inputMode: "text",
+      });
+
+      // Un identifiant recopié de travers tombe sur un autre dossier réel : la
+      // proposition paraît sensée alors qu'elle range la conversation ailleurs.
+      expect(capturedPayload(suggestions)["existingFolderIds"]).toEqual([TAXES]);
+      jest.restoreAllMocks();
+    });
+
+    it("accepte un dossier désigné par son chemin complet", async () => {
+      const suggestions = makeSuggestionRepository();
+      const folders = makeFolderRepository([
+        makeFolder({ id: TAXES, name: "Administratif" }),
+        makeFolder({ id: OTHER, name: "Assurances", parentId: TAXES }),
+      ]);
+      const llm = makeLlm(
+        ["Je te range ça."],
+        [filing([{ id: OTHER, name: "Administratif > Assurances" }])],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions, folders));
+
+      // La consigne affiche « Administratif > Assurances » : reprendre la ligne
+      // entière est une lecture fidèle, pas une confusion.
+      expect(capturedPayload(suggestions)["existingFolderIds"]).toEqual([OTHER]);
+    });
+
+    it("écarte un identifiant que l'utilisateur ne possède pas", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const folders = makeFolderRepository([makeFolder({ id: TAXES, name: "Impôts" })]);
+      const llm = makeLlm(
+        ["Je te range ça."],
+        [filing([{ id: OTHER, name: "Impôts" }], ["Déclarations"])],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions, folders));
+
+      const payload = capturedPayload(suggestions);
+      // Le dossier neuf survit : perdre tout le rangement pour une ligne
+      // fautive coûterait plus cher que de l'écarter.
+      expect(payload["existingFolderIds"]).toEqual([]);
+      expect(payload["newFolderNames"]).toEqual(["Déclarations"]);
+      jest.restoreAllMocks();
+    });
+
+    it("demande de ne proposer que les dossiers dont la conversation traite", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository([makeFolder({ id: TAXES, name: "Impôts" })]),
+        ),
+      );
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("dont cette conversation-ci traite réellement");
+      expect(system).toContain("dans le doute, laisse-le de côté");
+    });
+  });
+
   describe("contexte du canal permanent (A.10)", () => {
     /** Le canal, tel que la route le remet au service. */
     function channel(): IConversationRepository {
@@ -1575,6 +1993,40 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm));
 
       expect(lastRequest(llm).system ?? "").not.toContain("Propositions que tu as déjà faites");
+    });
+  });
+
+  describe("choix du modèle par l'utilisateur (§5.1)", () => {
+    it("interroge le modèle retenu dans les réglages", async () => {
+      const llm = makeLlm();
+      const users = makeUserRepository(
+        {},
+        { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+      );
+
+      await drain(makeService(makeRepository(), llm, undefined, undefined, users));
+
+      expect(lastRequest(llm).model).toBe("mistral/mistral-medium-3.5");
+    });
+
+    it("laisse répondre le modèle du serveur tant que rien n'est choisi", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      // `undefined` et non `null` : l'adaptateur retombe alors sur `LLM_MODEL`,
+      // ce qui permet d'en changer par configuration sans toucher aux profils.
+      expect(lastRequest(llm).model).toBeUndefined();
+    });
+
+    it("laisse répondre le modèle du serveur quand le profil est introuvable", async () => {
+      const llm = makeLlm();
+      const users = makeUserRepository();
+      (users.findById as jest.Mock).mockResolvedValue(null);
+
+      await drain(makeService(makeRepository(), llm, undefined, undefined, users));
+
+      expect(lastRequest(llm).model).toBeUndefined();
     });
   });
 

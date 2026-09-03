@@ -3,14 +3,16 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react-native";
 import {
+  addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
-  scheduleTasksPayloadSchema,
+  scheduleListsPayloadSchema,
   type AssignFoldersPayload,
   type Suggestion,
 } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -251,6 +253,8 @@ function outcomeLabel(suggestion: Suggestion): string {
       return "Conversation rangée";
     case "create_task_list":
       return "Todolistes créées";
+    case "add_task_list_items":
+      return "Liste complétée";
     case "schedule_task":
       return "Créneaux posés";
     default:
@@ -315,30 +319,47 @@ function useSuggestionPreview(suggestion: Suggestion): {
               key: list.title,
               label: list.title,
               nested: false,
-              ...(list.kind === "shopping" ? { hint: "achats" } : {}),
+              ...hintOf(list.kind, list.dueAt),
             },
             ...list.items.map((item) => ({
               key: `${list.title}/${item.title}`,
               label: item.title,
               nested: true,
-              ...(item.dueAt === null ? {} : { hint: dueLabel(item.dueAt) }),
             })),
           ])
         : [],
     };
   }
 
-  if (suggestion.kind === "schedule_task") {
-    const proposed = scheduleTasksPayloadSchema.safeParse(suggestion.payload);
+  // Compléter une liste, plutôt qu'en ouvrir une seconde : la liste visée est
+  // nommée dans la phrase de l'assistant, l'aperçu ne montre donc que ce qui
+  // s'y ajoute.
+  if (suggestion.kind === "add_task_list_items") {
+    const proposed = addTaskListItemsPayloadSchema.safeParse(suggestion.payload);
 
     return {
-      acceptLabel: "Poser les créneaux",
+      acceptLabel: "Ajouter à la liste",
       lines: proposed.success
-        ? proposed.data.tasks.map((task) => ({
-            key: task.taskId,
-            label: task.title,
+        ? proposed.data.items.map((item) => ({
+            key: `${proposed.data.listId}/${item.title}`,
+            label: item.title,
             nested: false,
-            hint: dueLabel(task.dueAt),
+          }))
+        : [],
+    };
+  }
+
+  if (suggestion.kind === "schedule_task") {
+    const proposed = scheduleListsPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Bloquer les créneaux",
+      lines: proposed.success
+        ? proposed.data.lists.map((list) => ({
+            key: list.listId,
+            label: list.title,
+            nested: false,
+            hint: dueLabel(list.dueAt),
           }))
         : [],
     };
@@ -375,6 +396,20 @@ function useSuggestionPreview(suggestion: Suggestion): {
 }
 
 /**
+ * Ce que la carte dit d'une liste proposée : sa nature, puis son échéance.
+ *
+ * L'échéance est celle de la liste entière — c'est ce que la conversation a
+ * donné, et l'accrocher à une de ses lignes ferait croire à une date par item.
+ */
+function hintOf(kind: "todo" | "shopping", dueAt: string | null): { hint?: string } {
+  const parts = [
+    ...(kind === "shopping" ? ["achats"] : []),
+    ...(dueAt === null ? [] : [dueLabel(dueAt)]),
+  ];
+  return parts.length === 0 ? {} : { hint: parts.join(" · ") };
+}
+
+/**
  * Échéance telle qu'elle se lit dans la carte — « lundi 7 septembre, 9h ».
  *
  * L'heure est omise à minuit : le modèle la pose faute de mieux quand la
@@ -396,7 +431,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.lg,
   },
-  message: { fontSize: fontSize.md, lineHeight: 22 },
+  message: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22 },
   tree: { gap: spacing.xs, paddingLeft: spacing.md, borderLeftWidth: 2 },
   // Pas de filet vertical ici : les cases alignent déjà les lignes entre elles.
   choices: { gap: spacing.xs },
@@ -414,9 +449,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.sm,
   },
-  folder: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  folder: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   nested: { paddingLeft: spacing.md, fontWeight: fontWeight.regular },
-  hint: { fontSize: fontSize.xs, fontWeight: fontWeight.regular },
+  hint: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.regular },
   note: {
     alignSelf: "flex-start",
     maxWidth: "85%",
@@ -428,7 +463,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.pill,
   },
-  noteLabel: { fontSize: fontSize.xs, flexShrink: 1 },
+  noteLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, flexShrink: 1 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   action: {
     minHeight: MIN_TOUCH_TARGET,
@@ -437,5 +472,5 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   secondary: { borderWidth: 1 },
-  actionLabel: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  actionLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
 });

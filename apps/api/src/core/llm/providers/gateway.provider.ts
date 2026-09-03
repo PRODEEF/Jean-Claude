@@ -1,3 +1,4 @@
+import { isSovereignModel } from "@jc/domain";
 import { createGateway, jsonSchema, streamText, tool, type ToolSet } from "ai";
 import type { HTTPException } from "hono/http-exception";
 import { config } from "../../config.js";
@@ -17,20 +18,11 @@ import type {
  *
  * Le Gateway expose des centaines de modèles derrière une clé unique et un
  * identifiant de la forme `éditeur/modèle`. Conséquence directe : changer de
- * moteur — `anthropic/claude-opus-5` → `mistral/mistral-large` — ne demande
+ * moteur — `anthropic/claude-opus-5` → `mistral/mistral-medium-3.5` — ne demande
  * plus d'écrire un adaptateur, seulement de changer `LLM_MODEL`. C'est plus
  * fort que ce que le §5.1 exigeait, qui se contentait de « sans réécriture
  * majeure ».
  */
-
-/**
- * Éditeurs hébergeant et opérant en France/UE (§5.1, §13.4.6).
- *
- * La souveraineté se lit sur l'éditeur du modèle, pas sur le Gateway qui n'est
- * qu'un routeur : c'est bien Mistral ou Anthropic qui traite le contenu des
- * conversations de l'utilisateur.
- */
-const SOVEREIGN_CREATORS = new Set(["mistral"]);
 
 /**
  * Au-delà, on considère le moteur perdu plutôt que de laisser la requête HTTP
@@ -55,24 +47,59 @@ class GatewayProvider implements LlmProvider {
 
   readonly model: string;
 
-  private readonly languageModel: ReturnType<ReturnType<typeof createGateway>>;
-  /** Éditeur du modèle actif — `anthropic`, `mistral`, `deepseek`... */
-  private readonly creator: string;
+  private readonly gateway = createGateway({ apiKey: config.aiGatewayApiKey });
+
+  /**
+   * Un modèle du SDK par identifiant déjà rencontré.
+   *
+   * Le choix appartenant à l'utilisateur (§5.1), plusieurs modèles coexistent
+   * au sein d'un même processus. Les reconstruire à chaque tour est inutile —
+   * l'objet ne porte qu'une configuration d'appel — et le nombre
+   * d'identifiants possibles est borné par le catalogue de `@jc/domain`.
+   */
+  private readonly languageModels = new Map<string, ReturnType<typeof this.gateway>>();
 
   constructor() {
     this.model = config.llmModel;
-    this.creator = this.model.split("/")[0] ?? "unknown";
-    this.isSovereign = SOVEREIGN_CREATORS.has(this.creator);
+    this.isSovereign = isSovereignModel(this.model);
+  }
 
-    this.languageModel = createGateway({ apiKey: config.aiGatewayApiKey })(this.model);
+  /** Éditeur du modèle — `anthropic`, `mistral`, `deepseek`... */
+  private creatorOf(model: string): string {
+    return model.split("/")[0] ?? "unknown";
+  }
+
+  private languageModelFor(model: string): ReturnType<typeof this.gateway> {
+    const known = this.languageModels.get(model);
+    if (known) return known;
+
+    const built = this.gateway(model);
+    this.languageModels.set(model, built);
+    return built;
   }
 
   async *stream(request: LlmCompletionRequest): AsyncIterable<LlmStreamChunk> {
+    // L'AI SDK ne relaie pas l'échec du fournisseur sur le flux : il le passe à
+    // `onError`, puis rejette les promesses de résultat avec un
+    // `NoOutputGeneratedError` qui, lui, ne porte aucun statut. Sans le garder
+    // de côté ici, un quota dépassé ressortirait en panne générique.
+    let streamError: unknown;
+
+    // Le modèle demandé n'est pas relu ici : la route l'a déjà validé contre le
+    // catalogue. Le laisser passer tel quel garde l'adaptateur utilisable avec
+    // un `LLM_MODEL` hors catalogue, ce dont le développement a besoin.
+    const model = request.model ?? this.model;
+
     try {
       const result = streamText({
-        model: this.languageModel,
+        model: this.languageModelFor(model),
         timeout: { totalMs: COMPLETION_TIMEOUT_MS, firstChunkMs: FIRST_CHUNK_TIMEOUT_MS },
         maxOutputTokens: MAX_OUTPUT_TOKENS,
+        // Remplace le `console.error` par défaut du SDK, qui déverse la requête
+        // envoyée au modèle — donc le prompt de l'utilisateur — dans les logs.
+        onError: ({ error }) => {
+          streamError = error;
+        },
         ...(request.system ? { system: request.system } : {}),
         ...(request.tools?.length ? { tools: toToolSet(request.tools) } : {}),
         messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
@@ -98,7 +125,7 @@ class GatewayProvider implements LlmProvider {
         response: {
           text,
           toolCalls,
-          provider: this.creator,
+          provider: this.creatorOf(model),
           model: (await result.response).modelId,
           usage: {
             inputTokens: usage.inputTokens ?? 0,
@@ -107,7 +134,7 @@ class GatewayProvider implements LlmProvider {
         },
       };
     } catch (error) {
-      throw this.fail("Échec du flux du moteur IA", error);
+      throw this.fail("Échec du flux du moteur IA", streamError ?? error);
     }
   }
 

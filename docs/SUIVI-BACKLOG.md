@@ -7,7 +7,156 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — la conversation se reprend, se corrige
+Dernière mise à jour : **3 septembre 2026** — l'assistant sait compléter une todoliste
+existante, et non plus seulement en créer. Auparavant le même jour : le contexte remis au
+modèle a été repris — une proposition ne fait plus taire la réponse, et un dossier hors
+sujet ne se glisse plus dans un rangement ; l'échéance est passée de la tâche à la liste,
+les todolistes s'écrivent comme un texte, et le calendrier sait ouvrir une liste sur le
+jour affiché.
+
+**Une carte ne remplace plus la réponse.** Un tour où le modèle s'en tenait à son appel
+d'outil n'écrivait aucun message : la carte s'affichait seule et la question posée restait
+sans réponse. La consigne le dit maintenant explicitement — l'outil n'affiche qu'une carte,
+il ne dispense pas de répondre — et le serveur rattrape le cas restant par un second appel,
+sans outils, où la proposition déjà captée est rappelée pour qu'il ne la reformule pas. Deux
+appels d'outils échappent au rattrapage : `open_new_conversation`, qui exige justement le
+silence, et `ask_question`, dont la question fait déjà le texte du message.
+
+**Un dossier proposé se vérifie avant d'être affiché.** Le modèle rendait un identifiant
+seul ; recopié de travers, il tombait sur un autre dossier réel de l'utilisateur — la
+proposition paraissait sensée tout en rangeant la conversation dans un dossier étranger au
+sujet. `suggest_folders` réclame désormais l'identifiant **et** le nom lus sur la même
+ligne de la consigne, et le serveur écarte la ligne dont les deux ne se correspondent pas.
+La charge utile persistée, elle, ne bouge pas : les cartes déjà en base restent lisibles.
+La consigne demande en outre de ne retenir que les dossiers dont la conversation traite
+réellement — la règle du §5.2 vaut toujours (une conversation relève de plusieurs dossiers),
+mais le voisinage thématique n'en est pas un.
+
+**L'attente dit combien de temps elle dure.** La roue d'attente est remplacée par
+« <assistant> réfléchit… 4 s », le compteur montant tant qu'aucun jeton n'est arrivé — le
+repère qu'affichent ChatGPT et Claude (§4.2). Côté serveur, les lectures qui précèdent
+l'appel au modèle (fil, profil, propositions, arborescence, agenda) partent désormais
+ensemble : deux allers-retours de base en moins avant le premier mot.
+
+**La carte de réponses proposées se voit.** Elle reste au-dessus de la saisie, là où
+ChatGPT, Claude et Perplexity posent les leurs (§4.2), mais porte la couleur d'accent et
+non le gris des bordures ordinaires : discrète, elle se lisait comme un pied d'écran et se
+traversait sans être vue.
+
+**L'échéance appartient à la liste, plus à ses lignes** (A.2, A.3). « Les courses avant
+samedi » date la liste, pas le paquet de farine : `due_at` quitte `tasks` pour
+`task_lists`, et `event_id` suit le même déplacement — le créneau posé dans l'agenda vaut
+désormais pour la liste entière. La migration ne perd rien : chaque liste hérite de la
+plus proche des échéances que portaient ses tâches. Conséquence en cascade — la semaine
+pose des listes sur leurs jours plutôt que des tâches éparpillées, le calendrier compte
+ce qu'il reste à faire dans les listes échues, et l'assistant date la liste qu'il propose
+puis n'offre plus qu'un créneau par liste au lieu d'un par ligne.
+
+**Les todolistes s'écrivent comme on écrit un texte** (§13.4.1). Chaque ligne est un
+champ : Entrée ouvre la suivante, Retour arrière sur une ligne vide la referme,
+Tabulation la range sous la précédente — le modèle de Things 3, de Todoist et de Notion
+(§4.2). Deux niveaux, pas trois : `tasks.parent_id` et une règle tenue par le service,
+une tâche qui a un parent ne peut pas en être un. La liste part au serveur en un appel
+(`PUT /api/tasks/:id/items`) plutôt qu'un geste à la fois : insérer une ligne au milieu
+décale toutes les suivantes, et une suite d'appels unitaires laisserait la liste
+incohérente entre deux d'entre eux. Le mode « supprimer des éléments » disparaît, devenu
+redondant avec Retour arrière.
+
+**L'assistant sait compléter une liste, plus seulement en créer** (§12.1, A.2). Le défaut
+était net à l'usage : « complète la liste » faisait reproposer indéfiniment une liste
+homonyme, avec une ligne bouche-trou « À compléter ». Trois causes cumulées — aucun outil
+ne permettait d'ajouter à une liste existante, la consigne système ne disait rien des
+todolistes du fil ni de leur contenu, et le garde-fou anti-répétition ne couvrait que les
+propositions *en attente*, pas celles déjà acceptées. `suggest_task_list_items` et la
+nature de suggestion `add_task_list_items` répondent au premier point ; la consigne reçoit
+désormais les listes nées de la conversation avec leur identifiant et leurs lignes ; et la
+phrase anti-répétition mentionne l'accepté. L'outil est retiré du jeu quand le fil n'a
+produit aucune liste — sans identifiant à recevoir, le modèle en inventerait un.
+
+**Un `<button>` dans un `<button>` corrigé dans la grille mensuelle.** La cellule de jour
+était pressable et portait des pastilles de rendez-vous pressables : HTML invalide, et
+React l'avertissait à chaque rendu. Le sélecteur de jour passe en fond
+(`StyleSheet.absoluteFill`, comme le fait déjà la grille horaire), le contenu inerte laisse
+passer l'appui (`pointerEvents`), les pastilles restent des boutons. Aucun changement
+d'usage. Le défaut préexistait à la refonte.
+
+**Trois ajustements d'interface.** « Mes listes » passe devant « Semaine » — c'est la
+lecture complète, la semaine n'en est qu'un filtre daté — et une loupe s'ouvre à
+l'extrême droite, qui filtre listes et tâches sur ce qui est déjà chargé, sans aller au
+serveur. L'icône de dossier qui coiffait une todoliste est remplacée par celle de la
+barre latérale : une liste n'est pas un dossier. Dans le calendrier, un bouton
+« + Tâches » ouvre une liste datée sur le jour affiché puis conduit à son éditeur —
+plutôt que d'y reproduire une seconde saisie.
+
+**Le choix du modèle passe à l'utilisateur** (§5.1). Cinq modèles sont proposés dans les
+réglages — un par éditeur, chacun présenté par ce qu'il apporte plutôt que par ce qu'il
+est : la page ne demande pas de savoir ce qu'est un modèle de langage pour en changer
+(§13.4.4). Mistral porte la mention « hébergé en Europe », déduite de l'éditeur et non
+écrite à la main, pour que la promesse affichée soit exactement celle que `/api/health`
+calcule (§13.4.6).
+
+Deux réserves sur la liste retenue. Sonar cherche sur le web et raisonne avant de répondre :
+la première réponse tarde davantage, et rien ne garantit qu'il produise des appels d'outils —
+un modèle qui n'en produit pas laisse la conversation utilisable mais l'assistant muet, plus
+une seule proposition (§12.1). Et l'éligibilité au palier gratuit du Gateway n'a pas pu être
+vérifiée : seuls les identifiants l'ont été, contre le catalogue que le SDK embarque.
+
+La préférence vit sur le profil (`profiles.llm_model`), et `LLM_MODEL` devient le repli :
+`null` n'est pas une absence de réglage mais la valeur « celui que le serveur a retenu »,
+ce qui permet d'en changer par configuration sans réécrire les profils. Un modèle retiré du
+catalogue est relu comme `null` plutôt que de rendre le profil illisible. Côté moteur, le
+modèle voyage désormais sur la requête et non sur l'adaptateur — une instance par
+utilisateur aurait reconstruit le port à chaque message — et l'éditeur remonté avec la
+réponse est celui qui a réellement répondu, puisqu'il peut changer en cours de fil.
+
+Rien n'est tenté sur un second moteur en cas de refus : un quota atteint reste un quota
+atteint, et l'utilisateur en change dans ses réglages. La dette « aucun modèle de repli »
+reste donc ouverte.
+
+**Un dossier se glisse dans un autre**, à la souris, et sa branche entière le suit —
+sous-dossiers, conversations et todolistes gardent leur rangement relatif. L'en-tête de
+section « Dossiers » sert de zone racine : sans elle, le geste n'aurait su que ranger, jamais
+ressortir. Rien de nouveau côté serveur, `PATCH /folders/:id` faisait déjà office de
+déplacement, garde-fous d'acyclicité et de profondeur compris. Un seul défaut que le geste
+exposait : deux dossiers homonymes sous le même parent ressortaient en 500 générique, ils
+rendent maintenant un 409 qui dit ce qui s'est passé.
+
+**Les rangées de la barre latérale portent un « … » au survol** (web), qui ouvre exactement
+le menu du clic droit. Le clic droit reste le geste, mais rien n'indiquait qu'il existait.
+Au doigt, où il n'y a pas de survol, l'appui long continue de tenir ce rôle et le bouton
+n'est pas rendu. Au passage, la graisse des rangées non sélectionnées disparaît : le
+`Button` de react-native-reusables publie `font-medium` par son contexte de texte, dont
+toute rangée héritait — l'arborescence entière paraissait sélectionnée.
+
+**La carte d'une todoliste se replie et se resserre.** Les rangées se touchaient à 8 pt
+d'écart pour rien, la hauteur tactile de 44 pt les séparant déjà. Le crayon cède la place à
+un « … » portant trois actions — modifier, supprimer des éléments, supprimer la liste — et
+les corbeilles quittent les rangées : elles ne reviennent que le temps du mode suppression.
+Cocher est le geste courant, supprimer l'exception, et les deux se touchaient du doigt. Un
+chevron replie la liste, dépliée par défaut.
+
+**Les todos se lisent et se filtrent par dossier.** Dans l'agenda du jour du calendrier,
+elles sont groupées sous l'intitulé de leur dossier — une journée mêle le jardin et les
+impôts, l'intitulé dit de quoi relève ce qui suit ; le groupe unique n'en porte pas, il ne
+distinguerait rien. Dans l'onglet Todoliste, une rangée de boutons filtre par dossier, et
+elle agit sur les deux vues d'un coup, la semaine n'étant qu'une autre lecture des mêmes
+tâches. Seuls les dossiers portant au moins une liste sont proposés. Arriver depuis la barre
+latérale sur une liste précise relâche le filtre : on a demandé celle-là.
+
+**Le sélecteur de vue du calendrier porte un cinquième segment, « Todo »**, qui n'est pas
+une période mais un passage vers l'onglet Todoliste — c'est là que l'œil cherche les autres
+lectures du temps. Sur téléphone, la bascule défile plutôt que de déborder : cinq segments
+et les trois commandes de navigation ne tiennent pas sur 375 pt, et c'est la navigation qui
+doit rester entière.
+
+**Toute l'interface passe en Arial.** Elle tournait jusqu'ici sur la police système, qui
+diffère d'une plateforme à l'autre. Un jeton unique, appliqué en `style` et non en classe
+utilitaire : la moitié des vues — menus contextuels, fenêtres, écrans d'authentification —
+est rendue par `StyleSheet`, hors de portée de NativeWind. Le monospace du code reste
+monospace. Sur Android, où Arial n'existe pas, le système retombe sur Roboto : écart assumé,
+aucune police n'est embarquée dans le bundle.
+
+Auparavant le 2 septembre : la conversation se reprend, se corrige
 et se range au geste ; et l'assistant sait proposer une todoliste.
 
 **Un message n'est plus figé.** Au survol, chaque message porte son ancienneté et ses
@@ -319,7 +468,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                                                                                                                                                                                                                                                                                                                           |
 | §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code                                                                                                                                                                                                                                                                                   |
 | §5.1 | Timeouts, quotas et erreurs                            |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés                                                                                                                                                                                                                                                                                               |
-| §5.1 | Choix du modèle par l'utilisateur                      |   🟡   | `LLM_MODEL` reste le défaut serveur, désormais exposé par `/api/health` et affiché **désactivé** dans les réglages. Reste à porter dans `userPreferences`                                                                                                                                                                                                                                 |
+| §5.1 | Choix du modèle par l'utilisateur                      |   ✅   | Catalogue de trois modèles dans `@jc/domain`, choisi dans les réglages et porté par `profiles.llm_model`. `LLM_MODEL` devient le repli, servi tant que rien n'est choisi                                                                                                                                                                                                                  |
 | §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                                                                                                                                                                                                                                                                                                                     |
 | §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                                                                                                                                                                                                                                                                                                              |
 | §5.3 | API commune web + mobile                               |   ✅   | REST sur Hono, arbitrage consigné dans `docs/ARCHITECTURE.md` ; client `@jc/api-client` partagé, l'app ne touche jamais la base directement                                                                                                                                                                                                                                               |
@@ -348,14 +497,14 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Réf. | Point                                                 | Statut | Note                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                                                                                                                                                                                           |
-| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer sur un dossier (ajouter ou déplacer, au choix), et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                 |
-| A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (semaine + toutes les listes), todolistes visibles dans leur dossier. L'assistant propose désormais les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation. Restent la conversion à la demande et l'édition avant validation → #17                              |
-| A.3  | Détection de tâches datées                            |   🟡   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit désormais de la conversation : les échéances portées par les tâches proposées sont conservées, puis une seconde proposition pose un créneau d'agenda pour chacune. Reste le parsing des dates relatives, laissé au modèle pour l'instant → #18                                                                                             |
+| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer d'une conversation sur un dossier (ajouter ou déplacer, au choix) **et d'un dossier dans un autre**, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                 |
+| A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (« Mes listes » puis « Semaine », filtrables par dossier, cherchables à la loupe), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Le contenu s'édite comme un texte — une ligne par tâche, deux niveaux d'indentation, réécrit en un appel. Listes groupées par dossier dans l'agenda du calendrier, où « + Tâches » en ouvre une sur le jour affiché. L'assistant propose désormais les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation. Restent la conversion à la demande et l'édition avant validation → #17                              |
+| A.3  | Détection de tâches datées                            |   🟡   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte désormais sur la **liste** et non sur ses lignes : le modèle date la liste qu'il propose, puis une seconde proposition bloque un créneau d'agenda par liste datée. Reste le parsing des dates relatives, laissé au modèle pour l'instant → #18                                                                                             |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                                                                                                                                                                                                                                                                           |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                                                                                          |
 | A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                                                                                                                                                 |
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                                                                                                                                                                                                                                                                                   |
-| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées — et que le modèle relit au tour suivant, pour ne pas reproposer ce qui vient d'être écarté. Trois natures branchées sur quatre : dossiers de projet, rangement, todolistes et leurs créneaux. Reste le rendez-vous récurrent (A.11)                            |
+| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées — et que le modèle relit au tour suivant, pour ne reproposer ni ce qui a été écarté ni ce qui a été accepté. Quatre natures branchées sur cinq : dossiers de projet, rangement, todolistes, complétion d'une todoliste existante et leurs créneaux. Reste le rendez-vous récurrent (A.11)                            |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                                                                                                                                                                                                                     |
 | A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule hors périmètre proposée puis validée par l'utilisateur (et retirée du contexte une fois faite), et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages. Le canal reçoit l'agenda des 7 jours et les dossiers existants — il peut enfin répondre sur le premier de ses trois sujets ; délivrance des rappels → #26 |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                                                                                                                                                                                                                           |
@@ -392,7 +541,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 | Sujet                                      | Ce qui a été tranché, faute de mieux                                                                                                                                                                                                                                                                  |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Actions d'un dossier et d'une conversation | Une **fenêtre unique** portant toutes les actions, ouverte par un « … ». Les applications de référence ne convergent pas : ChatGPT et Claude posent un menu déroulant au survol, Notion et Apple Notes un menu contextuel — or ni le survol ni le clic droit n'existent au doigt (§4.2 non concluant) |
+| Actions d'un dossier et d'une conversation | Les deux chemins cohabitent : menu contextuel au clic droit (appui long au doigt) **et** bouton « … » au survol sur web, ouvrant le même menu. Les applications de référence ne convergent pas — ChatGPT et Claude posent un menu au survol, Notion et Apple Notes un menu contextuel (§4.2 non concluant) — mais ni le survol ni le clic droit n'existant au doigt, il fallait de toute façon les deux |
 | Lisibilité de la barre au 5e niveau        | Chaque niveau ajoute un retrait et un filet vertical. Au 5e, la barre est très entamée à gauche et les libellés se tronquent. L'aplatissement a été écarté — il perdrait la filiation — mais le point demande à être vu avec un vrai volume de dossiers                                               |
 
 ## Dette technique connue
@@ -402,15 +551,16 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Pagination remontante du fil absente    | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                                                           |
 | Rappels du matin non délivrés           | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26, #20)                                                           |
 | Rendez-vous récurrent non capté         | `suggest_task_list` est désormais traduit et exécuté. `suggest_recurring_event` part toujours en `console.warn` : le modèle est invité à proposer une série et aucune carte n'apparaît. Raccordement à faire (→ A.11)   |
-| Créneaux posés à l'heure de l'échéance  | Un créneau reprend le `dueAt` de sa tâche, sans durée : le calendrier lui en donne une implicite à l'affichage. Une échéance déduite d'une conversation dit quand, pas combien de temps — la durée réelle relève de #18 |
+| Créneaux posés à l'heure de l'échéance  | Un créneau reprend le `dueAt` de sa liste, sans durée : le calendrier lui en donne une implicite à l'affichage. Une échéance déduite d'une conversation dit quand, pas combien de temps — la durée réelle relève de #18 |
+| Sauvegarde de liste en écrasement       | `PUT /tasks/:id/items` réécrit la liste entière depuis ce que l'éditeur tient. Deux appareils ouverts sur la même liste se recouvrent donc l'un l'autre — le dernier à écrire gagne. Sans effet à un seul utilisateur, à revoir si l'édition partagée arrive       |
 | Séries récurrentes non déployées        | Une `rrule` se saisit et se stocke, mais les occurrences ne sont pas calculées : l'événement n'apparaît qu'à son premier créneau. La dépendance `rrule` est déjà au `package.json` de l'API (A.11)                      |
 | Dates saisies au clavier                | Le formulaire d'événement demande `JJ/MM/AAAA` et `HH:MM` en texte, faute de sélecteur natif partagé par les trois cibles. Fonctionnel, mais en deçà des références du §4.2                                             |
 | Node ≥ 22.12 requis                     | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                                                                     |
 | Aucune limite de débit par compte       | `POST /conversations/:id/messages` n'est borné que par la taille d'une réponse (`MAX_OUTPUT_TOKENS`). Rien ne borne le nombre d'appels : un seul compte peut consommer le budget du Gateway                             |
 | Aucun modèle de repli                   | `llm-error.ts` distingue proprement 429 et 402, mais il n'y a qu'un `LLM_MODEL` : un quota atteint tue le tour au lieu de basculer sur un second moteur                                                                 |
 | Un timeout se présente en panne         | Les délais de `gateway.provider.ts` (60 s, 15 s au premier jeton) retombent dans le `default` de `toHttpException` : l'utilisateur lit « moteur indisponible » et attend une panne qui n'existe pas                     |
-| Erreurs du SDK `ai` non interceptées    | Aucun `onError` n'est posé sur `streamText`. Si le SDK route certaines erreurs vers ce rappel plutôt que par exception, un 429 produirait une réponse vide sans message — à vérifier par un test                        |
 | Historique ouvert par un tour assistant | Le canal commence par le message d'accueil, donc l'historique remis au modèle débute par un tour `assistant`. Toléré ou refusé selon le moteur routé par le Gateway — à couvrir avant de changer `LLM_MODEL`            |
+| Rattrapage de réponse au prix d'un tour  | Un modèle qui s'en tient à son appel d'outil déclenche un second appel : la réponse arrive, mais l'attente double. La consigne cherche à rendre ce cas rare — reste à mesurer sa fréquence par moteur                                                                     |
 | `listPending` sans appelant             | `ConversationService` lit `listForConversation` et en déduit les propositions en attente. La méthode du Repository n'a plus d'appelant : à retirer, ou à consommer là où la déduction se fait                           |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo

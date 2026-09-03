@@ -23,6 +23,7 @@ import { SuggestionService } from "../../domain/suggestion/suggestion.service.js
 import type {
   ITaskRepository,
   TaskListOrigin,
+  TaskListPatch,
   TaskPatch,
 } from "../../domain/task/task.repository.interface.js";
 import { TaskService } from "../../domain/task/task.service.js";
@@ -202,6 +203,13 @@ function makeTaskRepository(): ITaskRepository {
   return {
     findAll: jest.fn().mockImplementation(() => Promise.resolve([...lists.values()])),
     findById: jest.fn().mockImplementation((id: string) => Promise.resolve(lists.get(id) ?? null)),
+    findByConversation: jest
+      .fn()
+      .mockImplementation((conversationId: string) =>
+        Promise.resolve(
+          [...lists.values()].filter((list) => list.conversationId === conversationId),
+        ),
+      ),
     createList: jest
       .fn()
       .mockImplementation((_userId: string, input: CreateTaskList & TaskListOrigin) => {
@@ -210,6 +218,8 @@ function makeTaskRepository(): ITaskRepository {
           id: uuid(sequence),
           title: input.title,
           kind: input.kind,
+          dueAt: input.dueAt ?? null,
+          eventId: null,
           conversationId: input.conversationId ?? null,
           folderId: input.folderId ?? null,
           createdByAssistant: input.createdByAssistant ?? false,
@@ -220,7 +230,12 @@ function makeTaskRepository(): ITaskRepository {
         lists.set(list.id, list);
         return Promise.resolve(list);
       }),
-    updateList: jest.fn(),
+    updateList: jest.fn().mockImplementation((id: string, patch: TaskListPatch) => {
+      const list = lists.get(id);
+      if (!list) return Promise.reject(new Error("Liste introuvable"));
+      if (patch.eventId !== undefined) list.eventId = patch.eventId;
+      return Promise.resolve(list);
+    }),
     deleteList: jest.fn(),
     createTask: jest
       .fn()
@@ -234,8 +249,7 @@ function makeTaskRepository(): ITaskRepository {
             notes: input.notes ?? null,
             done: false,
             completedAt: null,
-            dueAt: input.dueAt ?? null,
-            eventId: null,
+            parentId: input.parentId ?? null,
             position,
             createdAt: NOW,
             updatedAt: NOW,
@@ -247,10 +261,11 @@ function makeTaskRepository(): ITaskRepository {
     updateTask: jest.fn().mockImplementation((listId: string, taskId: string, patch: TaskPatch) => {
       const task = lists.get(listId)?.tasks.find((candidate) => candidate.id === taskId);
       if (!task) return Promise.reject(new Error("Tâche introuvable"));
-      if (patch.eventId !== undefined) task.eventId = patch.eventId;
+      if (patch.title !== undefined) task.title = patch.title;
       return Promise.resolve(task);
     }),
     deleteTask: jest.fn(),
+    replaceTasks: jest.fn(),
   };
 }
 
@@ -293,6 +308,7 @@ function makeService(
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
   const calendarService = new CalendarService(events);
+  const taskService = new TaskService(tasks);
 
   return new AssistantService(
     suggestionService,
@@ -304,8 +320,9 @@ function makeService(
       folderService,
       IDLE_USERS,
       calendarService,
+      taskService,
     ),
-    new TaskService(tasks),
+    taskService,
     calendarService,
   );
 }
@@ -346,15 +363,13 @@ function makeJardinSuggestion(): Suggestion {
         {
           title: "Achats jardin",
           kind: "shopping",
-          items: [{ title: "Terreau", dueAt: null }],
+          items: [{ title: "Terreau" }],
         },
         {
           title: "Travaux jardin",
           kind: "todo",
-          items: [
-            { title: "Désherber", dueAt: DESHERBAGE },
-            { title: "Tondre", dueAt: null },
-          ],
+          dueAt: DESHERBAGE,
+          items: [{ title: "Désherber" }, { title: "Tondre" }],
         },
       ],
     },
@@ -752,7 +767,7 @@ describe("AssistantService", () => {
       ]);
     });
 
-    it("ajoute chaque tâche proposée à sa liste, échéance comprise", async () => {
+    it("ajoute chaque tâche proposée à sa liste", async () => {
       const tasks = makeTaskRepository();
 
       const resolved = await makeService(
@@ -764,12 +779,27 @@ describe("AssistantService", () => {
 
       const created = await tasks.findAll(TOKEN);
       expect(resolved.taskLists).toHaveLength(2);
-      expect(created.map((list) => list.tasks.map((task) => [task.title, task.dueAt]))).toEqual([
-        [["Terreau", null]],
-        [
-          ["Désherber", DESHERBAGE],
-          ["Tondre", null],
-        ],
+      expect(created.map((list) => list.tasks.map((task) => task.title))).toEqual([
+        ["Terreau"],
+        ["Désherber", "Tondre"],
+      ]);
+    });
+
+    it("date la liste entière et non ses lignes", async () => {
+      const tasks = makeTaskRepository();
+
+      await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      // « Avant samedi » date le travail à faire, pas le sac de terreau : les
+      // achats restent sans échéance.
+      expect(createdLists(tasks).map((list) => [list.title, list.dueAt ?? null])).toEqual([
+        ["Achats jardin", null],
+        ["Travaux jardin", DESHERBAGE],
       ]);
     });
 
@@ -820,7 +850,7 @@ describe("AssistantService", () => {
       expect(createdLists(tasks).map((list) => list.folderId)).toEqual([null, null]);
     });
 
-    it("enchaîne sur une proposition de créneaux pour les tâches datées", async () => {
+    it("enchaîne sur une proposition de créneaux pour les listes datées", async () => {
       const resolved = await makeService(makeSuggestionStore(makeJardinSuggestion())).resolve(
         USER,
         "sug-1",
@@ -832,12 +862,12 @@ describe("AssistantService", () => {
       expect(resolved.next).toMatchObject({
         kind: "schedule_task",
         status: "pending",
-        message: "Une de ces tâches porte une date. Je te la pose dans ton agenda ?",
+        message: "Cette liste porte une échéance. Je te bloque le créneau dans ton agenda ?",
       });
       expect(resolved.events).toEqual([]);
     });
 
-    it("n'enchaîne sur rien quand aucune tâche ne porte de date", async () => {
+    it("n'enchaîne sur rien quand aucune liste ne porte d'échéance", async () => {
       const sansDate = makeSuggestion({
         kind: "create_task_list",
         message: "Je te l'organise ?",
@@ -871,6 +901,91 @@ describe("AssistantService", () => {
     });
   });
 
+  describe("acceptation d'une complétion de liste (§12.1, A.2)", () => {
+    /** Crée la liste du jardin, puis rend l'identifiant de la liste de tâches. */
+    async function withTravauxList() {
+      const tasks = makeTaskRepository();
+      await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      if (!travaux) throw new Error("La liste de travaux devrait exister");
+      return { tasks, listId: travaux.id };
+    }
+
+    it("ajoute les lignes proposées à la liste existante, sans en créer une seconde", async () => {
+      const { tasks, listId } = await withTravauxList();
+      const before = (tasks.createList as jest.Mock).mock.calls.length;
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "add_task_list_items",
+            message: "J'ajoute tailler la haie et arroser ?",
+            payload: { listId, items: [{ title: "Tailler la haie" }, { title: "Arroser" }] },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      expect(travaux?.tasks.map((task) => task.title)).toEqual([
+        "Désherber",
+        "Tondre",
+        "Tailler la haie",
+        "Arroser",
+      ]);
+      // Le point de départ du défaut corrigé : le modèle reproposait une liste
+      // homonyme au lieu de compléter celle-ci.
+      expect((tasks.createList as jest.Mock).mock.calls.length).toBe(before);
+    });
+
+    it("ajoute les lignes à la suite des positions déjà prises", async () => {
+      const { tasks, listId } = await withTravauxList();
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "add_task_list_items",
+            message: "J'ajoute arroser ?",
+            payload: { listId, items: [{ title: "Arroser" }] },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      expect(travaux?.tasks.map((task) => task.position)).toEqual([0, 1, 2]);
+    });
+
+    it("refuse une complétion dont la charge utile est illisible", async () => {
+      const tasks = makeTaskRepository();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "add_task_list_items",
+              message: "J'ajoute quelque chose ?",
+              payload: { items: [{ title: "Arroser" }] },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
   describe("acceptation des créneaux (A.3)", () => {
     /** Joue les deux temps : les listes d'abord, leurs créneaux ensuite. */
     async function acceptBothCards() {
@@ -891,27 +1006,27 @@ describe("AssistantService", () => {
       return { second, tasks, events };
     }
 
-    it("pose un créneau par tâche datée, sans heure de fin inventée", async () => {
+    it("pose un créneau par liste datée, sans heure de fin inventée", async () => {
       const { second, events } = await acceptBothCards();
 
+      // Un seul créneau pour les deux tâches du jardin : c'est la liste qui
+      // porte l'échéance, pas chacune de ses lignes.
       expect(second.events).toHaveLength(1);
       expect(events.create).toHaveBeenCalledWith(
         USER,
-        { title: "Désherber", startsAt: DESHERBAGE, endsAt: null, allDay: false },
+        { title: "Travaux jardin", startsAt: DESHERBAGE, endsAt: null, allDay: false },
         TOKEN,
       );
     });
 
-    it("rattache la tâche à son créneau", async () => {
+    it("rattache la liste à son créneau", async () => {
       const { second, tasks } = await acceptBothCards();
 
-      const desherber = (await tasks.findAll(TOKEN))
-        .flatMap((list) => list.tasks)
-        .find((task) => task.title === "Désherber");
+      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
 
       // Sans ce lien, le calendrier montrerait deux fois la même échéance : la
-      // tâche datée et le créneau posé pour elle.
-      expect(desherber?.eventId).toBe(second.events[0]?.id);
+      // liste datée et le créneau posé pour elle.
+      expect(travaux?.eventId).toBe(second.events[0]?.id);
     });
   });
 

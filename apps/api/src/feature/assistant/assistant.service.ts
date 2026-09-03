@@ -1,14 +1,15 @@
 import {
+  addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
-  scheduleTasksPayloadSchema,
+  scheduleListsPayloadSchema,
   type AssignFoldersPayload,
   type CalendarEvent,
   type Folder,
   type FolderTreeNode,
   type ResolveSuggestion,
-  type ScheduleTasksPayload,
+  type ScheduleListsPayload,
   type Suggestion,
   type TaskList,
 } from "@jc/domain";
@@ -123,6 +124,10 @@ export class AssistantService {
       const created = await this.createTaskLists(userId, suggestion, accessToken);
       return { ...nothingApplied(), ...created };
     }
+    if (suggestion.kind === "add_task_list_items") {
+      const taskLists = await this.addTaskListItems(userId, suggestion, accessToken);
+      return { ...nothingApplied(), taskLists };
+    }
     if (suggestion.kind === "schedule_task") {
       const events = await this.scheduleTasks(userId, suggestion, accessToken);
       return { ...nothingApplied(), events };
@@ -163,7 +168,7 @@ export class AssistantService {
     const folderId = conversation.folderIds[0] ?? null;
 
     const taskLists: TaskList[] = [];
-    const dated: ScheduleTasksPayload["tasks"] = [];
+    const dated: ScheduleListsPayload["lists"] = [];
 
     for (const proposed of payload.data.lists) {
       const list = await this.tasks.createList(
@@ -172,6 +177,7 @@ export class AssistantService {
           title: proposed.title,
           kind: proposed.kind,
           folderId,
+          dueAt: proposed.dueAt,
           conversationId,
           createdByAssistant: true,
         },
@@ -179,22 +185,52 @@ export class AssistantService {
       );
       taskLists.push(list);
 
-      for (const item of proposed.items) {
-        const task = await this.tasks.addTask(
-          userId,
-          list.id,
-          { title: item.title, dueAt: item.dueAt },
-          accessToken,
-        );
+      if (list.dueAt !== null) {
+        dated.push({ listId: list.id, title: list.title, dueAt: list.dueAt });
+      }
 
-        if (task.dueAt !== null) {
-          dated.push({ listId: list.id, taskId: task.id, title: task.title, dueAt: task.dueAt });
-        }
+      for (const item of proposed.items) {
+        await this.tasks.addTask(userId, list.id, { title: item.title }, accessToken);
       }
     }
 
     const next = await this.proposeSchedule(userId, conversationId, dated, accessToken);
     return { taskLists, next };
+  }
+
+  /**
+   * Ajoute les lignes proposées à une liste qui existe déjà (§12.1, A.2).
+   *
+   * Compléter et non recréer : « complète la liste » désigne celle dont on
+   * vient de parler, et y répondre par une seconde liste homonyme laisserait
+   * l'utilisateur avec deux fois le même sujet.
+   *
+   * Les lignes sont ajoutées l'une après l'autre plutôt qu'en parallèle : leur
+   * position se calcule à partir de celles déjà prises dans la liste, et deux
+   * insertions concurrentes se verraient attribuer la même.
+   *
+   * La liste est relue avant d'écrire — c'est ce que fait `addTask` — donc une
+   * liste supprimée entre la proposition et son acceptation rend un 404 plutôt
+   * que d'écrire dans le vide. L'appel passe par le jeton de l'utilisateur :
+   * les RLS garantissent qu'un identifiant venu d'ailleurs ne trouve rien.
+   */
+  private async addTaskListItems(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<TaskList[]> {
+    const payload = addTaskListItemsPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      console.error("Charge utile de complétion illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    for (const item of payload.data.items) {
+      await this.tasks.addTask(userId, payload.data.listId, { title: item.title }, accessToken);
+    }
+
+    return [];
   }
 
   /**
@@ -206,21 +242,25 @@ export class AssistantService {
   private proposeSchedule(
     userId: string,
     conversationId: string,
-    tasks: ScheduleTasksPayload["tasks"],
+    lists: ScheduleListsPayload["lists"],
     accessToken: string,
   ): Promise<Suggestion | null> {
-    if (tasks.length === 0) return Promise.resolve(null);
+    if (lists.length === 0) return Promise.resolve(null);
 
     return this.suggestions.propose(
       userId,
       conversationId,
-      { kind: "schedule_task", message: scheduleMessage(tasks.length), payload: { tasks } },
+      { kind: "schedule_task", message: scheduleMessage(lists.length), payload: { lists } },
       accessToken,
     );
   }
 
   /**
-   * Pose dans l'agenda un créneau par tâche datée (A.3).
+   * Pose dans l'agenda un créneau par liste datée (A.3).
+   *
+   * Un créneau par liste et non par ligne : l'échéance appartient à la liste,
+   * et poser autant d'événements qu'elle a d'items remplirait la journée de
+   * doublons pour une seule chose à faire.
    *
    * L'événement n'a pas de fin : une échéance déduite d'une conversation dit
    * quand, pas combien de temps. Le calendrier lui donne déjà une durée
@@ -232,7 +272,7 @@ export class AssistantService {
     suggestion: Suggestion,
     accessToken: string,
   ): Promise<CalendarEvent[]> {
-    const payload = scheduleTasksPayloadSchema.safeParse(suggestion.payload);
+    const payload = scheduleListsPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
       console.error("Charge utile de créneau illisible", suggestion.id);
@@ -241,7 +281,7 @@ export class AssistantService {
 
     const events: CalendarEvent[] = [];
 
-    for (const entry of payload.data.tasks) {
+    for (const entry of payload.data.lists) {
       const event = await this.calendar.create(
         userId,
         { title: entry.title, startsAt: entry.dueAt, endsAt: null, allDay: false },
@@ -249,12 +289,12 @@ export class AssistantService {
       );
 
       try {
-        await this.tasks.linkEvent(entry.listId, entry.taskId, event.id, accessToken);
+        await this.tasks.linkEvent(entry.listId, event.id, accessToken);
       } catch {
-        // Tâche supprimée entre la proposition et son acceptation : le créneau
+        // Liste supprimée entre la proposition et son acceptation : le créneau
         // reste, il porte l'information. Faire échouer l'acceptation entière
-        // annulerait les créneaux déjà posés pour les tâches précédentes.
-        console.warn("Tâche introuvable au moment de poser son créneau", entry.taskId);
+        // annulerait les créneaux déjà posés pour les listes précédentes.
+        console.warn("Liste introuvable au moment de poser son créneau", entry.listId);
       }
 
       events.push(event);
@@ -399,8 +439,8 @@ export class AssistantService {
  */
 function scheduleMessage(count: number): string {
   return count === 1
-    ? "Une de ces tâches porte une date. Je te la pose dans ton agenda ?"
-    : count + " de ces tâches portent une date. Je te les pose dans ton agenda ?";
+    ? "Cette liste porte une échéance. Je te bloque le créneau dans ton agenda ?"
+    : count + " de ces listes portent une échéance. Je te bloque les créneaux dans ton agenda ?";
 }
 
 /**

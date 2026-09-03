@@ -1,15 +1,18 @@
 import { useState, type ReactNode } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
+import { Check } from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
-import type { AssistantScope, Theme } from "@jc/domain";
+import { ASSISTANT_MODELS, type AssistantScope, type Theme } from "@jc/domain";
 import { useProfile, useUpdateProfile } from "@/shared/hooks/use-profile";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { api } from "@/shared/lib/api";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
+import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
-import { Separator } from "@/shared/ui/separator";
+import { FORM_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 
@@ -69,6 +72,10 @@ const CAPABILITIES: { key: keyof AssistantScope; label: string; hint: string }[]
  * Une liste de lignes « libellé / contrôle » : ChatGPT, Claude et Perplexity
  * présentent tous leurs réglages ainsi (§4.2), et une page de préférences n'a
  * pas à attirer l'œil.
+ *
+ * Même ossature que les autres écrans : le titre vit dans le bandeau, et la
+ * déconnexion en est la commande de droite — c'est la place des actions
+ * d'écran ici, et un bouton perdu au bas d'une page longue se cherche.
  */
 export function SettingsScreen() {
   const { signOut } = useAuth();
@@ -96,11 +103,30 @@ export function SettingsScreen() {
   const accent = profile?.preferences.assistantColor ?? DEFAULT_ACCENT;
   const scope = profile?.preferences.scope;
 
-  return (
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="p-6">
-      <View className="w-full max-w-2xl gap-8 self-center">
-        <Text className="text-2xl font-semibold text-foreground">Réglages</Text>
+  // Tant que rien n'a été choisi, c'est le modèle du serveur qui répond : on
+  // coche l'entrée qui lui correspond plutôt que de n'en cocher aucune, sans
+  // quoi la page laisserait croire qu'aucun modèle n'est actif.
+  const chosenModel = profile?.preferences.llmModel ?? null;
+  const servedModel = health.data?.llm.model ?? null;
+  const activeModel = chosenModel ?? servedModel;
 
+  return (
+    <ScreenShell
+      title="Réglages"
+      maxWidth={FORM_MAX_WIDTH}
+      action={
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={() => void signOut()}
+          accessibilityRole="button"
+          accessibilityLabel="Se déconnecter"
+        >
+          <Text className="text-destructive">Se déconnecter</Text>
+        </Button>
+      }
+    >
+      <View className="gap-8">
         <Section title="Compte">
           <Field label="Adresse e-mail" hint="Non modifiable">
             <Input
@@ -215,10 +241,29 @@ export function SettingsScreen() {
             </View>
           </Field>
 
-          <Field label="Modèle" hint="Bientôt modifiable">
-            <View className="h-10 justify-center rounded-md border border-border px-3 opacity-50 sm:h-9">
-              <Text className="text-base text-foreground">{health.data?.llm.model ?? "—"}</Text>
+          {/* Une liste de lignes descriptives plutôt qu'un groupe segmenté :
+              le choix ne se devine pas d'un libellé, il demande une phrase.
+              C'est la forme qu'ont retenue ChatGPT, Claude et Perplexity pour
+              le même réglage (§4.2). */}
+          <Field label="Modèle">
+            <View className="gap-2" accessibilityRole="radiogroup">
+              {ASSISTANT_MODELS.map((model) => (
+                <ModelRow
+                  key={model.id}
+                  label={model.label}
+                  benefit={model.benefit}
+                  sovereign={model.sovereign}
+                  selected={model.id === activeModel}
+                  disabled={updateProfile.isPending}
+                  onPress={() => updateProfile.mutate({ llmModel: model.id })}
+                />
+              ))}
             </View>
+            {activeModel === null ? (
+              <Text className="text-sm text-muted-foreground">
+                Aucun de ces modèles n'est actif pour l'instant : choisissez-en un.
+              </Text>
+            ) : null}
           </Field>
         </Section>
 
@@ -277,14 +322,57 @@ export function SettingsScreen() {
             Vos réglages n'ont pas pu être enregistrés. Réessayez.
           </Text>
         ) : null}
-
-        <Separator />
-
-        <Button variant="outline" onPress={() => void signOut()} accessibilityRole="button">
-          <Text className="text-destructive">Se déconnecter</Text>
-        </Button>
       </View>
-    </ScrollView>
+    </ScreenShell>
+  );
+}
+
+/**
+ * Ligne d'un modèle proposé.
+ *
+ * La mention d'hébergement n'est affichée que lorsqu'elle est vraie : la
+ * transparence du §13.4.6 porte sur ce qui rassure, et répéter « hébergé hors
+ * d'Europe » sur deux lignes sur trois transformerait un réglage en avertissement.
+ */
+function ModelRow({
+  label,
+  benefit,
+  sovereign,
+  selected,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  benefit: string;
+  sovereign: boolean;
+  selected: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      className={cn(
+        "flex-row items-center gap-3 rounded-md border px-3 py-3",
+        selected ? "border-primary bg-primary/5" : "border-border",
+        disabled && "opacity-50",
+      )}
+      style={{ minHeight: MIN_TOUCH_TARGET }}
+      accessibilityRole="radio"
+      accessibilityState={{ selected, disabled }}
+      accessibilityLabel={label}
+      accessibilityHint={benefit}
+    >
+      <View className="flex-1 gap-0.5">
+        <Text className="text-base text-foreground">{label}</Text>
+        <Text className="text-sm text-muted-foreground">{benefit}</Text>
+        {sovereign ? (
+          <Text className="text-sm text-muted-foreground">Hébergé en Europe.</Text>
+        ) : null}
+      </View>
+      {selected ? <Icon as={Check} size={18} className="text-primary" /> : null}
+    </Pressable>
   );
 }
 

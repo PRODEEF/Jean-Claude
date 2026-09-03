@@ -1,14 +1,5 @@
-import { View } from "react-native";
 import type { Conversation, Folder } from "@jc/domain";
-import { Button } from "@/shared/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/shared/ui/dialog";
-import { Text } from "@/shared/ui/text";
+import { Modal, type ModalAction } from "@/shared/ui/modal";
 import { useConversationActions } from "./hooks/use-conversation-actions";
 
 /** Conversation lâchée sur un dossier. */
@@ -37,18 +28,9 @@ export type ConversationDropDialogProps = {
  * le même résultat : la fenêtre ne propose alors qu'un seul geste.
  */
 export function ConversationDropDialog({ drop, onClose }: ConversationDropDialogProps) {
-  return (
-    <Dialog
-      open={drop !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DialogContent>
-        {drop ? <DropChoice key={drop.conversation.id} drop={drop} onClose={onClose} /> : null}
-      </DialogContent>
-    </Dialog>
-  );
+  if (!drop) return null;
+
+  return <DropChoice key={drop.conversation.id} drop={drop} onClose={onClose} />;
 }
 
 function DropChoice({ drop, onClose }: { drop: ConversationDrop; onClose: () => void }) {
@@ -58,45 +40,40 @@ function DropChoice({ drop, onClose }: { drop: ConversationDrop; onClose: () => 
 
   const apply = (folderIds: string[]) => file.mutate(folderIds, { onSuccess: onClose });
 
+  const actions: ModalAction[] = [{ label: "Annuler", onPress: onClose, disabled: file.isPending }];
+
+  // Le glisser-déposer dit « déplacer » dans tous les explorateurs de fichiers :
+  // le geste reste offert, il n'est simplement plus le seul.
+  if (filedElsewhere) {
+    actions.push({
+      label: "Déplacer ici seulement",
+      onPress: () => apply([folder.id]),
+      disabled: file.isPending,
+    });
+  }
+
+  actions.push({
+    label: filedElsewhere ? "Ajouter à ce dossier" : "Ranger ici",
+    variant: "default",
+    onPress: () => apply([...conversation.folderIds, folder.id]),
+    disabled: file.isPending,
+  });
+
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle>Ranger dans « {folder.name} » ?</DialogTitle>
-        <DialogDescription>
-          {filedElsewhere
-            ? `« ${conversation.title} » est déjà rangée ailleurs. Elle peut appartenir aux deux endroits à la fois.`
-            : `« ${conversation.title} » rejoindra ce dossier.`}
-        </DialogDescription>
-      </DialogHeader>
-
-      {/* Message fixe, et non `error.message` : une erreur remontée du serveur
-          peut porter des fragments de requête. */}
-      {file.isError ? (
-        <Text className="text-sm text-destructive">
-          Le rangement a échoué. Réessayez dans un instant.
-        </Text>
-      ) : null}
-
-      <View className="gap-2">
-        <Button
-          onPress={() => apply([...conversation.folderIds, folder.id])}
-          disabled={file.isPending}
-        >
-          <Text>{filedElsewhere ? "Ajouter à ce dossier" : "Ranger ici"}</Text>
-        </Button>
-
-        {/* Le glisser-déposer dit « déplacer » dans tous les explorateurs de
-            fichiers : le geste reste offert, il n'est simplement plus le seul. */}
-        {filedElsewhere ? (
-          <Button variant="outline" onPress={() => apply([folder.id])} disabled={file.isPending}>
-            <Text>Déplacer ici seulement</Text>
-          </Button>
-        ) : null}
-
-        <Button variant="ghost" onPress={onClose} disabled={file.isPending}>
-          <Text>Annuler</Text>
-        </Button>
-      </View>
-    </>
+    <Modal
+      open
+      onClose={onClose}
+      variant="confirm"
+      title={`Ranger dans « ${folder.name} » ?`}
+      description={
+        filedElsewhere
+          ? `« ${conversation.title} » est déjà rangée ailleurs. Elle peut appartenir aux deux endroits à la fois.`
+          : `« ${conversation.title} » rejoindra ce dossier.`
+      }
+      // Message fixe, et non `error.message` : une erreur remontée du serveur
+      // peut porter des fragments de requête.
+      error={file.isError ? "Le rangement a échoué. Réessayez dans un instant." : null}
+      actions={actions}
+    />
   );
 }
