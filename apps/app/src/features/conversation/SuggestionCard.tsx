@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react-native";
 import {
+  addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
@@ -252,6 +253,8 @@ function outcomeLabel(suggestion: Suggestion): string {
       return "Conversation rangée";
     case "create_task_list":
       return "Todolistes créées";
+    case "add_task_list_items":
+      return "Liste complétée";
     case "schedule_task":
       return "Créneaux posés";
     default:
@@ -324,6 +327,24 @@ function useSuggestionPreview(suggestion: Suggestion): {
               nested: true,
             })),
           ])
+        : [],
+    };
+  }
+
+  // Compléter une liste, plutôt qu'en ouvrir une seconde : la liste visée est
+  // nommée dans la phrase de l'assistant, l'aperçu ne montre donc que ce qui
+  // s'y ajoute.
+  if (suggestion.kind === "add_task_list_items") {
+    const proposed = addTaskListItemsPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Ajouter à la liste",
+      lines: proposed.success
+        ? proposed.data.items.map((item) => ({
+            key: `${proposed.data.listId}/${item.title}`,
+            label: item.title,
+            nested: false,
+          }))
         : [],
     };
   }

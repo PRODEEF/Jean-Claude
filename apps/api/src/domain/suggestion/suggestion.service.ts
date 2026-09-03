@@ -1,4 +1,5 @@
 import {
+  addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
@@ -13,6 +14,7 @@ import {
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
   SUGGEST_TASK_LIST,
+  SUGGEST_TASK_LIST_ITEMS,
 } from "../../core/llm/llm.tools.js";
 import type { ISuggestionRepository } from "./suggestion.repository.interface.js";
 
@@ -138,6 +140,9 @@ function translate(
   } else if (toolCall.name === SUGGEST_TASK_LIST.name) {
     const payload = createTaskListsPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "create_task_list", payload: payload.data };
+  } else if (toolCall.name === SUGGEST_TASK_LIST_ITEMS.name) {
+    const payload = addTaskListItemsPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "add_task_list_items", payload: payload.data };
   } else {
     console.warn(`Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
     return null;

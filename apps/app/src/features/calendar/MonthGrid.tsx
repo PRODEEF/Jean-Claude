@@ -1,4 +1,4 @@
-import { Pressable, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { ListChecks } from "lucide-react-native";
 import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
@@ -69,18 +69,27 @@ export function MonthGrid({
           );
 
           return (
-            <Pressable
+            <View
               key={day.toISOString()}
-              onPress={() => onSelectDay(day)}
-              accessibilityRole="button"
-              accessibilityLabel={`${day.getDate()}, ${dayEvents.length} événement(s), ${dayTasks} tâche(s) à faire`}
-              accessibilityState={{ selected }}
               style={{ width: `${100 / 7}%`, height: compact ? 64 : 96 }}
               className={`border-border gap-1 border-b border-r p-1 ${
                 selected ? "bg-accent-soft" : ""
               }`}
             >
-              <View className="flex-row justify-end">
+              {/* La cellule n'est pas elle-même pressable : elle porte les
+                  rendez-vous, qui le sont, et un bouton dans un bouton n'est
+                  pas du HTML valide. Le sélecteur de jour est donc posé en
+                  fond — avant eux dans la pile, pour qu'ils captent l'appui
+                  qui les vise — et le contenu inerte le laisse passer. */}
+              <Pressable
+                style={StyleSheet.absoluteFill}
+                onPress={() => onSelectDay(day)}
+                accessibilityRole="button"
+                accessibilityLabel={`${day.getDate()}, ${dayEvents.length} événement(s), ${dayTasks} tâche(s) à faire`}
+                accessibilityState={{ selected }}
+              />
+
+              <View pointerEvents="none" className="flex-row justify-end">
                 <Text
                   className={`text-xs ${outside ? "text-muted-foreground" : "text-foreground"} ${
                     isToday
@@ -93,14 +102,17 @@ export function MonthGrid({
               </View>
 
               {compact ? (
-                <View className="flex-row flex-wrap items-center gap-0.5">
+                <View pointerEvents="none" className="flex-row flex-wrap items-center gap-0.5">
                   {dayEvents.slice(0, MAX_PILLS_PER_CELL).map((event) => (
                     <View key={event.id} className="bg-primary h-1.5 w-1.5 rounded-full" />
                   ))}
                   {dayTasks > 0 ? <TaskBadge count={dayTasks} compact /> : null}
                 </View>
               ) : (
-                <View className="gap-0.5">
+                // `box-none` et non `none` : la colonne elle-même laisse
+                // passer l'appui vers le sélecteur de jour, mais les
+                // rendez-vous qu'elle porte restent pressables.
+                <View pointerEvents="box-none" className="gap-0.5">
                   {/* Avant les rendez-vous : au-delà de trois lignes la cellule
                       déborde, et la charge de la journée doit rester visible. */}
                   {dayTasks > 0 ? <TaskBadge count={dayTasks} /> : null}
@@ -123,13 +135,15 @@ export function MonthGrid({
                     </Pressable>
                   ))}
                   {dayEvents.length > MAX_PILLS_PER_CELL ? (
-                    <Text className="text-muted-foreground px-1 text-[11px]">
-                      +{dayEvents.length - MAX_PILLS_PER_CELL}
-                    </Text>
+                    <View pointerEvents="none">
+                      <Text className="text-muted-foreground px-1 text-[11px]">
+                        +{dayEvents.length - MAX_PILLS_PER_CELL}
+                      </Text>
+                    </View>
                   ) : null}
                 </View>
               )}
-            </Pressable>
+            </View>
           );
         })}
       </View>
@@ -147,7 +161,7 @@ export function MonthGrid({
 function TaskBadge({ count, compact }: { count: number; compact?: boolean }) {
   if (compact) {
     return (
-      <View className="flex-row items-center gap-0.5">
+      <View pointerEvents="none" className="flex-row items-center gap-0.5">
         <Icon as={ListChecks} size={10} className="text-muted-foreground" />
         <Text className="text-muted-foreground text-[10px]">{count}</Text>
       </View>
@@ -155,7 +169,10 @@ function TaskBadge({ count, compact }: { count: number; compact?: boolean }) {
   }
 
   return (
-    <View className="border-border flex-row items-center gap-1 rounded border px-1 py-0.5">
+    <View
+      pointerEvents="none"
+      className="border-border flex-row items-center gap-1 rounded border px-1 py-0.5"
+    >
       <Icon as={ListChecks} size={10} className="text-muted-foreground" />
       <Text className="text-muted-foreground text-[11px] leading-4">
         {count === 1 ? "1 tâche" : `${count} tâches`}

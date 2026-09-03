@@ -106,6 +106,17 @@ export const taskRepository: ITaskRepository = {
     return data ? toListWithTasks(data as unknown as TaskListRow & { tasks: TaskRow[] }) : null;
   },
 
+  async findByConversation(conversationId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("task_lists")
+      .select(LIST_WITH_TASKS_COLUMNS)
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return (data as unknown as (TaskListRow & { tasks: TaskRow[] })[]).map(toListWithTasks);
+  },
+
   async createList(userId, input: CreateTaskList & TaskListOrigin, accessToken) {
     const { data, error } = await forUser(accessToken)
       .from("task_lists")
