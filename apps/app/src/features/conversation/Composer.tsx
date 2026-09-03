@@ -1,12 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import {
-  Platform,
-  Pressable,
-  StyleSheet,
-  TextInput,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { Platform, Pressable, StyleSheet, TextInput, useWindowDimensions } from "react-native";
 import { ArrowUp, Square } from "lucide-react-native";
 import { MESSAGE_MAX_LENGTH } from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
@@ -61,6 +54,12 @@ export type ComposerProps = {
  * Le champ grandit avec ce qu'on y écrit, jusqu'à une fraction de l'écran :
  * relire son message avant de l'envoyer ne doit pas demander de le faire
  * défiler dans une fenêtre de deux lignes.
+ *
+ * La coque entière donne le focus au champ : elle se lit comme une zone de
+ * saisie, et ses marges internes — celle de gauche, celle du haut, la
+ * gouttière qui précède la flèche — n'avaient aucune raison de rester mortes
+ * au clic. Le bouton d'envoi, lui, prend le geste avant elle : un enfant
+ * pressable retient le toucher plutôt que de le laisser remonter.
  */
 export function Composer({
   value,
@@ -104,7 +103,14 @@ export function Composer({
   }, [value, maxHeight]);
 
   return (
-    <View style={[styles.shell, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+    <Pressable
+      onPress={() => node.current?.focus()}
+      // Rien à annoncer : le champ et la flèche portent déjà leurs libellés,
+      // et une cible de plus dans l'ordre de lecture ne dirait rien de neuf.
+      accessible={false}
+      className="web:cursor-text"
+      style={[styles.shell, { backgroundColor: palette.surface, borderColor: palette.border }]}
+    >
       <TextInput
         ref={attach}
         value={value}
@@ -169,7 +175,7 @@ export function Composer({
           <ArrowUp size={18} color={palette.accentText} />
         )}
       </Pressable>
-    </View>
+    </Pressable>
   );
 }
 
