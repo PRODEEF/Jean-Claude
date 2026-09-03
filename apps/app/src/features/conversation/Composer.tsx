@@ -1,10 +1,39 @@
-import type { RefObject } from "react";
-import { Platform, Pressable, StyleSheet, TextInput, View } from "react-native";
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { ArrowUp, Square } from "lucide-react-native";
 import { MESSAGE_MAX_LENGTH } from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
+
+/**
+ * Part de la hauteur de fenêtre au-delà de laquelle la saisie cesse de
+ * grandir. Un brouillon doit se relire entier avant d'être envoyé — mais passé
+ * cette part, c'est la conversation qu'il chasserait de l'écran.
+ */
+const MAX_HEIGHT_RATIO = 0.45;
+
+/** Hauteur d'une ligne : le champ naît là, et n'y redescend qu'une fois vidé. */
+const MIN_INPUT_HEIGHT = 24;
+
+/**
+ * Le nœud que react-native-web rend pour une saisie multiligne.
+ *
+ * Un `instanceof` plutôt qu'un `as` : sur iOS et Android, la référence n'est
+ * pas un élément du DOM, et le contrôle doit donc être fait à l'exécution.
+ */
+function asTextArea(node: unknown): HTMLTextAreaElement | null {
+  return typeof HTMLTextAreaElement !== "undefined" && node instanceof HTMLTextAreaElement
+    ? node
+    : null;
+}
 
 export type ComposerProps = {
   value: string;
@@ -28,6 +57,10 @@ export type ComposerProps = {
  *
  * Partagé par le fil et l'écran d'accueil : c'est la même saisie, et deux
  * copies auraient divergé au premier ajustement.
+ *
+ * Le champ grandit avec ce qu'on y écrit, jusqu'à une fraction de l'écran :
+ * relire son message avant de l'envoyer ne doit pas demander de le faire
+ * défiler dans une fenêtre de deux lignes.
  */
 export function Composer({
   value,
@@ -40,13 +73,40 @@ export function Composer({
   autoFocus = false,
 }: ComposerProps) {
   const { palette } = useTheme();
+  const { height: windowHeight } = useWindowDimensions();
   const empty = value.trim().length === 0;
   const stoppable = busy && onStop !== undefined;
+
+  const node = useRef<TextInput | null>(null);
+  const [contentHeight, setContentHeight] = useState(MIN_INPUT_HEIGHT);
+  const maxHeight = Math.max(MIN_INPUT_HEIGHT * 3, Math.round(windowHeight * MAX_HEIGHT_RATIO));
+
+  // L'appelant garde la main sur le champ — le fil y rend le focus après un
+  // envoi — sans que le composant perde la référence dont il a besoin ici.
+  const attach = useCallback(
+    (instance: TextInput | null) => {
+      node.current = instance;
+      if (inputRef) inputRef.current = instance;
+    },
+    [inputRef],
+  );
+
+  // Un `textarea` ne suit pas son contenu : sa hauteur est remise à zéro puis
+  // calée sur ce que le navigateur mesure. `onContentSizeChange`, lui, ne sert
+  // que les plateformes natives.
+  useLayoutEffect(() => {
+    if (Platform.OS !== "web") return;
+    const textArea = asTextArea(node.current);
+    if (!textArea) return;
+
+    textArea.style.height = "auto";
+    textArea.style.height = `${Math.min(textArea.scrollHeight, maxHeight)}px`;
+  }, [value, maxHeight]);
 
   return (
     <View style={[styles.shell, { backgroundColor: palette.surface, borderColor: palette.border }]}>
       <TextInput
-        ref={inputRef}
+        ref={attach}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -67,7 +127,16 @@ export function Composer({
         // du liseré de focus enlèverait le repère de navigation au clavier,
         // qui est ici la coque elle-même.
         className="web:outline-none"
-        style={[styles.input, { color: palette.text }]}
+        onContentSizeChange={(event) => setContentHeight(event.nativeEvent.contentSize.height)}
+        style={[
+          styles.input,
+          { color: palette.text, maxHeight },
+          // Sur web, la hauteur est posée sur le nœud lui-même : un style de
+          // plus ici la remettrait à sa valeur de rendu à chaque frappe.
+          Platform.OS === "web"
+            ? null
+            : { height: Math.min(Math.max(contentHeight, MIN_INPUT_HEIGHT), maxHeight) },
+        ]}
         // Un `textarea` s'ouvre sur deux rangées par défaut : le champ naissait
         // donc deux fois trop haut, texte collé en haut et flèche en bas. Sur
         // mobile, `numberOfLines` bornerait au contraire la saisie à une ligne.
@@ -119,7 +188,6 @@ const styles = StyleSheet.create({
   input: {
     fontFamily: FONT_FAMILY,
     flex: 1,
-    maxHeight: 140,
     paddingVertical: spacing.xs,
     fontSize: fontSize.md,
   },
