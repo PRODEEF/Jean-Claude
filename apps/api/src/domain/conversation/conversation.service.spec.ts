@@ -1605,6 +1605,114 @@ describe("ConversationService", () => {
     });
   });
 
+  describe("dossiers proposés au rangement (§5.2, A.1)", () => {
+    // De vrais UUID : la charge utile écarte tout identifiant qui n'en est pas
+    // un, et un libellé de fixture passerait pour un dossier inventé.
+    const TAXES = "11111111-1111-4111-8111-111111111111";
+    const OTHER = "22222222-2222-4222-8222-222222222222";
+
+    /** Le rangement tel que le modèle le rend, dossiers existants compris. */
+    function filing(existingFolders: unknown, newFolderNames: string[] = []): LlmToolCall {
+      return {
+        id: "call-1",
+        name: "suggest_folders",
+        input: { message: "Je range ça où il faut ?", existingFolders, newFolderNames },
+      };
+    }
+
+    /** Charge utile de la proposition effectivement enregistrée. */
+    function capturedPayload(suggestions: ISuggestionRepository): Record<string, unknown> {
+      const call = (suggestions.create as jest.Mock).mock.calls[0] as [
+        string,
+        { payload: Record<string, unknown> },
+        string,
+      ];
+      return call[1].payload;
+    }
+
+    it("écarte le dossier dont le nom contredit l'identifiant", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const folders = makeFolderRepository([
+        makeFolder({ id: TAXES, name: "Impôts" }),
+        makeFolder({ id: OTHER, name: "Environnement" }),
+      ]);
+      const llm = makeLlm(
+        ["Je te range ça."],
+        [
+          filing([
+            { id: TAXES, name: "Impôts" },
+            { id: OTHER, name: "Impôts" },
+          ]),
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions, folders), {
+        content: "C'est quand la date de déclaration ?",
+        inputMode: "text",
+      });
+
+      // Un identifiant recopié de travers tombe sur un autre dossier réel : la
+      // proposition paraît sensée alors qu'elle range la conversation ailleurs.
+      expect(capturedPayload(suggestions)["existingFolderIds"]).toEqual([TAXES]);
+      jest.restoreAllMocks();
+    });
+
+    it("accepte un dossier désigné par son chemin complet", async () => {
+      const suggestions = makeSuggestionRepository();
+      const folders = makeFolderRepository([
+        makeFolder({ id: TAXES, name: "Administratif" }),
+        makeFolder({ id: OTHER, name: "Assurances", parentId: TAXES }),
+      ]);
+      const llm = makeLlm(
+        ["Je te range ça."],
+        [filing([{ id: OTHER, name: "Administratif > Assurances" }])],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions, folders));
+
+      // La consigne affiche « Administratif > Assurances » : reprendre la ligne
+      // entière est une lecture fidèle, pas une confusion.
+      expect(capturedPayload(suggestions)["existingFolderIds"]).toEqual([OTHER]);
+    });
+
+    it("écarte un identifiant que l'utilisateur ne possède pas", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const folders = makeFolderRepository([makeFolder({ id: TAXES, name: "Impôts" })]);
+      const llm = makeLlm(
+        ["Je te range ça."],
+        [filing([{ id: OTHER, name: "Impôts" }], ["Déclarations"])],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions, folders));
+
+      const payload = capturedPayload(suggestions);
+      // Le dossier neuf survit : perdre tout le rangement pour une ligne
+      // fautive coûterait plus cher que de l'écarter.
+      expect(payload["existingFolderIds"]).toEqual([]);
+      expect(payload["newFolderNames"]).toEqual(["Déclarations"]);
+      jest.restoreAllMocks();
+    });
+
+    it("demande de ne proposer que les dossiers dont la conversation traite", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository([makeFolder({ id: TAXES, name: "Impôts" })]),
+        ),
+      );
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("dont cette conversation-ci traite réellement");
+      expect(system).toContain("dans le doute, laisse-le de côté");
+    });
+  });
+
   describe("contexte du canal permanent (A.10)", () => {
     /** Le canal, tel que la route le remet au service. */
     function channel(): IConversationRepository {

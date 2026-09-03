@@ -558,7 +558,12 @@ export class ConversationService {
           console.warn(`Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
-        await this.suggestions.capture(userId, conversationId, toolCall, accessToken);
+        await this.suggestions.capture(
+          userId,
+          conversationId,
+          withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+          accessToken,
+        );
       }
 
       await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
@@ -816,6 +821,89 @@ function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[])
 }
 
 /**
+ * Vérifie les dossiers d'un `suggest_folders` avant d'en faire une proposition.
+ *
+ * Le modèle rend un identifiant **et** le nom lu sur la même ligne de la
+ * consigne : seules les paires cohérentes sont retenues. Un identifiant recopié
+ * de travers tombe sur un autre dossier réel de l'utilisateur — la proposition
+ * paraît alors sensée alors qu'elle range la conversation dans un dossier
+ * étranger au sujet, et rien en aval ne peut le détecter. C'est le seul endroit
+ * où les deux informations sont connues ensemble.
+ *
+ * L'appel est traduit vers `existingFolderIds`, la forme que la charge utile
+ * persistée porte depuis le début : les cartes déjà en base et le client
+ * restent lisibles à l'identique.
+ */
+function withVerifiedFolders(toolCall: LlmToolCall, known: FolderTreeNode[]): LlmToolCall {
+  if (toolCall.name !== SUGGEST_FOLDERS.name) return toolCall;
+
+  const proposed = toolCall.input["existingFolders"];
+  // Le modèle s'en est tenu aux nouveaux dossiers, ou a répondu dans l'ancienne
+  // forme : la capture sait déjà écarter un identifiant qui n'est pas un UUID.
+  if (!Array.isArray(proposed)) return toolCall;
+
+  const folders = flattenWithPath(known);
+  const verified: string[] = [];
+
+  for (const entry of proposed) {
+    const candidate = readProposedFolder(entry);
+    if (!candidate) {
+      console.warn("Dossier proposé sans identifiant ni nom exploitables, écarté.");
+      continue;
+    }
+
+    const folder = folders.find((known) => known.id === candidate.id);
+    if (!folder) {
+      console.warn("Dossier proposé inconnu, écarté du rangement.");
+      continue;
+    }
+
+    // Le chemin complet est accepté au même titre que le nom seul : la consigne
+    // affiche « Administratif > Assurances », et reprendre la ligne entière est
+    // une lecture fidèle, pas une confusion.
+    if (!sameName(folder.name, candidate.name) && !sameName(folder.path, candidate.name)) {
+      console.warn("Dossier proposé dont le nom contredit l'identifiant, écarté.");
+      continue;
+    }
+
+    verified.push(folder.id);
+  }
+
+  return { ...toolCall, input: { ...toolCall.input, existingFolderIds: verified } };
+}
+
+/** Un dossier tel que le modèle le rend, ou `null` si la forme n'y est pas. */
+function readProposedFolder(entry: unknown): { id: string; name: string } | null {
+  if (typeof entry !== "object" || entry === null) return null;
+  if (!("id" in entry) || !("name" in entry)) return null;
+
+  const { id, name } = entry;
+  return typeof id === "string" && typeof name === "string" ? { id, name } : null;
+}
+
+/** Arborescence mise à plat, chaque dossier portant aussi son chemin complet. */
+function flattenWithPath(
+  tree: FolderTreeNode[],
+  parent = "",
+): { id: string; name: string; path: string }[] {
+  return tree.flatMap((folder) => {
+    const path = parent ? `${parent} > ${folder.name}` : folder.name;
+    return [
+      { id: folder.id, name: folder.name, path },
+      ...flattenWithPath(folder.children, path),
+    ];
+  });
+}
+
+/**
+ * Deux noms de dossier ne différant que par la casse ou les espaces de bord
+ * désignent le même dossier — c'est ainsi que l'utilisateur les lit.
+ */
+function sameName(a: string, b: string): boolean {
+  return a.trim().toLocaleLowerCase("fr") === b.trim().toLocaleLowerCase("fr");
+}
+
+/**
  * Le tour doit-il encore produire une réponse écrite ?
  *
  * Deux appels se suffisent à eux-mêmes : `open_new_conversation` exige au
@@ -1007,11 +1095,18 @@ function buildSystemPrompt(
     lines.push(
       "",
       "Elle n'est rangée dans aucun dossier. Dès que son sujet est clair, appelle",
-      "`suggest_folders` pour proposer où la ranger — tous les dossiers pertinents,",
-      "pas seulement un. N'attends pas qu'on te le demande, et ne le fais qu'une fois.",
+      "`suggest_folders` pour proposer où la ranger. N'attends pas qu'on te le",
+      "demande, et ne le fais qu'une fois.",
+      "",
+      "Ne propose que des dossiers dont cette conversation-ci traite réellement.",
+      "Elle peut en relever de plusieurs à la fois — la mutuelle est à la fois",
+      "« Santé » et « Assurances » — mais un dossier seulement voisin du sujet n'en",
+      "fait pas partie : dans le doute, laisse-le de côté. Un dossier de trop range",
+      "la conversation là où l'utilisateur n'ira jamais la chercher.",
       "",
       todo.filing.folders.length > 0
-        ? "Dossiers existants, à réutiliser en priorité avec leur identifiant exact :"
+        ? "Dossiers existants. Pour en réutiliser un, recopie son identifiant ET son nom" +
+          " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas."
         : "L'utilisateur n'a encore aucun dossier : propose-en un nouveau, sobrement nommé.",
       ...describeFolders(todo.filing.folders),
     );
