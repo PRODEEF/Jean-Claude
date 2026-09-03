@@ -14,10 +14,27 @@ import type {
  * `completedAt` s'ajoute à ce que le client peut envoyer : l'horodatage de
  * complétion est déduit du passage de `done`, jamais posé par l'appelant.
  */
-export type TaskPatch = UpdateTask & {
-  completedAt?: string | null;
-  /** Événement calendrier posé depuis la tâche (A.3) — jamais envoyé par un client. */
-  eventId?: string | null;
+export type TaskPatch = UpdateTask & { completedAt?: string | null };
+
+/**
+ * Modification d'une liste telle qu'elle atteint la base.
+ *
+ * `eventId` s'ajoute à ce que le client peut envoyer : le lien vers le créneau
+ * de l'agenda naît d'une proposition acceptée (A.3), jamais d'un appel direct.
+ */
+export type TaskListPatch = UpdateTaskList & { eventId?: string | null };
+
+/**
+ * Une ligne de l'éditeur, prête pour la base.
+ *
+ * La filiation y est déjà résolue : le service traduit la profondeur envoyée
+ * par l'éditeur en `parentId`, le Repository ne fait plus qu'écrire.
+ */
+export type TaskRowInput = {
+  id: string;
+  title: string;
+  parentId: string | null;
+  position: number;
 };
 
 /**
@@ -38,7 +55,7 @@ export interface ITaskRepository {
     input: CreateTaskList & TaskListOrigin,
     accessToken: string,
   ): Promise<TaskList>;
-  updateList(id: string, patch: UpdateTaskList, accessToken: string): Promise<TaskList>;
+  updateList(id: string, patch: TaskListPatch, accessToken: string): Promise<TaskList>;
   deleteList(id: string, accessToken: string): Promise<void>;
   createTask(
     userId: string,
@@ -50,4 +67,18 @@ export interface ITaskRepository {
   /** Filtre aussi sur la liste : une tâche ne se modifie que depuis la sienne. */
   updateTask(listId: string, taskId: string, patch: TaskPatch, accessToken: string): Promise<Task>;
   deleteTask(listId: string, taskId: string, accessToken: string): Promise<void>;
+  /**
+   * Réécrit le contenu d'une liste en un appel.
+   *
+   * Les lignes absentes de `rows` disparaissent ; les autres sont écrites
+   * telles quelles. Ce que l'éditeur ne transporte pas — `done`, `notes`,
+   * l'horodatage de complétion — est conservé : cocher et écrire sont deux
+   * gestes distincts, et taper une ligne ne doit pas décocher la voisine.
+   */
+  replaceTasks(
+    userId: string,
+    listId: string,
+    rows: TaskRowInput[],
+    accessToken: string,
+  ): Promise<Task[]>;
 }

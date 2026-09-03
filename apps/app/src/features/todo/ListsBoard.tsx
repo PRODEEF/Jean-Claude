@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { View } from "react-native";
 import {
+  CalendarClock,
   ChevronDown,
   ChevronRight,
-  Folder as FolderIcon,
+  ListChecks,
   MoreHorizontal,
-  Plus,
   ShoppingBasket,
 } from "lucide-react-native";
 import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
@@ -13,17 +13,17 @@ import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
-import { Input } from "@/shared/ui/input";
 import { Text } from "@/shared/ui/text";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
-import { useTaskActions } from "@/shared/hooks/use-task-lists";
-import { TaskRow } from "./TaskRow";
+import { TaskListEditor } from "./TaskListEditor";
 
 export type ListsBoardProps = {
   lists: TaskListWithTasks[];
   /** Liste ouverte depuis la barre latérale : mise en avant à l'arrivée. */
   highlightedId?: string;
+  /** Recherche en cours, transmise aux lignes pour les mettre en avant. */
+  query: string;
   onEditList: (list: TaskList) => void;
   onDeleteList: (list: TaskList) => void;
   onOpenTask: (task: Task) => void;
@@ -39,6 +39,7 @@ export type ListsBoardProps = {
 export function ListsBoard({
   lists,
   highlightedId,
+  query,
   onEditList,
   onDeleteList,
   onOpenTask,
@@ -62,6 +63,7 @@ export function ListsBoard({
           list={list}
           folderName={folders.find((folder) => folder.id === list.folderId)?.name}
           highlighted={list.id === highlightedId}
+          query={query}
           onEdit={() => onEditList(list)}
           onDelete={() => onDeleteList(list)}
           onOpenTask={onOpenTask}
@@ -75,6 +77,7 @@ function ListCard({
   list,
   folderName,
   highlighted,
+  query,
   onEdit,
   onDelete,
   onOpenTask,
@@ -82,32 +85,18 @@ function ListCard({
   list: TaskListWithTasks;
   folderName: string | undefined;
   highlighted: boolean;
+  query: string;
   onEdit: () => void;
   onDelete: () => void;
   onOpenTask: (task: Task) => void;
 }) {
-  const { addTask, removeTask } = useTaskActions();
-  const [draft, setDraft] = useState("");
   /** Dépliée par défaut : une liste repliée d'office se ferait oublier. */
   const [open, setOpen] = useState(true);
-  /**
-   * Mode suppression.
-   *
-   * La corbeille n'est plus en face de chaque ligne à demeure : cocher est le
-   * geste courant, supprimer l'exception, et les deux se touchaient du doigt.
-   */
-  const [removing, setRemoving] = useState(false);
   /** Point d'ouverture du menu, `null` s'il est fermé. */
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   const shopping = list.kind === "shopping";
-
-  const submit = () => {
-    const title = draft.trim();
-    if (title.length === 0) return;
-    setDraft("");
-    addTask.mutate({ listId: list.id, input: { title } });
-  };
+  const due = dueLabel(list.dueAt);
 
   const items: ContextMenuItem[] = [
     {
@@ -115,15 +104,6 @@ function ListCard({
       onPress: () => {
         setMenu(null);
         onEdit();
-      },
-    },
-    {
-      label: "Supprimer des éléments",
-      onPress: () => {
-        setMenu(null);
-        // Entrer dans le mode sur une liste repliée n'aurait rien de visible.
-        setOpen(true);
-        setRemoving(true);
       },
     },
     {
@@ -141,7 +121,7 @@ function ListCard({
       <Collapsible open={open} onOpenChange={setOpen}>
         <View className="flex-row items-center gap-2">
           <Icon
-            as={shopping ? ShoppingBasket : FolderIcon}
+            as={shopping ? ShoppingBasket : ListChecks}
             size={16}
             className="text-muted-foreground"
           />
@@ -157,31 +137,27 @@ function ListCard({
             </Text>
           </View>
 
-          {/* Une seule affordance à la fois : tant qu'on supprime, le menu
-            s'efface derrière la sortie du mode. */}
-          {removing ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => setRemoving(false)}
-              accessibilityLabel={`Terminer la suppression dans ${list.title}`}
-            >
-              <Text>Terminé</Text>
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              hitSlop={8}
-              onPress={(event) =>
-                setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
-              }
-              accessibilityLabel={`Actions pour ${list.title}`}
-              className="size-8"
-            >
-              <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
-            </Button>
-          )}
+          {/* L'échéance porte sur la liste entière : elle se lit en tête, pas
+              en face d'une de ses lignes. */}
+          {due ? (
+            <View className="flex-row items-center gap-1">
+              <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
+              <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+                {due}
+              </Text>
+            </View>
+          ) : null}
+
+          <Button
+            variant="ghost"
+            size="icon"
+            hitSlop={8}
+            onPress={(event) => setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
+            accessibilityLabel={`Actions pour ${list.title}`}
+            className="size-8"
+          >
+            <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
+          </Button>
 
           <CollapsibleTrigger asChild>
             <Button
@@ -201,37 +177,11 @@ function ListCard({
         </View>
 
         <CollapsibleContent>
-          {/* Sans écart entre les rangées : la hauteur tactile de 44 pt les
-              sépare déjà, et un interligne de plus faisait tenir trois courses
-              là où l'écran en montrait dix. */}
+          {/* La capture ne demande rien d'autre que du texte : ni date, ni
+              dossier au moment où l'on écrit (§13.4.1). Le reste se pose
+              ensuite, sur la liste. */}
           <View className="pt-2">
-            {list.tasks.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                meta={dueLabel(task.dueAt)}
-                onOpen={() => onOpenTask(task)}
-                {...(removing
-                  ? { onRemove: () => removeTask.mutate({ listId: list.id, taskId: task.id }) }
-                  : {})}
-              />
-            ))}
-          </View>
-
-          {/* La capture ne demande rien d'autre qu'un titre : ni date, ni dossier
-            au moment où l'on écrit (§13.4.1). Le reste se pose ensuite. */}
-          <View className="flex-row items-center gap-2 pt-2">
-            <Icon as={Plus} size={14} className="text-muted-foreground" />
-            <Input
-              value={draft}
-              onChangeText={setDraft}
-              onSubmitEditing={submit}
-              onBlur={submit}
-              returnKeyType="done"
-              placeholder={shopping ? "Ajouter un achat" : "Ajouter une tâche"}
-              accessibilityLabel={`Ajouter une tâche à ${list.title}`}
-              className="flex-1 border-0 px-0"
-            />
+            <TaskListEditor list={list} query={query} onOpenTask={onOpenTask} />
           </View>
         </CollapsibleContent>
       </Collapsible>
@@ -245,8 +195,8 @@ function ListCard({
   );
 }
 
-/** Ex. « jeudi 4 septembre · 14h30 », ou rien quand la tâche n'a pas d'échéance. */
-function dueLabel(dueAt: string | null): string | undefined {
+/** Ex. « jeudi 4 septembre · 14h30 », ou rien quand la liste n'a pas d'échéance. */
+export function dueLabel(dueAt: string | null): string | undefined {
   if (dueAt === null) return undefined;
 
   const due = new Date(dueAt);

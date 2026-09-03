@@ -5,13 +5,6 @@ import { ApiError } from "@jc/api-client";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "@/shared/ui/modal";
 import { Text } from "@/shared/ui/text";
-import {
-  formatDateInput,
-  formatTimeInput,
-  parseDateInput,
-  parseTimeInput,
-  withTime,
-} from "@/shared/lib/date-input";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
 
 export type TaskDialogProps = {
@@ -21,11 +14,11 @@ export type TaskDialogProps = {
 };
 
 /**
- * Détail d'une tâche : son titre, son échéance, ses notes.
+ * Détail d'une tâche : son titre et ses notes.
  *
- * La capture, elle, n'ouvre rien : on tape un titre au bas de la liste et la
- * tâche existe (§13.4.1). Cette fenêtre sert à ce qui vient après — dater,
- * préciser, corriger.
+ * Pas d'échéance : elle appartient à la liste entière, et se pose sur elle.
+ * La capture, elle, n'ouvre rien — on tape la ligne dans la liste et la tâche
+ * existe (§13.4.1). Cette fenêtre sert à ce qui ne tient pas sur une ligne.
  */
 export function TaskDialog({ task, onClose }: TaskDialogProps) {
   if (!task) return null;
@@ -33,29 +26,10 @@ export function TaskDialog({ task, onClose }: TaskDialogProps) {
   return <TaskForm key={task.id} task={task} onClose={onClose} />;
 }
 
-type TaskFormValues = {
-  title: string;
-  /** `JJ/MM/AAAA`, vide quand la tâche n'a pas d'échéance. */
-  date: string;
-  /** `HH:MM`, vide quand l'échéance ne vise pas d'heure précise. */
-  time: string;
-  notes: string;
-};
+type TaskFormValues = { title: string; notes: string };
 
 function initialValues(task: Task): TaskFormValues {
-  if (task.dueAt === null) {
-    return { title: task.title, date: "", time: "", notes: task.notes ?? "" };
-  }
-
-  const due = new Date(task.dueAt);
-  const timed = due.getHours() !== 0 || due.getMinutes() !== 0;
-
-  return {
-    title: task.title,
-    date: formatDateInput(due),
-    time: timed ? formatTimeInput(due) : "",
-    notes: task.notes ?? "",
-  };
+  return { title: task.title, notes: task.notes ?? "" };
 }
 
 function TaskForm({ task, onClose }: { task: Task; onClose: () => void }) {
@@ -104,37 +78,6 @@ function TaskForm({ task, onClose }: { task: Task; onClose: () => void }) {
         />
       </Field>
 
-      <View className="flex-row gap-3">
-        <View className="flex-1">
-          <Field label="Échéance">
-            <Input
-              value={values.date}
-              onChangeText={(text) => patch("date", text)}
-              placeholder="JJ/MM/AAAA"
-              keyboardType="numbers-and-punctuation"
-              accessibilityLabel="Date d'échéance"
-            />
-          </Field>
-        </View>
-        <View className="flex-1">
-          <Field label="Heure">
-            <Input
-              value={values.time}
-              onChangeText={(text) => patch("time", text)}
-              placeholder="HH:MM"
-              keyboardType="numbers-and-punctuation"
-              accessibilityLabel="Heure de l'échéance"
-            />
-          </Field>
-        </View>
-      </View>
-
-      {/* Sans heure, la tâche se range dans « Dans la journée » : c'est le
-          cas le plus courant, et l'imposer obligerait à inventer un horaire. */}
-      <Text className="text-muted-foreground -mt-2 text-xs">
-        Une date sans heure place la tâche dans la journée, sans créneau.
-      </Text>
-
       <Field label="Notes">
         <Input
           value={values.notes}
@@ -154,29 +97,7 @@ function parseForm(values: TaskFormValues): ParseResult {
   const title = values.title.trim();
   if (title.length === 0) return { ok: false, message: "Donnez un titre à la tâche." };
 
-  const notes = values.notes.trim() || null;
-
-  // Effacer la date efface l'échéance : la tâche retourne dans sa liste sans
-  // pour autant disparaître.
-  if (values.date.trim().length === 0) {
-    if (values.time.trim().length > 0) {
-      return { ok: false, message: "Indiquez une date avant une heure." };
-    }
-    return { ok: true, value: { title, dueAt: null, notes } };
-  }
-
-  const day = parseDateInput(values.date);
-  if (day === "malformed") return { ok: false, message: "Date attendue au format JJ/MM/AAAA." };
-  if (day === "impossible") return { ok: false, message: "Ce jour n'existe pas dans ce mois." };
-
-  if (values.time.trim().length === 0) {
-    return { ok: true, value: { title, dueAt: day.toISOString(), notes } };
-  }
-
-  const time = parseTimeInput(values.time);
-  if (!time) return { ok: false, message: "Heure attendue au format HH:MM." };
-
-  return { ok: true, value: { title, dueAt: withTime(day, time), notes } };
+  return { ok: true, value: { title, notes: values.notes.trim() || null } };
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

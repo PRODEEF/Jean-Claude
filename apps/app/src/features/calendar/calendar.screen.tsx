@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState } from "react";
 import { ScrollView, View, type LayoutChangeEvent } from "react-native";
-import { Plus } from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEvent } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
-import { datedTasks } from "@/shared/lib/tasks";
+import { unscheduledLists } from "@/shared/lib/tasks";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
@@ -12,6 +13,7 @@ import { Text } from "@/shared/ui/text";
 import { CalendarToolbar, type CalendarView } from "./CalendarToolbar";
 import { DayAgenda } from "./DayAgenda";
 import { EventFormDialog, type EventDialogTarget } from "./EventFormDialog";
+import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
 import { MonthGrid } from "./MonthGrid";
 import { TimeGrid } from "./TimeGrid";
 import { YearGrid } from "./YearGrid";
@@ -54,19 +56,21 @@ export function CalendarScreen() {
   const [anchor, setAnchor] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [dialogTarget, setDialogTarget] = useState<EventDialogTarget | null>(null);
+  const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
+  const router = useRouter();
 
   const days = useMemo(() => visibleDays(view, anchor), [view, anchor]);
   const range = useMemo(() => rangeOf(days), [days]);
   const { data, isPending, isError } = useCalendarEvents(range);
   const events = data ?? [];
 
-  // Les tâches datées se lisent dans le calendrier au même titre que les
+  // Les todolistes échues se lisent dans le calendrier au même titre que les
   // rendez-vous : une journée chargée de todos est une journée chargée, et
   // devoir ouvrir un autre onglet pour s'en apercevoir ferait planifier à
   // l'aveugle. Elles restent en lecture seule ici — on les coche dans
   // l'onglet Todoliste, qui est leur écran.
   const { data: lists } = useTaskLists();
-  const tasks = useMemo(() => datedTasks(lists ?? []), [lists]);
+  const dueLists = useMemo(() => unscheduledLists(lists ?? []), [lists]);
 
   const page = useRef<ScrollView>(null);
   /** Position de la grille dans la page, et de la première heure ouvrée en son sein. */
@@ -114,6 +118,10 @@ export function CalendarScreen() {
     setSelectedDay(startOfDay(today));
   };
 
+  // Minuit, et non l'heure courante : une liste datée sur un jour n'a pas
+  // d'horaire tant que l'utilisateur n'en pose pas un (§13.4.1).
+  const dueDay = () => startOfDay(selectedDay).toISOString();
+
   const openEvent = (event: CalendarEvent) => setDialogTarget({ mode: "edit", event });
   const createAt = (day: Date, minute: number) => setDialogTarget({ mode: "create", day, minute });
 
@@ -121,15 +129,31 @@ export function CalendarScreen() {
     <ScreenShell
       title="Calendrier"
       action={
-        <Button
-          size="sm"
-          onPress={() => createAt(selectedDay, DEFAULT_CREATE_MINUTE)}
-          accessibilityRole="button"
-          accessibilityLabel="Nouvel événement"
-        >
-          <Icon as={Plus} className="size-4" />
-          <Text>Événement</Text>
-        </Button>
+        // Deux créations et non une : ce qu'on pose sur une journée est soit un
+        // rendez-vous, soit ce qu'on doit y boucler. Le second bouton évite le
+        // détour par l'onglet Todoliste pour dater une liste sur le jour qu'on
+        // a justement sous les yeux.
+        <View className="flex-row items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onPress={() => setListTarget({ mode: "create", folderId: null, dueAt: dueDay() })}
+            accessibilityRole="button"
+            accessibilityLabel="Nouvelle liste de tâches"
+          >
+            <Icon as={ListPlus} className="size-4" />
+            <Text>Tâches</Text>
+          </Button>
+          <Button
+            size="sm"
+            onPress={() => createAt(selectedDay, DEFAULT_CREATE_MINUTE)}
+            accessibilityRole="button"
+            accessibilityLabel="Nouvel événement"
+          >
+            <Icon as={Plus} className="size-4" />
+            <Text>Événement</Text>
+          </Button>
+        </View>
       }
       maxWidth={GRID_MAX_WIDTH}
       scrollRef={page}
@@ -155,13 +179,13 @@ export function CalendarScreen() {
             days={days}
             anchor={anchor}
             events={events}
-            tasks={tasks}
+            lists={dueLists}
             selectedDay={selectedDay}
             onSelectDay={setSelectedDay}
             onOpenEvent={openEvent}
             compact={compact}
           />
-          <DayAgenda day={selectedDay} events={events} tasks={tasks} onOpenEvent={openEvent} />
+          <DayAgenda day={selectedDay} events={events} lists={dueLists} onOpenEvent={openEvent} />
         </>
       ) : null}
 
@@ -182,7 +206,7 @@ export function CalendarScreen() {
           <TimeGrid
             days={days}
             events={events}
-            tasks={tasks}
+            lists={dueLists}
             onOpenEvent={openEvent}
             onCreateAt={createAt}
             onMorningOffset={measureMorning}
@@ -196,6 +220,15 @@ export function CalendarScreen() {
       {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
 
       <EventFormDialog target={dialogTarget} onClose={() => setDialogTarget(null)} />
+
+      {/* La liste créée s'ouvre dans son onglet : c'est là qu'on la remplit,
+          ligne par ligne, plutôt que dans une seconde saisie qui aurait à
+          reproduire le même éditeur. */}
+      <TaskListDialog
+        target={listTarget}
+        onClose={() => setListTarget(null)}
+        onCreated={(created) => router.push(`/todo?list=${created.id}` as never)}
+      />
     </ScreenShell>
   );
 }
