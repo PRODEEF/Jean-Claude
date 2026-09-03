@@ -1,5 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 /** Une entrée du menu. */
@@ -118,6 +119,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderRadius: radius.sm,
   },
-  label: { fontSize: fontSize.sm },
+  label: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm },
   separator: { height: 1, marginVertical: spacing.xs },
 });

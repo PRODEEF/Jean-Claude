@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { fontSize, MIN_TOUCH_TARGET, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { ConversationThread } from "@/features/conversation/ConversationThread";
 import { ScreenShell } from "@/shared/ui/screen-shell";
@@ -88,7 +89,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: spacing.sm,
   },
-  skipLabel: { fontSize: fontSize.sm, textDecorationLine: "underline" },
+  skipLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, textDecorationLine: "underline" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl },
-  error: { fontSize: fontSize.sm, textAlign: "center" },
+  error: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, textAlign: "center" },
 });

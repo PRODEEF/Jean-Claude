@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Pencil, X } from "lucide-react-native";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 export type QuestionCardProps = {
@@ -138,7 +139,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  question: { flex: 1, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
+  question: {
+    fontFamily: FONT_FAMILY,
+    flex: 1,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
   close: { width: 24, height: 24, alignItems: "center", justifyContent: "center" },
   choice: {
     flexDirection: "row",
@@ -150,8 +156,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   /** Le rang tient sa propre colonne : les libellés restent alignés entre eux. */
-  rank: { width: 16, fontSize: fontSize.xs },
-  choiceLabel: { flex: 1, fontSize: fontSize.sm },
+  rank: { fontFamily: FONT_FAMILY, width: 16, fontSize: fontSize.xs },
+  choiceLabel: { fontFamily: FONT_FAMILY, flex: 1, fontSize: fontSize.sm },
   footer: {
     flexDirection: "row",
     alignItems: "center",
@@ -168,7 +174,7 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
     flexShrink: 1,
   },
-  writeLabel: { fontSize: fontSize.sm },
+  writeLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm },
   skip: {
     minHeight: 32,
     justifyContent: "center",
@@ -176,5 +182,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.md,
   },
-  skipLabel: { fontSize: fontSize.xs, fontWeight: fontWeight.medium },
+  skipLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.medium },
 });

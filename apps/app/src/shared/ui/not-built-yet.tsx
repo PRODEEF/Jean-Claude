@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { fontSize, fontWeight, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 /**
@@ -32,11 +33,12 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   cardTitle: {
+    fontFamily: FONT_FAMILY,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.semibold,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: spacing.xs,
   },
-  cardItem: { fontSize: fontSize.sm, lineHeight: 20 },
+  cardItem: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, lineHeight: 20 },
 });

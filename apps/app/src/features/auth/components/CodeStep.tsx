@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { OTP_CODE_LENGTH } from "@jc/domain";
 import { useTheme } from "@/shared/providers/theme-provider";
 
@@ -85,6 +86,7 @@ export function CodeStep({
 const styles = StyleSheet.create({
   root: { gap: spacing.lg },
   input: {
+    fontFamily: FONT_FAMILY,
     height: MIN_TOUCH_TARGET + 4,
     borderWidth: 1,
     borderRadius: radius.md,
@@ -95,5 +97,5 @@ const styles = StyleSheet.create({
     letterSpacing: spacing.sm,
   },
   actions: { gap: spacing.md, alignItems: "center" },
-  link: { fontSize: fontSize.sm, textAlign: "center", lineHeight: 20 },
+  link: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, textAlign: "center", lineHeight: 20 },
 });

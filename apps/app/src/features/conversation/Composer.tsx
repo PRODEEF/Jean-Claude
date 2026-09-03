@@ -3,6 +3,7 @@ import { Platform, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { ArrowUp, Square } from "lucide-react-native";
 import { MESSAGE_MAX_LENGTH } from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 export type ComposerProps = {
@@ -116,6 +117,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   input: {
+    fontFamily: FONT_FAMILY,
     flex: 1,
     maxHeight: 140,
     paddingVertical: spacing.xs,

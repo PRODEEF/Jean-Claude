@@ -1,5 +1,6 @@
 import { StyleSheet, TextInput } from "react-native";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 export type EmailStepProps = {
@@ -39,6 +40,7 @@ export function EmailStep({ value, onChange, onSubmit, editable }: EmailStepProp
 
 const styles = StyleSheet.create({
   input: {
+    fontFamily: FONT_FAMILY,
     height: MIN_TOUCH_TARGET + 4,
     borderWidth: 1,
     borderRadius: radius.md,

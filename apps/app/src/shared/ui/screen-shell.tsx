@@ -2,6 +2,7 @@ import type { ReactNode, RefObject } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 import { ChevronLeft } from "lucide-react-native";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, spacing } from "@jc/design";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
 
@@ -153,7 +154,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  title: { flex: 1, fontSize: fontSize.md, fontWeight: fontWeight.semibold },
+  title: {
+    fontFamily: FONT_FAMILY,
+    flex: 1,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
   scroll: { flex: 1 },
   content: { paddingVertical: spacing.lg, gap: spacing.lg },
 });
