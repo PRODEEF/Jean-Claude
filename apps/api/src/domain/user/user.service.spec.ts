@@ -20,6 +20,7 @@ function makeRecord(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       theme: "system",
       timezone: "Europe/Paris",
       speakResponses: false,
+      llmModel: null,
       scope: {
         morningReminders: true,
         folderOrganization: true,
@@ -146,6 +147,30 @@ describe("UserService", () => {
         { assistantName: "Marcel", assistantColor: "#16A34A" },
         OWNER.accessToken,
       );
+    });
+
+    it("enregistre le modèle choisi sans relire le profil (§5.1)", async () => {
+      const update = jest.fn().mockResolvedValue(makeRecord());
+      const findById = jest.fn();
+      const service = new UserService(makeRepository({ update, findById }));
+
+      await service.updateProfile(OWNER, { llmModel: "mistral/mistral-medium-3.5" });
+
+      expect(update).toHaveBeenCalledWith(
+        OWNER.id,
+        { llmModel: "mistral/mistral-medium-3.5" },
+        OWNER.accessToken,
+      );
+      expect(findById).not.toHaveBeenCalled();
+    });
+
+    it("transmet le retour au modèle du serveur, qui est un choix et non un oubli", async () => {
+      const update = jest.fn().mockResolvedValue(makeRecord());
+      const service = new UserService(makeRepository({ update }));
+
+      await service.updateProfile(OWNER, { llmModel: null });
+
+      expect(update).toHaveBeenCalledWith(OWNER.id, { llmModel: null }, OWNER.accessToken);
     });
 
     it("refuse de fusionner un périmètre sur un profil introuvable", async () => {

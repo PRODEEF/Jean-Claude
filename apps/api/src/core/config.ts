@@ -39,7 +39,8 @@ export const config = {
   // se fait en changeant `LLM_MODEL`, sans toucher au code.
   aiGatewayApiKey: required("AI_GATEWAY_API_KEY"),
 
-  // Modèle par défaut du serveur. À terme, l'utilisateur choisira le sien dans
-  // ses préférences ; cette valeur restera le repli.
+  // Modèle servi tant que l'utilisateur n'en a pas choisi un dans ses réglages
+  // (§5.1). Il n'a pas à figurer au catalogue de `@jc/domain` : c'est ce qui
+  // permet d'éprouver un moteur avant de le proposer.
   llmModel: optional("LLM_MODEL", "anthropic/claude-opus-5"),
 } as const;

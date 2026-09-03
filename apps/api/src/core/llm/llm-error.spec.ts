@@ -26,6 +26,29 @@ describe("toHttpException", () => {
     expect(exception.message).toContain("crédit");
   });
 
+  it("lit le statut d'un échec emballé par les réessais du SDK", () => {
+    const retryError = Object.assign(new Error("Failed after 3 attempts."), {
+      reason: "maxRetriesExceeded",
+      lastError: upstreamError(429),
+    });
+
+    expect(toHttpException(retryError).status).toBe(429);
+  });
+
+  it("lit le statut d'un échec emballé dans une cause", () => {
+    const wrapped = new Error("No output generated.", { cause: upstreamError(402) });
+
+    expect(toHttpException(wrapped).status).toBe(402);
+  });
+
+  it("ne boucle pas sur une chaîne de causes cyclique", () => {
+    const first: { cause?: unknown } = new Error("premier");
+    const second = new Error("second", { cause: first });
+    first.cause = second;
+
+    expect(toHttpException(first).status).toBe(503);
+  });
+
   it("retombe sur une indisponibilité générique pour tout autre échec", () => {
     expect(toHttpException(upstreamError(500)).status).toBe(503);
     expect(toHttpException(new Error("réseau coupé")).status).toBe(503);

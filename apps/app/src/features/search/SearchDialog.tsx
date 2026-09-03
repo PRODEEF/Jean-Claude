@@ -512,11 +512,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.lg,
     overflow: "hidden",
-    elevation: 12,
-    shadowColor: "#000000",
-    shadowOpacity: 0.24,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
+    // `boxShadow` plutôt que les `shadow*` + `elevation` d'autrefois : ces
+    // derniers sont dépréciés par react-native-web, et la nouvelle
+    // architecture rend `boxShadow` sur les trois plateformes.
+    boxShadow: "0px 8px 24px rgba(0, 0, 0, 0.24)",
   },
   field: {
     flexDirection: "row",
