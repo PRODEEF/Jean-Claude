@@ -54,3 +54,54 @@ export function openTasksOfDay(tasks: DatedTask[], day: Date): DatedTask[] {
 export function byDueDate(a: DatedTask, b: DatedTask): number {
   return (a.task.dueAt ?? "").localeCompare(b.task.dueAt ?? "");
 }
+
+/** Tâches d'un même dossier. `folderId` à `null` : listes rangées nulle part. */
+export type FolderTaskGroup = { folderId: string | null; tasks: DatedTask[] };
+
+/**
+ * Tâches regroupées par dossier de leur liste.
+ *
+ * L'ordre d'arrivée des dossiers est conservé — les tâches sont déjà triées par
+ * échéance quand elles arrivent ici — et « sans dossier » passe en dernier :
+ * c'est un reste, pas un dossier.
+ */
+export function groupByFolder(tasks: DatedTask[]): FolderTaskGroup[] {
+  const byFolder = new Map<string | null, DatedTask[]>();
+
+  for (const dated of tasks) {
+    const existing = byFolder.get(dated.list.folderId);
+    if (existing) existing.push(dated);
+    else byFolder.set(dated.list.folderId, [dated]);
+  }
+
+  const groups = Array.from(byFolder, ([folderId, grouped]) => ({ folderId, tasks: grouped }));
+  return [
+    ...groups.filter((group) => group.folderId !== null),
+    ...groups.filter((group) => group.folderId === null),
+  ];
+}
+
+/**
+ * Listes du dossier visé.
+ *
+ * Trois états et non deux : `undefined` ne filtre rien, `null` ne garde que les
+ * listes rangées nulle part. « Tous les dossiers » n'est pas « aucun dossier ».
+ */
+export function filterListsByFolder(
+  lists: TaskListWithTasks[],
+  folderId: string | null | undefined,
+): TaskListWithTasks[] {
+  if (folderId === undefined) return lists;
+  return lists.filter((list) => list.folderId === folderId);
+}
+
+/**
+ * Dossiers qui portent au moins une liste — `null` s'il en existe une sans
+ * dossier.
+ *
+ * Ce qui filtre les propositions du filtre : douze dossiers dont deux seulement
+ * contiennent une liste donneraient dix boutons qui ne montrent rien.
+ */
+export function usedFolderIds(lists: TaskListWithTasks[]): Set<string | null> {
+  return new Set(lists.map((list) => list.folderId));
+}
