@@ -125,7 +125,7 @@ de réécriture _du tout_.
 **Comment changer de moteur.**
 
 ```bash
-LLM_MODEL=mistral/mistral-small
+LLM_MODEL=mistral/mistral-medium-3.5
 ```
 
 C'est tout. Aucun fichier n'est touché, aucune seconde clé d'API à obtenir.

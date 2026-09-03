@@ -18,13 +18,13 @@ describe("catalogue des modèles", () => {
   });
 
   it("marque comme hébergé en Europe le seul éditeur qui l'est", () => {
-    expect(isSovereignModel("mistral/mistral-small")).toBe(true);
-    expect(isSovereignModel("anthropic/claude-haiku-4.5")).toBe(false);
-    expect(isSovereignModel("google/gemini-3.5-flash")).toBe(false);
+    expect(isSovereignModel("mistral/mistral-medium-3.5")).toBe(true);
+    expect(isSovereignModel("openai/gpt-5.4-mini")).toBe(false);
+    expect(isSovereignModel("spacexai/grok-4.6")).toBe(false);
   });
 
   it("ne déduit pas la souveraineté d'un identifiant sans éditeur", () => {
-    expect(isSovereignModel("mistral-small")).toBe(false);
+    expect(isSovereignModel("mistral-medium-3.5")).toBe(false);
     expect(isSovereignModel("")).toBe(false);
   });
 
@@ -37,7 +37,7 @@ describe("catalogue des modèles", () => {
 
 describe("toAssistantModel", () => {
   it("retient un modèle du catalogue", () => {
-    expect(toAssistantModel("mistral/mistral-small")).toBe("mistral/mistral-small");
+    expect(toAssistantModel("mistral/mistral-medium-3.5")).toBe("mistral/mistral-medium-3.5");
   });
 
   it("rend la main au serveur quand le modèle enregistré n'est plus proposé", () => {

@@ -40,21 +40,22 @@ export function isSovereignModel(model: string): boolean {
  * comme cinq choix distincts, là où « Mistral Small » et « Mistral Medium »
  * demanderaient de savoir ce qui les sépare.
  *
- * Deux critères ont écarté des modèles plus capables. Aucun modèle de
- * raisonnement : ils gardent le silence plusieurs dizaines de secondes avant
- * le premier mot, ce que le délai d'attente du flux refuse — et ce qu'une
- * conversation supporte mal. Aucun modèle de codage non plus, malgré leur
- * disponibilité : ils écrivent mal en français courant.
+ * ⚠️ Sonar cherche sur le web et raisonne avant de répondre, ce qui a deux
+ * conséquences que les autres n'ont pas : la première réponse tarde davantage,
+ * et les appels d'outils n'y sont pas acquis. Un modèle qui n'en produit pas
+ * laisse la conversation utilisable mais l'assistant muet — plus une seule
+ * proposition (§12.1). À éprouver avant de le donner à quelqu'un qui compte
+ * dessus.
  *
  * Les identifiants sont ceux du catalogue du Gateway, à ne pas composer de
  * mémoire — `mistral/mistral-large` par exemple n'existe pas.
  */
 const ASSISTANT_MODEL_IDS = [
-  "mistral/mistral-small",
-  "google/gemini-3.5-flash",
-  "anthropic/claude-haiku-4.5",
-  "openai/gpt-5-mini",
-  "deepseek/deepseek-v3.2",
+  "mistral/mistral-medium-3.5",
+  "openai/gpt-5.4-mini",
+  "google/gemini-2.5-flash-lite",
+  "perplexity/sonar-reasoning-pro",
+  "spacexai/grok-4.6",
 ] as const;
 
 export const assistantModelSchema = z.enum(ASSISTANT_MODEL_IDS);
@@ -72,25 +73,25 @@ export type AssistantModel = z.infer<typeof assistantModelSchema>;
  * entre dans la liste sans qu'on ait écrit ce qu'il apporte.
  */
 const ASSISTANT_MODEL_DETAILS: Record<AssistantModel, { label: string; benefit: string }> = {
-  "mistral/mistral-small": {
+  "mistral/mistral-medium-3.5": {
     label: "Mistral",
-    benefit: "Vif et léger, il convient à la plupart des échanges.",
+    benefit: "Bon équilibre entre vitesse et finesse, au quotidien.",
   },
-  "google/gemini-3.5-flash": {
-    label: "Gemini",
-    benefit: "Répond très vite, même au bout d'une longue conversation.",
-  },
-  "anthropic/claude-haiku-4.5": {
-    label: "Claude",
-    benefit: "Suit de près les demandes détaillées, et écrit posément.",
-  },
-  "openai/gpt-5-mini": {
+  "openai/gpt-5.4-mini": {
     label: "GPT",
     benefit: "Polyvalent : il s'en sort sur à peu près tout.",
   },
-  "deepseek/deepseek-v3.2": {
-    label: "DeepSeek",
-    benefit: "Économe, pour un usage courant sans exigence particulière.",
+  "google/gemini-2.5-flash-lite": {
+    label: "Gemini",
+    benefit: "Le plus rapide à répondre, pour les échanges courts.",
+  },
+  "perplexity/sonar-reasoning-pro": {
+    label: "Perplexity",
+    benefit: "Va chercher sur le web et réfléchit avant de répondre. Plus lent.",
+  },
+  "spacexai/grok-4.6": {
+    label: "Grok",
+    benefit: "Un ton plus direct, moins policé que les autres.",
   },
 };
 

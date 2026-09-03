@@ -154,11 +154,11 @@ describe("UserService", () => {
       const findById = jest.fn();
       const service = new UserService(makeRepository({ update, findById }));
 
-      await service.updateProfile(OWNER, { llmModel: "mistral/mistral-small" });
+      await service.updateProfile(OWNER, { llmModel: "mistral/mistral-medium-3.5" });
 
       expect(update).toHaveBeenCalledWith(
         OWNER.id,
-        { llmModel: "mistral/mistral-small" },
+        { llmModel: "mistral/mistral-medium-3.5" },
         OWNER.accessToken,
       );
       expect(findById).not.toHaveBeenCalled();

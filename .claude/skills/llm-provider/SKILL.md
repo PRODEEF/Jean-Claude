@@ -19,7 +19,7 @@ clé unique.
 ## Changer de moteur : une variable, zéro ligne de code
 
 ```bash
-LLM_MODEL=mistral/mistral-small      # souverain (§8, §13.4.6)
+LLM_MODEL=mistral/mistral-medium-3.5  # souverain (§8, §13.4.6)
 LLM_MODEL=deepseek/deepseek-v3.2
 LLM_MODEL=anthropic/claude-opus-5    # défaut
 ```
