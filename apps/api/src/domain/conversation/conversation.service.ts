@@ -447,9 +447,18 @@ export class ConversationService {
   ): AsyncGenerator<MessageStreamEvent> {
     const conversationId = conversation.id;
 
-    const history = await this.conversations.listMessages(conversationId, accessToken, {
-      limit: CONTEXT_WINDOW_MESSAGES,
-    });
+    // Instant du tour, pris une fois : la fenêtre d'agenda et le repère
+    // temporel de la consigne doivent désigner le même moment.
+    const now = new Date();
+
+    // Fil et profil partent ensemble : ils ne dépendent pas l'un de l'autre, et
+    // les enchaîner allongeait d'autant l'attente avant le premier mot.
+    const [history, context] = await Promise.all([
+      this.conversations.listMessages(conversationId, accessToken, {
+        limit: CONTEXT_WINDOW_MESSAGES,
+      }),
+      this.contextFor(userId, accessToken),
+    ]);
 
     // Les messages `system` stockés ne sont pas rejouables comme des tours de
     // dialogue : la consigne système est reconstruite à chaque appel.
@@ -466,13 +475,8 @@ export class ConversationService {
     let model: string | null = null;
     const toolCalls: LlmToolCall[] = [];
 
-    // Instant du tour, pris une fois : la fenêtre d'agenda et le repère
-    // temporel de la consigne doivent désigner le même moment.
-    const now = new Date();
-
-    // Profil et entretien du fil : résolus avant l'appel au modèle, parce que
-    // les deux décident des outils qu'on lui expose.
-    const context = await this.contextFor(userId, accessToken);
+    // Entretien du fil : résolu avant l'appel au modèle, parce qu'il décide des
+    // outils qu'on lui expose — et il se lit à partir du profil.
     const todo = await this.pendingHousekeeping(conversation, context, now, accessToken);
 
     const request: LlmCompletionRequest = {
@@ -685,24 +689,35 @@ export class ConversationService {
         return { tools, filing: null, channel: null, decided: [] };
       }
 
-      const decided = await this.suggestions.listForConversation(conversation.id, accessToken);
+      // Les trois lectures partent ensemble : les enchaîner ajoutait deux
+      // allers-retours de base au délai qui précède le premier mot de la
+      // réponse, alors qu'aucune ne dépend du résultat des autres.
+      const [decided, tree, agenda] = await Promise.all([
+        this.suggestions.listForConversation(conversation.id, accessToken),
+        this.folders.getTree(accessToken),
+        this.calendar.list(agendaWindow(now), accessToken),
+      ]);
+
       const structuring = isPending(decided, "create_project_folders")
         ? tools.filter((tool) => tool !== SUGGEST_PROJECT_FOLDERS)
         : tools;
 
-      const [folders, agenda] = await Promise.all([
-        // L'arborescence n'est lue que si le modèle peut en proposer une : sans
-        // l'outil, elle ne servirait qu'à allonger la consigne.
-        structuring.includes(SUGGEST_PROJECT_FOLDERS)
-          ? this.folders.getTree(accessToken)
-          : Promise.resolve<FolderTreeNode[]>([]),
-        this.calendar.list(agendaWindow(now), accessToken),
-      ]);
+      // L'arborescence n'est remise au modèle que s'il peut en proposer une :
+      // sans l'outil, elle ne ferait qu'allonger la consigne.
+      const folders = structuring.includes(SUGGEST_PROJECT_FOLDERS) ? tree : [];
 
       return { tools: structuring, filing: null, channel: { folders, agenda }, decided };
     }
 
-    const decided = await this.suggestions.listForConversation(conversation.id, accessToken);
+    // L'arborescence n'est utile qu'à un fil non classé dont le rangement reste
+    // autorisé : les deux se savent sans lire la base, et la lecture part alors
+    // en même temps que les propositions plutôt qu'après elles.
+    const mayFile = conversation.folderIds.length === 0 && scope.folderOrganization;
+
+    const [decided, tree] = await Promise.all([
+      this.suggestions.listForConversation(conversation.id, accessToken),
+      mayFile ? this.folders.getTree(accessToken) : Promise.resolve<FolderTreeNode[]>([]),
+    ]);
 
     const tools = allowed(CHAT_TOOLS, scope).filter(
       (tool) =>
@@ -717,21 +732,12 @@ export class ConversationService {
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
 
-    if (
-      conversation.folderIds.length > 0 ||
-      !scope.folderOrganization ||
-      isPending(decided, "assign_folders")
-    ) {
+    if (!mayFile || isPending(decided, "assign_folders")) {
       return { tools, filing: null, channel: null, decided };
     }
 
     tools.push(SUGGEST_FOLDERS);
-    return {
-      tools,
-      filing: { folders: await this.folders.getTree(accessToken) },
-      channel: null,
-      decided,
-    };
+    return { tools, filing: { folders: tree }, channel: null, decided };
   }
 
   /**
