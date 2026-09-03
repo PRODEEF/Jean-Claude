@@ -7,7 +7,53 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **2 septembre 2026** — la conversation se reprend, se corrige
+Dernière mise à jour : **3 septembre 2026** — les dossiers se déplacent au geste,
+les todolistes se rangent et se replient, et l'interface tient sur une seule police.
+
+**Un dossier se glisse dans un autre**, à la souris, et sa branche entière le suit —
+sous-dossiers, conversations et todolistes gardent leur rangement relatif. L'en-tête de
+section « Dossiers » sert de zone racine : sans elle, le geste n'aurait su que ranger, jamais
+ressortir. Rien de nouveau côté serveur, `PATCH /folders/:id` faisait déjà office de
+déplacement, garde-fous d'acyclicité et de profondeur compris. Un seul défaut que le geste
+exposait : deux dossiers homonymes sous le même parent ressortaient en 500 générique, ils
+rendent maintenant un 409 qui dit ce qui s'est passé.
+
+**Les rangées de la barre latérale portent un « … » au survol** (web), qui ouvre exactement
+le menu du clic droit. Le clic droit reste le geste, mais rien n'indiquait qu'il existait.
+Au doigt, où il n'y a pas de survol, l'appui long continue de tenir ce rôle et le bouton
+n'est pas rendu. Au passage, la graisse des rangées non sélectionnées disparaît : le
+`Button` de react-native-reusables publie `font-medium` par son contexte de texte, dont
+toute rangée héritait — l'arborescence entière paraissait sélectionnée.
+
+**La carte d'une todoliste se replie et se resserre.** Les rangées se touchaient à 8 pt
+d'écart pour rien, la hauteur tactile de 44 pt les séparant déjà. Le crayon cède la place à
+un « … » portant trois actions — modifier, supprimer des éléments, supprimer la liste — et
+les corbeilles quittent les rangées : elles ne reviennent que le temps du mode suppression.
+Cocher est le geste courant, supprimer l'exception, et les deux se touchaient du doigt. Un
+chevron replie la liste, dépliée par défaut.
+
+**Les todos se lisent et se filtrent par dossier.** Dans l'agenda du jour du calendrier,
+elles sont groupées sous l'intitulé de leur dossier — une journée mêle le jardin et les
+impôts, l'intitulé dit de quoi relève ce qui suit ; le groupe unique n'en porte pas, il ne
+distinguerait rien. Dans l'onglet Todoliste, une rangée de boutons filtre par dossier, et
+elle agit sur les deux vues d'un coup, la semaine n'étant qu'une autre lecture des mêmes
+tâches. Seuls les dossiers portant au moins une liste sont proposés. Arriver depuis la barre
+latérale sur une liste précise relâche le filtre : on a demandé celle-là.
+
+**Le sélecteur de vue du calendrier porte un cinquième segment, « Todo »**, qui n'est pas
+une période mais un passage vers l'onglet Todoliste — c'est là que l'œil cherche les autres
+lectures du temps. Sur téléphone, la bascule défile plutôt que de déborder : cinq segments
+et les trois commandes de navigation ne tiennent pas sur 375 pt, et c'est la navigation qui
+doit rester entière.
+
+**Toute l'interface passe en Arial.** Elle tournait jusqu'ici sur la police système, qui
+diffère d'une plateforme à l'autre. Un jeton unique, appliqué en `style` et non en classe
+utilitaire : la moitié des vues — menus contextuels, fenêtres, écrans d'authentification —
+est rendue par `StyleSheet`, hors de portée de NativeWind. Le monospace du code reste
+monospace. Sur Android, où Arial n'existe pas, le système retombe sur Roboto : écart assumé,
+aucune police n'est embarquée dans le bundle.
+
+Le 2 septembre : la conversation se reprend, se corrige
 et se range au geste ; et l'assistant sait proposer une todoliste.
 
 **Un message n'est plus figé.** Au survol, chaque message porte son ancienneté et ses
@@ -348,8 +394,8 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Réf. | Point                                                 | Statut | Note                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                                                                                                                                                                                           |
-| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer sur un dossier (ajouter ou déplacer, au choix), et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                 |
-| A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (semaine + toutes les listes), todolistes visibles dans leur dossier. L'assistant propose désormais les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation. Restent la conversion à la demande et l'édition avant validation → #17                              |
+| A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer d'une conversation sur un dossier (ajouter ou déplacer, au choix) **et d'un dossier dans un autre**, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                 |
+| A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (semaine + toutes les listes, filtrables par dossier), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Tâches groupées par dossier dans l'agenda du calendrier. L'assistant propose désormais les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation. Restent la conversion à la demande et l'édition avant validation → #17                              |
 | A.3  | Détection de tâches datées                            |   🟡   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit désormais de la conversation : les échéances portées par les tâches proposées sont conservées, puis une seconde proposition pose un créneau d'agenda pour chacune. Reste le parsing des dates relatives, laissé au modèle pour l'instant → #18                                                                                             |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                                                                                                                                                                                                                                                                           |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -392,7 +438,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 | Sujet                                      | Ce qui a été tranché, faute de mieux                                                                                                                                                                                                                                                                  |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Actions d'un dossier et d'une conversation | Une **fenêtre unique** portant toutes les actions, ouverte par un « … ». Les applications de référence ne convergent pas : ChatGPT et Claude posent un menu déroulant au survol, Notion et Apple Notes un menu contextuel — or ni le survol ni le clic droit n'existent au doigt (§4.2 non concluant) |
+| Actions d'un dossier et d'une conversation | Les deux chemins cohabitent : menu contextuel au clic droit (appui long au doigt) **et** bouton « … » au survol sur web, ouvrant le même menu. Les applications de référence ne convergent pas — ChatGPT et Claude posent un menu au survol, Notion et Apple Notes un menu contextuel (§4.2 non concluant) — mais ni le survol ni le clic droit n'existant au doigt, il fallait de toute façon les deux |
 | Lisibilité de la barre au 5e niveau        | Chaque niveau ajoute un retrait et un filet vertical. Au 5e, la barre est très entamée à gauche et les libellés se tronquent. L'aplatissement a été écarté — il perdrait la filiation — mais le point demande à être vu avec un vrai volume de dossiers                                               |
 
 ## Dette technique connue
