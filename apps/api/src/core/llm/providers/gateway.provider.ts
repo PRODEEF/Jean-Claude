@@ -68,11 +68,22 @@ class GatewayProvider implements LlmProvider {
   }
 
   async *stream(request: LlmCompletionRequest): AsyncIterable<LlmStreamChunk> {
+    // L'AI SDK ne relaie pas l'échec du fournisseur sur le flux : il le passe à
+    // `onError`, puis rejette les promesses de résultat avec un
+    // `NoOutputGeneratedError` qui, lui, ne porte aucun statut. Sans le garder
+    // de côté ici, un quota dépassé ressortirait en panne générique.
+    let streamError: unknown;
+
     try {
       const result = streamText({
         model: this.languageModel,
         timeout: { totalMs: COMPLETION_TIMEOUT_MS, firstChunkMs: FIRST_CHUNK_TIMEOUT_MS },
         maxOutputTokens: MAX_OUTPUT_TOKENS,
+        // Remplace le `console.error` par défaut du SDK, qui déverse la requête
+        // envoyée au modèle — donc le prompt de l'utilisateur — dans les logs.
+        onError: ({ error }) => {
+          streamError = error;
+        },
         ...(request.system ? { system: request.system } : {}),
         ...(request.tools?.length ? { tools: toToolSet(request.tools) } : {}),
         messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
@@ -107,7 +118,7 @@ class GatewayProvider implements LlmProvider {
         },
       };
     } catch (error) {
-      throw this.fail("Échec du flux du moteur IA", error);
+      throw this.fail("Échec du flux du moteur IA", streamError ?? error);
     }
   }
 
