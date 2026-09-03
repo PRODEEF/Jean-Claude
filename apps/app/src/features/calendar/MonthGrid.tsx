@@ -1,11 +1,11 @@
 import { Pressable, View } from "react-native";
 import { ListChecks } from "lucide-react-native";
-import type { CalendarEvent } from "@jc/domain";
+import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { eventsOfDay } from "./lib/calendar-dates";
 import { formatTime, isSameDay, WEEKDAY_LABELS } from "@/shared/lib/dates";
-import { openTasksOfDay, type DatedTask } from "@/shared/lib/tasks";
+import { listsOfDay, openTaskCount } from "@/shared/lib/tasks";
 
 export type MonthGridProps = {
   /** Les 42 jours de la grille, lundi en tête. */
@@ -13,8 +13,8 @@ export type MonthGridProps = {
   /** Mois mis en avant ; les jours des mois voisins sont atténués. */
   anchor: Date;
   events: CalendarEvent[];
-  /** Tâches datées, toutes listes confondues : ce qui charge la journée (A.2). */
-  tasks: DatedTask[];
+  /** Todolistes échues, toutes listes confondues : ce qui charge la journée (A.2). */
+  lists: TaskListWithTasks[];
   selectedDay: Date;
   onSelectDay: (day: Date) => void;
   onOpenEvent: (event: CalendarEvent) => void;
@@ -37,7 +37,7 @@ export function MonthGrid({
   days,
   anchor,
   events,
-  tasks,
+  lists,
   selectedDay,
   onSelectDay,
   onOpenEvent,
@@ -63,7 +63,10 @@ export function MonthGrid({
           const dayEvents = eventsOfDay(events, day);
           // Ce qui reste à faire, pas ce qui a été fait : une journée entièrement
           // cochée ne doit plus se signaler comme chargée.
-          const dayTasks = openTasksOfDay(tasks, day).length;
+          const dayTasks = listsOfDay(lists, day).reduce(
+            (count, list) => count + openTaskCount(list),
+            0,
+          );
 
           return (
             <Pressable

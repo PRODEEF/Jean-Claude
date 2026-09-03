@@ -1,4 +1,5 @@
-import { byDueDate, tasksOfDay, type DatedTask } from "@/shared/lib/tasks";
+import type { TaskListWithTasks } from "@jc/domain";
+import { byDueDate, listsOfDay } from "@/shared/lib/tasks";
 
 /**
  * Découpage d'une journée en moments.
@@ -30,7 +31,7 @@ const NIGHT_FROM = 22;
  * Moment d'une échéance.
  *
  * Minuit pile vaut « dans la journée » et non « matin » : c'est l'heure que
- * porte une tâche datée sans heure précise, et l'annoncer à 0h laisserait
+ * porte une liste datée sans heure précise, et l'annoncer à 0h laisserait
  * croire à un rendez-vous nocturne.
  */
 export function momentOf(dueAt: string): MomentKey {
@@ -44,19 +45,19 @@ export function momentOf(dueAt: string): MomentKey {
   return "morning";
 }
 
-export type MomentGroup = { moment: Moment; tasks: DatedTask[] };
+export type MomentGroup = { moment: Moment; lists: TaskListWithTasks[] };
 
 /**
- * Tâches d'une journée, regroupées par moment.
+ * Listes échues ce jour-là, regroupées par moment.
  *
  * Les moments vides sont écartés : sept jours × cinq moments rempliraient la
  * semaine de « rien de prévu » et noieraient ce qui s'y passe vraiment.
  */
-export function momentsOfDay(tasks: DatedTask[], day: Date): MomentGroup[] {
-  const ofDay = tasksOfDay(tasks, day).sort(byDueDate);
+export function momentsOfDay(lists: TaskListWithTasks[], day: Date): MomentGroup[] {
+  const ofDay = listsOfDay(lists, day).sort(byDueDate);
 
   return MOMENTS.map((moment) => ({
     moment,
-    tasks: ofDay.filter(({ task }) => task.dueAt !== null && momentOf(task.dueAt) === moment.key),
-  })).filter((group) => group.tasks.length > 0);
+    lists: ofDay.filter((list) => list.dueAt !== null && momentOf(list.dueAt) === moment.key),
+  })).filter((group) => group.lists.length > 0);
 }

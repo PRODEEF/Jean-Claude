@@ -1,16 +1,16 @@
 import { Pressable, StyleSheet, View } from "react-native";
-import type { CalendarEvent } from "@jc/domain";
+import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
 import { eventsOfDay, layoutDayEvents } from "./lib/calendar-dates";
 import { formatDayLabel, formatTime, isSameDay } from "@/shared/lib/dates";
-import { openTasksOfDay, type DatedTask } from "@/shared/lib/tasks";
+import { listsOfDay } from "@/shared/lib/tasks";
 
 export type TimeGridProps = {
   /** Les jours à mettre en colonnes : un seul en vue jour, sept en vue semaine. */
   days: Date[];
   events: CalendarEvent[];
-  /** Tâches datées, en bandeau au-dessus de la grille : elles chargent le jour. */
-  tasks: DatedTask[];
+  /** Todolistes échues, en bandeau au-dessus de la grille : elles chargent le jour. */
+  lists: TaskListWithTasks[];
   onOpenEvent: (event: CalendarEvent) => void;
   /** Appui sur un créneau libre — la minute est celle visée dans la colonne. */
   onCreateAt: (day: Date, minute: number) => void;
@@ -51,7 +51,7 @@ const MAX_TASKS_PER_COLUMN = 3;
 export function TimeGrid({
   days,
   events,
-  tasks,
+  lists,
   onOpenEvent,
   onCreateAt,
   onMorningOffset,
@@ -64,12 +64,12 @@ export function TimeGrid({
       day,
       allDay: dayEvents.filter((event) => event.allDay),
       timed: layoutDayEvents(dayEvents, day),
-      tasks: openTasksOfDay(tasks, day),
+      lists: listsOfDay(lists, day),
     };
   });
 
   const hasAllDay = perDay.some((column) => column.allDay.length > 0);
-  const hasTasks = perDay.some((column) => column.tasks.length > 0);
+  const hasTasks = perDay.some((column) => column.lists.length > 0);
 
   return (
     <View className="border-border overflow-hidden rounded-xl border">
@@ -125,23 +125,23 @@ export function TimeGrid({
       {hasTasks ? (
         <View className="border-border flex-row border-b">
           <View style={{ width: GUTTER_WIDTH }} className="justify-center px-1">
-            <Text className="text-muted-foreground text-[10px]">tâches</Text>
+            <Text className="text-muted-foreground text-[10px]">listes</Text>
           </View>
           {perDay.map((column) => (
             <View
               key={column.day.toISOString()}
               className="border-border min-h-8 flex-1 gap-0.5 border-l p-0.5"
             >
-              {column.tasks.slice(0, MAX_TASKS_PER_COLUMN).map(({ task }) => (
-                <View key={task.id} className="bg-muted rounded px-1 py-0.5">
+              {column.lists.slice(0, MAX_TASKS_PER_COLUMN).map((list) => (
+                <View key={list.id} className="bg-muted rounded px-1 py-0.5">
                   <Text numberOfLines={1} className="text-muted-foreground text-[11px] leading-4">
-                    {task.title}
+                    {list.title}
                   </Text>
                 </View>
               ))}
-              {column.tasks.length > MAX_TASKS_PER_COLUMN ? (
+              {column.lists.length > MAX_TASKS_PER_COLUMN ? (
                 <Text className="text-muted-foreground px-1 text-[10px]">
-                  +{column.tasks.length - MAX_TASKS_PER_COLUMN}
+                  +{column.lists.length - MAX_TASKS_PER_COLUMN}
                 </Text>
               ) : null}
             </View>

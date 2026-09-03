@@ -1,43 +1,43 @@
 import { Pressable, View } from "react-native";
-import { Check, Trash2 } from "lucide-react-native";
+import { Check } from "lucide-react-native";
 import type { Task } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
-import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
 
+/** Retrait d'une sous-tâche, aligné sur celui de l'éditeur. */
+const INDENT = 22;
+
 export type TaskRowProps = {
   task: Task;
-  /** Contexte de la tâche : sa liste dans la semaine, son échéance dans sa liste. */
+  /** Contexte de la tâche, quand la rangée est lue hors de sa liste. */
   meta?: string;
-  /** Ouvre le détail. Absent, l'appui sur le titre coche comme la case. */
-  onOpen?: () => void;
-  /**
-   * Fourni là où la tâche se supprime : jamais depuis la semaine, qui n'est
-   * qu'une lecture, et dans sa liste seulement quand le mode suppression est
-   * actif — une corbeille à demeure à côté de la case à cocher se touchait par
-   * erreur.
-   */
-  onRemove?: () => void;
 };
 
 /**
- * Une tâche, cochable d'un geste.
+ * Une tâche cochable, en lecture.
+ *
+ * Sert là où la tâche est vue depuis ailleurs que sa liste — la semaine. Dans
+ * sa liste, c'est `TaskListEditor` qui la porte : on y écrit autant qu'on y
+ * coche.
  *
  * La case est à gauche et le geste ne demande pas confirmation : c'est ce que
  * font Things 3, Todoist et TickTick (§4.2), où cocher est l'action la plus
  * répétée de la journée. Décocher rétablit l'état précédent, il n'y a donc
  * rien à protéger.
  */
-export function TaskRow({ task, meta, onOpen, onRemove }: TaskRowProps) {
-  const { updateTask, removeTask } = useTaskActions();
+export function TaskRow({ task, meta }: TaskRowProps) {
+  const { updateTask } = useTaskActions();
 
   const toggle = () =>
     updateTask.mutate({ listId: task.listId, taskId: task.id, patch: { done: !task.done } });
 
   return (
-    <View className="flex-row items-center gap-2">
+    <View
+      className="flex-row items-center gap-2"
+      style={{ paddingLeft: task.parentId === null ? 0 : INDENT }}
+    >
       <Pressable
         onPress={toggle}
         disabled={updateTask.isPending}
@@ -58,9 +58,9 @@ export function TaskRow({ task, meta, onOpen, onRemove }: TaskRowProps) {
       </Pressable>
 
       <Pressable
-        onPress={onOpen ?? toggle}
+        onPress={toggle}
         accessibilityRole="button"
-        accessibilityLabel={onOpen ? `Modifier ${task.title}` : task.title}
+        accessibilityLabel={task.title}
         style={{ minHeight: MIN_TOUCH_TARGET }}
         className="flex-1 justify-center"
       >
@@ -74,20 +74,6 @@ export function TaskRow({ task, meta, onOpen, onRemove }: TaskRowProps) {
         </Text>
         {meta ? <Text className="text-muted-foreground text-xs">{meta}</Text> : null}
       </Pressable>
-
-      {onRemove ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          hitSlop={8}
-          disabled={removeTask.isPending}
-          onPress={onRemove}
-          accessibilityLabel={`Supprimer ${task.title}`}
-          className="size-8"
-        >
-          <Icon as={Trash2} size={14} className="text-muted-foreground" />
-        </Button>
-      ) : null}
     </View>
   );
 }

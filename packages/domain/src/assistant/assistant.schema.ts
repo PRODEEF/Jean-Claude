@@ -142,24 +142,18 @@ export const resolveSuggestionSchema = z.object({
 export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
 
 /**
- * Tâche proposée dans une todoliste (§12.1).
- *
- * `dueAt` retombe sur `null` au lieu de faire échouer la validation : le
- * modèle rend parfois une échéance inexploitable — « lundi prochain » laissé
- * en clair, une date sans fuseau. Perdre la liste entière pour une ligne mal
- * datée coûterait plus cher que de la proposer sans échéance.
- */
-const proposedTaskSchema = z.object({
-  title: labelSchema,
-  dueAt: isoDateTimeSchema.nullable().catch(null),
-});
-
-/**
  * Charge utile d'une suggestion `create_task_list` (§12.1, A.2).
  *
  * Plusieurs listes et non une seule : l'exemple du jardin en produit deux —
  * les achats et les tâches — et les fusionner reviendrait à rendre une liste
  * de courses illisible au milieu du désherbage.
+ *
+ * `dueAt` date la liste et non ses lignes : une échéance sortie d'une
+ * conversation vaut pour ce qui est à boucler, pas pour un article de la
+ * liste de courses. Elle retombe sur `null` au lieu de faire échouer la
+ * validation — le modèle rend parfois une date inexploitable, « lundi
+ * prochain » laissé en clair ou sans fuseau, et perdre la liste entière pour
+ * cela coûterait plus cher que de la proposer sans échéance.
  */
 export const createTaskListsPayloadSchema = z.object({
   lists: z
@@ -167,7 +161,11 @@ export const createTaskListsPayloadSchema = z.object({
       z.object({
         title: labelSchema,
         kind: taskListKindSchema,
-        items: z.array(proposedTaskSchema).min(1).max(30),
+        dueAt: isoDateTimeSchema.nullable().catch(null).default(null),
+        items: z
+          .array(z.object({ title: labelSchema }))
+          .min(1)
+          .max(30),
       }),
     )
     .min(1)
@@ -179,22 +177,21 @@ export type CreateTaskListsPayload = z.infer<typeof createTaskListsPayloadSchema
 /**
  * Charge utile d'une suggestion `schedule_task` (A.3).
  *
- * Les tâches y sont désignées par leur identifiant : la proposition naît après
- * la création des listes, quand les lignes existent déjà. Le titre est recopié
- * pour que la carte reste lisible sans avoir à recharger les listes.
+ * Les listes y sont désignées par leur identifiant : la proposition naît après
+ * la création des listes, quand elles existent déjà. Le titre est recopié pour
+ * que la carte reste lisible sans avoir à recharger les todolistes.
  */
-export const scheduleTasksPayloadSchema = z.object({
-  tasks: z
+export const scheduleListsPayloadSchema = z.object({
+  lists: z
     .array(
       z.object({
         listId: uuidSchema,
-        taskId: uuidSchema,
         title: labelSchema,
         dueAt: isoDateTimeSchema,
       }),
     )
     .min(1)
-    .max(20),
+    .max(8),
 });
 
-export type ScheduleTasksPayload = z.infer<typeof scheduleTasksPayloadSchema>;
+export type ScheduleListsPayload = z.infer<typeof scheduleListsPayloadSchema>;
