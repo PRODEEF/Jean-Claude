@@ -107,11 +107,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     // Ombre portée : le menu flotte au-dessus de la barre latérale, dont il
     // reprendrait sinon le fond à un ton près.
-    elevation: 8,
-    shadowColor: "#000000",
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
+    // `boxShadow` plutôt que les `shadow*` + `elevation` d'autrefois : ces
+    // derniers sont dépréciés par react-native-web, et la nouvelle
+    // architecture rend `boxShadow` sur les trois plateformes.
+    boxShadow: "0px 4px 16px rgba(0, 0, 0, 0.18)",
   },
   item: {
     minHeight: MIN_TOUCH_TARGET,

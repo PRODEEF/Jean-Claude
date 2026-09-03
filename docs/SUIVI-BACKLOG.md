@@ -7,8 +7,34 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **3 septembre 2026** — les dossiers se déplacent au geste,
-les todolistes se rangent et se replient, et l'interface tient sur une seule police.
+Dernière mise à jour : **3 septembre 2026** — le modèle qui répond se choisit dans les
+réglages ; les dossiers se déplacent au geste, les todolistes se rangent et se replient,
+et l'interface tient sur une seule police.
+
+**Le choix du modèle passe à l'utilisateur** (§5.1). Cinq modèles sont proposés dans les
+réglages — un par éditeur, chacun présenté par ce qu'il apporte plutôt que par ce qu'il
+est : la page ne demande pas de savoir ce qu'est un modèle de langage pour en changer
+(§13.4.4). Mistral porte la mention « hébergé en Europe », déduite de l'éditeur et non
+écrite à la main, pour que la promesse affichée soit exactement celle que `/api/health`
+calcule (§13.4.6).
+
+Deux réserves sur la liste retenue. Sonar cherche sur le web et raisonne avant de répondre :
+la première réponse tarde davantage, et rien ne garantit qu'il produise des appels d'outils —
+un modèle qui n'en produit pas laisse la conversation utilisable mais l'assistant muet, plus
+une seule proposition (§12.1). Et l'éligibilité au palier gratuit du Gateway n'a pas pu être
+vérifiée : seuls les identifiants l'ont été, contre le catalogue que le SDK embarque.
+
+La préférence vit sur le profil (`profiles.llm_model`), et `LLM_MODEL` devient le repli :
+`null` n'est pas une absence de réglage mais la valeur « celui que le serveur a retenu »,
+ce qui permet d'en changer par configuration sans réécrire les profils. Un modèle retiré du
+catalogue est relu comme `null` plutôt que de rendre le profil illisible. Côté moteur, le
+modèle voyage désormais sur la requête et non sur l'adaptateur — une instance par
+utilisateur aurait reconstruit le port à chaque message — et l'éditeur remonté avec la
+réponse est celui qui a réellement répondu, puisqu'il peut changer en cours de fil.
+
+Rien n'est tenté sur un second moteur en cas de refus : un quota atteint reste un quota
+atteint, et l'utilisateur en change dans ses réglages. La dette « aucun modèle de repli »
+reste donc ouverte.
 
 **Un dossier se glisse dans un autre**, à la souris, et sa branche entière le suit —
 sous-dossiers, conversations et todolistes gardent leur rangement relatif. L'en-tête de
@@ -53,7 +79,7 @@ est rendue par `StyleSheet`, hors de portée de NativeWind. Le monospace du code
 monospace. Sur Android, où Arial n'existe pas, le système retombe sur Roboto : écart assumé,
 aucune police n'est embarquée dans le bundle.
 
-Le 2 septembre : la conversation se reprend, se corrige
+Auparavant le 2 septembre : la conversation se reprend, se corrige
 et se range au geste ; et l'assistant sait proposer une todoliste.
 
 **Un message n'est plus figé.** Au survol, chaque message porte son ancienneté et ses
@@ -365,7 +391,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                                                                                                                                                                                                                                                                                                                           |
 | §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code                                                                                                                                                                                                                                                                                   |
 | §5.1 | Timeouts, quotas et erreurs                            |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés                                                                                                                                                                                                                                                                                               |
-| §5.1 | Choix du modèle par l'utilisateur                      |   🟡   | `LLM_MODEL` reste le défaut serveur, désormais exposé par `/api/health` et affiché **désactivé** dans les réglages. Reste à porter dans `userPreferences`                                                                                                                                                                                                                                 |
+| §5.1 | Choix du modèle par l'utilisateur                      |   ✅   | Catalogue de trois modèles dans `@jc/domain`, choisi dans les réglages et porté par `profiles.llm_model`. `LLM_MODEL` devient le repli, servi tant que rien n'est choisi                                                                                                                                                                                                                  |
 | §5.1 | Indication « souverain » ou non                        |   ✅   | `isSovereign` déduit de l'éditeur du modèle, exposé par `/api/health`                                                                                                                                                                                                                                                                                                                     |
 | §5.2 | Relation conversation ↔ dossiers plusieurs-à-plusieurs |   ✅   | Table `conversation_folders`                                                                                                                                                                                                                                                                                                                                                              |
 | §5.3 | API commune web + mobile                               |   ✅   | REST sur Hono, arbitrage consigné dans `docs/ARCHITECTURE.md` ; client `@jc/api-client` partagé, l'app ne touche jamais la base directement                                                                                                                                                                                                                                               |
@@ -455,7 +481,6 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Aucune limite de débit par compte       | `POST /conversations/:id/messages` n'est borné que par la taille d'une réponse (`MAX_OUTPUT_TOKENS`). Rien ne borne le nombre d'appels : un seul compte peut consommer le budget du Gateway                             |
 | Aucun modèle de repli                   | `llm-error.ts` distingue proprement 429 et 402, mais il n'y a qu'un `LLM_MODEL` : un quota atteint tue le tour au lieu de basculer sur un second moteur                                                                 |
 | Un timeout se présente en panne         | Les délais de `gateway.provider.ts` (60 s, 15 s au premier jeton) retombent dans le `default` de `toHttpException` : l'utilisateur lit « moteur indisponible » et attend une panne qui n'existe pas                     |
-| Erreurs du SDK `ai` non interceptées    | Aucun `onError` n'est posé sur `streamText`. Si le SDK route certaines erreurs vers ce rappel plutôt que par exception, un 429 produirait une réponse vide sans message — à vérifier par un test                        |
 | Historique ouvert par un tour assistant | Le canal commence par le message d'accueil, donc l'historique remis au modèle débute par un tour `assistant`. Toléré ou refusé selon le moteur routé par le Gateway — à couvrir avant de changer `LLM_MODEL`            |
 | `listPending` sans appelant             | `ConversationService` lit `listForConversation` et en déduit les propositions en attente. La méthode du Repository n'a plus d'appelant : à retirer, ou à consommer là où la déduction se fait                           |
 

@@ -10,11 +10,31 @@ import { httpError } from "../http.js";
  * couverte par des tests sans rien charger du SDK.
  */
 
-/** Statut HTTP renvoyé par le fournisseur, quand l'erreur en porte un. */
-function upstreamStatus(error: unknown): number | undefined {
-  if (typeof error !== "object" || error === null || !("statusCode" in error)) return undefined;
-  const { statusCode } = error as { statusCode: unknown };
-  return typeof statusCode === "number" ? statusCode : undefined;
+/**
+ * Profondeur d'emballage explorée. Deux niveaux suffisent aux formes connues
+ * (`RetryError` → `lastError`, `NoOutputGeneratedError` → `cause`) ; la borne
+ * est là pour qu'un cycle entre `cause` ne fasse pas boucler la traduction.
+ */
+const MAX_WRAPPING_DEPTH = 4;
+
+/**
+ * Statut HTTP renvoyé par le fournisseur, quand l'erreur en porte un.
+ *
+ * L'AI SDK emballe : un 429 du Gateway ressort en `RetryError` après trois
+ * tentatives, et le statut ne vit plus que dans `lastError`. Sans cette
+ * descente, un quota se présenterait comme une panne — exactement la confusion
+ * que la traduction ci-dessous cherche à éviter.
+ */
+function upstreamStatus(error: unknown, depth = 0): number | undefined {
+  if (typeof error !== "object" || error === null || depth >= MAX_WRAPPING_DEPTH) return undefined;
+
+  if ("statusCode" in error) {
+    const { statusCode } = error as { statusCode: unknown };
+    if (typeof statusCode === "number") return statusCode;
+  }
+
+  const { lastError, cause } = error as { lastError?: unknown; cause?: unknown };
+  return upstreamStatus(lastError, depth + 1) ?? upstreamStatus(cause, depth + 1);
 }
 
 /**

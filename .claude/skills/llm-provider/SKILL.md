@@ -19,14 +19,42 @@ clé unique.
 ## Changer de moteur : une variable, zéro ligne de code
 
 ```bash
-LLM_MODEL=mistral/mistral-large      # souverain (§8, §13.4.6)
-LLM_MODEL=deepseek/deepseek-chat
+LLM_MODEL=mistral/mistral-medium-3.5  # souverain (§8, §13.4.6)
+LLM_MODEL=deepseek/deepseek-v3.2
 LLM_MODEL=anthropic/claude-opus-5    # défaut
 ```
+
+Les identifiants ne se composent pas de mémoire : `mistral/mistral-large`
+n'existe pas. Le catalogue exact est celui que le SDK embarque —
+`node_modules/@ai-sdk/gateway/dist/index.d.ts` en porte la liste.
 
 **C'est tout.** N'écris pas de `MistralProvider` : le Gateway route déjà vers
 Mistral, et un adaptateur de plus serait du code mort. La suite de ce document
 ne concerne que le cas — encore hypothétique — d'un moteur _hors_ Gateway.
+
+## Ce que l'utilisateur, lui, peut choisir (§5.1)
+
+`LLM_MODEL` n'est plus que le repli : il sert tant que l'utilisateur n'a rien
+choisi dans ses réglages. Son choix, lui, se limite au catalogue de
+`packages/domain/src/user/preferences.schema.ts` — trois modèles, chacun avec
+la phrase qui dit à quoi il sert. Y ajouter un modèle, c'est deux endroits que
+le compilateur garde synchronisés :
+
+```ts
+const ASSISTANT_MODEL_IDS = [/* ... */ "alibaba/qwen3.8-flash"] as const;
+
+const ASSISTANT_MODEL_DETAILS: Record<AssistantModel, { label: string; benefit: string }> = {
+  // ...
+  "alibaba/qwen3.8-flash": { label: "Qwen", benefit: "..." },
+};
+```
+
+`benefit` s'adresse à quelqu'un qui ne connaît rien aux modèles de langage
+(§13.4.4) : ce que ça change pour lui, pas la taille du modèle ni son éditeur.
+
+Le modèle voyage ensuite sur `LlmCompletionRequest.model`, jamais sur
+l'instance : le port reste unique, et `provider` remonté dans la réponse est
+l'éditeur qui a réellement répondu — il change d'un message à l'autre.
 
 ## La règle absolue
 

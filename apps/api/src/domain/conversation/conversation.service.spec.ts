@@ -235,6 +235,7 @@ function makePreferences(
     theme: "system",
     timezone: "Europe/Paris",
     speakResponses: false,
+    llmModel: null,
     ...overrides,
     scope: {
       morningReminders: true,
@@ -1575,6 +1576,40 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm));
 
       expect(lastRequest(llm).system ?? "").not.toContain("Propositions que tu as déjà faites");
+    });
+  });
+
+  describe("choix du modèle par l'utilisateur (§5.1)", () => {
+    it("interroge le modèle retenu dans les réglages", async () => {
+      const llm = makeLlm();
+      const users = makeUserRepository(
+        {},
+        { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+      );
+
+      await drain(makeService(makeRepository(), llm, undefined, undefined, users));
+
+      expect(lastRequest(llm).model).toBe("mistral/mistral-medium-3.5");
+    });
+
+    it("laisse répondre le modèle du serveur tant que rien n'est choisi", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      // `undefined` et non `null` : l'adaptateur retombe alors sur `LLM_MODEL`,
+      // ce qui permet d'en changer par configuration sans toucher aux profils.
+      expect(lastRequest(llm).model).toBeUndefined();
+    });
+
+    it("laisse répondre le modèle du serveur quand le profil est introuvable", async () => {
+      const llm = makeLlm();
+      const users = makeUserRepository();
+      (users.findById as jest.Mock).mockResolvedValue(null);
+
+      await drain(makeService(makeRepository(), llm, undefined, undefined, users));
+
+      expect(lastRequest(llm).model).toBeUndefined();
     });
   });
 
