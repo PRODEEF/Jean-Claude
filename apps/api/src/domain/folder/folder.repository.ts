@@ -18,6 +18,24 @@ type FolderRow = {
 };
 
 /**
+ * Ce que Postgres refuse et qui se dit à l'utilisateur.
+ *
+ * `folders_name_unique_per_parent` interdit deux dossiers de même nom au même
+ * endroit, racine comprise (`nulls not distinct`). Sans cette traduction, la
+ * violation ressortait en 500 : « Une erreur interne est survenue » là où
+ * l'utilisateur venait simplement de déposer un dossier au mauvais endroit.
+ *
+ * Tout le reste part en 500 : le message brut d'un fournisseur peut porter une
+ * requête, donc des données de l'utilisateur.
+ */
+function toPublicError(error: { code: string; message: string }): Error {
+  if (error.code === "23505") {
+    return httpError(409, "Un dossier de ce nom existe déjà à cet endroit.");
+  }
+  return new Error(error.message);
+}
+
+/**
  * Le mapping snake_case ↔ camelCase est confiné ici.
  *
  * Aucune forme `*_id` ne doit franchir la frontière du Repository : services,
@@ -79,7 +97,7 @@ export const folderRepository: IFolderRepository = {
       .select(COLUMNS)
       .single();
 
-    if (error) throw new Error(error.message);
+    if (error) throw toPublicError(error);
     return toEntity(data as unknown as FolderRow);
   },
 
@@ -101,7 +119,7 @@ export const folderRepository: IFolderRepository = {
       .select(COLUMNS)
       .maybeSingle();
 
-    if (error) throw new Error(error.message);
+    if (error) throw toPublicError(error);
     if (!data) throw httpError(404, "Dossier introuvable.");
     return toEntity(data as unknown as FolderRow);
   },
