@@ -24,6 +24,7 @@ import type {
   Paginated,
   SendMessage,
   Suggestion,
+  TaskListWithTasks,
   UpdateConversation,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
@@ -39,10 +40,12 @@ import {
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
   SUGGEST_TASK_LIST,
+  SUGGEST_TASK_LIST_ITEMS,
 } from "../../core/llm/llm.tools.js";
 import type { CalendarService } from "../calendar/calendar.service.js";
 import type { FolderService } from "../folder/folder.service.js";
 import type { SuggestionService } from "../suggestion/suggestion.service.js";
+import type { TaskService } from "../task/task.service.js";
 import type { IUserRepository } from "../user/user.repository.interface.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
 
@@ -104,6 +107,13 @@ type Housekeeping = {
    * conversation classique n'a pas à connaître les rendez-vous de son auteur.
    */
   channel: { folders: FolderTreeNode[]; agenda: CalendarEvent[] } | null;
+  /**
+   * Todolistes nées de ce fil, avec leur contenu.
+   *
+   * Sans elles, « complète la liste » n'a rien à désigner : le modèle rappelle
+   * l'outil de création et propose une seconde liste homonyme.
+   */
+  lists: TaskListWithTasks[];
   /** Propositions déjà faites sur ce fil, tranchées ou non (§12.1). */
   decided: Suggestion[];
 };
@@ -166,6 +176,7 @@ export class ConversationService {
     private readonly folders: FolderService,
     private readonly users: IUserRepository,
     private readonly calendar: CalendarService,
+    private readonly tasks: TaskService,
   ) {}
 
   list(
@@ -611,7 +622,7 @@ export class ConversationService {
       // sont vides, et la consigne d'accueil doit rester une conversation.
       if (context.onboarding) {
         tools.push(FINISH_ONBOARDING);
-        return { tools, filing: null, channel: null, decided: [] };
+        return { tools, filing: null, channel: null, lists: [], decided: [] };
       }
 
       const decided = await this.suggestions.listForConversation(conversation.id, accessToken);
@@ -628,10 +639,15 @@ export class ConversationService {
         this.calendar.list(agendaWindow(now), accessToken),
       ]);
 
-      return { tools: structuring, filing: null, channel: { folders, agenda }, decided };
+      return { tools: structuring, filing: null, channel: { folders, agenda }, lists: [], decided };
     }
 
-    const decided = await this.suggestions.listForConversation(conversation.id, accessToken);
+    const [decided, lists] = await Promise.all([
+      this.suggestions.listForConversation(conversation.id, accessToken),
+      // Les listes nées de ce fil, pour que « complète la liste » ait de quoi
+      // désigner celle dont on parle plutôt qu'une seconde à créer.
+      this.tasks.listForConversation(conversation.id, accessToken),
+    ]);
 
     const tools = allowed(CHAT_TOOLS, scope).filter(
       (tool) =>
@@ -641,7 +657,14 @@ export class ConversationService {
         // Une todoliste déjà proposée attend un geste : la reproposer
         // empilerait deux cartes pour la même chose, ce que le « non intrusif »
         // du §12.1 exclut.
-        !(tool === SUGGEST_TASK_LIST && isPending(decided, "create_task_list")),
+        !(tool === SUGGEST_TASK_LIST && isPending(decided, "create_task_list")) &&
+        // Compléter suppose qu'il y ait quelque chose à compléter : sans liste
+        // sur ce fil, l'outil n'aurait aucun identifiant à recevoir et le
+        // modèle en inventerait un.
+        !(
+          tool === SUGGEST_TASK_LIST_ITEMS &&
+          (lists.length === 0 || isPending(decided, "add_task_list_items"))
+        ),
     );
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
@@ -651,7 +674,7 @@ export class ConversationService {
       !scope.folderOrganization ||
       isPending(decided, "assign_folders")
     ) {
-      return { tools, filing: null, channel: null, decided };
+      return { tools, filing: null, channel: null, lists, decided };
     }
 
     tools.push(SUGGEST_FOLDERS);
@@ -659,6 +682,7 @@ export class ConversationService {
       tools,
       filing: { folders: await this.folders.getTree(accessToken) },
       channel: null,
+      lists,
       decided,
     };
   }
@@ -875,6 +899,20 @@ function buildSystemPrompt(
   // Exposer l'outil ne suffit pas : sa description est lue au moment de choisir,
   // pas au moment de décider s'il y a lieu de choisir. Les deux gestes
   // d'entretien du fil sont donc demandés explicitement ici.
+  // Le modèle ne peut compléter que ce qu'il connaît : sans le contenu des
+  // listes, « complète la liste » n'a rien à désigner et il en propose une
+  // seconde, homonyme et vide.
+  if (todo.tools.includes(SUGGEST_TASK_LIST_ITEMS)) {
+    lines.push(
+      "",
+      "Todolistes déjà nées de cette conversation. Pour en compléter une, appelle",
+      "`suggest_task_list_items` avec son identifiant recopié caractère pour",
+      "caractère. N'ouvre jamais une seconde liste pour un sujet que l'une d'elles",
+      "couvre déjà, et n'y propose que des lignes qui n'y figurent pas.",
+      ...describeTaskLists(todo.lists),
+    );
+  }
+
   if (todo.tools.includes(NAME_CONVERSATION)) {
     lines.push(
       "",
@@ -998,8 +1036,32 @@ function describeDecisions(suggestions: Suggestion[]): string[] {
     "",
     "Propositions que tu as déjà faites sur ce fil :",
     ...recent.map((suggestion) => `- « ${suggestion.message} » → ${outcome(suggestion.status)}`),
-    "Ne repropose ni ce qui a été écarté, ni ce qui attend encore une réponse.",
+    // L'accepté était absent de cette phrase : le modèle reproposait donc à
+    // l'identique ce qui venait d'être créé.
+    "Ne repropose ni ce qui a été accepté, ni ce qui a été écarté, ni ce qui attend",
+    "encore une réponse.",
   ];
+}
+
+/**
+ * Todolistes du fil, telles que le modèle doit les lire.
+ *
+ * Le contenu est repris ligne à ligne, pas résumé : c'est ce qui lui permet de
+ * ne pas proposer une deuxième fois ce qui est déjà dans la liste. Le retrait
+ * marque les sous-tâches, comme dans l'éditeur.
+ */
+function describeTaskLists(lists: TaskListWithTasks[]): string[] {
+  return lists.map((list) => {
+    const nature = list.kind === "shopping" ? "achats" : "tâches";
+    const content =
+      list.tasks.length === 0
+        ? "vide"
+        : list.tasks
+            .map((task) => (task.parentId === null ? task.title : `> ${task.title}`))
+            .join(", ");
+
+    return `- « ${list.title} » (identifiant ${list.id}, ${nature}) : ${content}`;
+  });
 }
 
 function outcome(status: Suggestion["status"]): string {

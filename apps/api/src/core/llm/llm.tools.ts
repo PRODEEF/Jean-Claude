@@ -67,6 +67,56 @@ export const SUGGEST_TASK_LIST: LlmTool = {
   },
 };
 
+/**
+ * Compléter une liste qui existe déjà (§12.1, A.2).
+ *
+ * Distinct de `suggest_task_list` parce que le geste est différent : l'un ouvre
+ * un sujet, l'autre y ajoute. Sans lui, « complète la liste » n'avait qu'un
+ * outil à sa portée — celui qui crée — et le modèle reproposait indéfiniment
+ * une liste homonyme, faute de pouvoir faire ce qu'on lui demandait.
+ */
+export const SUGGEST_TASK_LIST_ITEMS: LlmTool = {
+  name: "suggest_task_list_items",
+  description:
+    "À appeler pour ajouter des lignes à une todoliste qui existe déjà : quand " +
+    "l'utilisateur demande de la compléter, de l'enrichir, d'y ajouter quelque chose, " +
+    "ou quand la conversation fait apparaître de nouvelles lignes pour elle. " +
+    "Les listes existantes sont données dans la consigne avec leur identifiant et " +
+    "leur contenu : ne jamais créer une seconde liste pour un sujet que l'une d'elles " +
+    "couvre déjà, et ne proposer que des lignes qui n'y figurent pas.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question, nommant la liste concernée — ex. « J'ajoute le pain, le lait " +
+          "et les œufs à Courses de samedi ? ». Ne jamais présenter l'ajout comme " +
+          "déjà fait. 500 caractères maximum.",
+      },
+      listId: {
+        type: "string",
+        description:
+          "Identifiant de la liste à compléter, recopié caractère pour caractère " +
+          "depuis la consigne. Un identifiant reconstitué de mémoire ou remplacé par " +
+          "le titre de la liste fait perdre la proposition.",
+      },
+      items: {
+        type: "array",
+        minItems: 1,
+        maxItems: 30,
+        items: {
+          type: "object",
+          properties: { title: { type: "string" } },
+          required: ["title"],
+        },
+      },
+    },
+    required: ["message", "listId", "items"],
+  },
+};
+
 export const SUGGEST_FOLDERS: LlmTool = {
   name: "suggest_folders",
   description:
@@ -314,6 +364,7 @@ export const ASK_QUESTION: LlmTool = {
 /** Outils actifs sur une conversation classique. */
 export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST,
+  SUGGEST_TASK_LIST_ITEMS,
   SUGGEST_FOLDERS,
   SUGGEST_RECURRING_EVENT,
   ASK_QUESTION,
@@ -344,6 +395,7 @@ export const ASSISTANT_TOOLS: LlmTool[] = [
  */
 const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",
+  [SUGGEST_TASK_LIST_ITEMS.name]: "proactiveTaskDetection",
   [SUGGEST_RECURRING_EVENT.name]: "proactiveScheduling",
   [SUGGEST_FOLDERS.name]: "folderOrganization",
   [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",

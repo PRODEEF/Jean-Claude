@@ -1,4 +1,5 @@
 import {
+  addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
@@ -123,6 +124,10 @@ export class AssistantService {
       const created = await this.createTaskLists(userId, suggestion, accessToken);
       return { ...nothingApplied(), ...created };
     }
+    if (suggestion.kind === "add_task_list_items") {
+      const taskLists = await this.addTaskListItems(userId, suggestion, accessToken);
+      return { ...nothingApplied(), taskLists };
+    }
     if (suggestion.kind === "schedule_task") {
       const events = await this.scheduleTasks(userId, suggestion, accessToken);
       return { ...nothingApplied(), events };
@@ -191,6 +196,41 @@ export class AssistantService {
 
     const next = await this.proposeSchedule(userId, conversationId, dated, accessToken);
     return { taskLists, next };
+  }
+
+  /**
+   * Ajoute les lignes proposées à une liste qui existe déjà (§12.1, A.2).
+   *
+   * Compléter et non recréer : « complète la liste » désigne celle dont on
+   * vient de parler, et y répondre par une seconde liste homonyme laisserait
+   * l'utilisateur avec deux fois le même sujet.
+   *
+   * Les lignes sont ajoutées l'une après l'autre plutôt qu'en parallèle : leur
+   * position se calcule à partir de celles déjà prises dans la liste, et deux
+   * insertions concurrentes se verraient attribuer la même.
+   *
+   * La liste est relue avant d'écrire — c'est ce que fait `addTask` — donc une
+   * liste supprimée entre la proposition et son acceptation rend un 404 plutôt
+   * que d'écrire dans le vide. L'appel passe par le jeton de l'utilisateur :
+   * les RLS garantissent qu'un identifiant venu d'ailleurs ne trouve rien.
+   */
+  private async addTaskListItems(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<TaskList[]> {
+    const payload = addTaskListItemsPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      console.error("Charge utile de complétion illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    for (const item of payload.data.items) {
+      await this.tasks.addTask(userId, payload.data.listId, { title: item.title }, accessToken);
+    }
+
+    return [];
   }
 
   /**

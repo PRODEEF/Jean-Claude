@@ -21,6 +21,8 @@ import { folderRepository } from "../folder/folder.repository.js";
 import { FolderService } from "../folder/folder.service.js";
 import { suggestionRepository } from "../suggestion/suggestion.repository.js";
 import { SuggestionService } from "../suggestion/suggestion.service.js";
+import { taskRepository } from "../task/task.repository.js";
+import { TaskService } from "../task/task.service.js";
 import { userRepository } from "../user/user.repository.js";
 import { conversationRepository } from "./conversation.repository.js";
 import { ConversationService } from "./conversation.service.js";
@@ -32,6 +34,7 @@ const service = new ConversationService(
   new FolderService(folderRepository),
   userRepository,
   new CalendarService(calendarRepository),
+  new TaskService(taskRepository),
 );
 
 const idParam = validate("param", z.object({ id: uuidSchema }));

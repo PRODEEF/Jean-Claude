@@ -43,6 +43,7 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
   return {
     findAll: jest.fn().mockResolvedValue([]),
     findById: jest.fn().mockResolvedValue(makeList()),
+    findByConversation: jest.fn().mockResolvedValue([]),
     createList: jest
       .fn()
       .mockImplementation((_userId, input: TaskList) => Promise.resolve(makeList(input))),

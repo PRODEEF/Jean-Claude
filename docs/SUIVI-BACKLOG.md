@@ -30,6 +30,24 @@ décale toutes les suivantes, et une suite d'appels unitaires laisserait la list
 incohérente entre deux d'entre eux. Le mode « supprimer des éléments » disparaît, devenu
 redondant avec Retour arrière.
 
+**L'assistant sait compléter une liste, plus seulement en créer** (§12.1, A.2). Le défaut
+était net à l'usage : « complète la liste » faisait reproposer indéfiniment une liste
+homonyme, avec une ligne bouche-trou « À compléter ». Trois causes cumulées — aucun outil
+ne permettait d'ajouter à une liste existante, la consigne système ne disait rien des
+todolistes du fil ni de leur contenu, et le garde-fou anti-répétition ne couvrait que les
+propositions *en attente*, pas celles déjà acceptées. `suggest_task_list_items` et la
+nature de suggestion `add_task_list_items` répondent au premier point ; la consigne reçoit
+désormais les listes nées de la conversation avec leur identifiant et leurs lignes ; et la
+phrase anti-répétition mentionne l'accepté. L'outil est retiré du jeu quand le fil n'a
+produit aucune liste — sans identifiant à recevoir, le modèle en inventerait un.
+
+**Un `<button>` dans un `<button>` corrigé dans la grille mensuelle.** La cellule de jour
+était pressable et portait des pastilles de rendez-vous pressables : HTML invalide, et
+React l'avertissait à chaque rendu. Le sélecteur de jour passe en fond
+(`StyleSheet.absoluteFill`, comme le fait déjà la grille horaire), le contenu inerte laisse
+passer l'appui (`pointerEvents`), les pastilles restent des boutons. Aucun changement
+d'usage. Le défaut préexistait à la refonte.
+
 **Trois ajustements d'interface.** « Mes listes » passe devant « Semaine » — c'est la
 lecture complète, la semaine n'en est qu'un filtre daté — et une loupe s'ouvre à
 l'extrême droite, qui filtre listes et tâches sur ce qui est déjà chargé, sans aller au
@@ -454,7 +472,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                                                                                          |
 | A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                                                                                                                                                 |
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                                                                                                                                                                                                                                                                                   |
-| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées — et que le modèle relit au tour suivant, pour ne pas reproposer ce qui vient d'être écarté. Trois natures branchées sur quatre : dossiers de projet, rangement, todolistes et leurs créneaux. Reste le rendez-vous récurrent (A.11)                            |
+| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées — et que le modèle relit au tour suivant, pour ne reproposer ni ce qui a été écarté ni ce qui a été accepté. Quatre natures branchées sur cinq : dossiers de projet, rangement, todolistes, complétion d'une todoliste existante et leurs créneaux. Reste le rendez-vous récurrent (A.11)                            |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                                                                                                                                                                                                                     |
 | A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule hors périmètre proposée puis validée par l'utilisateur (et retirée du contexte une fois faite), et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages. Le canal reçoit l'agenda des 7 jours et les dossiers existants — il peut enfin répondre sur le premier de ses trois sujets ; délivrance des rappels → #26 |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                                                                                                                                                                                                                           |

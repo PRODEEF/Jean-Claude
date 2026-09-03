@@ -203,6 +203,13 @@ function makeTaskRepository(): ITaskRepository {
   return {
     findAll: jest.fn().mockImplementation(() => Promise.resolve([...lists.values()])),
     findById: jest.fn().mockImplementation((id: string) => Promise.resolve(lists.get(id) ?? null)),
+    findByConversation: jest
+      .fn()
+      .mockImplementation((conversationId: string) =>
+        Promise.resolve(
+          [...lists.values()].filter((list) => list.conversationId === conversationId),
+        ),
+      ),
     createList: jest
       .fn()
       .mockImplementation((_userId: string, input: CreateTaskList & TaskListOrigin) => {
@@ -301,6 +308,7 @@ function makeService(
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
   const calendarService = new CalendarService(events);
+  const taskService = new TaskService(tasks);
 
   return new AssistantService(
     suggestionService,
@@ -312,8 +320,9 @@ function makeService(
       folderService,
       IDLE_USERS,
       calendarService,
+      taskService,
     ),
-    new TaskService(tasks),
+    taskService,
     calendarService,
   );
 }
@@ -889,6 +898,91 @@ describe("AssistantService", () => {
 
       expect(resolved.taskLists).toEqual([]);
       expect(tasks.createList).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("acceptation d'une complétion de liste (§12.1, A.2)", () => {
+    /** Crée la liste du jardin, puis rend l'identifiant de la liste de tâches. */
+    async function withTravauxList() {
+      const tasks = makeTaskRepository();
+      await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      if (!travaux) throw new Error("La liste de travaux devrait exister");
+      return { tasks, listId: travaux.id };
+    }
+
+    it("ajoute les lignes proposées à la liste existante, sans en créer une seconde", async () => {
+      const { tasks, listId } = await withTravauxList();
+      const before = (tasks.createList as jest.Mock).mock.calls.length;
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "add_task_list_items",
+            message: "J'ajoute tailler la haie et arroser ?",
+            payload: { listId, items: [{ title: "Tailler la haie" }, { title: "Arroser" }] },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      expect(travaux?.tasks.map((task) => task.title)).toEqual([
+        "Désherber",
+        "Tondre",
+        "Tailler la haie",
+        "Arroser",
+      ]);
+      // Le point de départ du défaut corrigé : le modèle reproposait une liste
+      // homonyme au lieu de compléter celle-ci.
+      expect((tasks.createList as jest.Mock).mock.calls.length).toBe(before);
+    });
+
+    it("ajoute les lignes à la suite des positions déjà prises", async () => {
+      const { tasks, listId } = await withTravauxList();
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "add_task_list_items",
+            message: "J'ajoute arroser ?",
+            payload: { listId, items: [{ title: "Arroser" }] },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      expect(travaux?.tasks.map((task) => task.position)).toEqual([0, 1, 2]);
+    });
+
+    it("refuse une complétion dont la charge utile est illisible", async () => {
+      const tasks = makeTaskRepository();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "add_task_list_items",
+              message: "J'ajoute quelque chose ?",
+              payload: { items: [{ title: "Arroser" }] },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
     });
   });
 

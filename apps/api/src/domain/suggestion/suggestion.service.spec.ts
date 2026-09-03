@@ -196,6 +196,78 @@ describe("SuggestionService", () => {
       });
     });
 
+    it("traduit une complétion de liste en proposition d'ajout", async () => {
+      const repo = makeRepository();
+      const listId = "11111111-1111-4111-8111-111111111111";
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "J'ajoute le pain et les œufs à Courses de samedi ?",
+            listId,
+            items: [{ title: "Pain" }, { title: "Œufs" }],
+          },
+          "suggest_task_list_items",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "add_task_list_items",
+          payload: { listId, items: [{ title: "Pain" }, { title: "Œufs" }] },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ignore une complétion dont l'identifiant de liste n'est pas un UUID", async () => {
+      const repo = makeRepository();
+
+      // Le modèle recopie parfois le titre là où la consigne demandait
+      // l'identifiant : la carte serait inapplicable, mieux vaut la perdre.
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "J'ajoute le pain ?",
+            listId: "Courses de samedi",
+            items: [{ title: "Pain" }],
+          },
+          "suggest_task_list_items",
+        ),
+        TOKEN,
+      );
+
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("ignore une complétion sans aucune ligne à ajouter", async () => {
+      const repo = makeRepository();
+
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je complète ?",
+            listId: "11111111-1111-4111-8111-111111111111",
+            items: [],
+          },
+          "suggest_task_list_items",
+        ),
+        TOKEN,
+      );
+
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
     it("ignore une proposition de todoliste sans aucune liste", async () => {
       const repo = makeRepository();
 
