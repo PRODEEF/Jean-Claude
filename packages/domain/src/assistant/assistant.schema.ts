@@ -36,6 +36,8 @@ export type AssistantScope = z.infer<typeof assistantScopeSchema>;
 export const suggestionKindSchema = z.enum([
   /** « On dirait qu'une liste de tâches se dessine, je te l'organise ? » (§12.1, A.2) */
   "create_task_list",
+  /** « J'ajoute le pain et les œufs à ta liste de courses ? » (§12.1, A.2) */
+  "add_task_list_items",
   /** « Tu veux qu'on prévoie un créneau ce week-end ? » (A.3) */
   "schedule_task",
   /** « Je range cette conversation dans Santé et Administratif ? » (A.1) */
@@ -173,6 +175,22 @@ export const createTaskListsPayloadSchema = z.object({
 });
 
 export type CreateTaskListsPayload = z.infer<typeof createTaskListsPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `add_task_list_items` (§12.1, A.2).
+ *
+ * Compléter une liste plutôt qu'en ouvrir une seconde : « complète la liste »
+ * désigne celle qui existe, et y répondre par une liste homonyme laisserait
+ * l'utilisateur avec deux fois le même sujet. La liste est désignée par son
+ * identifiant, repris de la consigne — le titre, lui, est déjà dans la phrase
+ * que l'assistant adresse à l'utilisateur.
+ */
+export const addTaskListItemsPayloadSchema = z.object({
+  listId: uuidSchema,
+  items: z.array(z.object({ title: labelSchema })).min(1).max(30),
+});
+
+export type AddTaskListItemsPayload = z.infer<typeof addTaskListItemsPayloadSchema>;
 
 /**
  * Charge utile d'une suggestion `schedule_task` (A.3).

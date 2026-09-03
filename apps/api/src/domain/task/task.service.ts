@@ -32,6 +32,19 @@ export class TaskService {
     return this.lists.findAll(accessToken);
   }
 
+  /**
+   * Listes nées d'une conversation.
+   *
+   * Sert la consigne système : le modèle ne peut compléter une liste que s'il
+   * sait laquelle existe et ce qu'elle contient. Bornées à la conversation
+   * courante plutôt qu'à tout le compte — « complète la liste » désigne celle
+   * dont on vient de parler, et verser toutes les listes de l'utilisateur dans
+   * la consigne la ferait grossir à chaque tour.
+   */
+  listForConversation(conversationId: string, accessToken: string): Promise<TaskListWithTasks[]> {
+    return this.lists.findByConversation(conversationId, accessToken);
+  }
+
   createList(
     userId: string,
     input: CreateTaskList & TaskListOrigin,

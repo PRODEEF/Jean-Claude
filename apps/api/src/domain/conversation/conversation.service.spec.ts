@@ -7,6 +7,8 @@ import type {
   Message,
   MessageStreamEvent,
   Suggestion,
+  Task,
+  TaskListWithTasks,
   UserPreferences,
 } from "@jc/domain";
 import type { LlmCompletionRequest, LlmProvider, LlmToolCall } from "../../core/llm/llm.port.js";
@@ -16,6 +18,8 @@ import type { IFolderRepository } from "../folder/folder.repository.interface.js
 import { FolderService } from "../folder/folder.service.js";
 import type { ISuggestionRepository } from "../suggestion/suggestion.repository.interface.js";
 import { SuggestionService } from "../suggestion/suggestion.service.js";
+import type { ITaskRepository } from "../task/task.repository.interface.js";
+import { TaskService } from "../task/task.service.js";
 import type { IUserRepository, ProfileRecord } from "../user/user.repository.interface.js";
 import { ConversationService } from "./conversation.service.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
@@ -187,10 +191,8 @@ function makeLlmTurns(
   return { name: "gateway", model: "anthropic/claude-sonnet-5", isSovereign: false, stream };
 }
 
-function makeSuggestionRepository(
-  overrides: Partial<ISuggestionRepository> = {},
-): ISuggestionRepository {
-  const suggestion: Suggestion = {
+function makeSuggestion(overrides: Partial<Suggestion> = {}): Suggestion {
+  return {
     id: "sug-1",
     kind: "create_project_folders",
     status: "pending",
@@ -199,7 +201,14 @@ function makeSuggestionRepository(
     payload: {},
     createdAt: "2026-09-01T08:00:00.000Z",
     resolvedAt: null,
+    ...overrides,
   };
+}
+
+function makeSuggestionRepository(
+  overrides: Partial<ISuggestionRepository> = {},
+): ISuggestionRepository {
+  const suggestion = makeSuggestion();
 
   return {
     create: jest.fn().mockResolvedValue(suggestion),
@@ -322,6 +331,60 @@ function makeUserRepository(
   };
 }
 
+/**
+ * Todolistes du fil, telles que la consigne les lira.
+ *
+ * Seule `findByConversation` est appelée depuis le tour de dialogue : le reste
+ * de l'interface ne sert qu'à satisfaire le type.
+ */
+function makeTaskRepository(lists: TaskListWithTasks[] = []): ITaskRepository {
+  return {
+    findAll: jest.fn().mockResolvedValue(lists),
+    findById: jest.fn().mockResolvedValue(null),
+    findByConversation: jest.fn().mockResolvedValue(lists),
+    createList: jest.fn(),
+    updateList: jest.fn(),
+    deleteList: jest.fn(),
+    createTask: jest.fn(),
+    updateTask: jest.fn(),
+    deleteTask: jest.fn(),
+    replaceTasks: jest.fn(),
+  };
+}
+
+function makeTaskListItem(overrides: Partial<Task> = {}): Task {
+  return {
+    id: "task-1",
+    listId: "11111111-1111-4111-8111-111111111111",
+    title: "Pain",
+    notes: null,
+    done: false,
+    completedAt: null,
+    parentId: null,
+    position: 0,
+    createdAt: "2026-09-03T08:00:00.000Z",
+    updatedAt: "2026-09-03T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeTaskList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithTasks {
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    title: "Courses de samedi",
+    kind: "shopping",
+    dueAt: null,
+    eventId: null,
+    conversationId: "conv-1",
+    folderId: null,
+    createdByAssistant: true,
+    createdAt: "2026-09-03T08:00:00.000Z",
+    updatedAt: "2026-09-03T08:00:00.000Z",
+    tasks: [],
+    ...overrides,
+  };
+}
+
 function makeService(
   repo: IConversationRepository = makeRepository(),
   llm: LlmProvider = makeLlm(),
@@ -329,6 +392,7 @@ function makeService(
   folders: IFolderRepository = makeFolderRepository(),
   users: IUserRepository = makeUserRepository(),
   calendar: ICalendarRepository = makeCalendarRepository(),
+  tasks: ITaskRepository = makeTaskRepository(),
 ): ConversationService {
   return new ConversationService(
     repo,
@@ -337,6 +401,7 @@ function makeService(
     new FolderService(folders),
     users,
     new CalendarService(calendar),
+    new TaskService(tasks),
   );
 }
 
@@ -990,6 +1055,78 @@ describe("ConversationService", () => {
       // Seuls les deux messages du tour sont écrits : aucune todoliste n'est
       // créée à la volée. L'assistant propose, il n'exécute pas.
       expect(repo.appendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("ne propose pas de compléter une liste quand le fil n'en a produit aucune", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm), {
+        content: "Il me faut des courses pour samedi.",
+        inputMode: "text",
+      });
+
+      // Sans liste à compléter, l'outil n'aurait aucun identifiant à recevoir
+      // et le modèle en inventerait un.
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).toContain("suggest_task_list");
+      expect(tools).not.toContain("suggest_task_list_items");
+    });
+
+    it("donne au modèle de quoi compléter une liste déjà née du fil", async () => {
+      const llm = makeLlm();
+      const list = makeTaskList({
+        tasks: [
+          makeTaskListItem({ id: "task-1", title: "Pain" }),
+          makeTaskListItem({ id: "task-2", title: "Lait", parentId: "task-1" }),
+        ],
+      });
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([list]),
+        ),
+        { content: "Complète la liste.", inputMode: "text" },
+      );
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).toContain("suggest_task_list_items");
+
+      // Sans le contenu ni l'identifiant, « complète la liste » n'a rien à
+      // désigner : le modèle rappelle l'outil de création et propose une
+      // seconde liste homonyme.
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain(list.id);
+      expect(system).toContain("Pain");
+      expect(system).toContain("> Lait");
+    });
+
+    it("rappelle au modèle de ne pas reproposer ce qui a déjà été accepté", async () => {
+      const llm = makeLlm();
+      const suggestions = makeSuggestionRepository({
+        listForConversation: jest
+          .fn()
+          .mockResolvedValue([
+            makeSuggestion({
+              kind: "create_task_list",
+              status: "accepted",
+              message: "Je te l'organise ?",
+            }),
+          ]),
+      });
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Complète la liste.",
+        inputMode: "text",
+      });
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("Ne repropose ni ce qui a été accepté");
     });
 
     it("n'expose au canal permanent que les outils de son périmètre (A.10)", async () => {

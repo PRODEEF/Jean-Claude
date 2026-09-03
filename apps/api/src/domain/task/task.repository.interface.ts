@@ -50,6 +50,8 @@ export interface ITaskRepository {
   /** Toutes les listes de l'utilisateur, tâches comprises, tous dossiers confondus (A.2). */
   findAll(accessToken: string): Promise<TaskListWithTasks[]>;
   findById(id: string, accessToken: string): Promise<TaskListWithTasks | null>;
+  /** Listes nées d'une conversation donnée — celles que l'assistant peut compléter. */
+  findByConversation(conversationId: string, accessToken: string): Promise<TaskListWithTasks[]>;
   createList(
     userId: string,
     input: CreateTaskList & TaskListOrigin,
