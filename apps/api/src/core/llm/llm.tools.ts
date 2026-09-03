@@ -72,12 +72,14 @@ export const SUGGEST_FOLDERS: LlmTool = {
   description:
     "À appeler dès que l'échange en dit assez sur le sujet de la conversation pour " +
     "savoir où la ranger. Ne pas attendre qu'on le demande. " +
-    "Une conversation peut légitimement appartenir à plusieurs dossiers à la fois " +
-    "(une conversation sur la mutuelle relève à la fois de « Santé » et de " +
-    "« Administratif > Assurances ») : proposer tous les dossiers pertinents, pas seulement un. " +
+    "Ne retenir que les dossiers dont la conversation traite réellement. Elle peut en " +
+    "relever de plusieurs à la fois (une conversation sur la mutuelle relève à la fois de " +
+    "« Santé » et de « Administratif > Assurances »), mais un dossier seulement voisin du " +
+    "sujet n'en fait pas partie : dans le doute, ne pas le proposer. " +
     "Réutiliser en priorité les dossiers existants listés dans la consigne, en recopiant " +
-    "leur identifiant caractère pour caractère — un identifiant reconstitué de mémoire ou " +
-    "remplacé par le nom du dossier fait perdre la ligne correspondante. " +
+    "identifiant et nom caractère pour caractère depuis la même ligne — le serveur écarte " +
+    "la ligne dont les deux ne se correspondent pas, et un identifiant reconstitué de " +
+    "mémoire range la conversation dans un dossier qui n'a rien à voir. " +
     "N'en proposer un nouveau que si aucun ne convient, et remplir au moins l'une des deux " +
     "listes : une proposition sans aucun dossier n'a rien à ranger. " +
     "S'aligner sur la façon dont l'utilisateur nomme déjà ses dossiers plutôt que d'imposer " +
@@ -94,11 +96,28 @@ export const SUGGEST_FOLDERS: LlmTool = {
           "décoche ceux qu'il ne retient pas. Écrire « dans X et Y ? », jamais « dans X ou Y ? ». " +
           "Ne jamais présenter le rangement comme déjà fait. 500 caractères maximum.",
       },
-      existingFolderIds: {
+      existingFolders: {
         type: "array",
-        description: "Identifiants de dossiers existants, repris tels quels de la consigne.",
+        description:
+          "Dossiers existants où ranger la conversation, un objet par dossier, repris " +
+          "d'une seule et même ligne de la consigne.",
         maxItems: 8,
-        items: { type: "string" },
+        items: {
+          type: "object",
+          properties: {
+            id: {
+              type: "string",
+              description: "Identifiant du dossier, recopié caractère pour caractère.",
+            },
+            name: {
+              type: "string",
+              description:
+                "Nom du dossier tel qu'il figure sur cette ligne, sans le chemin de ses " +
+                "parents — « Assurances », pas « Administratif > Assurances ».",
+            },
+          },
+          required: ["id", "name"],
+        },
       },
       newFolderNames: {
         type: "array",

@@ -7,9 +7,40 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **3 septembre 2026** — l'échéance passe de la tâche à la liste,
+Dernière mise à jour : **3 septembre 2026** — le contexte remis au modèle a été repris :
+une proposition ne fait plus taire la réponse, et un dossier hors sujet ne se glisse plus
+dans un rangement. Plus tôt dans la journée : l'échéance est passée de la tâche à la liste,
 les todolistes s'écrivent comme un texte, et le calendrier sait ouvrir une liste sur le
 jour affiché.
+
+**Une carte ne remplace plus la réponse.** Un tour où le modèle s'en tenait à son appel
+d'outil n'écrivait aucun message : la carte s'affichait seule et la question posée restait
+sans réponse. La consigne le dit maintenant explicitement — l'outil n'affiche qu'une carte,
+il ne dispense pas de répondre — et le serveur rattrape le cas restant par un second appel,
+sans outils, où la proposition déjà captée est rappelée pour qu'il ne la reformule pas. Deux
+appels d'outils échappent au rattrapage : `open_new_conversation`, qui exige justement le
+silence, et `ask_question`, dont la question fait déjà le texte du message.
+
+**Un dossier proposé se vérifie avant d'être affiché.** Le modèle rendait un identifiant
+seul ; recopié de travers, il tombait sur un autre dossier réel de l'utilisateur — la
+proposition paraissait sensée tout en rangeant la conversation dans un dossier étranger au
+sujet. `suggest_folders` réclame désormais l'identifiant **et** le nom lus sur la même
+ligne de la consigne, et le serveur écarte la ligne dont les deux ne se correspondent pas.
+La charge utile persistée, elle, ne bouge pas : les cartes déjà en base restent lisibles.
+La consigne demande en outre de ne retenir que les dossiers dont la conversation traite
+réellement — la règle du §5.2 vaut toujours (une conversation relève de plusieurs dossiers),
+mais le voisinage thématique n'en est pas un.
+
+**L'attente dit combien de temps elle dure.** La roue d'attente est remplacée par
+« <assistant> réfléchit… 4 s », le compteur montant tant qu'aucun jeton n'est arrivé — le
+repère qu'affichent ChatGPT et Claude (§4.2). Côté serveur, les lectures qui précèdent
+l'appel au modèle (fil, profil, propositions, arborescence, agenda) partent désormais
+ensemble : deux allers-retours de base en moins avant le premier mot.
+
+**La carte de réponses proposées se voit.** Elle reste au-dessus de la saisie, là où
+ChatGPT, Claude et Perplexity posent les leurs (§4.2), mais porte la couleur d'accent et
+non le gris des bordures ordinaires : discrète, elle se lisait comme un pied d'écran et se
+traversait sans être vue.
 
 **L'échéance appartient à la liste, plus à ses lignes** (A.2, A.3). « Les courses avant
 samedi » date la liste, pas le paquet de farine : `due_at` quitte `tasks` pour
@@ -510,6 +541,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Aucun modèle de repli                   | `llm-error.ts` distingue proprement 429 et 402, mais il n'y a qu'un `LLM_MODEL` : un quota atteint tue le tour au lieu de basculer sur un second moteur                                                                 |
 | Un timeout se présente en panne         | Les délais de `gateway.provider.ts` (60 s, 15 s au premier jeton) retombent dans le `default` de `toHttpException` : l'utilisateur lit « moteur indisponible » et attend une panne qui n'existe pas                     |
 | Historique ouvert par un tour assistant | Le canal commence par le message d'accueil, donc l'historique remis au modèle débute par un tour `assistant`. Toléré ou refusé selon le moteur routé par le Gateway — à couvrir avant de changer `LLM_MODEL`            |
+| Rattrapage de réponse au prix d'un tour  | Un modèle qui s'en tient à son appel d'outil déclenche un second appel : la réponse arrive, mais l'attente double. La consigne cherche à rendre ce cas rare — reste à mesurer sa fréquence par moteur                                                                     |
 | `listPending` sans appelant             | `ConversationService` lit `listForConversation` et en déduit les propositions en attente. La méthode du Repository n'a plus d'appelant : à retirer, ou à consommer là où la déduction se fait                           |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo

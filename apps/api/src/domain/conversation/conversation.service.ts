@@ -27,7 +27,12 @@ import type {
   UpdateConversation,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
-import type { LlmProvider, LlmTool, LlmToolCall } from "../../core/llm/llm.port.js";
+import type {
+  LlmCompletionRequest,
+  LlmProvider,
+  LlmTool,
+  LlmToolCall,
+} from "../../core/llm/llm.port.js";
 import {
   ASK_QUESTION,
   ASSISTANT_TOOLS,
@@ -76,6 +81,20 @@ const FORMAT_RULES = [
   "Va au fait : quelques phrases suffisent le plus souvent. Le Markdown est",
   "rendu — titres, listes, tableaux — mais réserve-le à ce qui en a réellement",
   "besoin, la même réponse se lit sur un téléphone.",
+];
+
+/**
+ * Un appel d'outil ne dispense jamais de répondre (§12.1).
+ *
+ * Laissé libre, le modèle s'en tient souvent à l'appel : la carte s'affiche et
+ * la question posée reste sans réponse. Le service sait rattraper ce cas au
+ * prix d'un second appel — cette consigne évite d'en arriver là.
+ */
+const TOOL_ANSWER_RULE = [
+  "",
+  "Appeler un outil ne remplace jamais ta réponse : l'outil ne fait qu'afficher",
+  "une carte sous le fil. Réponds toujours à l'utilisateur dans le même tour, et",
+  "laisse la carte porter la proposition plutôt que de la répéter.",
 ];
 
 /**
@@ -428,9 +447,18 @@ export class ConversationService {
   ): AsyncGenerator<MessageStreamEvent> {
     const conversationId = conversation.id;
 
-    const history = await this.conversations.listMessages(conversationId, accessToken, {
-      limit: CONTEXT_WINDOW_MESSAGES,
-    });
+    // Instant du tour, pris une fois : la fenêtre d'agenda et le repère
+    // temporel de la consigne doivent désigner le même moment.
+    const now = new Date();
+
+    // Fil et profil partent ensemble : ils ne dépendent pas l'un de l'autre, et
+    // les enchaîner allongeait d'autant l'attente avant le premier mot.
+    const [history, context] = await Promise.all([
+      this.conversations.listMessages(conversationId, accessToken, {
+        limit: CONTEXT_WINDOW_MESSAGES,
+      }),
+      this.contextFor(userId, accessToken),
+    ]);
 
     // Les messages `system` stockés ne sont pas rejouables comme des tours de
     // dialogue : la consigne système est reconstruite à chaque appel.
@@ -447,29 +475,24 @@ export class ConversationService {
     let model: string | null = null;
     const toolCalls: LlmToolCall[] = [];
 
-    // Instant du tour, pris une fois : la fenêtre d'agenda et le repère
-    // temporel de la consigne doivent désigner le même moment.
-    const now = new Date();
-
-    // Profil et entretien du fil : résolus avant l'appel au modèle, parce que
-    // les deux décident des outils qu'on lui expose.
-    const context = await this.contextFor(userId, accessToken);
+    // Entretien du fil : résolu avant l'appel au modèle, parce qu'il décide des
+    // outils qu'on lui expose — et il se lit à partir du profil.
     const todo = await this.pendingHousekeeping(conversation, context, now, accessToken);
 
-    try {
-      const stream = this.llm.stream({
-        system: buildSystemPrompt(conversation.kind, todo, context, now),
-        messages: dialogue.map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        })),
-        tools: todo.tools,
-        // Le modèle du profil ne remplace celui du serveur que s'il existe :
-        // `null` veut dire « celui que le serveur a retenu », et non « aucun ».
-        ...(context.model ? { model: context.model } : {}),
-      });
+    const request: LlmCompletionRequest = {
+      system: buildSystemPrompt(conversation.kind, todo, context, now),
+      messages: dialogue.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+      tools: todo.tools,
+      // Le modèle du profil ne remplace celui du serveur que s'il existe :
+      // `null` veut dire « celui que le serveur a retenu », et non « aucun ».
+      ...(context.model ? { model: context.model } : {}),
+    };
 
-      for await (const chunk of stream) {
+    try {
+      for await (const chunk of this.llm.stream(request)) {
         if (chunk.type === "text") {
           text += chunk.text;
           yield { type: "text", text: chunk.text };
@@ -478,6 +501,16 @@ export class ConversationService {
         } else if (chunk.type === "done") {
           provider = chunk.response.provider;
           model = chunk.response.model;
+        }
+      }
+
+      // Le modèle s'en tient parfois à l'appel d'outil, sans un mot pour
+      // l'utilisateur : la carte s'affiche, et la question posée reste sans
+      // réponse. Un second tour la lui donne, la consigne n'ayant pas suffi.
+      if (text.length === 0 && needsWrittenAnswer(conversation.kind, toolCalls)) {
+        for await (const chunk of this.answerAfterToolCall(request, toolCalls)) {
+          text += chunk;
+          yield { type: "text", text: chunk };
         }
       }
     } finally {
@@ -529,7 +562,12 @@ export class ConversationService {
           console.warn(`Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
-        await this.suggestions.capture(userId, conversationId, toolCall, accessToken);
+        await this.suggestions.capture(
+          userId,
+          conversationId,
+          withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+          accessToken,
+        );
       }
 
       await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
@@ -537,6 +575,43 @@ export class ConversationService {
       await this.applyOnboardingMemory(userId, toolCalls, accessToken);
 
       if (assistantMessage) yield { type: "done", message: assistantMessage };
+    }
+  }
+
+  /**
+   * Second tour, quand le premier n'a produit qu'un appel d'outil.
+   *
+   * Sans lui, la demande de l'utilisateur reste sans réponse : le fil n'affiche
+   * qu'une carte, et rien ne dit ce qui a été compris. Le rattrapage est rendu
+   * en flux comme la réponse ordinaire — c'en est une, arrivée en deux temps.
+   *
+   * Aucun outil n'est remis au modèle : la proposition du premier tour sera
+   * captée de toute façon, et la rejouer afficherait deux cartes pour un seul
+   * geste. Un échec est consigné puis abandonné — le tour reste exploitable
+   * sans ce second texte, alors que le faire échouer perdrait la proposition
+   * avec lui.
+   */
+  private async *answerAfterToolCall(
+    request: LlmCompletionRequest,
+    toolCalls: LlmToolCall[],
+  ): AsyncGenerator<string> {
+    console.warn("Tour sans réponse écrite : second appel pour répondre à l'utilisateur.");
+
+    try {
+      const stream = this.llm.stream({
+        ...request,
+        system: [request.system ?? "", "", proposalReminder(toolCalls)].join("\n"),
+        tools: [],
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.type === "text") yield chunk.text;
+      }
+    } catch (error) {
+      console.error(
+        "Rattrapage de réponse impossible :",
+        error instanceof Error ? error.message : error,
+      );
     }
   }
 
@@ -614,24 +689,35 @@ export class ConversationService {
         return { tools, filing: null, channel: null, decided: [] };
       }
 
-      const decided = await this.suggestions.listForConversation(conversation.id, accessToken);
+      // Les trois lectures partent ensemble : les enchaîner ajoutait deux
+      // allers-retours de base au délai qui précède le premier mot de la
+      // réponse, alors qu'aucune ne dépend du résultat des autres.
+      const [decided, tree, agenda] = await Promise.all([
+        this.suggestions.listForConversation(conversation.id, accessToken),
+        this.folders.getTree(accessToken),
+        this.calendar.list(agendaWindow(now), accessToken),
+      ]);
+
       const structuring = isPending(decided, "create_project_folders")
         ? tools.filter((tool) => tool !== SUGGEST_PROJECT_FOLDERS)
         : tools;
 
-      const [folders, agenda] = await Promise.all([
-        // L'arborescence n'est lue que si le modèle peut en proposer une : sans
-        // l'outil, elle ne servirait qu'à allonger la consigne.
-        structuring.includes(SUGGEST_PROJECT_FOLDERS)
-          ? this.folders.getTree(accessToken)
-          : Promise.resolve<FolderTreeNode[]>([]),
-        this.calendar.list(agendaWindow(now), accessToken),
-      ]);
+      // L'arborescence n'est remise au modèle que s'il peut en proposer une :
+      // sans l'outil, elle ne ferait qu'allonger la consigne.
+      const folders = structuring.includes(SUGGEST_PROJECT_FOLDERS) ? tree : [];
 
       return { tools: structuring, filing: null, channel: { folders, agenda }, decided };
     }
 
-    const decided = await this.suggestions.listForConversation(conversation.id, accessToken);
+    // L'arborescence n'est utile qu'à un fil non classé dont le rangement reste
+    // autorisé : les deux se savent sans lire la base, et la lecture part alors
+    // en même temps que les propositions plutôt qu'après elles.
+    const mayFile = conversation.folderIds.length === 0 && scope.folderOrganization;
+
+    const [decided, tree] = await Promise.all([
+      this.suggestions.listForConversation(conversation.id, accessToken),
+      mayFile ? this.folders.getTree(accessToken) : Promise.resolve<FolderTreeNode[]>([]),
+    ]);
 
     const tools = allowed(CHAT_TOOLS, scope).filter(
       (tool) =>
@@ -646,21 +732,12 @@ export class ConversationService {
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
 
-    if (
-      conversation.folderIds.length > 0 ||
-      !scope.folderOrganization ||
-      isPending(decided, "assign_folders")
-    ) {
+    if (!mayFile || isPending(decided, "assign_folders")) {
       return { tools, filing: null, channel: null, decided };
     }
 
     tools.push(SUGGEST_FOLDERS);
-    return {
-      tools,
-      filing: { folders: await this.folders.getTree(accessToken) },
-      channel: null,
-      decided,
-    };
+    return { tools, filing: { folders: tree }, channel: null, decided };
   }
 
   /**
@@ -750,6 +827,137 @@ function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[])
 }
 
 /**
+ * Vérifie les dossiers d'un `suggest_folders` avant d'en faire une proposition.
+ *
+ * Le modèle rend un identifiant **et** le nom lu sur la même ligne de la
+ * consigne : seules les paires cohérentes sont retenues. Un identifiant recopié
+ * de travers tombe sur un autre dossier réel de l'utilisateur — la proposition
+ * paraît alors sensée alors qu'elle range la conversation dans un dossier
+ * étranger au sujet, et rien en aval ne peut le détecter. C'est le seul endroit
+ * où les deux informations sont connues ensemble.
+ *
+ * L'appel est traduit vers `existingFolderIds`, la forme que la charge utile
+ * persistée porte depuis le début : les cartes déjà en base et le client
+ * restent lisibles à l'identique.
+ */
+function withVerifiedFolders(toolCall: LlmToolCall, known: FolderTreeNode[]): LlmToolCall {
+  if (toolCall.name !== SUGGEST_FOLDERS.name) return toolCall;
+
+  const proposed = toolCall.input["existingFolders"];
+  // Le modèle s'en est tenu aux nouveaux dossiers, ou a répondu dans l'ancienne
+  // forme : la capture sait déjà écarter un identifiant qui n'est pas un UUID.
+  if (!Array.isArray(proposed)) return toolCall;
+
+  const folders = flattenWithPath(known);
+  const verified: string[] = [];
+
+  for (const entry of proposed) {
+    const candidate = readProposedFolder(entry);
+    if (!candidate) {
+      console.warn("Dossier proposé sans identifiant ni nom exploitables, écarté.");
+      continue;
+    }
+
+    const folder = folders.find((known) => known.id === candidate.id);
+    if (!folder) {
+      console.warn("Dossier proposé inconnu, écarté du rangement.");
+      continue;
+    }
+
+    // Le chemin complet est accepté au même titre que le nom seul : la consigne
+    // affiche « Administratif > Assurances », et reprendre la ligne entière est
+    // une lecture fidèle, pas une confusion.
+    if (!sameName(folder.name, candidate.name) && !sameName(folder.path, candidate.name)) {
+      console.warn("Dossier proposé dont le nom contredit l'identifiant, écarté.");
+      continue;
+    }
+
+    verified.push(folder.id);
+  }
+
+  return { ...toolCall, input: { ...toolCall.input, existingFolderIds: verified } };
+}
+
+/** Un dossier tel que le modèle le rend, ou `null` si la forme n'y est pas. */
+function readProposedFolder(entry: unknown): { id: string; name: string } | null {
+  if (typeof entry !== "object" || entry === null) return null;
+  if (!("id" in entry) || !("name" in entry)) return null;
+
+  const { id, name } = entry;
+  return typeof id === "string" && typeof name === "string" ? { id, name } : null;
+}
+
+/** Arborescence mise à plat, chaque dossier portant aussi son chemin complet. */
+function flattenWithPath(
+  tree: FolderTreeNode[],
+  parent = "",
+): { id: string; name: string; path: string }[] {
+  return tree.flatMap((folder) => {
+    const path = parent ? `${parent} > ${folder.name}` : folder.name;
+    return [
+      { id: folder.id, name: folder.name, path },
+      ...flattenWithPath(folder.children, path),
+    ];
+  });
+}
+
+/**
+ * Deux noms de dossier ne différant que par la casse ou les espaces de bord
+ * désignent le même dossier — c'est ainsi que l'utilisateur les lit.
+ */
+function sameName(a: string, b: string): boolean {
+  return a.trim().toLocaleLowerCase("fr") === b.trim().toLocaleLowerCase("fr");
+}
+
+/**
+ * Le tour doit-il encore produire une réponse écrite ?
+ *
+ * Deux appels se suffisent à eux-mêmes : `open_new_conversation` exige au
+ * contraire qu'aucun texte ne soit écrit — l'annonce de bascule vient du
+ * serveur — et `ask_question` porte déjà sa question, affichée telle quelle à
+ * défaut de texte. Partout ailleurs, une carte sans un mot laisse l'utilisateur
+ * devant une proposition qui ne répond pas à ce qu'il vient de demander.
+ *
+ * Un tour sans le moindre appel d'outil n'est pas rattrapé : le modèle n'a
+ * alors rien produit du tout, et le rejouer à l'identique donnerait le même
+ * silence.
+ */
+function needsWrittenAnswer(kind: Conversation["kind"], toolCalls: LlmToolCall[]): boolean {
+  if (toolCalls.length === 0) return false;
+  if (readRedirectTitle(kind, toolCalls) !== null) return false;
+  return readQuestion(toolCalls) === null;
+}
+
+/**
+ * Ce que le second tour doit savoir du premier.
+ *
+ * Le modèle ne relit pas ses propres appels d'outils : sans ce rappel, il
+ * reformulerait en clair une proposition que la carte affiche déjà, ou la
+ * présenterait comme faite — l'inverse du §12.1.
+ */
+function proposalReminder(toolCalls: LlmToolCall[]): string {
+  const proposed = toolCalls
+    .map((toolCall) => toolCall.input["message"])
+    .filter((message): message is string => typeof message === "string" && message.length > 0);
+
+  const lines = [
+    "Tu viens d'appeler un outil sans écrire un mot : la demande de l'utilisateur",
+    "reste sans réponse. Réponds-y maintenant, en texte et sans appeler d'outil.",
+  ];
+
+  if (proposed.length > 0) {
+    lines.push(
+      "",
+      "Une carte affiche déjà la proposition ci-dessous, avec de quoi l'accepter ou",
+      "l'ignorer. N'y reviens pas, ne la répète pas, ne la présente pas comme faite :",
+      ...proposed.map((message) => `- « ${message} »`),
+    );
+  }
+
+  return lines.join("\n");
+}
+
+/**
  * Retire du contexte l'échange déjà basculé vers une conversation dédiée (A.10).
  *
  * Deux messages partent : l'annonce validée, et la demande qui l'a provoquée.
@@ -813,6 +1021,8 @@ function buildSystemPrompt(
       "Quand tu poses une question dont quelques réponses couvrent l'essentiel des",
       "cas, pose-la avec `ask_question` : l'utilisateur répond d'un appui plutôt",
       "que d'écrire. Réserve-la à ces questions-là.",
+      ...TOOL_ANSWER_RULE,
+      "Seule exception : `open_new_conversation`, après lequel tu n'écris rien.",
       ...FORMAT_RULES,
       ...describeAgenda(todo.channel?.agenda ?? [], context.timezone),
     ];
@@ -854,6 +1064,7 @@ function buildSystemPrompt(
     "Quand tu poses une question dont quelques réponses couvrent l'essentiel des cas,",
     "pose-la avec `ask_question` : l'utilisateur répond d'un appui plutôt que d'écrire.",
     "Réserve-la à ces questions-là — une question ouverte se pose à l'écrit.",
+    ...TOOL_ANSWER_RULE,
     ...FORMAT_RULES,
     ...describeMemory(context.memory),
   ];
@@ -890,11 +1101,18 @@ function buildSystemPrompt(
     lines.push(
       "",
       "Elle n'est rangée dans aucun dossier. Dès que son sujet est clair, appelle",
-      "`suggest_folders` pour proposer où la ranger — tous les dossiers pertinents,",
-      "pas seulement un. N'attends pas qu'on te le demande, et ne le fais qu'une fois.",
+      "`suggest_folders` pour proposer où la ranger. N'attends pas qu'on te le",
+      "demande, et ne le fais qu'une fois.",
+      "",
+      "Ne propose que des dossiers dont cette conversation-ci traite réellement.",
+      "Elle peut en relever de plusieurs à la fois — la mutuelle est à la fois",
+      "« Santé » et « Assurances » — mais un dossier seulement voisin du sujet n'en",
+      "fait pas partie : dans le doute, laisse-le de côté. Un dossier de trop range",
+      "la conversation là où l'utilisateur n'ira jamais la chercher.",
       "",
       todo.filing.folders.length > 0
-        ? "Dossiers existants, à réutiliser en priorité avec leur identifiant exact :"
+        ? "Dossiers existants. Pour en réutiliser un, recopie son identifiant ET son nom" +
+          " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas."
         : "L'utilisateur n'a encore aucun dossier : propose-en un nouveau, sobrement nommé.",
       ...describeFolders(todo.filing.folders),
     );
@@ -934,6 +1152,7 @@ function buildOnboardingPrompt(assistantName: string, preamble: string[]): strin
     "`suggest_project_folders` pour proposer les dossiers correspondants. L'outil",
     "ne crée rien : il affiche une proposition que l'utilisateur valide d'un geste.",
     "Ne présente donc jamais les dossiers comme déjà créés.",
+    ...TOOL_ANSWER_RULE,
   ].join("\n");
 }
 
