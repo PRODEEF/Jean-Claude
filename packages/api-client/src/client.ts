@@ -127,12 +127,14 @@ export class JeanClaudeClient {
   /**
    * Todolistes (A.2).
    *
-   * Une seule lecture rend toutes les listes avec leurs tâches : la vue
-   * hebdomadaire et la vue « toutes mes listes » se dérivent du même
-   * chargement, et basculer de l'une à l'autre ne recharge rien.
+   * `lists` est paginée par curseur, comme les conversations — un garde-fou
+   * pour un compte qui en accumule beaucoup, la vue hebdomadaire et la vue
+   * « toutes mes listes » continuant de se dériver du même chargement côté
+   * app (`useTaskLists`, qui enchaîne les pages).
    */
   readonly tasks = {
-    lists: () => this.http.request<TaskListWithTasks[]>("/tasks"),
+    lists: (params: { cursor?: string; limit?: number } = {}) =>
+      this.http.request<Paginated<TaskListWithTasks>>("/tasks", { query: params }),
 
     createList: (input: CreateTaskList) =>
       this.http.request<TaskList>("/tasks", { method: "POST", body: input }),

@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   createTaskListSchema,
   createTaskSchema,
+  cursorPaginationSchema,
   replaceTasksSchema,
   updateTaskListSchema,
   updateTaskSchema,
@@ -17,6 +18,7 @@ const service = new TaskService(taskRepository);
 
 const idParam = validate("param", z.object({ id: uuidSchema }));
 const itemParams = validate("param", z.object({ id: uuidSchema, itemId: uuidSchema }));
+const pagination = validate("query", cursorPaginationSchema);
 
 /**
  * Todolistes (A.2).
@@ -28,7 +30,9 @@ const itemParams = validate("param", z.object({ id: uuidSchema, itemId: uuidSche
 export const taskRoutes = new Hono<AuthEnv>()
   .use(auth)
 
-  .get("/", async (c) => c.json(await service.list(c.get("user").accessToken)))
+  .get("/", pagination, async (c) =>
+    c.json(await service.list(c.get("user").accessToken, c.req.valid("query"))),
+  )
 
   .post("/", validate("json", createTaskListSchema), async (c) => {
     const user = c.get("user");
