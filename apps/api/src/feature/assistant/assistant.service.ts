@@ -16,6 +16,7 @@ import {
   type TaskListKind,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
+import { logger } from "../../core/logger.js";
 import type { CalendarService } from "../../domain/calendar/calendar.service.js";
 import type { ConversationService } from "../../domain/conversation/conversation.service.js";
 import type { FolderService } from "../../domain/folder/folder.service.js";
@@ -43,6 +44,8 @@ export type ResolvedSuggestion = {
 
 /** Ce que l'acceptation a produit, hors de la suggestion elle-même. */
 type Applied = Omit<ResolvedSuggestion, "suggestion">;
+
+const SCOPE = "assistant.service";
 
 /** Un refus, ou une proposition qui n'a rien créé. */
 function nothingApplied(): Applied {
@@ -165,7 +168,7 @@ export class AssistantService {
     const payload = createTaskListsPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success || !suggestion.conversationId) {
-      console.error("Charge utile de todoliste illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de todoliste illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -235,7 +238,7 @@ export class AssistantService {
     const payload = addTaskListItemsPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
-      console.error("Charge utile de complétion illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de complétion illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -288,7 +291,7 @@ export class AssistantService {
     const payload = scheduleListsPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
-      console.error("Charge utile de créneau illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de créneau illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -307,7 +310,7 @@ export class AssistantService {
         // Liste supprimée entre la proposition et son acceptation : le créneau
         // reste, il porte l'information. Faire échouer l'acceptation entière
         // annulerait les créneaux déjà posés pour les listes précédentes.
-        console.warn("Liste introuvable au moment de poser son créneau", entry.listId);
+        logger.warn(SCOPE, "Liste introuvable au moment de poser son créneau", entry.listId);
       }
 
       events.push(event);
@@ -331,7 +334,7 @@ export class AssistantService {
     const payload = assignFoldersPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success || !suggestion.conversationId) {
-      console.error("Charge utile de rangement illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de rangement illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -344,7 +347,7 @@ export class AssistantService {
       // Un identifiant inventé par le modèle échouerait sur la clé étrangère :
       // on l'écarte plutôt que de perdre tout le rangement avec lui.
       if (known.some((folder) => folder.id === id)) targetIds.add(id);
-      else console.warn("Dossier proposé inconnu, ignoré", suggestion.id);
+      else logger.warn(SCOPE, "Dossier proposé inconnu, ignoré", suggestion.id);
     }
 
     for (const name of payload.data.newFolderNames) {
@@ -364,7 +367,7 @@ export class AssistantService {
     }
 
     if (targetIds.size === 0) {
-      console.error("Rangement sans dossier applicable", suggestion.id);
+      logger.error(SCOPE, "Rangement sans dossier applicable", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -395,7 +398,7 @@ export class AssistantService {
     if (!payload.success) {
       // La charge utile a été validée à la capture : échouer ici signifie que
       // le contrat a changé depuis. Le détail reste côté serveur.
-      console.error("Charge utile de suggestion illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de suggestion illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 

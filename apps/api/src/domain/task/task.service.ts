@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type {
   CreateTask,
   CreateTaskList,
+  CursorPagination,
+  Paginated,
   ReplaceTasks,
   Task,
   TaskList,
@@ -21,15 +23,17 @@ export class TaskService {
   constructor(private readonly lists: ITaskRepository) {}
 
   /**
-   * Toutes les listes, tâches comprises.
-   *
-   * Pas de fenêtre temporelle ni de pagination : l'onglet TODOLISTE est
-   * précisément la vue « tous dossiers confondus » (A.2), et la vue
-   * hebdomadaire se dérive du même chargement. Deux routes auraient obligé à
-   * recharger à chaque bascule entre la semaine et les listes.
+   * Les listes, tâches comprises, par page — garde-fou pour un compte qui en
+   * accumule beaucoup (Phase C : conversion conversation → todoliste, A.2).
+   * L'onglet TODOLISTE reste la vue « tous dossiers confondus » : c'est le
+   * client qui recompose l'ensemble en enchaînant les pages, pas l'API qui
+   * borne la vue.
    */
-  list(accessToken: string): Promise<TaskListWithTasks[]> {
-    return this.lists.findAll(accessToken);
+  list(accessToken: string, pagination: CursorPagination): Promise<Paginated<TaskListWithTasks>> {
+    return this.lists.findAll(accessToken, {
+      ...(pagination.cursor ? { cursor: pagination.cursor } : {}),
+      limit: pagination.limit,
+    });
   }
 
   /**
