@@ -69,12 +69,14 @@ export default function AssistantScreen() {
 
           <Pressable
             onPress={() => setFeedbackOpen(true)}
-            hitSlop={8}
             style={styles.feedbackButton}
             accessibilityRole="button"
             accessibilityLabel="Donner votre avis"
           >
-            <MessageSquarePlus size={20} color={palette.textMuted} />
+            <MessageSquarePlus size={18} color={palette.textMuted} />
+            <Text style={[styles.feedbackLabel, { color: palette.textMuted }]}>
+              Donner votre avis
+            </Text>
           </Pressable>
         </View>
       }
@@ -109,9 +111,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   skipLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, textDecorationLine: "underline" },
-  // 28 pt + 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
-  // `MIN_TOUCH_TARGET` sans grossir l'icône, comme dans MessageRow.
-  feedbackButton: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
+  feedbackButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    minHeight: MIN_TOUCH_TARGET,
+    paddingHorizontal: spacing.sm,
+  },
+  feedbackLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl },
   error: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, textAlign: "center" },
 });
