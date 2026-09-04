@@ -14,14 +14,6 @@ export type TimeGridProps = {
   onOpenEvent: (event: CalendarEvent) => void;
   /** Appui sur un créneau libre — la minute est celle visée dans la colonne. */
   onCreateAt: (day: Date, minute: number) => void;
-  /**
-   * Distance entre le haut de la grille et la première heure ouvrée.
-   *
-   * La grille ne défile plus d'elle-même — c'est la page qui défile — et seul
-   * son parent peut donc la cadrer sur le matin. Il lui manque pour cela la
-   * hauteur des bandeaux de tête, mesurée ici.
-   */
-  onMorningOffset?: (offset: number) => void;
 };
 
 const HOUR_HEIGHT = 48;
@@ -29,9 +21,6 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
 /** Colonne des heures, à gauche de la grille. */
 const GUTTER_WIDTH = 44;
-
-/** La grille s'ouvre sur le matin plutôt qu'à minuit, comme les trois références. */
-const INITIAL_HOUR = 7;
 
 /** En deçà, le titre d'un rendez-vous court n'est plus lisible. */
 const MIN_EVENT_HEIGHT = 18;
@@ -54,7 +43,6 @@ export function TimeGrid({
   lists,
   onOpenEvent,
   onCreateAt,
-  onMorningOffset,
 }: TimeGridProps) {
   const today = new Date();
 
@@ -149,13 +137,7 @@ export function TimeGrid({
         </View>
       ) : null}
 
-      <View
-        className="flex-row"
-        style={{ height: HOURS.length * HOUR_HEIGHT }}
-        onLayout={(event) =>
-          onMorningOffset?.(event.nativeEvent.layout.y + INITIAL_HOUR * HOUR_HEIGHT)
-        }
-      >
+      <View className="flex-row" style={{ height: HOURS.length * HOUR_HEIGHT }}>
         <View style={{ width: GUTTER_WIDTH }}>
           {HOURS.map((hour) => (
             <View key={hour} style={{ height: HOUR_HEIGHT }} className="items-end pr-1 pt-0.5">
