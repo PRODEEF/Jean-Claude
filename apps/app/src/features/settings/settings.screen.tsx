@@ -1,18 +1,16 @@
 import { useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { Check } from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
 import { ASSISTANT_MODELS, type AssistantScope, type Theme } from "@jc/domain";
 import { useProfile, useUpdateProfile } from "@/shared/hooks/use-profile";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { api } from "@/shared/lib/api";
-import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
-import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { FORM_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
+import { Select } from "@/shared/ui/select";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 
@@ -241,24 +239,21 @@ export function SettingsScreen() {
             </View>
           </Field>
 
-          {/* Une liste de lignes descriptives plutôt qu'un groupe segmenté :
-              le choix ne se devine pas d'un libellé, il demande une phrase.
-              C'est la forme qu'ont retenue ChatGPT, Claude et Perplexity pour
-              le même réglage (§4.2). */}
           <Field label="Modèle">
-            <View className="gap-2" accessibilityRole="radiogroup">
-              {ASSISTANT_MODELS.map((model) => (
-                <ModelRow
-                  key={model.id}
-                  label={model.label}
-                  benefit={model.benefit}
-                  sovereign={model.sovereign}
-                  selected={model.id === activeModel}
-                  disabled={updateProfile.isPending}
-                  onPress={() => updateProfile.mutate({ llmModel: model.id })}
-                />
-              ))}
-            </View>
+            <Select
+              value={activeModel}
+              options={ASSISTANT_MODELS.map((model) => ({
+                value: model.id,
+                label: model.label,
+                description: model.sovereign
+                  ? `${model.benefit} Hébergé en Europe.`
+                  : model.benefit,
+              }))}
+              onChange={(id) => updateProfile.mutate({ llmModel: id })}
+              placeholder="Choisir un modèle"
+              disabled={updateProfile.isPending}
+              accessibilityLabel="Modèle"
+            />
             {activeModel === null ? (
               <Text className="text-sm text-muted-foreground">
                 Aucun de ces modèles n'est actif pour l'instant : choisissez-en un.
@@ -324,55 +319,6 @@ export function SettingsScreen() {
         ) : null}
       </View>
     </ScreenShell>
-  );
-}
-
-/**
- * Ligne d'un modèle proposé.
- *
- * La mention d'hébergement n'est affichée que lorsqu'elle est vraie : la
- * transparence du §13.4.6 porte sur ce qui rassure, et répéter « hébergé hors
- * d'Europe » sur deux lignes sur trois transformerait un réglage en avertissement.
- */
-function ModelRow({
-  label,
-  benefit,
-  sovereign,
-  selected,
-  disabled,
-  onPress,
-}: {
-  label: string;
-  benefit: string;
-  sovereign: boolean;
-  selected: boolean;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      className={cn(
-        "flex-row items-center gap-3 rounded-md border px-3 py-3",
-        selected ? "border-primary bg-primary/5" : "border-border",
-        disabled && "opacity-50",
-      )}
-      style={{ minHeight: MIN_TOUCH_TARGET }}
-      accessibilityRole="radio"
-      accessibilityState={{ selected, disabled }}
-      accessibilityLabel={label}
-      accessibilityHint={benefit}
-    >
-      <View className="flex-1 gap-0.5">
-        <Text className="text-base text-foreground">{label}</Text>
-        <Text className="text-sm text-muted-foreground">{benefit}</Text>
-        {sovereign ? (
-          <Text className="text-sm text-muted-foreground">Hébergé en Europe.</Text>
-        ) : null}
-      </View>
-      {selected ? <Icon as={Check} size={18} className="text-primary" /> : null}
-    </Pressable>
   );
 }
 
