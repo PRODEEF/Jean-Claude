@@ -193,8 +193,11 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           contentContainerStyle={[styles.list, column]}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={
-            <Text style={[styles.empty, { color: palette.textMuted }]}>
+          // En en-tête et non en état vide : la phrase reste au-dessus du fil
+          // une fois les premiers messages échangés, au lieu de disparaître dès
+          // le premier envoi — elle défile avec le reste, sans être fixée.
+          ListHeaderComponent={
+            <Text style={[styles.intro, { color: palette.textMuted }]}>
               Écrivez ce que vous avez en tête. Le rangement viendra ensuite.
             </Text>
           }
@@ -372,11 +375,11 @@ const styles = StyleSheet.create({
    */
   plain: { alignSelf: "flex-start", maxWidth: "100%", paddingHorizontal: 0 },
   bubbleText: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22 },
-  empty: {
+  intro: {
     fontFamily: FONT_FAMILY,
     fontSize: fontSize.sm,
     textAlign: "center",
-    marginTop: spacing.xxl,
+    marginBottom: spacing.md,
   },
   errorBar: {
     flexDirection: "row",

@@ -1,18 +1,19 @@
 import { useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { Check } from "lucide-react-native";
+import { Palette } from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
 import { ASSISTANT_MODELS, type AssistantScope, type Theme } from "@jc/domain";
 import { useProfile, useUpdateProfile } from "@/shared/hooks/use-profile";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { api } from "@/shared/lib/api";
-import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
+import { ColorPicker } from "@/shared/ui/color-picker";
 import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { FORM_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
+import { Select } from "@/shared/ui/select";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 
@@ -102,6 +103,15 @@ export function SettingsScreen() {
   const theme = profile?.preferences.theme ?? "system";
   const accent = profile?.preferences.assistantColor ?? DEFAULT_ACCENT;
   const scope = profile?.preferences.scope;
+
+  // La pastille « Personnalisée » se rouvre d'elle-même si la couleur active
+  // n'est déjà aucun des huit presets — sans quoi choisir une teinte brute
+  // puis revenir sur cet écran ferait croire qu'elle a été perdue.
+  const isPresetAccent = ASSISTANT_ACCENTS.some(
+    (option) => option.value.toLowerCase() === accent.toLowerCase(),
+  );
+  const [customRequested, setCustomRequested] = useState(false);
+  const showColorPicker = customRequested || !isPresetAccent;
 
   // Tant que rien n'a été choisi, c'est le modèle du serveur qui répond : on
   // coche l'entrée qui lui correspond plutôt que de n'en cocher aucune, sans
@@ -200,12 +210,15 @@ export function SettingsScreen() {
                 donne la teinte franche, celle des boutons. */}
             <View className="flex-row flex-wrap gap-3" accessibilityRole="radiogroup">
               {ASSISTANT_ACCENTS.map((option) => {
-                const selected = option.value.toLowerCase() === accent.toLowerCase();
+                const selected = !showColorPicker && option.value.toLowerCase() === accent.toLowerCase();
 
                 return (
                   <Pressable
                     key={option.value}
-                    onPress={() => updateProfile.mutate({ assistantColor: option.value })}
+                    onPress={() => {
+                      setCustomRequested(false);
+                      updateProfile.mutate({ assistantColor: option.value });
+                    }}
                     disabled={updateProfile.isPending}
                     // Une rangée de pastilles de 44 pt paraîtrait grossière ;
                     // le `hitSlop` rétablit la cible tactile sans grossir le
@@ -238,27 +251,51 @@ export function SettingsScreen() {
                   </Pressable>
                 );
               })}
+
+              {/* Neuvième pastille, hors du catalogue fermé : elle ouvre le
+                  sélecteur libre plutôt que d'appliquer une teinte à elle
+                  seule, et se coche d'elle-même quand la couleur active n'est
+                  déjà aucun des huit presets. */}
+              <Pressable
+                onPress={() => setCustomRequested(true)}
+                disabled={updateProfile.isPending}
+                hitSlop={(MIN_TOUCH_TARGET - SWATCH_SIZE) / 2}
+                style={[
+                  styles.swatch,
+                  { backgroundColor: palette.surface, borderColor: showColorPicker ? accent : palette.border },
+                  showColorPicker && styles.swatchSelected,
+                ]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: showColorPicker }}
+                accessibilityLabel="Couleur personnalisée"
+              >
+                <Icon as={Palette} size={18} className="text-muted-foreground" />
+              </Pressable>
             </View>
+
+            {showColorPicker ? (
+              <ColorPicker
+                value={accent}
+                onChange={(hex) => updateProfile.mutate({ assistantColor: hex })}
+              />
+            ) : null}
           </Field>
 
-          {/* Une liste de lignes descriptives plutôt qu'un groupe segmenté :
-              le choix ne se devine pas d'un libellé, il demande une phrase.
-              C'est la forme qu'ont retenue ChatGPT, Claude et Perplexity pour
-              le même réglage (§4.2). */}
           <Field label="Modèle">
-            <View className="gap-2" accessibilityRole="radiogroup">
-              {ASSISTANT_MODELS.map((model) => (
-                <ModelRow
-                  key={model.id}
-                  label={model.label}
-                  benefit={model.benefit}
-                  sovereign={model.sovereign}
-                  selected={model.id === activeModel}
-                  disabled={updateProfile.isPending}
-                  onPress={() => updateProfile.mutate({ llmModel: model.id })}
-                />
-              ))}
-            </View>
+            <Select
+              value={activeModel}
+              options={ASSISTANT_MODELS.map((model) => ({
+                value: model.id,
+                label: model.label,
+                description: model.sovereign
+                  ? `${model.benefit} Hébergé en Europe.`
+                  : model.benefit,
+              }))}
+              onChange={(id) => updateProfile.mutate({ llmModel: id })}
+              placeholder="Choisir un modèle"
+              disabled={updateProfile.isPending}
+              accessibilityLabel="Modèle"
+            />
             {activeModel === null ? (
               <Text className="text-sm text-muted-foreground">
                 Aucun de ces modèles n'est actif pour l'instant : choisissez-en un.
@@ -324,55 +361,6 @@ export function SettingsScreen() {
         ) : null}
       </View>
     </ScreenShell>
-  );
-}
-
-/**
- * Ligne d'un modèle proposé.
- *
- * La mention d'hébergement n'est affichée que lorsqu'elle est vraie : la
- * transparence du §13.4.6 porte sur ce qui rassure, et répéter « hébergé hors
- * d'Europe » sur deux lignes sur trois transformerait un réglage en avertissement.
- */
-function ModelRow({
-  label,
-  benefit,
-  sovereign,
-  selected,
-  disabled,
-  onPress,
-}: {
-  label: string;
-  benefit: string;
-  sovereign: boolean;
-  selected: boolean;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      className={cn(
-        "flex-row items-center gap-3 rounded-md border px-3 py-3",
-        selected ? "border-primary bg-primary/5" : "border-border",
-        disabled && "opacity-50",
-      )}
-      style={{ minHeight: MIN_TOUCH_TARGET }}
-      accessibilityRole="radio"
-      accessibilityState={{ selected, disabled }}
-      accessibilityLabel={label}
-      accessibilityHint={benefit}
-    >
-      <View className="flex-1 gap-0.5">
-        <Text className="text-base text-foreground">{label}</Text>
-        <Text className="text-sm text-muted-foreground">{benefit}</Text>
-        {sovereign ? (
-          <Text className="text-sm text-muted-foreground">Hébergé en Europe.</Text>
-        ) : null}
-      </View>
-      {selected ? <Icon as={Check} size={18} className="text-primary" /> : null}
-    </Pressable>
   );
 }
 

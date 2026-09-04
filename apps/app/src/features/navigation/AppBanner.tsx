@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Pressable, View } from "react-native";
-import { useRouter } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import { PanelLeft, Search } from "lucide-react-native";
 import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
 import { Button } from "@/shared/ui/button";
@@ -26,6 +26,7 @@ export type AppBannerProps = {
  */
 export function AppBanner({ onToggleSidebar }: AppBannerProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const breakpoint = useBreakpoint();
   const { displayName, initials } = useCurrentUser();
   const assistantName = useAssistantName();
@@ -82,17 +83,30 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
       </Pressable>
 
       <View className="min-w-0 flex-1 flex-row items-center justify-end">
-        {UTILITY_LINKS.map((link) => (
-          <Button
-            key={link.href}
-            variant="ghost"
-            size="icon"
-            onPress={() => router.push(link.href)}
-            accessibilityLabel={link.label}
-          >
-            <Icon as={link.icon} size={18} className="text-accent-soft-foreground" />
-          </Button>
-        ))}
+        {UTILITY_LINKS.map((link) => {
+          // `default` et non `ghost` : son fond plein (couleur d'accent) reste
+          // visible une fois le geste terminé, contrairement au survol — sans
+          // quoi rien ne distingue plus l'onglet ouvert dès que le curseur
+          // s'en écarte.
+          const active = pathname === link.href;
+
+          return (
+            <Button
+              key={link.href}
+              variant={active ? "default" : "ghost"}
+              size="icon"
+              onPress={() => router.push(link.href)}
+              accessibilityLabel={link.label}
+              accessibilityState={{ selected: active }}
+            >
+              <Icon
+                as={link.icon}
+                size={18}
+                className={active ? "text-primary-foreground" : "text-accent-soft-foreground"}
+              />
+            </Button>
+          );
+        })}
 
         <Button
           variant="ghost"
