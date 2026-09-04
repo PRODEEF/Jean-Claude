@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
 import { ASSISTANT_MODELS, type AssistantScope, type Theme } from "@jc/domain";
+import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
 import { useProfile, useUpdateProfile } from "@/shared/hooks/use-profile";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -82,6 +83,7 @@ export function SettingsScreen() {
   const { palette } = useTheme();
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const health = useQuery({ queryKey: ["health"], queryFn: () => api.health.check() });
 
@@ -317,12 +319,26 @@ export function SettingsScreen() {
           </Field>
         </Section>
 
+        <Section title="Aide">
+          <Pressable
+            onPress={() => setFeedbackOpen(true)}
+            className="flex-row items-center justify-between"
+            style={{ minHeight: MIN_TOUCH_TARGET }}
+            accessibilityRole="button"
+            accessibilityLabel="Donner votre avis"
+          >
+            <Text className="text-base text-foreground">Donner votre avis</Text>
+          </Pressable>
+        </Section>
+
         {updateProfile.isError ? (
           <Text className="text-sm text-destructive">
             Vos réglages n'ont pas pu être enregistrés. Réessayez.
           </Text>
         ) : null}
       </View>
+
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </ScreenShell>
   );
 }
