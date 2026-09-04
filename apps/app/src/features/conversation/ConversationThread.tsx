@@ -121,14 +121,24 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     submit(initialDraft);
   }, [initialDraft, submit]);
 
-  // `onContentSizeChange` ne suffit pas pendant le flux : le pied de liste
-  // grandit d'un jeton à la fois, et le rendu Markdown reflue après coup —
-  // la liste mesure alors sa hauteur d'avant. Suivre `streamingText` la
-  // recale à chaque arrivée de texte.
+  // Le rendu Markdown se met en page après le commit qui déclenche cet
+  // événement — sur web, react-native-web traduit en DOM réel, dont la mise
+  // en page suit son propre cycle de peinture. Reporter d'une frame laisse
+  // cette mise en page se terminer avant de recalculer la fin de liste ;
+  // sans quoi le défilement atterrit sur la hauteur d'avant, et la fin du
+  // dernier message reste masquée par la saisie — surtout sensible sur le
+  // tout dernier jeton d'une réponse, celui qui referme souvent une liste.
+  const scrollToEndSoon = useCallback(() => {
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
+  }, []);
+
+  // Suivre `streamingText` recale la liste à chaque arrivée de texte : le
+  // pied de liste grandit d'un jeton à la fois, `onContentSizeChange` seul
+  // accuserait un train de retard.
   useEffect(() => {
     if (streamingText === null && pendingUserText === null) return;
-    listRef.current?.scrollToEnd({ animated: false });
-  }, [streamingText, pendingUserText]);
+    scrollToEndSoon();
+  }, [streamingText, pendingUserText, scrollToEndSoon]);
 
   const sendDraft = useCallback(() => {
     const content = draft.trim();
@@ -191,7 +201,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={[styles.list, column]}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={scrollToEndSoon}
           // Par défaut, `FlatList` ne rend que 10 éléments au montage, en
           // partant du début — les plus anciens messages, la liste étant triée
           // par date croissante. Le premier `scrollToEnd` n'atteignait alors
