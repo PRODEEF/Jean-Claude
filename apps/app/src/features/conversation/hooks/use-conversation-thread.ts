@@ -167,6 +167,14 @@ export function useConversationThread(
       await queryClient.invalidateQueries({
         queryKey: ["conversation", conversationId, "messages"],
       });
+      // Dans le même rendu que l'insertion, et avant les autres invalidations
+      // : plus tard, la bulle en cours resterait affichée à côté de sa version
+      // persistée le temps de leurs allers-retours réseau, et le message
+      // semblerait dupliqué le temps d'un battement.
+      setStreamingText(null);
+      // Filet : un tour interrompu avant l'événement `message` laisserait
+      // sinon la bulle provisoire à l'écran indéfiniment.
+      setPendingUserText(null);
       // Le tri de la liste des conversations dépend de `lastMessageAt`, que
       // ce tour vient de déplacer.
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -182,12 +190,6 @@ export function useConversationThread(
       // passer. Une requête de plus est négligeable à l'échelle d'un appel au
       // modèle.
       await queryClient.invalidateQueries({ queryKey: PROFILE_KEY });
-      // Après l'invalidation seulement : plus tôt, la bulle en cours
-      // disparaîtrait avant que la version persistée n'ait pris sa place.
-      setStreamingText(null);
-      // Filet : un tour interrompu avant l'événement `message` laisserait
-      // sinon la bulle provisoire à l'écran indéfiniment.
-      setPendingUserText(null);
       abort.current = null;
     },
   });
