@@ -66,6 +66,18 @@ suivait la règle des 3 apps (§4.2) — ChatGPT, Claude et Perplexity présente
 ce réglage en lignes plutôt qu'en menu déroulant — et le changement demandé
 s'en écarte.
 
+Auparavant le même jour : couleur brute pour l'assistant.
+
+**La couleur de l'assistant admet désormais une teinte libre**, en plus des
+huit pastilles de #12. Une neuvième option « Personnalisée » ouvre un
+sélecteur (carré teinte/saturation, bande de teinte, champ hexadécimal) et se
+coche d'elle-même quand la couleur active n'est déjà aucun des huit presets.
+Le contraste n'est pas le problème que redoutait #12 : `buildPalette` calcule
+déjà `accentText` et `accentSoft` dynamiquement pour n'importe quelle couleur
+(luminance WCAG, mélange vers le blanc ou le noir selon le thème) — les huit
+presets n'étaient qu'un raccourci, pas une garantie que seules elles
+offraient.
+
 Auparavant le 3 septembre 2026 : l'assistant sait compléter une todoliste
 existante, et non plus seulement en créer. Auparavant le même jour : le contexte remis au
 modèle a été repris — une proposition ne fait plus taire la réponse, et un dossier hors
