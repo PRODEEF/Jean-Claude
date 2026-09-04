@@ -11,7 +11,7 @@ import { api } from "@/shared/lib/api";
 /**
  * Toutes les todolistes, tâches comprises (A.2).
  *
- * Une seule clé de cache pour l'onglet TODOLISTE, la barre latérale et le
+ * Une seule clé de cache pour l'onglet Mes listes, la barre latérale et le
  * calendrier : les trois lisent la même chose sous trois angles, et cocher une
  * tâche depuis l'un doit se voir aussitôt dans les deux autres.
  */

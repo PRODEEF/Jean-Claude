@@ -25,6 +25,7 @@ import {
   type ConversationDrop,
 } from "@/features/conversation/ConversationDropDialog";
 import { ConversationNameRow } from "@/features/conversation/ConversationNameRow";
+import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
 import { FolderContextMenu, type FolderMenuTarget } from "@/features/folder/FolderContextMenu";
 import { FolderDeleteDialog } from "@/features/folder/FolderDeleteDialog";
 import { moveErrorMessage, useFolderActions } from "@/features/folder/hooks/use-folder-actions";
@@ -103,6 +104,7 @@ export function AppSidebar({
   const [drop, setDrop] = useState<ConversationDrop | null>(null);
   /** Ce qu'a répondu le serveur au dernier déplacement raté, `null` sinon. */
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const { move } = useFolderActions();
 
   const go = (href: string) => {
@@ -187,6 +189,21 @@ export function AppSidebar({
             <Text className="text-sm font-semibold text-foreground">{assistantName}</Text>
             <Text className="text-xs font-normal text-muted-foreground">Canal permanent</Text>
           </View>
+        </Button>
+
+        {/* Signalement direct, distinct des suggestions du modèle (§12.1) : un
+            geste utilisateur, jamais une proposition (A.10). Même traitement
+            visuel que le canal permanent, en rouge, pour rester aussi visible. */}
+        <Button
+          variant="ghost"
+          onPress={() => setFeedbackOpen(true)}
+          accessibilityLabel="Signaler un problème"
+          className="h-auto justify-start gap-3 px-2 py-2"
+        >
+          <View className="size-8 items-center justify-center rounded-md bg-destructive">
+            <Icon as={MessageCircle} size={16} className="text-white" />
+          </View>
+          <Text className="text-sm font-semibold text-foreground">PROBLÈME</Text>
         </Button>
 
         <Button
@@ -370,6 +387,7 @@ export function AppSidebar({
       {/* Créer depuis un dossier est le seul moment où le rangement précède la
           capture (§13.4.1) : l'utilisateur l'a déjà exprimé en partant de là. */}
       <TaskListDialog target={listTarget} onClose={() => setListTarget(null)} />
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
 
       {onResize ? <ResizeHandle width={width} onResize={onResize} /> : null}
     </View>
@@ -770,7 +788,7 @@ function FolderChildren({
       )}
 
       {/* Une todoliste se lit dans son dossier thématique autant que dans
-          l'onglet Todoliste : c'est la même liste, vue d'un autre endroit (A.2). */}
+          l'onglet Mes listes : c'est la même liste, vue d'un autre endroit (A.2). */}
       {group.taskLists.map((list) => (
         <TaskListRow key={list.id} list={list} onOpen={onOpen} />
       ))}
@@ -848,7 +866,7 @@ function isFolderEmpty(group: SidebarGroup): boolean {
 /**
  * Une todoliste rangée dans ce dossier.
  *
- * Elle ouvre l'onglet Todoliste sur la liste visée plutôt qu'un écran à part :
+ * Elle ouvre l'onglet Mes listes sur la liste visée plutôt qu'un écran à part :
  * la vue centralisée reste le seul endroit où une liste se lit et se coche,
  * quel que soit le chemin par lequel on y arrive.
  */

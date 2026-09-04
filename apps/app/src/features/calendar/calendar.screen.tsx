@@ -5,13 +5,15 @@ import { ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEvent } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
-import { unscheduledLists } from "@/shared/lib/tasks";
+import { listsOfDay, unscheduledLists } from "@/shared/lib/tasks";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
+import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 import { CalendarToolbar, type CalendarView } from "./CalendarToolbar";
 import { DayAgenda } from "./DayAgenda";
+import { DueListsBoard } from "./DueListsBoard";
 import { EventFormDialog, type EventDialogTarget } from "./EventFormDialog";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
 import { MonthGrid } from "./MonthGrid";
@@ -68,9 +70,24 @@ export function CalendarScreen() {
   // rendez-vous : une journée chargée de todos est une journée chargée, et
   // devoir ouvrir un autre onglet pour s'en apercevoir ferait planifier à
   // l'aveugle. Elles restent en lecture seule ici — on les coche dans
-  // l'onglet Todoliste, qui est leur écran.
+  // l'onglet Mes listes, qui est leur écran.
   const { data: lists } = useTaskLists();
   const dueLists = useMemo(() => unscheduledLists(lists ?? []), [lists]);
+
+  /** Masque par défaut : sur un mois entier, tout afficher noierait les jours qui comptent. */
+  const [hideEmptyDays, setHideEmptyDays] = useState(true);
+
+  // Les jours réels du mois affiché, sans le débord des mois voisins que
+  // porte la grille : une todoliste du 31 août n'a pas sa place dans « le
+  // mois de septembre ».
+  const monthDays = useMemo(
+    () => days.filter((day) => day.getMonth() === anchor.getMonth()),
+    [days, anchor],
+  );
+  const monthListDays = useMemo(
+    () => monthDays.filter((day) => listsOfDay(dueLists, day).length > 0),
+    [monthDays, dueLists],
+  );
 
   // La sélection suit la période affichée : sans cela, la liste du jour
   // resterait sur septembre alors que la grille montre octobre — le contresens
@@ -101,7 +118,7 @@ export function CalendarScreen() {
       action={
         // Deux créations et non une : ce qu'on pose sur une journée est soit un
         // rendez-vous, soit ce qu'on doit y boucler. Le second bouton évite le
-        // détour par l'onglet Todoliste pour dater une liste sur le jour qu'on
+        // détour par l'onglet Mes listes pour dater une liste sur le jour qu'on
         // a justement sous les yeux.
         <View className="flex-row items-center gap-2">
           <Button
@@ -155,6 +172,30 @@ export function CalendarScreen() {
             compact={compact}
           />
           <DayAgenda day={selectedDay} events={events} lists={dueLists} onOpenEvent={openEvent} />
+
+          {/* Bloc distinct de l'agenda du jour : celui-ci reste sur le jour
+              sélectionné, celui-ci couvre le mois entier — c'est la lecture par
+              semaine de l'ancien onglet Todoliste, reprise ici plutôt que
+              dupliquée dans Mes listes. */}
+          <View className="gap-2">
+            <View className="flex-row items-center justify-between gap-2">
+              <Text className="text-base font-medium">Todolistes du mois</Text>
+              <View className="flex-row items-center gap-2">
+                <Text className="text-muted-foreground text-xs">Jours sans liste</Text>
+                <Switch
+                  value={!hideEmptyDays}
+                  onValueChange={(value) => setHideEmptyDays(!value)}
+                  accessibilityLabel="Afficher les jours sans liste"
+                />
+              </View>
+            </View>
+
+            {hideEmptyDays && monthListDays.length === 0 ? (
+              <Text className="text-muted-foreground text-sm">Aucune todoliste ce mois-ci.</Text>
+            ) : (
+              <DueListsBoard days={hideEmptyDays ? monthListDays : monthDays} lists={dueLists} />
+            )}
+          </View>
         </>
       ) : null}
 

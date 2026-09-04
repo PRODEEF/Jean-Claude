@@ -23,7 +23,7 @@ export type CalendarToolbarProps = {
  * Ce que la bascule peut porter : les quatre vues, plus un raccourci.
  *
  * « Todo » n'est pas une cinquième période mais un passage vers l'onglet
- * Todoliste. Il est placé là parce que c'est là que l'œil cherche les autres
+ * Mes listes. Il est placé là parce que c'est là que l'œil cherche les autres
  * lectures du temps, et `CalendarView` n'a pas à s'en trouver élargi : ni le
  * cadrage, ni le libellé de période, ni la fenêtre chargée n'auraient de sens
  * pour lui.
