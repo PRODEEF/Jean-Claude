@@ -247,8 +247,14 @@ export const SUGGEST_PROJECT_FOLDERS: LlmTool = {
     "dossiers : celui-ci construit l'arborescence elle-même. " +
     "Un dossier peut porter des sous-dossiers, mais l'arborescence s'arrête là — " +
     "un sous-dossier ne peut pas en contenir d'autres. " +
-    "Quand la conversation décrit un projet, les sous-dossiers types sont " +
-    "IDÉE, TODO, ACHAT et PRENDRE RDV : renseigner alors `purpose`. " +
+    "Un projet se reconnaît à ce qu'il ne se referme pas en un message : un " +
+    "objectif qui se réalise en plusieurs étapes, sur plusieurs jours ou " +
+    "semaines, et qui mêle des actions de nature différente — une idée, un " +
+    "achat, une tâche, un rendez-vous. Une question ponctuelle, même détaillée, " +
+    "n'en est pas un : ne pas appeler l'outil pour un simple renseignement. " +
+    "Quand la conversation décrit bien un projet, les sous-dossiers types sont " +
+    "IDÉE, TODO, ACHAT et PRENDRE RDV — n'en proposer que les pertinents, pas " +
+    "les quatre systématiquement : renseigner alors `purpose`. " +
     "Reprendre les mots de l'utilisateur pour nommer les dossiers plutôt " +
     "qu'imposer une nomenclature standard.",
   inputSchema: {
