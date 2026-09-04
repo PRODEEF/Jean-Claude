@@ -2190,5 +2190,31 @@ describe("ConversationService", () => {
         TOKEN,
       );
     });
+
+    it("détache la conversation de tous ses dossiers quand la liste est vide", async () => {
+      const repo = makeRepository();
+
+      const result = await makeService(repo, makeLlm()).assignFolders(
+        "conv-1",
+        { folderIds: [], source: "user" },
+        TOKEN,
+      );
+
+      expect(repo.setFolders).toHaveBeenCalledWith("conv-1", [], "user", TOKEN);
+      expect(result.folderIds).toEqual([]);
+    });
+
+    it("signale une conversation introuvable plutôt que d'écrire un rangement dans le vide", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
+
+      await expect(
+        makeService(repo, makeLlm()).assignFolders(
+          "absente",
+          { folderIds: ["sante"], source: "user" },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(repo.setFolders).not.toHaveBeenCalled();
+    });
   });
 });
