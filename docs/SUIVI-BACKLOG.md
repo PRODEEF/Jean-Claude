@@ -36,6 +36,36 @@ bas). IDÉE reste un sous-dossier ordinaire, sans mécanisme de rattachement : a
 concept de note n'existe dans le produit aujourd'hui pour y déposer quoi que ce soit
 automatiquement — voir le point consigné plus bas sur la distinction dossier / projet.
 
+Auparavant le même jour : corrections après relecture : fil de conversation,
+calendrier, bannière et réglages.
+
+**Fil de conversation** : la phrase d'accroche (« Écrivez ce que vous avez en
+tête. Le rangement viendra ensuite. ») passe d'un état vide à un en-tête de
+liste — elle ne restait affichée que tant qu'aucun message n'existait, et
+disparaissait dès le premier échange plutôt que de rester au-dessus du fil.
+Le message de l'assistant clignotait aussi en toute fin de réponse : la bulle
+de streaming n'était effacée qu'après plusieurs invalidations de cache
+indépendantes de son affichage (liste des conversations, titre, propositions,
+profil), et restait donc visible en double le temps de leurs allers-retours
+réseau.
+
+**Calendrier** : la page ne recadre plus sur les heures ouvrées au
+changement de vue (Jour/Semaine). Ce cadrage, posé le 3 septembre pour éviter
+d'ouvrir sur des heures de nuit vides, masquait aussi le haut de page —
+bandeau et barre d'outils — juste après avoir cliqué dessus. Retiré à la
+demande ; la grille peut désormais s'ouvrir sur des heures vides.
+
+**Bannière** : les onglets Calendrier et Todoliste n'avaient aucun style
+actif — seul le survol s'affichait, sans rien indiquer quel onglet restait
+ouvert une fois le geste terminé. Ils prennent maintenant le fond plein de la
+couleur d'assistant tant que leur route est active.
+
+**Réglages** : le choix du modèle passe en menu déroulant, à la place de la
+liste de lignes cochables. Point relevé et non tranché ici : cette liste
+suivait la règle des 3 apps (§4.2) — ChatGPT, Claude et Perplexity présentent
+ce réglage en lignes plutôt qu'en menu déroulant — et le changement demandé
+s'en écarte.
+
 Auparavant le 3 septembre 2026 : l'assistant sait compléter une todoliste
 existante, et non plus seulement en créer. Auparavant le même jour : le contexte remis au
 modèle a été repris — une proposition ne fait plus taire la réponse, et un dossier hors
