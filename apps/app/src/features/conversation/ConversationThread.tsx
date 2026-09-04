@@ -20,7 +20,7 @@ import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
 import { contentColumn, READING_MAX_WIDTH } from "@/shared/ui/screen-shell";
 import { Composer } from "./Composer";
-import { useConversationThread } from "./hooks/use-conversation-thread";
+import { THREAD_PAGE_SIZE, useConversationThread } from "./hooks/use-conversation-thread";
 import { useSuggestions } from "./hooks/use-suggestions";
 import { MessageRow } from "./MessageRow";
 import { QuestionCard } from "./QuestionCard";
@@ -192,6 +192,13 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           renderItem={renderItem}
           contentContainerStyle={[styles.list, column]}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+          // Par défaut, `FlatList` ne rend que 10 éléments au montage, en
+          // partant du début — les plus anciens messages, la liste étant triée
+          // par date croissante. Le premier `scrollToEnd` n'atteignait alors
+          // que leur fin à eux, jamais le dernier échange. Rendre toute la
+          // page chargée dès le montage fait atterrir ce premier défilement au
+          // bon endroit.
+          initialNumToRender={THREAD_PAGE_SIZE}
           keyboardShouldPersistTaps="handled"
           // En en-tête et non en état vide : la phrase reste au-dessus du fil
           // une fois les premiers messages échangés, au lieu de disparaître dès

@@ -4,8 +4,14 @@ import type { Conversation, Message, MessageStreamEvent, Paginated } from "@jc/d
 import { api } from "@/shared/lib/api";
 import { PROFILE_KEY } from "@/shared/hooks/use-profile";
 
-/** Nombre de messages chargés à l'ouverture du fil. */
-const THREAD_PAGE_SIZE = 50;
+/**
+ * Nombre de messages chargés à l'ouverture du fil.
+ *
+ * Exportée : le fil s'en sert aussi pour forcer `FlatList` à tout rendre dès
+ * le montage, sans quoi le défilement initial n'atteindrait que la fin de ce
+ * qu'elle a rendu en premier — les plus anciens messages, pas les plus récents.
+ */
+export const THREAD_PAGE_SIZE = 50;
 
 /**
  * Ce qui déclenche un tour de dialogue.
