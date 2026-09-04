@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
+import { Palette } from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
 import { ASSISTANT_MODELS, type AssistantScope, type Theme } from "@jc/domain";
 import { useProfile, useUpdateProfile } from "@/shared/hooks/use-profile";
@@ -8,6 +9,8 @@ import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { api } from "@/shared/lib/api";
 import { Button } from "@/shared/ui/button";
+import { ColorPicker } from "@/shared/ui/color-picker";
+import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { FORM_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Select } from "@/shared/ui/select";
@@ -100,6 +103,15 @@ export function SettingsScreen() {
   const theme = profile?.preferences.theme ?? "system";
   const accent = profile?.preferences.assistantColor ?? DEFAULT_ACCENT;
   const scope = profile?.preferences.scope;
+
+  // La pastille « Personnalisée » se rouvre d'elle-même si la couleur active
+  // n'est déjà aucun des huit presets — sans quoi choisir une teinte brute
+  // puis revenir sur cet écran ferait croire qu'elle a été perdue.
+  const isPresetAccent = ASSISTANT_ACCENTS.some(
+    (option) => option.value.toLowerCase() === accent.toLowerCase(),
+  );
+  const [customRequested, setCustomRequested] = useState(false);
+  const showColorPicker = customRequested || !isPresetAccent;
 
   // Tant que rien n'a été choisi, c'est le modèle du serveur qui répond : on
   // coche l'entrée qui lui correspond plutôt que de n'en cocher aucune, sans
@@ -198,12 +210,15 @@ export function SettingsScreen() {
                 donne la teinte franche, celle des boutons. */}
             <View className="flex-row flex-wrap gap-3" accessibilityRole="radiogroup">
               {ASSISTANT_ACCENTS.map((option) => {
-                const selected = option.value.toLowerCase() === accent.toLowerCase();
+                const selected = !showColorPicker && option.value.toLowerCase() === accent.toLowerCase();
 
                 return (
                   <Pressable
                     key={option.value}
-                    onPress={() => updateProfile.mutate({ assistantColor: option.value })}
+                    onPress={() => {
+                      setCustomRequested(false);
+                      updateProfile.mutate({ assistantColor: option.value });
+                    }}
                     disabled={updateProfile.isPending}
                     // Une rangée de pastilles de 44 pt paraîtrait grossière ;
                     // le `hitSlop` rétablit la cible tactile sans grossir le
@@ -236,7 +251,34 @@ export function SettingsScreen() {
                   </Pressable>
                 );
               })}
+
+              {/* Neuvième pastille, hors du catalogue fermé : elle ouvre le
+                  sélecteur libre plutôt que d'appliquer une teinte à elle
+                  seule, et se coche d'elle-même quand la couleur active n'est
+                  déjà aucun des huit presets. */}
+              <Pressable
+                onPress={() => setCustomRequested(true)}
+                disabled={updateProfile.isPending}
+                hitSlop={(MIN_TOUCH_TARGET - SWATCH_SIZE) / 2}
+                style={[
+                  styles.swatch,
+                  { backgroundColor: palette.surface, borderColor: showColorPicker ? accent : palette.border },
+                  showColorPicker && styles.swatchSelected,
+                ]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: showColorPicker }}
+                accessibilityLabel="Couleur personnalisée"
+              >
+                <Icon as={Palette} size={18} className="text-muted-foreground" />
+              </Pressable>
             </View>
+
+            {showColorPicker ? (
+              <ColorPicker
+                value={accent}
+                onChange={(hex) => updateProfile.mutate({ assistantColor: hex })}
+              />
+            ) : null}
           </Field>
 
           <Field label="Modèle">
