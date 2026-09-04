@@ -7,9 +7,9 @@ import {
   ChevronRight,
   Folder as FolderIcon,
   ListChecks,
+  MessageCircle,
   MoreHorizontal,
   Plus,
-  Sparkles,
 } from "lucide-react-native";
 import type { Conversation, Folder, FolderTreeNode, TaskList } from "@jc/domain";
 import { api } from "@/shared/lib/api";
@@ -181,7 +181,7 @@ export function AppSidebar({
           className={cx("h-auto justify-start gap-3 px-2 py-2", pathname === "/assistant")}
         >
           <View className="size-8 items-center justify-center rounded-md bg-primary">
-            <Icon as={Sparkles} size={16} className="text-primary-foreground" />
+            <Icon as={MessageCircle} size={16} className="text-primary-foreground" />
           </View>
           <View className="flex-1">
             <Text className="text-sm font-semibold text-foreground">{assistantName}</Text>
