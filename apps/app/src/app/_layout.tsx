@@ -2,6 +2,7 @@ import "../../global.css";
 
 import { useEffect, type ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { configureReanimatedLogger, ReanimatedLogLevel } from "react-native-reanimated";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { PortalHost } from "@rn-primitives/portal";
@@ -11,6 +12,13 @@ import { DEFAULT_ACCENT } from "@jc/design";
 import { useProfile } from "@/shared/hooks/use-profile";
 import { AuthProvider, useAuth } from "@/shared/providers/auth-provider";
 import { ThemeProvider, useTheme } from "@/shared/providers/theme-provider";
+
+// NativeWind (`react-native-css-interop`) lit des shared values Reanimated en
+// interne pour ses classes `hover:`/`active:` — le mode strict de Reanimated
+// prend cette lecture pour un mésusage applicatif et log un faux positif à
+// chaque rendu. Aucun écran n'appelle `useSharedValue` en dehors de ce
+// fournisseur : désactiver le mode strict n'éteint donc que ce faux positif.
+configureReanimatedLogger({ level: ReanimatedLogLevel.warn, strict: false });
 
 const queryClient = new QueryClient({
   defaultOptions: {
