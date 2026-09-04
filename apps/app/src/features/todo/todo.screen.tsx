@@ -114,7 +114,17 @@ export function TodoScreen() {
       }
       maxWidth={GRID_MAX_WIDTH}
     >
-      <View className="flex-row items-center justify-end">{searchButton}</View>
+      <View className="flex-row items-center gap-2">
+        <View className="min-w-0 flex-1">
+          <FolderFilterBar
+            folders={filterFolders}
+            hasUnfiled={used.has(null)}
+            value={folderId}
+            onChange={setFolderId}
+          />
+        </View>
+        {searchButton}
+      </View>
 
       {searching ? (
         <Input
@@ -127,13 +137,6 @@ export function TodoScreen() {
           accessibilityLabel="Chercher une tâche ou une liste"
         />
       ) : null}
-
-      <FolderFilterBar
-        folders={filterFolders}
-        hasUnfiled={used.has(null)}
-        value={folderId}
-        onChange={setFolderId}
-      />
 
       {isError ? (
         <Text className="text-destructive text-sm">

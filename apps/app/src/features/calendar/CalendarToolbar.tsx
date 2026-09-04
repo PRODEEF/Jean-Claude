@@ -1,5 +1,4 @@
 import { ScrollView, View } from "react-native";
-import { useRouter } from "expo-router";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
@@ -8,7 +7,12 @@ import { Icon } from "@/shared/ui/icon";
 import { SegmentedControl, type SegmentedOption } from "@/shared/ui/segmented-control";
 import { Text } from "@/shared/ui/text";
 
-export type CalendarView = "day" | "week" | "month" | "year";
+/**
+ * Cinq segments : les quatre vues calendaires, plus « Todo » — une lecture des
+ * todolistes du mois, sans grille d'événements. Elle partage la navigation
+ * par mois de la vue Mois : avancer d'une période y a le même sens.
+ */
+export type CalendarView = "day" | "week" | "month" | "year" | "todo";
 
 export type CalendarToolbarProps = {
   label: string;
@@ -19,18 +23,7 @@ export type CalendarToolbarProps = {
   onToday: () => void;
 };
 
-/**
- * Ce que la bascule peut porter : les quatre vues, plus un raccourci.
- *
- * « Todo » n'est pas une cinquième période mais un passage vers l'onglet
- * Mes listes. Il est placé là parce que c'est là que l'œil cherche les autres
- * lectures du temps, et `CalendarView` n'a pas à s'en trouver élargi : ni le
- * cadrage, ni le libellé de période, ni la fenêtre chargée n'auraient de sens
- * pour lui.
- */
-type ToolbarSegment = CalendarView | "todo";
-
-const VIEWS: SegmentedOption<ToolbarSegment>[] = [
+const VIEWS: SegmentedOption<CalendarView>[] = [
   { value: "day", label: "Jour" },
   { value: "week", label: "Semaine" },
   { value: "month", label: "Mois" },
@@ -58,15 +51,6 @@ export function CalendarToolbar({
   onToday,
 }: CalendarToolbarProps) {
   const compact = useBreakpoint() === "compact";
-  const router = useRouter();
-
-  const select = (next: ToolbarSegment) => {
-    if (next === "todo") {
-      router.push("/todo");
-      return;
-    }
-    onViewChange(next);
-  };
 
   const period = (
     <Text className="text-2xl font-semibold" numberOfLines={1}>
@@ -74,7 +58,7 @@ export function CalendarToolbar({
     </Text>
   );
 
-  const switcher = <SegmentedControl options={VIEWS} value={view} onChange={select} />;
+  const switcher = <SegmentedControl options={VIEWS} value={view} onChange={onViewChange} />;
 
   const navigation = (
     <View className="flex-row items-center gap-1">

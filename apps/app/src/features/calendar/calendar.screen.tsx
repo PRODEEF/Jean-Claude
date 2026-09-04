@@ -40,11 +40,13 @@ import {
 const DEFAULT_CREATE_MINUTE = 9 * 60;
 
 /**
- * Calendrier — vues jour, semaine, mois et année (§3, Phase B).
+ * Calendrier — vues jour, semaine, mois et année (§3, Phase B), plus Todo.
  *
- * Les quatre vues n'appellent pas quatre routes différentes : elles demandent
- * quatre fenêtres à la même. Changer de vue ou de période ne fait donc que
- * déplacer les bornes, et le mois déjà consulté revient du cache.
+ * Les quatre vues calendaires n'appellent pas quatre routes différentes :
+ * elles demandent quatre fenêtres à la même. Changer de vue ou de période ne
+ * fait donc que déplacer les bornes, et le mois déjà consulté revient du
+ * cache. Todo s'y ajoute comme cinquième lecture, sans grille : les
+ * todolistes du mois, sans les rendez-vous.
  *
  * Une seule zone défilante, celle du contenu posé par `ScreenShell` : les
  * grilles se déroulent en entier dedans. Une grille qui défilerait pour son
@@ -172,31 +174,29 @@ export function CalendarScreen() {
             compact={compact}
           />
           <DayAgenda day={selectedDay} events={events} lists={dueLists} onOpenEvent={openEvent} />
-
-          {/* Bloc distinct de l'agenda du jour : celui-ci reste sur le jour
-              sélectionné, celui-ci couvre le mois entier — c'est la lecture par
-              semaine de l'ancien onglet Todoliste, reprise ici plutôt que
-              dupliquée dans Mes listes. */}
-          <View className="gap-2">
-            <View className="flex-row items-center justify-between gap-2">
-              <Text className="text-base font-medium">Todolistes du mois</Text>
-              <View className="flex-row items-center gap-2">
-                <Text className="text-muted-foreground text-xs">Jours sans liste</Text>
-                <Switch
-                  value={!hideEmptyDays}
-                  onValueChange={(value) => setHideEmptyDays(!value)}
-                  accessibilityLabel="Afficher les jours sans liste"
-                />
-              </View>
-            </View>
-
-            {hideEmptyDays && monthListDays.length === 0 ? (
-              <Text className="text-muted-foreground text-sm">Aucune todoliste ce mois-ci.</Text>
-            ) : (
-              <DueListsBoard days={hideEmptyDays ? monthListDays : monthDays} lists={dueLists} />
-            )}
-          </View>
         </>
+      ) : null}
+
+      {/* Lecture des todolistes du mois, sans grille d'événements : c'est la
+          vue par semaine de l'ancien onglet Todoliste, élargie au mois et
+          reprise ici plutôt que dupliquée dans Mes listes. */}
+      {view === "todo" ? (
+        <View className="gap-2">
+          <View className="flex-row items-center justify-end gap-2">
+            <Text className="text-muted-foreground text-xs">Jours sans liste</Text>
+            <Switch
+              value={!hideEmptyDays}
+              onValueChange={(value) => setHideEmptyDays(!value)}
+              accessibilityLabel="Afficher les jours sans liste"
+            />
+          </View>
+
+          {hideEmptyDays && monthListDays.length === 0 ? (
+            <Text className="text-muted-foreground text-sm">Aucune todoliste ce mois-ci.</Text>
+          ) : (
+            <DueListsBoard days={hideEmptyDays ? monthListDays : monthDays} lists={dueLists} />
+          )}
+        </View>
       ) : null}
 
       {view === "year" ? (
@@ -244,20 +244,20 @@ export function CalendarScreen() {
 function visibleDays(view: CalendarView, anchor: Date): Date[] {
   if (view === "day") return [startOfDay(anchor)];
   if (view === "week") return weekDays(anchor);
-  if (view === "month") return monthGrid(anchor);
+  if (view === "month" || view === "todo") return monthGrid(anchor);
   return yearBounds(anchor);
 }
 
 function shiftAnchor(view: CalendarView, anchor: Date, direction: 1 | -1): Date {
   if (view === "day") return addDays(anchor, direction);
   if (view === "week") return addDays(anchor, 7 * direction);
-  if (view === "month") return addMonths(anchor, direction);
+  if (view === "month" || view === "todo") return addMonths(anchor, direction);
   return addYears(anchor, direction);
 }
 
 function periodLabel(view: CalendarView, anchor: Date): string {
   if (view === "day") return dayLabel(anchor);
   if (view === "week") return weekLabel(anchor);
-  if (view === "month") return monthLabel(anchor);
+  if (view === "month" || view === "todo") return monthLabel(anchor);
   return yearLabel(anchor);
 }
