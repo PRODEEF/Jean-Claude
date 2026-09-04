@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { ScrollView, View, type LayoutChangeEvent } from "react-native";
+import { useMemo, useState } from "react";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEvent } from "@jc/domain";
@@ -72,36 +72,6 @@ export function CalendarScreen() {
   const { data: lists } = useTaskLists();
   const dueLists = useMemo(() => unscheduledLists(lists ?? []), [lists]);
 
-  const page = useRef<ScrollView>(null);
-  /** Position de la grille dans la page, et de la première heure ouvrée en son sein. */
-  const gridTop = useRef(0);
-  const morningOffset = useRef(0);
-  const framePending = useRef(true);
-
-  // Les deux mesures arrivent dans un ordre non garanti : le cadrage se joue
-  // sur la seconde, quelle qu'elle soit. Sans lui, la vue jour et la vue
-  // semaine s'ouvriraient sur sept heures de nuit vides.
-  const frameMorning = () => {
-    if (!framePending.current || morningOffset.current === 0) return;
-    framePending.current = false;
-    page.current?.scrollTo({ y: gridTop.current + morningOffset.current, animated: false });
-  };
-
-  const measureGrid = (event: LayoutChangeEvent) => {
-    gridTop.current = event.nativeEvent.layout.y;
-    frameMorning();
-  };
-
-  const measureMorning = (offset: number) => {
-    morningOffset.current = offset;
-    frameMorning();
-  };
-
-  const changeView = (next: CalendarView) => {
-    if (next === "day" || next === "week") framePending.current = true;
-    setView(next);
-  };
-
   // La sélection suit la période affichée : sans cela, la liste du jour
   // resterait sur septembre alors que la grille montre octobre — le contresens
   // est immédiat sur téléphone, où c'est elle qui porte le détail.
@@ -156,12 +126,11 @@ export function CalendarScreen() {
         </View>
       }
       maxWidth={GRID_MAX_WIDTH}
-      scrollRef={page}
     >
       <CalendarToolbar
         label={periodLabel(view, anchor)}
         view={view}
-        onViewChange={changeView}
+        onViewChange={setView}
         onPrevious={() => shift(-1)}
         onNext={() => shift(1)}
         onToday={goToToday}
@@ -202,16 +171,13 @@ export function CalendarScreen() {
       ) : null}
 
       {view === "day" || view === "week" ? (
-        <View onLayout={measureGrid}>
-          <TimeGrid
-            days={days}
-            events={events}
-            lists={dueLists}
-            onOpenEvent={openEvent}
-            onCreateAt={createAt}
-            onMorningOffset={measureMorning}
-          />
-        </View>
+        <TimeGrid
+          days={days}
+          events={events}
+          lists={dueLists}
+          onOpenEvent={openEvent}
+          onCreateAt={createAt}
+        />
       ) : null}
 
       {/* Sous la grille et non à sa place : le mois déjà chargé reste

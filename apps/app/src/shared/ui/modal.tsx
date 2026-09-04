@@ -7,6 +7,7 @@ import { spacing } from "@jc/design";
 import { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useTheme } from "@/shared/providers/theme-provider";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
@@ -121,7 +122,7 @@ export function Modal({
 
                 <View
                   className={cn(
-                    "flex-row items-start gap-3 px-5 pb-4 pt-4",
+                    "flex-row items-start gap-4 px-6 pb-5 pt-5",
                     variant === "form" && "border-border border-b",
                   )}
                 >
@@ -154,7 +155,7 @@ export function Modal({
                 {variant === "form" ? (
                   <ScrollView
                     className="shrink"
-                    contentContainerClassName="gap-4 px-5 py-4"
+                    contentContainerClassName="gap-5 px-6 py-5"
                     keyboardShouldPersistTaps="handled"
                   >
                     {children}
@@ -162,10 +163,10 @@ export function Modal({
                 ) : null}
 
                 <View
-                  className="border-border gap-3 border-t px-5 pb-4 pt-4"
+                  className="border-border gap-4 border-t px-6 pb-5 pt-5"
                   // La feuille touche le bord bas de l'écran : sans ce retrait,
                   // le bouton principal passerait sous l'indicateur d'accueil.
-                  style={compact ? { paddingBottom: insets.bottom + spacing.lg } : undefined}
+                  style={compact ? { paddingBottom: insets.bottom + spacing.xl } : undefined}
                 >
                   {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
 
@@ -174,7 +175,7 @@ export function Modal({
                       c'est elle que le pouce atteint. */}
                   <View
                     className={cn(
-                      "gap-2",
+                      "gap-3",
                       compact ? "flex-col-reverse" : "flex-row items-center justify-end",
                     )}
                   >
@@ -219,7 +220,15 @@ function FooterButton({
   className?: string | undefined;
   destructive?: boolean;
 }) {
+  const { palette } = useTheme();
   const variant = action.variant ?? (destructive ? "ghost" : "outline");
+
+  // L'action principale porte la couleur d'assistant choisie par l'utilisateur
+  // (§5.1). Peinte depuis la palette et non par le jeton `primary` : la classe
+  // passe par une variable CSS, qu'une fenêtre sortie de l'arbre — le portail
+  // sur web, l'overlay plein écran sur iOS — n'hérite pas toujours. La palette,
+  // elle, vient du contexte React et suit la fenêtre partout.
+  const filled = variant === "default";
 
   return (
     <Button
@@ -229,10 +238,14 @@ function FooterButton({
       disabled={action.disabled ?? false}
       accessibilityRole="button"
       className={cn(compact && "w-full", className)}
+      {...(filled ? { style: { backgroundColor: palette.accent } } : {})}
     >
       {/* Sans fond, c'est au libellé de porter la mise en garde ; sur un fond
           rouge, il la porterait deux fois et ne se lirait plus. */}
-      <Text className={destructive && variant === "ghost" ? "text-destructive" : undefined}>
+      <Text
+        className={destructive && variant === "ghost" ? "text-destructive" : undefined}
+        {...(filled ? { style: { color: palette.accentText } } : {})}
+      >
         {action.label}
       </Text>
     </Button>

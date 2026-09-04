@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Check, Copy, Pencil, RotateCcw } from "lucide-react-native";
-import type { Message } from "@jc/domain";
+import { Check, Copy, Pencil, RotateCcw, ThumbsDown, ThumbsUp } from "lucide-react-native";
+import type { Message, MessageRatingValue } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
+import { useFeedbackContext, useRateMessage } from "@/features/feedback/hooks/use-feedback";
 import { Markdown } from "@/shared/ui/Markdown";
 import { formatRelativeTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -67,6 +68,17 @@ export function MessageRow({
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isUser = message.role === "user";
+
+  // Notation d'une réponse (§12.1 — geste utilisateur direct, jamais une
+  // suggestion de l'assistant). L'état du pouce sélectionné reste local à la
+  // session : la notation n'est pas encore renvoyée avec les messages, donc
+  // rien ne la restaure après un rechargement — la donnée, elle, est bien
+  // persistée côté serveur.
+  const [rating, setRating] = useState<MessageRatingValue | null>(null);
+  // `null` = pas de champ ouvert ; une chaîne (vide au départ) = champ ouvert.
+  const [commentDraft, setCommentDraft] = useState<string | null>(null);
+  const rateMessage = useRateMessage();
+  const feedbackContext = useFeedbackContext();
 
   const reveal = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -176,9 +188,66 @@ export function MessageRow({
             ) : null}
 
             <CopyAction content={message.content} onHoverIn={reveal} onHoverOut={scheduleHide} />
+
+            {/* Seules les réponses de l'assistant se notent : le fil est sa
+                parole à lui, pas celle de l'utilisateur. */}
+            {message.role === "assistant" ? (
+              <>
+                <IconAction
+                  icon={ThumbsUp}
+                  label="Utile"
+                  active={rating === "up"}
+                  disabled={false}
+                  onHoverIn={reveal}
+                  onHoverOut={scheduleHide}
+                  onPress={() => {
+                    reveal();
+                    setRating("up");
+                    setCommentDraft(null);
+                    rateMessage.mutate({ messageId: message.id, rating: "up", ...feedbackContext });
+                  }}
+                />
+                <IconAction
+                  icon={ThumbsDown}
+                  label="Pas utile"
+                  active={rating === "down"}
+                  disabled={false}
+                  onHoverIn={reveal}
+                  onHoverOut={scheduleHide}
+                  onPress={() => {
+                    reveal();
+                    setRating("down");
+                    // Révèle un champ de commentaire facultatif — jamais côté
+                    // pouce haut, ça n'a de sens que pour dire ce qui a manqué.
+                    setCommentDraft("");
+                    rateMessage.mutate({ messageId: message.id, rating: "down", ...feedbackContext });
+                  }}
+                />
+              </>
+            ) : null}
           </>
         ) : null}
       </View>
+
+      {/* Rendu hors du bloc `revealed` : une fois ouvert, le champ reste
+          jusqu'à l'envoi ou l'abandon, même si le survol quitte la rangée. */}
+      {commentDraft !== null ? (
+        <RatingCommentBox
+          value={commentDraft}
+          onChangeText={setCommentDraft}
+          onCancel={() => setCommentDraft(null)}
+          onSubmit={() => {
+            const comment = commentDraft.trim();
+            rateMessage.mutate({
+              messageId: message.id,
+              rating: "down",
+              comment: comment.length > 0 ? comment : null,
+              ...feedbackContext,
+            });
+            setCommentDraft(null);
+          }}
+        />
+      ) : null}
     </Pressable>
   );
 }
@@ -297,6 +366,7 @@ function IconAction({
   disabled,
   onHoverIn,
   onHoverOut,
+  active = false,
 }: {
   icon: typeof Copy;
   label: string;
@@ -304,6 +374,8 @@ function IconAction({
   disabled: boolean;
   onHoverIn: () => void;
   onHoverOut: () => void;
+  /** Marque une commande à état, ex. le pouce déjà choisi sur ce message. */
+  active?: boolean;
 }) {
   const { palette } = useTheme();
 
@@ -316,10 +388,66 @@ function IconAction({
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
       style={[styles.iconAction, { opacity: disabled ? 0.4 : 1 }]}
     >
-      <Glyph size={14} color={palette.textMuted} />
+      <Glyph size={14} color={active ? palette.accent : palette.textMuted} />
     </Pressable>
+  );
+}
+
+/**
+ * Commentaire facultatif après un pouce bas.
+ *
+ * Ouvert d'un geste, jamais imposé : la notation part déjà au clic sur le
+ * pouce, ce champ ne fait qu'en préciser la raison si l'utilisateur le
+ * souhaite.
+ */
+function RatingCommentBox({
+  value,
+  onChangeText,
+  onCancel,
+  onSubmit,
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const { palette } = useTheme();
+
+  return (
+    <View style={styles.commentBox}>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder="Qu'est-ce qui n'allait pas ? (facultatif)"
+        placeholderTextColor={palette.textMuted}
+        autoFocus
+        onSubmitEditing={onSubmit}
+        blurOnSubmit={Platform.OS === "web"}
+        className="web:outline-none"
+        style={[styles.commentInput, { borderColor: palette.border, color: palette.text }]}
+      />
+      <View style={styles.editorActions}>
+        <Pressable
+          onPress={onCancel}
+          accessibilityRole="button"
+          accessibilityLabel="Ne pas commenter"
+          style={[styles.editorButton, { borderColor: palette.border }]}
+        >
+          <Text style={[styles.editorLabel, { color: palette.textMuted }]}>Annuler</Text>
+        </Pressable>
+        <Pressable
+          onPress={onSubmit}
+          accessibilityRole="button"
+          accessibilityLabel="Envoyer le commentaire"
+          style={[styles.editorButton, { backgroundColor: palette.accent }]}
+        >
+          <Text style={[styles.editorLabel, { color: palette.accentText }]}>Envoyer</Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -360,6 +488,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.sm,
+  },
+  commentBox: { gap: spacing.sm, alignSelf: "stretch", marginTop: spacing.xs },
+  commentInput: {
+    fontFamily: FONT_FAMILY,
+    minHeight: MIN_TOUCH_TARGET,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    fontSize: fontSize.sm,
   },
   editor: { gap: spacing.sm, alignSelf: "stretch" },
   editorInput: {

@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import { MessageSquarePlus } from "lucide-react-native";
 import { fontSize, MIN_TOUCH_TARGET, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { ConversationThread } from "@/features/conversation/ConversationThread";
+import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
 import { ScreenShell } from "@/shared/ui/screen-shell";
 import { useAssistantName, useCompleteOnboarding, useProfile } from "@/shared/hooks/use-profile";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -29,6 +32,7 @@ export default function AssistantScreen() {
   const assistantName = useAssistantName();
   const { data: profile } = useProfile();
   const completeOnboarding = useCompleteOnboarding();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   // Le canal est créé à la volée au premier accès, côté serveur.
   const channel = useQuery({
@@ -45,22 +49,36 @@ export default function AssistantScreen() {
       // premier écran, pas cachée derrière un menu. En texte discret et non
       // en bouton plein — c'est une échappatoire, pas l'action principale.
       action={
-        onboarding ? (
+        <View style={styles.actions}>
+          {onboarding ? (
+            <Pressable
+              onPress={() => {
+                completeOnboarding.mutate(undefined, {
+                  onSuccess: () => router.replace("/chat"),
+                });
+              }}
+              disabled={completeOnboarding.isPending}
+              hitSlop={8}
+              style={styles.skip}
+              accessibilityRole="button"
+              accessibilityLabel="Passer les questions d'accueil"
+            >
+              <Text style={[styles.skipLabel, { color: palette.textMuted }]}>Passer</Text>
+            </Pressable>
+          ) : null}
+
           <Pressable
-            onPress={() => {
-              completeOnboarding.mutate(undefined, {
-                onSuccess: () => router.replace("/chat"),
-              });
-            }}
-            disabled={completeOnboarding.isPending}
-            hitSlop={8}
-            style={styles.skip}
+            onPress={() => setFeedbackOpen(true)}
+            style={styles.feedbackButton}
             accessibilityRole="button"
-            accessibilityLabel="Passer les questions d'accueil"
+            accessibilityLabel="Donner votre avis"
           >
-            <Text style={[styles.skipLabel, { color: palette.textMuted }]}>Passer</Text>
+            <MessageSquarePlus size={18} color={palette.textMuted} />
+            <Text style={[styles.feedbackLabel, { color: palette.textMuted }]}>
+              Donner votre avis
+            </Text>
           </Pressable>
-        ) : null
+        </View>
       }
       scrolls={false}
     >
@@ -79,17 +97,28 @@ export default function AssistantScreen() {
           )}
         </View>
       )}
+
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
+  actions: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   skip: {
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",
     paddingHorizontal: spacing.sm,
   },
   skipLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, textDecorationLine: "underline" },
+  feedbackButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    minHeight: MIN_TOUCH_TARGET,
+    paddingHorizontal: spacing.sm,
+  },
+  feedbackLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl },
   error: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, textAlign: "center" },
 });

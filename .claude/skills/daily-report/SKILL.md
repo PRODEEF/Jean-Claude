@@ -29,10 +29,16 @@ git diff --stat HEAD~5..HEAD
 
 Puis relire `docs/SUIVI-BACKLOG.md` pour repérer ce qui a changé de statut.
 
+Relire aussi les retours utilisateurs du jour (voir §5) : ils viennent
+s'ajouter au report, pas seulement au suivi de statut.
+
 ## 2. Le report
 
-Trois sections, pas plus. Rédigé pour un porteur de projet, **pas** pour un
-développeur : décrire ce que l'utilisateur peut faire, pas les fichiers touchés.
+Trois sections obligatoires, une quatrième si des retours utilisateurs sont
+arrivés depuis le dernier report (§5) — sinon on l'omet, comme un point de
+blocage qui n'existe pas ce jour-là. Rédigé pour un porteur de projet, **pas**
+pour un développeur : décrire ce que l'utilisateur peut faire, pas les
+fichiers touchés.
 
 ```markdown
 ## Jour N — <date>
@@ -53,6 +59,12 @@ développeur : décrire ce que l'utilisateur peut faire, pas les fichiers touch�
 - Il me faut le fichier `maquette-interface-ia.html` pour caler l'écran de
   conversation sur la référence prévue.
 - Choix à valider avec Antonin : service de reconnaissance vocale.
+
+### Retours utilisateurs
+
+- Un bug signalé sur le bouton d'envoi qui reste grisé après une erreur
+  réseau (catégorie « bug », écran `/assistant`).
+- Trois pouces bas sur la même réponse à propos des rappels de la semaine.
 ```
 
 Règles de rédaction :
@@ -85,7 +97,32 @@ possible, c'est la Cible 3 du §0.2.
 Si une variante d'interface est en attente d'arbitrage (§4.3), c'est le moment
 de la montrer — voir skill [ui-decision](../ui-decision/SKILL.md).
 
-## 4. Mettre à jour le suivi
+## 4. Lire les retours utilisateurs
+
+Aucune route ne les liste : les deux tables se lisent à la main dans
+Supabase Studio (SQL Editor). Une route de lecture aurait exigé un premier
+accès privilégié que les RLS actuelles ne prévoient pas — voir
+`.claude/rules/100-api.md` sur `admin` hors traitement système.
+
+```sql
+select category, content, platform, screen, created_at
+from public.feedback
+where created_at > now() - interval '1 day'
+order by created_at desc;
+```
+
+```sql
+select r.rating, r.comment, r.platform, r.screen, r.created_at, m.content as message_content
+from public.message_ratings r
+join public.messages m on m.id = r.message_id
+where r.created_at > now() - interval '1 day'
+order by r.created_at desc;
+```
+
+Rien depuis le dernier report → la section « Retours utilisateurs » ne
+figure pas dans le report du jour.
+
+## 5. Mettre à jour le suivi
 
 `docs/SUIVI-BACKLOG.md` est un **livrable de fin de stage** (§10). Le tenir à
 jour chaque jour évite de le reconstituer de mémoire à la fin.

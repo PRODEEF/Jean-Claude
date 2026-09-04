@@ -20,7 +20,7 @@ import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
 import { contentColumn, READING_MAX_WIDTH } from "@/shared/ui/screen-shell";
 import { Composer } from "./Composer";
-import { useConversationThread } from "./hooks/use-conversation-thread";
+import { THREAD_PAGE_SIZE, useConversationThread } from "./hooks/use-conversation-thread";
 import { useSuggestions } from "./hooks/use-suggestions";
 import { MessageRow } from "./MessageRow";
 import { QuestionCard } from "./QuestionCard";
@@ -121,14 +121,24 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     submit(initialDraft);
   }, [initialDraft, submit]);
 
-  // `onContentSizeChange` ne suffit pas pendant le flux : le pied de liste
-  // grandit d'un jeton à la fois, et le rendu Markdown reflue après coup —
-  // la liste mesure alors sa hauteur d'avant. Suivre `streamingText` la
-  // recale à chaque arrivée de texte.
+  // Le rendu Markdown se met en page après le commit qui déclenche cet
+  // événement — sur web, react-native-web traduit en DOM réel, dont la mise
+  // en page suit son propre cycle de peinture. Reporter d'une frame laisse
+  // cette mise en page se terminer avant de recalculer la fin de liste ;
+  // sans quoi le défilement atterrit sur la hauteur d'avant, et la fin du
+  // dernier message reste masquée par la saisie — surtout sensible sur le
+  // tout dernier jeton d'une réponse, celui qui referme souvent une liste.
+  const scrollToEndSoon = useCallback(() => {
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
+  }, []);
+
+  // Suivre `streamingText` recale la liste à chaque arrivée de texte : le
+  // pied de liste grandit d'un jeton à la fois, `onContentSizeChange` seul
+  // accuserait un train de retard.
   useEffect(() => {
     if (streamingText === null && pendingUserText === null) return;
-    listRef.current?.scrollToEnd({ animated: false });
-  }, [streamingText, pendingUserText]);
+    scrollToEndSoon();
+  }, [streamingText, pendingUserText, scrollToEndSoon]);
 
   const sendDraft = useCallback(() => {
     const content = draft.trim();
@@ -191,10 +201,20 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={[styles.list, column]}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={scrollToEndSoon}
+          // Par défaut, `FlatList` ne rend que 10 éléments au montage, en
+          // partant du début — les plus anciens messages, la liste étant triée
+          // par date croissante. Le premier `scrollToEnd` n'atteignait alors
+          // que leur fin à eux, jamais le dernier échange. Rendre toute la
+          // page chargée dès le montage fait atterrir ce premier défilement au
+          // bon endroit.
+          initialNumToRender={THREAD_PAGE_SIZE}
           keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={
-            <Text style={[styles.empty, { color: palette.textMuted }]}>
+          // En en-tête et non en état vide : la phrase reste au-dessus du fil
+          // une fois les premiers messages échangés, au lieu de disparaître dès
+          // le premier envoi — elle défile avec le reste, sans être fixée.
+          ListHeaderComponent={
+            <Text style={[styles.intro, { color: palette.textMuted }]}>
               Écrivez ce que vous avez en tête. Le rangement viendra ensuite.
             </Text>
           }
@@ -372,11 +392,11 @@ const styles = StyleSheet.create({
    */
   plain: { alignSelf: "flex-start", maxWidth: "100%", paddingHorizontal: 0 },
   bubbleText: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22 },
-  empty: {
+  intro: {
     fontFamily: FONT_FAMILY,
     fontSize: fontSize.sm,
     textAlign: "center",
-    marginTop: spacing.xxl,
+    marginBottom: spacing.md,
   },
   errorBar: {
     flexDirection: "row",

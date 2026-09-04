@@ -7,7 +7,91 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **3 septembre 2026** — l'assistant sait compléter une todoliste
+Dernière mise à jour : **4 septembre 2026** — un moyen de remonter un avis
+utilisateur (hors cahier des charges), et deux points d'A.1 et A.4 vérifiés et
+complétés : le classement matriciel multi-dossiers (#16) et les sous-dossiers
+automatiques de projet (#19).
+
+**Un moyen de remonter un avis existe, hors cahier des charges.** Deux formes :
+un avis général (bug, idée, autre) accessible depuis le canal Jean-Claude et
+depuis les Réglages, et un pouce haut/bas sous chaque réponse de l'assistant,
+sur toutes les conversations — le pouce bas propose un commentaire facultatif.
+Aucune des deux ne passe par le modèle : ce sont des gestes directs, comme
+`PATCH /api/me`, le canal permanent reste borné à ses trois sujets (§12.1,
+A.10). Restitution choisie délibérément minimale pour le sprint : les deux
+tables (`feedback`, `message_ratings`) se lisent à la main dans Supabase
+Studio pour composer le report quotidien — une route de lecture aurait exigé
+un premier accès privilégié, qu'aucune RLS ne prévoit aujourd'hui. Le skill
+`daily-report` porte désormais les requêtes prêtes à l'emploi.
+
+**#16 est vérifiée, pas reconstruite.** Le rattachement manuel à plusieurs dossiers,
+la proposition de rangement par l'assistant et l'affichage de la conversation sous
+chacun des dossiers concernés existaient déjà, posés par #7 et #8 — seul manquait un
+test sur le cas limite du détachement complet (`folderIds: []`), désormais couvert,
+ainsi qu'un test sur la conversation introuvable. Point relevé au passage et non
+corrigé ici, hors périmètre de l'issue : le rattachement manuel
+(`PUT /conversations/:id/folders`) n'écarte pas les identifiants de dossier
+inexistants avant de les écrire, contrairement au rangement proposé par l'assistant,
+qui les vérifie déjà.
+
+**#19 avance sur deux fronts.** La détection du « projet » ne reposait que sur le
+jugement du modèle, sans qu'aucune consigne ne dise ce qui la caractérise : la
+description de `suggest_project_folders` et le prompt du canal permanent portent
+désormais un critère explicite — plusieurs actions de nature différente (idée, achat,
+tâche, rendez-vous) sur plusieurs jours ou semaines, pas une question qui se referme
+en un message. Et une todoliste acceptée depuis une conversation rangée sous un
+dossier de projet rejoint maintenant son sous-dossier typé (ACHAT pour une liste de
+courses, TODO pour une liste de tâches) plutôt que le dossier du projet lui-même,
+quand ce sous-dossier existe — sinon le comportement d'origine s'applique. PRENDRE RDV
+en reste exclu : les événements de `calendar_events` ne portent aucun dossier,
+l'ajouter suppose une migration, écartée pour cette itération (dette consignée plus
+bas). IDÉE reste un sous-dossier ordinaire, sans mécanisme de rattachement : aucun
+concept de note n'existe dans le produit aujourd'hui pour y déposer quoi que ce soit
+automatiquement — voir le point consigné plus bas sur la distinction dossier / projet.
+
+Auparavant le même jour : corrections après relecture : fil de conversation,
+calendrier, bannière et réglages.
+
+**Fil de conversation** : la phrase d'accroche (« Écrivez ce que vous avez en
+tête. Le rangement viendra ensuite. ») passe d'un état vide à un en-tête de
+liste — elle ne restait affichée que tant qu'aucun message n'existait, et
+disparaissait dès le premier échange plutôt que de rester au-dessus du fil.
+Le message de l'assistant clignotait aussi en toute fin de réponse : la bulle
+de streaming n'était effacée qu'après plusieurs invalidations de cache
+indépendantes de son affichage (liste des conversations, titre, propositions,
+profil), et restait donc visible en double le temps de leurs allers-retours
+réseau.
+
+**Calendrier** : la page ne recadre plus sur les heures ouvrées au
+changement de vue (Jour/Semaine). Ce cadrage, posé le 3 septembre pour éviter
+d'ouvrir sur des heures de nuit vides, masquait aussi le haut de page —
+bandeau et barre d'outils — juste après avoir cliqué dessus. Retiré à la
+demande ; la grille peut désormais s'ouvrir sur des heures vides.
+
+**Bannière** : les onglets Calendrier et Todoliste n'avaient aucun style
+actif — seul le survol s'affichait, sans rien indiquer quel onglet restait
+ouvert une fois le geste terminé. Ils prennent maintenant le fond plein de la
+couleur d'assistant tant que leur route est active.
+
+**Réglages** : le choix du modèle passe en menu déroulant, à la place de la
+liste de lignes cochables. Point relevé et non tranché ici : cette liste
+suivait la règle des 3 apps (§4.2) — ChatGPT, Claude et Perplexity présentent
+ce réglage en lignes plutôt qu'en menu déroulant — et le changement demandé
+s'en écarte.
+
+Auparavant le même jour : couleur brute pour l'assistant.
+
+**La couleur de l'assistant admet désormais une teinte libre**, en plus des
+huit pastilles de #12. Une neuvième option « Personnalisée » ouvre un
+sélecteur (carré teinte/saturation, bande de teinte, champ hexadécimal) et se
+coche d'elle-même quand la couleur active n'est déjà aucun des huit presets.
+Le contraste n'est pas le problème que redoutait #12 : `buildPalette` calcule
+déjà `accentText` et `accentSoft` dynamiquement pour n'importe quelle couleur
+(luminance WCAG, mélange vers le blanc ou le noir selon le thème) — les huit
+presets n'étaient qu'un raccourci, pas une garantie que seules elles
+offraient.
+
+Auparavant le 3 septembre 2026 : l'assistant sait compléter une todoliste
 existante, et non plus seulement en créer. Auparavant le même jour : le contexte remis au
 modèle a été repris — une proposition ne fait plus taire la réponse, et un dossier hors
 sujet ne se glisse plus dans un rangement ; l'échéance est passée de la tâche à la liste,
@@ -500,7 +584,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer d'une conversation sur un dossier (ajouter ou déplacer, au choix) **et d'un dossier dans un autre**, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                 |
 | A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (« Mes listes » puis « Semaine », filtrables par dossier, cherchables à la loupe), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Le contenu s'édite comme un texte — une ligne par tâche, deux niveaux d'indentation, réécrit en un appel. Listes groupées par dossier dans l'agenda du calendrier, où « + Tâches » en ouvre une sur le jour affiché. L'assistant propose désormais les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation. Restent la conversion à la demande et l'édition avant validation → #17                              |
 | A.3  | Détection de tâches datées                            |   🟡   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte désormais sur la **liste** et non sur ses lignes : le modèle date la liste qu'il propose, puis une seconde proposition bloque un créneau d'agenda par liste datée. Reste le parsing des dates relatives, laissé au modèle pour l'instant → #18                                                                                             |
-| A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste. Détection automatique du « projet » à affiner                                                                                                                                                                                                                                                                           |
+| A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste — consigne de détection reprise, avec un critère explicite (#19). Une todoliste acceptée rejoint son sous-dossier typé (ACHAT, TODO) quand il existe, au lieu du dossier de projet. Restent PRENDRE RDV — `calendar_events` ne porte aucun dossier — et IDÉE, faute de concept de note dans le produit                |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                                                                                          |
 | A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                                                                                                                                                 |
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                                                                                                                                                                                                                                                                                   |
@@ -536,6 +620,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Date réelle du rendez-vous de cadrage             | §0    | Yann — le document signale l'incohérence du « 31 septembre »   |
 | **Profondeur d'arborescence portée de 2 à 5**     | §3    | Yann — écart assumé au cahier des charges, à valider           |
 | Jeu d'icônes de la navigation                     | §4.2  | — lucide-react-native en place (défaut react-native-reusables) |
+| Distinguer dossier et « projet »                  | A.4/A.5 | Yann — un projet gagnerait à être un format de dossier à part, avec mémoire globale et structure propre, plutôt qu'un dossier ordinaire portant des sous-dossiers typés. Piste soulevée pendant #19, non implémentée |
 
 ## Points nécessitant un A/B testing humain (§4.3)
 
@@ -552,6 +637,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Rappels du matin non délivrés           | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26, #20)                                                           |
 | Rendez-vous récurrent non capté         | `suggest_task_list` est désormais traduit et exécuté. `suggest_recurring_event` part toujours en `console.warn` : le modèle est invité à proposer une série et aucune carte n'apparaît. Raccordement à faire (→ A.11)   |
 | Créneaux posés à l'heure de l'échéance  | Un créneau reprend le `dueAt` de sa liste, sans durée : le calendrier lui en donne une implicite à l'affichage. Une échéance déduite d'une conversation dit quand, pas combien de temps — la durée réelle relève de #18 |
+| RDV de projet non rattaché à PRENDRE RDV | `calendar_events` ne porte aucun `folder_id`, contrairement à `task_lists` : un rendez-vous créé depuis un projet ne peut pas rejoindre son sous-dossier typé comme le font déjà les todolistes vers ACHAT et TODO (A.4). Demanderait une migration, écartée pour l'itération de #19 |
 | Sauvegarde de liste en écrasement       | `PUT /tasks/:id/items` réécrit la liste entière depuis ce que l'éditeur tient. Deux appareils ouverts sur la même liste se recouvrent donc l'un l'autre — le dernier à écrire gagne. Sans effet à un seul utilisateur, à revoir si l'édition partagée arrive       |
 | Séries récurrentes non déployées        | Une `rrule` se saisit et se stocke, mais les occurrences ne sont pas calculées : l'événement n'apparaît qu'à son premier créneau. La dépendance `rrule` est déjà au `package.json` de l'API (A.11)                      |
 | Dates saisies au clavier                | Le formulaire d'événement demande `JJ/MM/AAAA` et `HH:MM` en texte, faute de sélecteur natif partagé par les trois cibles. Fonctionnel, mais en deçà des références du §4.2                                             |
@@ -562,6 +648,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Historique ouvert par un tour assistant | Le canal commence par le message d'accueil, donc l'historique remis au modèle débute par un tour `assistant`. Toléré ou refusé selon le moteur routé par le Gateway — à couvrir avant de changer `LLM_MODEL`            |
 | Rattrapage de réponse au prix d'un tour  | Un modèle qui s'en tient à son appel d'outil déclenche un second appel : la réponse arrive, mais l'attente double. La consigne cherche à rendre ce cas rare — reste à mesurer sa fréquence par moteur                                                                     |
 | `listPending` sans appelant             | `ConversationService` lit `listForConversation` et en déduit les propositions en attente. La méthode du Repository n'a plus d'appelant : à retirer, ou à consommer là où la déduction se fait                           |
+| État visuel de la notation par message  | Le pouce sélectionné n'est pas restauré après un rechargement : la notation n'est pas renvoyée avec les messages aujourd'hui. La donnée est bien persistée (`message_ratings`), seul l'indicateur visuel est local à la session |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo
 (`app.config.js` / `metro.config.js`).

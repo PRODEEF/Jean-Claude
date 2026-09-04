@@ -21,3 +21,4 @@ export * from "./task/task.schema";
 export * from "./calendar/calendar.schema";
 export * from "./assistant/assistant.schema";
 export * from "./user/preferences.schema";
+export * from "./feedback/feedback.schema";
