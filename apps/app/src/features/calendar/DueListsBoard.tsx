@@ -1,29 +1,29 @@
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
+import { useRouter } from "expo-router";
 import { ListChecks, ShoppingBasket } from "lucide-react-native";
 import type { TaskListWithTasks } from "@jc/domain";
+import { MIN_TOUCH_TARGET } from "@jc/design";
 import { formatFullDay, formatTime, isSameDay } from "@/shared/lib/dates";
 import { openTaskCount } from "@/shared/lib/tasks";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
-import { TaskRow } from "./TaskRow";
 import { momentsOfDay } from "./lib/task-week";
 
-export type WeekBoardProps = {
-  /** Les sept jours de la semaine affichée, lundi en tête. */
+export type DueListsBoardProps = {
+  /** Les jours à afficher, dans l'ordre — une semaine ou un mois selon l'appelant. */
   days: Date[];
   lists: TaskListWithTasks[];
 };
 
 /**
- * Vue hebdomadaire des todolistes échues (A.2).
+ * Todolistes échues, un bloc par jour découpé en moments (A.2).
  *
- * Un bloc par jour, découpé en moments — la forme dans laquelle la maquette
- * écrit déjà les journées. L'échéance appartient à la liste : c'est donc la
- * liste entière qui se pose sur son jour, avec ce qu'elle contient. Les listes
- * sans échéance n'y figurent pas — elles se lisent dans « Mes listes », où
- * l'absence de date n'est pas un manque.
+ * En lecture seule, comme `DayAgenda` : le calendrier dit ce que porte chaque
+ * jour, il n'est pas un second endroit où gérer les mêmes listes — on les
+ * coche dans Mes listes, qui en reste l'écran. L'appui sur une liste y
+ * conduit directement.
  */
-export function WeekBoard({ days, lists }: WeekBoardProps) {
+export function DueListsBoard({ days, lists }: DueListsBoardProps) {
   const today = new Date();
 
   return (
@@ -81,14 +81,21 @@ export function WeekBoard({ days, lists }: WeekBoardProps) {
  * Une liste échue ce jour-là, avec ce qu'elle contient.
  *
  * Le contenu est montré et non résumé : « Courses » sans ses lignes n'apprend
- * rien de ce qu'il reste à faire, et c'est précisément ce que la semaine sert
- * à lire. Les lignes s'y cochent — l'écriture, elle, reste dans « Mes listes ».
+ * rien de ce qu'il reste à faire. Les lignes ne se cochent pas ici — l'appui
+ * ouvre la liste dans Mes listes, où l'écriture comme le pointage ont lieu.
  */
 function DueList({ list }: { list: TaskListWithTasks }) {
+  const router = useRouter();
   const shopping = list.kind === "shopping";
 
   return (
-    <View className="border-border gap-0.5 rounded-lg border border-dashed p-2">
+    <Pressable
+      onPress={() => router.push(`/todo?list=${list.id}` as never)}
+      accessibilityRole="button"
+      accessibilityLabel={`Ouvrir la liste ${list.title}`}
+      style={{ minHeight: MIN_TOUCH_TARGET }}
+      className="border-border gap-0.5 rounded-lg border border-dashed p-2"
+    >
       <View className="flex-row items-center gap-2">
         <Icon
           as={shopping ? ShoppingBasket : ListChecks}
@@ -106,9 +113,19 @@ function DueList({ list }: { list: TaskListWithTasks }) {
       {list.tasks.length === 0 ? (
         <Text className="text-muted-foreground text-xs">Liste vide.</Text>
       ) : (
-        list.tasks.map((task) => <TaskRow key={task.id} task={task} />)
+        list.tasks.map((task) => (
+          <Text
+            key={task.id}
+            numberOfLines={1}
+            className={`text-sm ${
+              task.done ? "text-muted-foreground line-through" : "text-foreground"
+            }`}
+          >
+            {task.title}
+          </Text>
+        ))
       )}
-    </View>
+    </Pressable>
   );
 }
 

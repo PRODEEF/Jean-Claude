@@ -42,7 +42,7 @@ export function FolderContextMenu({
       : []),
 
     // Une todoliste créée d'ici naît déjà rangée : elle restera visible dans ce
-    // dossier comme dans l'onglet Todoliste (A.2).
+    // dossier comme dans l'onglet Mes listes (A.2).
     { label: "Nouvelle todoliste", onPress: () => onAddTaskList(target) },
 
     { label: "Supprimer", destructive: true, onPress: () => onDelete(target) },

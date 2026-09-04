@@ -146,7 +146,7 @@ export class AssistantService {
    * Les listes naissent dans le dossier de la conversation quand elle en a un :
    * l'utilisateur ne choisit jamais où ranger au moment de créer (§13.4.1), et
    * une liste sortie d'une conversation déjà rangée relève du même sujet
-   * qu'elle. Sans dossier, elle reste lisible dans l'onglet TODOLISTE, qui est
+   * qu'elle. Sans dossier, elle reste lisible dans l'onglet Mes listes, qui est
    * de toute façon la vue « tous dossiers confondus ».
    *
    * Quand ce dossier porte un sous-dossier typé du bon purpose (A.4) — TODO
