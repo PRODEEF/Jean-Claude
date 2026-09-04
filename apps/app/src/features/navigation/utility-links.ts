@@ -8,6 +8,6 @@ import { CalendarDays, ListChecks } from "lucide-react-native";
  * destinations. Deux listes juxtaposées auraient divergé dès la troisième vue.
  */
 export const UTILITY_LINKS = [
-  { href: "/todo", label: "Todoliste", icon: ListChecks },
+  { href: "/todo", label: "Mes listes", icon: ListChecks },
   { href: "/calendar", label: "Calendrier", icon: CalendarDays },
 ] as const;
