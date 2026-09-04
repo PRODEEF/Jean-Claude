@@ -1063,11 +1063,13 @@ function buildSystemPrompt(
     if (todo.tools.includes(SUGGEST_PROJECT_FOLDERS)) {
       channel.push(
         "",
-        "Quand l'échange fait apparaître un besoin de rangement — un projet qui",
-        "démarre, un sujet qui revient, un espace mal structuré — appelle",
-        "`suggest_project_folders` pour proposer les dossiers correspondants.",
-        "L'outil ne crée rien : il affiche une proposition que l'utilisateur",
-        "valide. Ne dis donc jamais que les dossiers sont créés, demande.",
+        "Quand l'échange fait apparaître un projet — un objectif qui va demander",
+        "plusieurs actions de nature différente (une idée, un achat, une tâche,",
+        "un rendez-vous) sur plusieurs jours ou semaines, pas une question qui",
+        "se referme en un message — appelle `suggest_project_folders` pour",
+        "proposer les dossiers correspondants. L'outil ne crée rien : il",
+        "affiche une proposition que l'utilisateur valide. Ne dis donc jamais",
+        "que les dossiers sont créés, demande.",
       );
     }
 

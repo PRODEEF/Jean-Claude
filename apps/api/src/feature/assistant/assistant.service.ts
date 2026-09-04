@@ -7,11 +7,13 @@ import {
   type AssignFoldersPayload,
   type CalendarEvent,
   type Folder,
+  type FolderPurpose,
   type FolderTreeNode,
   type ResolveSuggestion,
   type ScheduleListsPayload,
   type Suggestion,
   type TaskList,
+  type TaskListKind,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import type { CalendarService } from "../../domain/calendar/calendar.service.js";
@@ -147,6 +149,10 @@ export class AssistantService {
    * qu'elle. Sans dossier, elle reste lisible dans l'onglet TODOLISTE, qui est
    * de toute façon la vue « tous dossiers confondus ».
    *
+   * Quand ce dossier porte un sous-dossier typé du bon purpose (A.4) — TODO
+   * pour une liste de tâches, ACHAT pour une liste de courses — la liste y
+   * naît directement plutôt que dans le dossier projet lui-même.
+   *
    * Les tâches sont ajoutées l'une après l'autre plutôt qu'en parallèle : leur
    * position se calcule à partir de celles déjà prises dans la liste, et deux
    * insertions concurrentes se verraient attribuer la même.
@@ -165,18 +171,25 @@ export class AssistantService {
 
     const conversationId = suggestion.conversationId;
     const conversation = await this.conversations.getById(conversationId, accessToken);
-    const folderId = conversation.folderIds[0] ?? null;
+    const fallbackFolderId = conversation.folderIds[0] ?? null;
+    const tree = conversation.folderIds.length > 0 ? await this.folders.getTree(accessToken) : [];
 
     const taskLists: TaskList[] = [];
     const dated: ScheduleListsPayload["lists"] = [];
 
     for (const proposed of payload.data.lists) {
+      const typedFolderId = findTypedFolder(
+        tree,
+        conversation.folderIds,
+        TASK_LIST_FOLDER_PURPOSE[proposed.kind],
+      );
+
       const list = await this.tasks.createList(
         userId,
         {
           title: proposed.title,
           kind: proposed.kind,
-          folderId,
+          folderId: typedFolderId ?? fallbackFolderId,
           dueAt: proposed.dueAt,
           conversationId,
           createdByAssistant: true,
@@ -497,4 +510,37 @@ function sameName(a: string, b: string): boolean {
  */
 function flatten(tree: FolderTreeNode[]): Folder[] {
   return tree.flatMap((node) => [node, ...flatten(node.children)]);
+}
+
+/**
+ * Une todoliste de courses rejoint le sous-dossier ACHAT, une todoliste de
+ * tâches le sous-dossier TODO (A.4) — les deux vocabulaires, kind de liste et
+ * purpose de dossier, ne se recouvrent pas par leur nom.
+ */
+const TASK_LIST_FOLDER_PURPOSE: Record<TaskListKind, FolderPurpose> = {
+  todo: "todo",
+  shopping: "purchase",
+};
+
+/**
+ * Sous-dossier du purpose donné, parmi les enfants directs des dossiers de la
+ * conversation (A.4) — une liste d'achats naît dans ACHAT plutôt que dans le
+ * dossier projet lui-même, quand ce sous-dossier a été créé.
+ */
+function findTypedFolder(
+  tree: FolderTreeNode[],
+  parentIds: string[],
+  purpose: FolderPurpose,
+): string | null {
+  for (const node of tree) {
+    if (parentIds.includes(node.id)) {
+      const match = node.children.find((child) => child.purpose === purpose);
+      if (match) return match.id;
+    }
+
+    const found = findTypedFolder(node.children, parentIds, purpose);
+    if (found) return found;
+  }
+
+  return null;
 }

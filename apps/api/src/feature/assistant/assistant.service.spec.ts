@@ -837,6 +837,57 @@ describe("AssistantService", () => {
       expect(createdLists(tasks).map((list) => list.folderId)).toEqual([SANTE, SANTE]);
     });
 
+    it("range chaque liste dans le sous-dossier typé du projet, quand il existe (A.4)", async () => {
+      const jardin = uuid(201);
+      const achat = uuid(202);
+      const todo = uuid(203);
+      const tasks = makeTaskRepository();
+      const folders = makeFolderRepository([
+        makeFolder({ id: jardin, name: "Jardin" }),
+        makeFolder({ id: achat, name: "ACHAT", parentId: jardin, purpose: "purchase" }),
+        makeFolder({ id: todo, name: "TODO", parentId: jardin, purpose: "todo" }),
+      ]);
+      const conversations = makeConversationRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation([jardin])),
+      });
+
+      await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        folders,
+        conversations,
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      // La liste d'achats rejoint ACHAT, la liste de tâches rejoint TODO — pas
+      // le dossier Jardin lui-même.
+      expect(createdLists(tasks).map((list) => [list.title, list.folderId])).toEqual([
+        ["Achats jardin", achat],
+        ["Travaux jardin", todo],
+      ]);
+    });
+
+    it("retombe sur le dossier de la conversation quand aucun sous-dossier ne correspond au type de liste", async () => {
+      const jardin = uuid(204);
+      const idee = uuid(205);
+      const tasks = makeTaskRepository();
+      const folders = makeFolderRepository([
+        makeFolder({ id: jardin, name: "Jardin" }),
+        makeFolder({ id: idee, name: "IDÉE", parentId: jardin, purpose: "idea" }),
+      ]);
+      const conversations = makeConversationRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation([jardin])),
+      });
+
+      await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        folders,
+        conversations,
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(createdLists(tasks).map((list) => list.folderId)).toEqual([jardin, jardin]);
+    });
+
     it("laisse les listes hors dossier quand la conversation n'est pas rangée", async () => {
       const tasks = makeTaskRepository();
 
