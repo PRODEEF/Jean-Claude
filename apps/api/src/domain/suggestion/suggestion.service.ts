@@ -10,6 +10,7 @@ import {
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import type { LlmToolCall } from "../../core/llm/llm.port.js";
+import { logger } from "../../core/logger.js";
 import {
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
@@ -20,6 +21,8 @@ import type { ISuggestionRepository } from "./suggestion.repository.interface.js
 
 /** Longueur maximale de `message`, alignée sur la contrainte CHECK de la table. */
 const MESSAGE_MAX_LENGTH = 500;
+
+const SCOPE = "suggestion.service";
 
 export class SuggestionService {
   constructor(private readonly suggestions: ISuggestionRepository) {}
@@ -49,7 +52,7 @@ export class SuggestionService {
     const message = typeof raw === "string" ? raw.trim() : "";
 
     if (message.length === 0 || message.length > MESSAGE_MAX_LENGTH) {
-      console.warn(`Appel d'outil \`${toolCall.name}\` sans phrase à afficher : ignoré.`);
+      logger.warn(SCOPE, `Appel d'outil \`${toolCall.name}\` sans phrase à afficher : ignoré.`);
       return null;
     }
 
@@ -144,11 +147,11 @@ function translate(
     const payload = addTaskListItemsPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "add_task_list_items", payload: payload.data };
   } else {
-    console.warn(`Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
+    logger.warn(SCOPE, `Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
     return null;
   }
 
-  console.warn(`Appel d'outil \`${toolCall.name}\` inexploitable : suggestion ignorée.`);
+  logger.warn(SCOPE, `Appel d'outil \`${toolCall.name}\` inexploitable : suggestion ignorée.`);
   return null;
 }
 
@@ -171,7 +174,7 @@ function withUuidFolderIds(input: Record<string, unknown>): Record<string, unkno
 
   const kept = ids.filter((id) => uuidSchema.safeParse(id).success);
   if (kept.length < ids.length) {
-    console.warn("Identifiants de dossier inexploitables écartés du rangement proposé.");
+    logger.warn(SCOPE, "Identifiants de dossier inexploitables écartés du rangement proposé.");
   }
 
   return { ...input, existingFolderIds: kept };
