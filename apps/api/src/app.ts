@@ -5,6 +5,7 @@ import { config } from "./core/config.js";
 import { onError } from "./core/http.js";
 import { calendarRoutes } from "./domain/calendar/calendar.routes.js";
 import { conversationRoutes } from "./domain/conversation/conversation.routes.js";
+import { feedbackRoutes } from "./domain/feedback/feedback.routes.js";
 import { folderRoutes } from "./domain/folder/folder.routes.js";
 import { taskRoutes } from "./domain/task/task.routes.js";
 import { assistantRoutes } from "./feature/assistant/assistant.routes.js";
@@ -37,6 +38,7 @@ export const app = new Hono()
   .route("/api/calendar", calendarRoutes)
   .route("/api/tasks", taskRoutes)
   .route("/api/assistant", assistantRoutes)
+  .route("/api/feedback", feedbackRoutes)
   .route("/api/me", userRoutes)
   .route("/api/search", searchRoutes)
   .route("/api/health", healthRoutes)

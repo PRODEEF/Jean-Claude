@@ -6,15 +6,19 @@ import {
   type Conversation,
   type CreateCalendarEvent,
   type CreateConversation,
+  type CreateFeedback,
   type CreateFolder,
   type CreateTask,
   type CreateTaskList,
   type EditMessage,
+  type Feedback,
   type Folder,
   type FolderTreeNode,
   type Message,
+  type MessageRating,
   type MessageStreamEvent,
   type Paginated,
+  type RateMessage,
   type ReplaceTasks,
   type ResolveSuggestion,
   type SearchFilters,
@@ -72,6 +76,21 @@ export class JeanClaudeClient {
      */
     completeOnboarding: () =>
       this.http.request<UserProfile>("/me/onboarding/complete", { method: "POST" }),
+  };
+
+  /**
+   * Feedback utilisateur — jamais un `tool_call` de l'assistant (§12.1, A.10) :
+   * un geste direct, comme `me.update`, écrit sans passer par le modèle.
+   */
+  readonly feedback = {
+    submit: (input: CreateFeedback) =>
+      this.http.request<Feedback>("/feedback", { method: "POST", body: input }),
+
+    rateMessage: (messageId: string, input: RateMessage) =>
+      this.http.request<MessageRating>(`/feedback/messages/${messageId}/rating`, {
+        method: "POST",
+        body: input,
+      }),
   };
 
   readonly folders = {

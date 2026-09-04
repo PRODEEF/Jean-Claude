@@ -7,9 +7,22 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **4 septembre 2026** — deux points d'A.1 et A.4 vérifiés et
+Dernière mise à jour : **4 septembre 2026** — un moyen de remonter un avis
+utilisateur (hors cahier des charges), et deux points d'A.1 et A.4 vérifiés et
 complétés : le classement matriciel multi-dossiers (#16) et les sous-dossiers
 automatiques de projet (#19).
+
+**Un moyen de remonter un avis existe, hors cahier des charges.** Deux formes :
+un avis général (bug, idée, autre) accessible depuis le canal Jean-Claude et
+depuis les Réglages, et un pouce haut/bas sous chaque réponse de l'assistant,
+sur toutes les conversations — le pouce bas propose un commentaire facultatif.
+Aucune des deux ne passe par le modèle : ce sont des gestes directs, comme
+`PATCH /api/me`, le canal permanent reste borné à ses trois sujets (§12.1,
+A.10). Restitution choisie délibérément minimale pour le sprint : les deux
+tables (`feedback`, `message_ratings`) se lisent à la main dans Supabase
+Studio pour composer le report quotidien — une route de lecture aurait exigé
+un premier accès privilégié, qu'aucune RLS ne prévoit aujourd'hui. Le skill
+`daily-report` porte désormais les requêtes prêtes à l'emploi.
 
 **#16 est vérifiée, pas reconstruite.** Le rattachement manuel à plusieurs dossiers,
 la proposition de rangement par l'assistant et l'affichage de la conversation sous
@@ -635,6 +648,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Historique ouvert par un tour assistant | Le canal commence par le message d'accueil, donc l'historique remis au modèle débute par un tour `assistant`. Toléré ou refusé selon le moteur routé par le Gateway — à couvrir avant de changer `LLM_MODEL`            |
 | Rattrapage de réponse au prix d'un tour  | Un modèle qui s'en tient à son appel d'outil déclenche un second appel : la réponse arrive, mais l'attente double. La consigne cherche à rendre ce cas rare — reste à mesurer sa fréquence par moteur                                                                     |
 | `listPending` sans appelant             | `ConversationService` lit `listForConversation` et en déduit les propositions en attente. La méthode du Repository n'a plus d'appelant : à retirer, ou à consommer là où la déduction se fait                           |
+| État visuel de la notation par message  | Le pouce sélectionné n'est pas restauré après un rechargement : la notation n'est pas renvoyée avec les messages aujourd'hui. La donnée est bien persistée (`message_ratings`), seul l'indicateur visuel est local à la session |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo
 (`app.config.js` / `metro.config.js`).
