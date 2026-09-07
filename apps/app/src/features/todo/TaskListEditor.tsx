@@ -12,14 +12,11 @@ import type { Task, TaskListWithTasks } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
-import { titleMatchesQuery } from "@/shared/lib/tasks";
+import { TASK_INDENT, titleMatchesQuery } from "@/shared/lib/tasks";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useTheme } from "@/shared/providers/theme-provider";
-
-/** Retrait d'un niveau, en points. Assez pour se lire, assez peu pour tenir sur un téléphone. */
-const INDENT = 22;
 
 /** Délai avant d'enregistrer une frappe. Un mot se tape plus vite que ça. */
 const AUTOSAVE_DELAY = 700;
@@ -300,7 +297,7 @@ export const TaskListEditor = memo(function TaskListEditor({
         return (
           <View
             key={row.key}
-            style={{ paddingLeft: row.depth * INDENT, minHeight: MIN_TOUCH_TARGET }}
+            style={{ paddingLeft: row.depth * TASK_INDENT, minHeight: MIN_TOUCH_TARGET }}
             className={`flex-row items-center gap-2 rounded-md ${matched ? "bg-accent-soft" : ""}`}
           >
             <Pressable

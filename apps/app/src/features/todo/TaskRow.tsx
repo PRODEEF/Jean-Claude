@@ -5,9 +5,7 @@ import { MIN_TOUCH_TARGET } from "@jc/design";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
-
-/** Retrait d'une sous-tâche, aligné sur celui de l'éditeur. */
-const INDENT = 22;
+import { TASK_INDENT } from "@/shared/lib/tasks";
 
 export type TaskRowProps = {
   task: Task;
@@ -36,7 +34,7 @@ export function TaskRow({ task, meta }: TaskRowProps) {
   return (
     <View
       className="flex-row items-center gap-2"
-      style={{ paddingLeft: task.parentId === null ? 0 : INDENT }}
+      style={{ paddingLeft: task.parentId === null ? 0 : TASK_INDENT }}
     >
       <Pressable
         onPress={toggle}
