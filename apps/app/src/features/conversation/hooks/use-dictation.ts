@@ -33,8 +33,10 @@ export function useDictation(onTranscript: (text: string) => void) {
   useSpeechRecognitionEvent("error", (event) => {
     // Le refus de permission arrive aussi ici (code "not-allowed") : rien de
     // plus à faire que revenir à l'état de repos, le geste n'a produit aucun
-    // texte à perdre.
-    console.warn("Dictée impossible :", event.message);
+    // texte à perdre. `event.error` porte le code (ex. "not-allowed",
+    // "network") ; `event.message`, lui, reste vide sur la plupart des
+    // navigateurs — le logger sans le code ne dit jamais pourquoi.
+    console.warn("Dictée impossible :", event.error, event.message);
     setListening(false);
   });
 
