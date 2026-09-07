@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Conversation, Message, MessageStreamEvent, Paginated } from "@jc/domain";
+import type {
+  Conversation,
+  Message,
+  MessageInputMode,
+  MessageStreamEvent,
+  Paginated,
+} from "@jc/domain";
 import { api } from "@/shared/lib/api";
 import { PROFILE_KEY } from "@/shared/hooks/use-profile";
 
@@ -21,7 +27,7 @@ export const THREAD_PAGE_SIZE = 50;
  * seule mutation les porte donc toutes.
  */
 type Turn =
-  | { kind: "send"; content: string }
+  | { kind: "send"; content: string; inputMode: MessageInputMode }
   | { kind: "edit"; messageId: string; content: string }
   | { kind: "retry"; messageId: string };
 
@@ -232,7 +238,8 @@ export function useConversationThread(
   });
 
   const submit = useCallback(
-    (content: string) => send.mutate({ kind: "send", content }),
+    (content: string, inputMode: MessageInputMode = "text") =>
+      send.mutate({ kind: "send", content, inputMode }),
     [send.mutate],
   );
 
@@ -304,7 +311,7 @@ function turnEvents(
   }
   return api.conversations.send(
     conversationId,
-    { content: turn.content, inputMode: "text" },
+    { content: turn.content, inputMode: turn.inputMode },
     signal,
   );
 }

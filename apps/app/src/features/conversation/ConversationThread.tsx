@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import type { Conversation, Message, Suggestion } from "@jc/domain";
+import type { Conversation, Message, MessageInputMode, Suggestion } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
@@ -147,12 +147,15 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     scrollToEndSoon();
   }, [streamingText, pendingUserText, scrollToEndSoon]);
 
-  const sendDraft = useCallback(() => {
-    const content = draft.trim();
-    if (!content || send.isPending) return;
-    setDraft("");
-    submit(content);
-  }, [draft, send.isPending, submit]);
+  const sendDraft = useCallback(
+    (inputMode: MessageInputMode) => {
+      const content = draft.trim();
+      if (!content || send.isPending) return;
+      setDraft("");
+      submit(content, inputMode);
+    },
+    [draft, send.isPending, submit],
+  );
 
   // Ne dépend ni de `items` (voir le calcul de `previous` ci-dessus) ni de
   // `switchAside`/`send` en entier : ces deux mutations sont de nouveaux

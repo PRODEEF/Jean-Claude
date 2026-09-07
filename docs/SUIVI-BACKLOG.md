@@ -7,13 +7,30 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **7 septembre 2026** — les réponses de l'assistant
-peuvent désormais s'écouter à voix haute, une todoliste datée pose désormais
-un créneau journée entière plutôt qu'un rendez-vous à heure fixe, pastille de
-non-lu sur les conversations, réglage « bandeau uni », section « Discussions
-et tâches » dans la barre latérale, trois ajustements du calendrier (clic sur
-un jour, détail d'un événement, détail d'une todoliste), et les issues #17,
-#18 et #20 qui se referment.
+Dernière mise à jour : **7 septembre 2026** — un message peut désormais se
+dicter dans la conversation, les réponses de l'assistant peuvent s'écouter à
+voix haute, une todoliste datée pose désormais un créneau journée entière
+plutôt qu'un rendez-vous à heure fixe, pastille de non-lu sur les
+conversations, réglage « bandeau uni », section « Discussions et tâches »
+dans la barre latérale, trois ajustements du calendrier (clic sur un jour,
+détail d'un événement, détail d'une todoliste), et les issues #17, #18 et
+#20 qui se referment.
+
+**Un message peut désormais se dicter dans la conversation, au même titre
+qu'un message tapé.** Second étage de l'issue #25 (§12.3, A.12), après la
+lecture à voix haute des réponses. Un bouton micro dans `Composer` démarre
+une reconnaissance vocale (`expo-speech-recognition`, service natif du
+téléphone ou du navigateur — choix provisoire, l'arbitrage formel avec
+Antonin reste ouvert) et complète le brouillon au fil de ce qui est reconnu,
+sans effacer ce qui était déjà tapé. `inputMode` — jusqu'ici figé à `"text"`
+dans `use-conversation-thread.ts` — porte enfin l'origine réelle du message
+envoyé, jusqu'en base ; un caractère retapé au clavier y ramène aussitôt, un
+message qu'on a soi-même corrigé n'étant plus fidèlement ce qui a été dit.
+Le geste est disponible partout où `Composer` l'est déjà, canal permanent et
+onboarding compris — c'est la même saisie (§12.3, « une porte d'entrée, pas
+un mode »). Reste hors de portée : le tout premier message envoyé depuis
+l'écran d'accueil (avant l'ouverture du fil) part toujours en `"text"`,
+faute de faire voyager `inputMode` jusqu'à la conversation qui naît avec lui.
 
 **Les réponses de l'assistant peuvent désormais s'écouter à voix haute.**
 Premier étage de l'issue #25 (§12.3, A.12) : un bouton « Écouter » apparaît au
@@ -786,7 +803,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | §6.1        | Règles de validation partagées                   |   ✅   | `packages/domain/src/auth/auth.schema.ts`, 14 tests. Plus aucune règle de saisie dans l'écran                                                                                                      |
 | §6.1        | Gabarit d'e-mail à pousser sur le projet hébergé |   ⬜   | `npx supabase config push` — **tant que ce n'est pas fait, le projet hébergé envoie un lien et non un code**                                                                                       |
 | §6.2        | 2FA par SMS                                      |   ⬜   | Étape 2. Si non fait dans le sprint → priorité immédiate du backlog restant                                                                                                                        |
-| §6.3 / A.13 | Onboarding conversationnel                       |   🟡   | Accueil mené dans le canal permanent au premier accès : questions ouvertes ou à réponses proposées (`ask_question`), mémoire écrite par `finish_onboarding`, lien « Passer ». Reste le vocal → #25 |
+| §6.3 / A.13 | Onboarding conversationnel                       |   🟡   | Accueil mené dans le canal permanent au premier accès : questions ouvertes ou à réponses proposées (`ask_question`), mémoire écrite par `finish_onboarding`, lien « Passer ». Vocal compris, même `Composer` que le reste (#25) ; reste à arbitrer le service de dictée avec Antonin. |
 
 ---
 
@@ -806,8 +823,8 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                                                                                                                                                                                                                     |
 | A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule hors périmètre proposée puis validée par l'utilisateur (et retirée du contexte une fois faite), et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages. Le canal reçoit l'agenda des 7 jours et les dossiers existants — il peut enfin répondre sur le premier de ses trois sujets ; délivrance des rappels → #26 |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                                                                                                                                                                                                                           |
-| A.12 | Interaction vocale bout en bout                       |   🟡   | Lecture à voix haute des réponses : bouton « Écouter » sur chaque message de l'assistant (`expo-speech`, natif). Reste la dictée (STT), prévue sur le même service natif, sous réserve de confirmation avec Antonin.                                                                                                                                                                                                               |
-| A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte, vocal renvoyé à #25                                                                                                                                                                                                                                                                                                                                                                              |
+| A.12 | Interaction vocale bout en bout                       |   🟡   | Lecture à voix haute des réponses et dictée d'un message, toutes deux sur `expo-speech` / `expo-speech-recognition` (natif). Reste l'arbitrage du service avec Antonin — choix provisoire pour ne pas bloquer le sprint.                                                                                                                                                                                                                  |
+| A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte et en vocal, le même `Composer` que le reste de la conversation                                                                                                                                                                                                                                                                                                                                       |
 
 ---
 
@@ -830,7 +847,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Sujet                                             | Réf.  | Interlocuteur                                                  |
 | ------------------------------------------------- | ----- | -------------------------------------------------------------- |
 | Région d'hébergement Supabase (UE recommandé)     | §8    | Antonin                                                        |
-| Service de reconnaissance vocale (natif ou tiers) | §12.3 | Antonin — budget / latence                                     |
+| Service de reconnaissance vocale (natif ou tiers) | §12.3 | Antonin — choix provisoire du natif en attendant, budget / latence à trancher |
 | Date réelle du rendez-vous de cadrage             | §0    | Yann — le document signale l'incohérence du « 31 septembre »   |
 | **Profondeur d'arborescence portée de 2 à 5**     | §3    | Yann — écart assumé au cahier des charges, à valider           |
 | Jeu d'icônes de la navigation                     | §4.2  | — lucide-react-native en place (défaut react-native-reusables) |
