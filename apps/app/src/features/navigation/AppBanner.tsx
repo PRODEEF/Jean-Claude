@@ -76,13 +76,13 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
         </Button>
       </View>
 
-      {/* Le titre ouvre le canal permanent : c'est la destination que la
-          signature désigne, et l'atteindre depuis n'importe quel écran évite
-          d'aller la chercher dans une barre latérale repliée. */}
+      {/* Le titre ramène à l'accueil des conversations, comme le ferait un
+          logo — le canal permanent, lui, reste à un geste dans la barre
+          latérale, pastille de non-lu à l'appui (A.10). */}
       <Pressable
-        onPress={() => router.push("/assistant")}
+        onPress={() => router.push("/chat")}
         accessibilityRole="button"
-        accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+        accessibilityLabel="Revenir à l'accueil des conversations"
         // La ligne de titre ne fait qu'une vingtaine de points de haut : le
         // débord lui rend la cible tactile de 44 pt sans épaissir la bannière.
         hitSlop={12}
