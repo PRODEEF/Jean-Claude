@@ -9,8 +9,9 @@ schéma prêts, comportement à écrire)
 
 Dernière mise à jour : **7 septembre 2026** — pastille de non-lu sur les
 conversations, réglage « bandeau uni », section « Discussions et tâches »
-dans la barre latérale, et trois ajustements du calendrier (clic sur un jour,
-détail d'un événement, détail d'une todoliste).
+dans la barre latérale, trois ajustements du calendrier (clic sur un jour,
+détail d'un événement, détail d'une todoliste), et les issues #17, #18 et #20
+qui se referment.
 
 **Pastille de non-lu sur les conversations**, hors cahier des charges. Un
 compteur de messages assistant reçus depuis la dernière ouverture s'affiche à
@@ -56,10 +57,82 @@ modifier — avant tout formulaire de modification, qui reste un pas de plus.
 `Modal` (`shared/ui`) gagne au passage un slot d'icônes de bandeau
 (`headerActions`), qu'un futur usage pourra réemployer.
 
-Auparavant le 4 septembre 2026 : l'onglet Todoliste devient Mes listes, sa
-vue Semaine rejoint le calendrier comme cinquième vue « Todo » (mois
-complet), et un raccourci direct vers l'avis général rejoint la barre
-latérale.
+Auparavant le même jour : l'issue #18 se referme à son tour : le parsing des
+dates relatives passe d'un calcul confié au seul modèle à un filet de
+sécurité déterministe sur les tournures les plus sujettes à erreur.
+
+**#18 est close.** `chrono-node`, la bibliothèque candidate évidente pour ce
+point, a été testée et rejetée : son support français calcule un jour de la
+semaine déjà passé au lieu du prochain (« vendredi » un lundi y renvoie le
+vendredi précédent), et ne reconnaît aucun week-end — moins fiable que le
+modèle lui-même sur exactement les cas qui comptent.
+
+`core/relative-date.ts` couvre à la place un nombre restreint de tournures
+fréquentes et non ambiguës (jours de semaine — toujours la prochaine
+occurrence, jamais celle déjà passée —, demain/après-demain, dans N
+jours/semaines, ce/le week-end, avant le week-end), en filet de sécurité et
+non en remplacement : `suggest_task_list` gagne un champ `dueAtText` où le
+modèle recopie l'expression source, et le serveur ne corrige `dueAt` que si
+le motif est reconnu avec certitude — sinon le calcul du modèle reste
+inchangé, sans régression possible sur ce qu'il faisait déjà correctement.
+Les conversions de fuseau horaire (DST compris) sortent au passage de
+`feature/search/date-range.ts`, qui en avait besoin seul jusqu'ici, vers
+`core/timezone.ts` — un second appelant justifiait de ne plus les dupliquer.
+
+Auparavant le même jour : les issues #17 et #20 se referment également —
+conversion d'une conversation en todoliste à la demande, avec édition avant
+validation ; et l'assistant sait prendre les devants même hors sujet
+actionnable explicite. La durée par défaut sur les créneaux nés d'une
+échéance, elle, faisait partie du premier lot de #18 — le point qui restait
+ouvert ce jour-là.
+
+**#17 est close.** Deux points restaient ouverts depuis le suivi du 2
+septembre : la conversion à la demande, et l'édition avant validation. Le
+premier prend la forme d'une entrée « Convertir en todoliste » dans le menu
+contextuel d'une conversation (`POST /conversations/:id/extract-task-list`) :
+un appel dédié au modèle, hors du tour de dialogue ordinaire, où un seul outil
+(`suggest_task_list`) lui est proposé sur l'historique du fil — rien n'est
+écrit dans la conversation, seule la carte de proposition apparaît, comme pour
+n'importe quelle suggestion spontanée. La consigne système reçoit en
+complément une phrase dédiée : une demande tapée explicitement (« convertis ça
+en todoliste ») doit être honorée tout de suite plutôt que décrite en texte.
+
+Le second point ouvre l'édition dans la carte elle-même — titres de liste et
+lignes deviennent des champs de texte, chacun avec sa croix de suppression —
+sans reprendre l'éditeur complet des todolistes réelles (`TaskListEditor`), qui
+suppose une liste déjà en base. Le brouillon reste local à la carte, comme le
+veut le §12.1 : rien n'est créé avant validation, et `ResolveSuggestion` porte
+désormais `taskListEdits`, du même schéma que la proposition d'origine — ici,
+contrairement au rangement, ce n'est pas un sous-ensemble de ce qui a été
+proposé : l'utilisateur corrige un titre, il ne se contente pas d'en écarter
+une partie.
+
+Auparavant le même jour : **#20 est close.** Le mécanisme technique — outils
+de suggestion déjà exposés sur les conversations classiques, périmètre
+`assistant_scope` déjà appliqué aux deux registres — existait depuis les
+premières suggestions proactives. Le trou tenait à la consigne : hors du canal
+permanent, elle ne poussait qu'à repérer un contenu déjà actionnable (une
+liste, une échéance), jamais à déduire une suite après une réponse sur un
+sujet qui n'en a lui-même rien — l'exemple des assureurs de l'issue. Une
+instruction complète désormais le prompt classique, calibrée pour rester
+suggestive (§12.1) : réservée aux suites concrètes et nettes, silencieuse dans
+le doute plutôt que systématique à chaque réponse.
+
+Auparavant le même jour : **#18 avance** sur la durée des créneaux, son point
+resté ouvert depuis le 3 septembre. Un créneau né d'une todoliste datée posait
+jusqu'ici `endsAt: null` — choix assumé à l'époque, pour ne pas prêter à
+l'utilisateur une durée qu'il n'avait jamais donnée. Il prend désormais la
+même durée que celle que le calendrier simulait déjà à l'affichage pour un
+événement sans fin (une heure) : rien ne change à ce qui se voit, mais le
+créneau porte enfin une fin exploitable. Le parsing des dates relatives, lui,
+reste volontairement confié au modèle plutôt qu'à un parseur déterministe —
+fonctionnel d'après ce suivi, et le sprint ne justifie pas la charge d'un
+second mécanisme pour un gain marginal ; ce point reste donc consigné comme
+dette assumée plutôt que traité.
+
+Auparavant le 4 septembre 2026 : l'onglet Todoliste devient Mes listes, sa vue
+Semaine rejoint le calendrier comme cinquième vue « Todo » (mois complet), et
+un raccourci direct vers l'avis général rejoint la barre latérale.
 
 **Mes listes perd sa vue Semaine, reprise dans le calendrier.** L'onglet
 Todoliste s'appelle désormais Mes listes, et n'a plus qu'une lecture — la
@@ -656,13 +729,13 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                                                                                                                                                                                           |
 | A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer d'une conversation sur un dossier (ajouter ou déplacer, au choix) **et d'un dossier dans un autre**, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                 |
-| A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet Mes listes (une seule lecture, filtrable par dossier, cherchable à la loupe ; la lecture par semaine vit désormais dans le calendrier, vue Todo — mois complet), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Le contenu s'édite comme un texte — une ligne par tâche, deux niveaux d'indentation, réécrit en un appel. Listes groupées par dossier dans l'agenda du calendrier, où « + Tâches » en ouvre une sur le jour affiché. L'assistant propose désormais les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation. Restent la conversion à la demande et l'édition avant validation → #17                              |
-| A.3  | Détection de tâches datées                            |   🟡   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte désormais sur la **liste** et non sur ses lignes : le modèle date la liste qu'il propose, puis une seconde proposition bloque un créneau d'agenda par liste datée. Reste le parsing des dates relatives, laissé au modèle pour l'instant → #18                                                                                             |
+| A.2  | Conversion conversation → todoliste                   |   ✅   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet Mes listes (une seule lecture, filtrable par dossier, cherchable à la loupe ; la lecture par semaine vit désormais dans le calendrier, vue Todo — mois complet), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Le contenu s'édite comme un texte — une ligne par tâche, deux niveaux d'indentation, réécrit en un appel. Listes groupées par dossier dans l'agenda du calendrier, où « + Tâches » en ouvre une sur le jour affiché. L'assistant propose les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation ; l'utilisateur peut aussi la demander (menu contextuel ou message tapé) et corriger les tâches extraites avant validation (#17)                              |
+| A.3  | Détection de tâches datées                            |   ✅   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte sur la **liste** et non sur ses lignes : le modèle date la liste qu'il propose, puis une seconde proposition bloque un créneau d'agenda par liste datée, avec une durée par défaut plutôt que sans fin. Le calcul de date relative du modèle est doublé d'un filet de sécurité déterministe sur les tournures les plus sujettes à erreur — jours de semaine, demain/après-demain, dans N jours/semaines, week-end (#18)                                                                                             |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste — consigne de détection reprise, avec un critère explicite (#19). Une todoliste acceptée rejoint son sous-dossier typé (ACHAT, TODO) quand il existe, au lieu du dossier de projet. Restent PRENDRE RDV — `calendar_events` ne porte aucun dossier — et IDÉE, faute de concept de note dans le produit                |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                                                                                          |
 | A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                                                                                                                                                 |
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                                                                                                                                                                                                                                                                                   |
-| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées — et que le modèle relit au tour suivant, pour ne reproposer ni ce qui a été écarté ni ce qui a été accepté. Quatre natures branchées sur cinq : dossiers de projet, rangement, todolistes, complétion d'une todoliste existante et leurs créneaux. Reste le rendez-vous récurrent (A.11)                            |
+| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées — et que le modèle relit au tour suivant, pour ne reproposer ni ce qui a été écarté ni ce qui a été accepté. Quatre natures branchées sur cinq : dossiers de projet, rangement, todolistes, complétion d'une todoliste existante et leurs créneaux. La consigne des conversations classiques pousse désormais aussi à déduire une suite d'action après coup, pas seulement à repérer un contenu déjà actionnable (#20). Reste le rendez-vous récurrent (A.11)                            |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                                                                                                                                                                                                                     |
 | A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule hors périmètre proposée puis validée par l'utilisateur (et retirée du contexte une fois faite), et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages. Le canal reçoit l'agenda des 7 jours et les dossiers existants — il peut enfin répondre sur le premier de ses trois sujets ; délivrance des rappels → #26 |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                                                                                                                                                                                                                           |
@@ -708,9 +781,8 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Point                                   | Détail                                                                                                                                                                                                                  |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pagination remontante du fil absente    | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                                                           |
-| Rappels du matin non délivrés           | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26, #20)                                                           |
+| Rappels du matin non délivrés           | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26)                                                           |
 | Rendez-vous récurrent non capté         | `suggest_task_list` est désormais traduit et exécuté. `suggest_recurring_event` part toujours en `console.warn` : le modèle est invité à proposer une série et aucune carte n'apparaît. Raccordement à faire (→ A.11)   |
-| Créneaux posés à l'heure de l'échéance  | Un créneau reprend le `dueAt` de sa liste, sans durée : le calendrier lui en donne une implicite à l'affichage. Une échéance déduite d'une conversation dit quand, pas combien de temps — la durée réelle relève de #18 |
 | RDV de projet non rattaché à PRENDRE RDV | `calendar_events` ne porte aucun `folder_id`, contrairement à `task_lists` : un rendez-vous créé depuis un projet ne peut pas rejoindre son sous-dossier typé comme le font déjà les todolistes vers ACHAT et TODO (A.4). Demanderait une migration, écartée pour l'itération de #19 |
 | Sauvegarde de liste en écrasement       | `PUT /tasks/:id/items` réécrit la liste entière depuis ce que l'éditeur tient. Deux appareils ouverts sur la même liste se recouvrent donc l'un l'autre — le dernier à écrire gagne. Sans effet à un seul utilisateur, à revoir si l'édition partagée arrive       |
 | Séries récurrentes non déployées        | Une `rrule` se saisit et se stocke, mais les occurrences ne sont pas calculées : l'événement n'apparaît qu'à son premier créneau. La dépendance `rrule` est déjà au `package.json` de l'API (A.11)                      |

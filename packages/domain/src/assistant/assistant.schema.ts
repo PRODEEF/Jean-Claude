@@ -126,24 +126,6 @@ export const assignFoldersPayloadSchema = z
 export type AssignFoldersPayload = z.infer<typeof assignFoldersPayloadSchema>;
 
 /**
- * Réponse de l'utilisateur à une proposition (§12.1).
- *
- * `folderSelection` porte les dossiers cochés dans la carte de rangement :
- * une conversation appartient à plusieurs dossiers, et l'utilisateur doit
- * pouvoir n'en retenir qu'une partie sans refuser toute la proposition
- * (§5.2, A.1). Même forme que la charge utile, parce que c'en est un
- * sous-ensemble : le serveur n'applique que ce qui avait été proposé, jamais
- * un dossier venu du client. Absente, la proposition s'applique en entier —
- * le cas des natures qui n'ont rien à cocher.
- */
-export const resolveSuggestionSchema = z.object({
-  action: z.enum(["accept", "dismiss"]),
-  folderSelection: assignFoldersPayloadSchema.optional(),
-});
-
-export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
-
-/**
  * Charge utile d'une suggestion `create_task_list` (§12.1, A.2).
  *
  * Plusieurs listes et non une seule : l'exemple du jardin en produit deux —
@@ -175,6 +157,32 @@ export const createTaskListsPayloadSchema = z.object({
 });
 
 export type CreateTaskListsPayload = z.infer<typeof createTaskListsPayloadSchema>;
+
+/**
+ * Réponse de l'utilisateur à une proposition (§12.1).
+ *
+ * `folderSelection` porte les dossiers cochés dans la carte de rangement :
+ * une conversation appartient à plusieurs dossiers, et l'utilisateur doit
+ * pouvoir n'en retenir qu'une partie sans refuser toute la proposition
+ * (§5.2, A.1). Même forme que la charge utile, parce que c'en est un
+ * sous-ensemble : le serveur n'applique que ce qui avait été proposé, jamais
+ * un dossier venu du client. Absente, la proposition s'applique en entier —
+ * le cas des natures qui n'ont rien à cocher.
+ *
+ * `taskListEdits` porte les listes relues et corrigées avant validation
+ * (§13.4.1, #17) : contrairement au rangement, ce n'est pas un sous-ensemble
+ * de la proposition — l'utilisateur peut y corriger un titre, pas seulement
+ * en écarter une partie. Le même schéma que la proposition initiale suffit à
+ * le border : ce n'est ni plus ni moins que ce qu'accepterait la création
+ * d'une todoliste ordinaire.
+ */
+export const resolveSuggestionSchema = z.object({
+  action: z.enum(["accept", "dismiss"]),
+  folderSelection: assignFoldersPayloadSchema.optional(),
+  taskListEdits: createTaskListsPayloadSchema.optional(),
+});
+
+export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
 
 /**
  * Charge utile d'une suggestion `add_task_list_items` (§12.1, A.2).

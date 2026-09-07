@@ -1074,6 +1074,22 @@ describe("ConversationService", () => {
       expect(repo.appendMessage).toHaveBeenCalledTimes(2);
     });
 
+    it("pousse le modèle à proposer une action après coup, même hors sujet actionnable explicite (A.8)", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm), {
+        content: "Il me faut du terreau et des bulbes.",
+        inputMode: "text",
+      });
+
+      // Le trou identifié dans #20 : le modèle ne fait alors que repérer du
+      // contenu déjà actionnable, jamais déduire une suite après avoir
+      // répondu sur un sujet qui n'en a lui-même rien d'actionnable.
+      expect(lastRequest(llm).system ?? "").toContain(
+        "Prends aussi les devants une fois la réponse donnée",
+      );
+    });
+
     it("ne propose pas de compléter une liste quand le fil n'en a produit aucune", async () => {
       const llm = makeLlm();
 
@@ -2232,6 +2248,211 @@ describe("ConversationService", () => {
         ),
       ).rejects.toMatchObject({ status: 404 });
       expect(repo.setFolders).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("extractTaskList (§13.4.1, #17)", () => {
+    it("convertit l'historique du fil en todoliste, sans rien écrire dans la conversation", async () => {
+      const repo = makeRepository();
+      const created = makeSuggestion({
+        kind: "create_task_list",
+        payload: { lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }] },
+      });
+      const suggestions = makeSuggestionRepository({ create: jest.fn().mockResolvedValue(created) });
+      const llm = makeLlm([], [
+        {
+          id: "call-1",
+          name: "suggest_task_list",
+          input: {
+            message: "Je t'organise ça ?",
+            lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }],
+          },
+        },
+      ]);
+
+      const suggestion = await makeService(repo, llm, suggestions).extractTaskList(
+        "conv-1",
+        USER,
+        TOKEN,
+      );
+
+      expect(suggestion).toBe(created);
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ conversationId: "conv-1", kind: "create_task_list" }),
+        TOKEN,
+      );
+      // Un appel dédié, hors du tour de dialogue ordinaire : rien n'est écrit
+      // dans le fil, contrairement à un envoi de message classique.
+      expect(repo.appendMessage).not.toHaveBeenCalled();
+    });
+
+    it("ne propose que l'outil de conversion au modèle, pas le jeu habituel", async () => {
+      const llm = makeLlm();
+
+      await expect(
+        makeService(makeRepository(), llm).extractTaskList("conv-1", USER, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+
+      // Sans appel exploitable, il n'y a rien à capturer : le geste explicite
+      // n'a pas plus de garantie qu'une proposition spontanée.
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toEqual(["suggest_task_list"]);
+    });
+
+    it("refuse de convertir le canal permanent", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+
+      await expect(
+        makeService(repo).extractTaskList("conv-1", USER, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+
+    it("refuse quand la détection de todolistes est désactivée dans les réglages (A.10)", async () => {
+      const users = makeUserRepository({ proactiveTaskDetection: false });
+
+      await expect(
+        makeService(
+          makeRepository(),
+          makeLlm(),
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          users,
+        ).extractTaskList("conv-1", USER, TOKEN),
+      ).rejects.toMatchObject({ status: 403 });
+    });
+
+    it("refuse une conversation sans historique exploitable", async () => {
+      const repo = makeRepository({ listMessages: emptyThread() });
+
+      await expect(
+        makeService(repo).extractTaskList("conv-1", USER, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  describe("correction des échéances relatives (A.3, #18)", () => {
+    it("remplace l'échéance du modèle par le calcul déterministe quand l'expression est reconnue", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  // Date fautive du modèle : le serveur doit la corriger.
+                  // NOW est un mercredi (2 septembre) : le prochain vendredi
+                  // est le 4, minuit Paris.
+                  dueAt: "2026-09-01T00:00:00.000Z",
+                  dueAtText: "vendredi",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain pour vendredi.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ title: "Courses", dueAt: "2026-09-03T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("laisse l'échéance du modèle inchangée quand l'expression n'est pas reconnue", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  dueAt: "2026-09-15T00:00:00.000Z",
+                  dueAtText: "le 15 septembre",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain pour le 15.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-15T00:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("garde le calcul du modèle quand la liste ne porte pas d'expression source", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  dueAt: "2026-09-10T00:00:00.000Z",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-10T00:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
     });
   });
 });

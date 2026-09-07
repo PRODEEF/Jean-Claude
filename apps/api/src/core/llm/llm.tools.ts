@@ -48,6 +48,17 @@ export const SUGGEST_TASK_LIST: LlmTool = {
                 "Sans heure précise, viser minuit — c'est ce qui signifie « dans la " +
                 "journée » plutôt qu'un créneau décidé.",
             },
+            dueAtText: {
+              type: "string",
+              description:
+                "Si `dueAt` est renseigné à partir d'une expression relative (« lundi » " +
+                "« vendredi prochain », « dans deux semaines », « demain », « ce week-end », " +
+                "« avant le week-end »), recopier cette expression telle quelle — quelques " +
+                "mots, pas la phrase entière. Le serveur la relit pour fiabiliser le calcul " +
+                "de date, qu'un modèle de langage fait parfois mal (confondre le jour de " +
+                "cette semaine avec celui de la prochaine). Omettre si l'échéance vient " +
+                "d'une date absolue (« le 15 septembre ») ou d'une heure précise.",
+            },
             items: {
               type: "array",
               items: {

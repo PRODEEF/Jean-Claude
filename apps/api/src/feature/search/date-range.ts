@@ -1,4 +1,5 @@
 import type { DateShortcut } from "@jc/domain";
+import { fromWall, shiftDays, toWall } from "../../core/timezone.js";
 
 /** Bornes en instants UTC : `from` inclusive, `to` exclusive. */
 export type DateRange = { from?: string; to?: string };
@@ -62,10 +63,6 @@ function startOfWeek(year: number, month: number, day: number): number {
   return Date.UTC(year, month, day - ((weekday + 6) % 7));
 }
 
-function shiftDays(wallMs: number, days: number): number {
-  return wallMs + days * 86_400_000;
-}
-
 function bounds(fromWallMs: number, toWallMs: number, timeZone: string): DateRange {
   return {
     from: fromWall(fromWallMs, timeZone).toISOString(),
@@ -76,35 +73,4 @@ function bounds(fromWallMs: number, toWallMs: number, timeZone: string): DateRan
 function startOfDay(calendarDate: string, timeZone: string, plusDays = 0): string {
   const [year, month, day] = calendarDate.split("-").map(Number) as [number, number, number];
   return fromWall(Date.UTC(year, month - 1, day + plusDays), timeZone).toISOString();
-}
-
-/**
- * Décalage du fuseau à un instant donné, en millisecondes.
- *
- * Obtenu en relisant l'heure murale rendue par `Intl` comme si elle était en
- * UTC : cela évite d'embarquer une table de fuseaux, `Intl` portant déjà celle
- * du système.
- */
-function offsetAt(instantMs: number, timeZone: string): number {
-  const instant = new Date(instantMs);
-  const zoned = new Date(instant.toLocaleString("en-US", { timeZone }));
-  const utc = new Date(instant.toLocaleString("en-US", { timeZone: "UTC" }));
-  return zoned.getTime() - utc.getTime();
-}
-
-/** Heure murale du fuseau, portée par un `Date` qu'on lit ensuite en UTC. */
-function toWall(instant: Date, timeZone: string): Date {
-  return new Date(instant.getTime() + offsetAt(instant.getTime(), timeZone));
-}
-
-/**
- * Opération inverse : de l'heure murale vers l'instant UTC correspondant.
- *
- * Le décalage est estimé une première fois puis repris sur l'instant obtenu.
- * Sans cette seconde passe, une borne posée le week-end d'un changement
- * d'heure tomberait une heure à côté.
- */
-function fromWall(wallMs: number, timeZone: string): Date {
-  const estimate = wallMs - offsetAt(wallMs, timeZone);
-  return new Date(wallMs - offsetAt(estimate, timeZone));
 }

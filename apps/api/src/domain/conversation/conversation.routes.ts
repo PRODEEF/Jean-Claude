@@ -152,6 +152,22 @@ export const conversationRoutes = new Hono<AuthEnv>()
   })
 
   /**
+   * Convertit la conversation en todoliste à la demande de l'utilisateur,
+   * plutôt que d'attendre une suggestion spontanée (A.2, #17).
+   *
+   * `201` comme toute création : le résultat est une suggestion en attente,
+   * jamais les todolistes elles-mêmes — l'assistant propose, il n'exécute
+   * pas (§12.1).
+   */
+  .post("/:id/extract-task-list", idParam, rateLimit, async (c) => {
+    const user = c.get("user");
+    return c.json(
+      await service.extractTaskList(c.req.valid("param").id, user.id, user.accessToken),
+      201,
+    );
+  })
+
+  /**
    * Ouvre la conversation dédiée que le canal permanent a proposée (A.10).
    *
    * `201` : la validation de l'utilisateur crée bien une conversation, et c'est

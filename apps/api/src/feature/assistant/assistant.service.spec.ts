@@ -955,6 +955,75 @@ describe("AssistantService", () => {
       expect(resolved.taskLists).toEqual([]);
       expect(tasks.createList).not.toHaveBeenCalled();
     });
+
+    it("crée les listes telles que corrigées avant validation, plutôt que la proposition d'origine (#17)", async () => {
+      const tasks = makeTaskRepository();
+
+      const resolved = await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(
+        USER,
+        "sug-1",
+        {
+          action: "accept",
+          taskListEdits: {
+            lists: [
+              {
+                title: "Achats jardin",
+                kind: "shopping",
+                dueAt: null,
+                items: [{ title: "Terreau" }, { title: "Gants" }],
+              },
+            ],
+          },
+        },
+        TOKEN,
+      );
+
+      // La liste des travaux, écartée par l'édition, n'est pas créée : c'est ce
+      // que l'utilisateur a retenu qui compte, pas ce que le modèle proposait.
+      expect(createdLists(tasks).map((list) => list.title)).toEqual(["Achats jardin"]);
+      expect(resolved.taskLists).toHaveLength(1);
+      const created = (await tasks.findAll(TOKEN, { limit: 100 })).items[0];
+      expect(created?.tasks.map((task) => task.title)).toEqual(["Terreau", "Gants"]);
+    });
+
+    it("laisse dans le fil la trace de ce qui a réellement été créé, édition comprise (#17)", async () => {
+      const suggestions = makeSuggestionStore(makeJardinSuggestion());
+
+      await makeService(suggestions, makeFolderRepository(), makeConversationRepository()).resolve(
+        USER,
+        "sug-1",
+        {
+          action: "accept",
+          taskListEdits: {
+            lists: [
+              {
+                title: "Courses de printemps",
+                kind: "shopping",
+                dueAt: null,
+                items: [{ title: "Terreau" }],
+              },
+            ],
+          },
+        },
+        TOKEN,
+      );
+
+      expect(suggestions.markResolved).toHaveBeenCalledWith(
+        "sug-1",
+        "accepted",
+        TOKEN,
+        expect.objectContaining({
+          lists: [
+            { title: "Courses de printemps", kind: "shopping", dueAt: null, items: [{ title: "Terreau" }] },
+          ],
+        }),
+      );
+    });
   });
 
   describe("acceptation d'une complétion de liste (§12.1, A.2)", () => {
@@ -1068,7 +1137,7 @@ describe("AssistantService", () => {
       return { second, tasks, events };
     }
 
-    it("pose un créneau par liste datée, sans heure de fin inventée", async () => {
+    it("pose un créneau par liste datée, sur une heure par défaut faute d'en connaître une réelle", async () => {
       const { second, events } = await acceptBothCards();
 
       // Un seul créneau pour les deux tâches du jardin : c'est la liste qui
@@ -1076,7 +1145,12 @@ describe("AssistantService", () => {
       expect(second.events).toHaveLength(1);
       expect(events.create).toHaveBeenCalledWith(
         USER,
-        { title: "Travaux jardin", startsAt: DESHERBAGE, endsAt: null, allDay: false },
+        {
+          title: "Travaux jardin",
+          startsAt: DESHERBAGE,
+          endsAt: "2026-09-07T10:00:00.000Z",
+          allDay: false,
+        },
         TOKEN,
       );
     });

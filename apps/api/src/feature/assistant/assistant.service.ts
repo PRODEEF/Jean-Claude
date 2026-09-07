@@ -6,6 +6,7 @@ import {
   scheduleListsPayloadSchema,
   type AssignFoldersPayload,
   type CalendarEvent,
+  type CreateTaskListsPayload,
   type Folder,
   type FolderPurpose,
   type FolderTreeNode,
@@ -46,6 +47,16 @@ export type ResolvedSuggestion = {
 type Applied = Omit<ResolvedSuggestion, "suggestion">;
 
 const SCOPE = "assistant.service";
+
+/**
+ * Durée posée aux créneaux nés d'une todoliste datée, faute d'en connaître une
+ * réelle (A.3, #18). Le calendrier affichait déjà cette même durée à titre
+ * indicatif pour un événement sans fin (`IMPLICIT_DURATION_MINUTES`,
+ * apps/app/src/features/calendar/lib/calendar-dates.ts) : la poser pour de
+ * vrai ne change donc rien à ce que l'utilisateur voit, mais donne au créneau
+ * une fin exploitable (rappel, superposition avec un autre rendez-vous).
+ */
+const DEFAULT_TASK_EVENT_DURATION_MINUTES = 60;
 
 /** Un refus, ou une proposition qui n'a rien créé. */
 function nothingApplied(): Applied {
@@ -96,19 +107,22 @@ export class AssistantService {
       };
     }
 
-    // L'utilisateur a pu décocher des dossiers avant d'accepter : c'est le
-    // rangement retenu qui s'applique, et c'est lui qui est réécrit dans la
-    // proposition — la trace laissée dans le fil doit dire ce qui a été fait.
+    // L'utilisateur a pu décocher des dossiers, ou corriger une todoliste,
+    // avant d'accepter : c'est ce qu'il a retenu qui s'applique, et c'est lui
+    // qui est réécrit dans la proposition — la trace laissée dans le fil doit
+    // dire ce qui a été fait.
     const retained = retainedFolders(suggestion, input.folderSelection);
+    const edited = editedTaskLists(suggestion, input.taskListEdits);
+    const payload = retained ?? edited;
     const applied = await this.apply(
       userId,
-      retained ? { ...suggestion, payload: retained } : suggestion,
+      payload ? { ...suggestion, payload } : suggestion,
       accessToken,
     );
 
     return {
       ...applied,
-      suggestion: await this.suggestions.markResolved(id, "accepted", accessToken, retained),
+      suggestion: await this.suggestions.markResolved(id, "accepted", accessToken, payload),
     };
   }
 
@@ -278,10 +292,9 @@ export class AssistantService {
    * et poser autant d'événements qu'elle a d'items remplirait la journée de
    * doublons pour une seule chose à faire.
    *
-   * L'événement n'a pas de fin : une échéance déduite d'une conversation dit
-   * quand, pas combien de temps. Le calendrier lui donne déjà une durée
-   * implicite à l'affichage — en inventer une ici la ferait passer pour une
-   * information venue de l'utilisateur.
+   * Une échéance déduite d'une conversation dit quand, pas combien de temps :
+   * faute de mieux, le créneau prend la durée par défaut plutôt que de rester
+   * sans fin (#18, A.3).
    */
   private async scheduleTasks(
     userId: string,
@@ -300,7 +313,12 @@ export class AssistantService {
     for (const entry of payload.data.lists) {
       const event = await this.calendar.create(
         userId,
-        { title: entry.title, startsAt: entry.dueAt, endsAt: null, allDay: false },
+        {
+          title: entry.title,
+          startsAt: entry.dueAt,
+          endsAt: addMinutes(entry.dueAt, DEFAULT_TASK_EVENT_DURATION_MINUTES),
+          allDay: false,
+        },
         accessToken,
       );
 
@@ -492,6 +510,27 @@ function retainedFolders(
   }
 
   return retained;
+}
+
+/** Instant ISO 8601 décalé du nombre de minutes donné. */
+function addMinutes(iso: string, minutes: number): string {
+  return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
+}
+
+/**
+ * Listes effectivement retenues par l'utilisateur, corrigées avant validation
+ * (§13.4.1, #17), ou `undefined` s'il n'y a rien à substituer.
+ *
+ * Contrairement à `retainedFolders`, ce n'est pas une intersection avec la
+ * proposition d'origine : l'utilisateur peut y corriger un titre que le
+ * modèle a mal transcrit, pas seulement en écarter une partie. Le schéma de
+ * la charge utile reste le même garde-fou que pour une création ordinaire.
+ */
+function editedTaskLists(
+  suggestion: Suggestion,
+  edits: CreateTaskListsPayload | undefined,
+): CreateTaskListsPayload | undefined {
+  return suggestion.kind === "create_task_list" ? edits : undefined;
 }
 
 /**
