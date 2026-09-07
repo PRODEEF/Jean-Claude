@@ -7,11 +7,35 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **7 septembre 2026** — les issues #17, #18 et #20
-avancent : conversion d'une conversation en todoliste à la demande, avec
-édition avant validation ; durée par défaut sur les créneaux nés d'une
-échéance ; et l'assistant sait prendre les devants même hors sujet actionnable
-explicite.
+Dernière mise à jour : **7 septembre 2026** — l'issue #18 se referme à son
+tour : le parsing des dates relatives passe d'un calcul confié au seul modèle
+à un filet de sécurité déterministe sur les tournures les plus sujettes à
+erreur.
+
+**#18 est close.** `chrono-node`, la bibliothèque candidate évidente pour ce
+point, a été testée et rejetée : son support français calcule un jour de la
+semaine déjà passé au lieu du prochain (« vendredi » un lundi y renvoie le
+vendredi précédent), et ne reconnaît aucun week-end — moins fiable que le
+modèle lui-même sur exactement les cas qui comptent.
+
+`core/relative-date.ts` couvre à la place un nombre restreint de tournures
+fréquentes et non ambiguës (jours de semaine — toujours la prochaine
+occurrence, jamais celle déjà passée —, demain/après-demain, dans N
+jours/semaines, ce/le week-end, avant le week-end), en filet de sécurité et
+non en remplacement : `suggest_task_list` gagne un champ `dueAtText` où le
+modèle recopie l'expression source, et le serveur ne corrige `dueAt` que si
+le motif est reconnu avec certitude — sinon le calcul du modèle reste
+inchangé, sans régression possible sur ce qu'il faisait déjà correctement.
+Les conversions de fuseau horaire (DST compris) sortent au passage de
+`feature/search/date-range.ts`, qui en avait besoin seul jusqu'ici, vers
+`core/timezone.ts` — un second appelant justifiait de ne plus les dupliquer.
+
+Auparavant le même jour : les issues #17 et #20 se referment également —
+conversion d'une conversation en todoliste à la demande, avec édition avant
+validation ; et l'assistant sait prendre les devants même hors sujet
+actionnable explicite. La durée par défaut sur les créneaux nés d'une
+échéance, elle, faisait partie du premier lot de #18 — le point qui restait
+ouvert ce jour-là.
 
 **#17 est close.** Deux points restaient ouverts depuis le suivi du 2
 septembre : la conversion à la demande, et l'édition avant validation. Le
@@ -657,7 +681,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                                                                                                                                                                                           |
 | A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer d'une conversation sur un dossier (ajouter ou déplacer, au choix) **et d'un dossier dans un autre**, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                 |
 | A.2  | Conversion conversation → todoliste                   |   ✅   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet Mes listes (une seule lecture, filtrable par dossier, cherchable à la loupe ; la lecture par semaine vit désormais dans le calendrier, vue Todo — mois complet), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Le contenu s'édite comme un texte — une ligne par tâche, deux niveaux d'indentation, réécrit en un appel. Listes groupées par dossier dans l'agenda du calendrier, où « + Tâches » en ouvre une sur le jour affiché. L'assistant propose les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation ; l'utilisateur peut aussi la demander (menu contextuel ou message tapé) et corriger les tâches extraites avant validation (#17)                              |
-| A.3  | Détection de tâches datées                            |   🟡   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte sur la **liste** et non sur ses lignes : le modèle date la liste qu'il propose, puis une seconde proposition bloque un créneau d'agenda par liste datée, posé depuis peu avec une durée par défaut plutôt que sans fin (#18). Reste le parsing des dates relatives, laissé au modèle par choix assumé plutôt qu'à un parseur déterministe dédié                                                                                             |
+| A.3  | Détection de tâches datées                            |   ✅   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte sur la **liste** et non sur ses lignes : le modèle date la liste qu'il propose, puis une seconde proposition bloque un créneau d'agenda par liste datée, avec une durée par défaut plutôt que sans fin. Le calcul de date relative du modèle est doublé d'un filet de sécurité déterministe sur les tournures les plus sujettes à erreur — jours de semaine, demain/après-demain, dans N jours/semaines, week-end (#18)                                                                                             |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste — consigne de détection reprise, avec un critère explicite (#19). Une todoliste acceptée rejoint son sous-dossier typé (ACHAT, TODO) quand il existe, au lieu du dossier de projet. Restent PRENDRE RDV — `calendar_events` ne porte aucun dossier — et IDÉE, faute de concept de note dans le produit                |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                                                                                          |
 | A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                                                                                                                                                 |
