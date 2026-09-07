@@ -86,7 +86,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const assistantName = useAssistantName();
-  const { groups, unfiled, all, channel, isLoading, error } = useSidebarData();
+  const { groups, all, channel, isLoading, error } = useSidebarData();
   const [deleting, setDeleting] = useState<Folder | null>(null);
   const [menuTarget, setMenuTarget] = useState<FolderMenuTarget | null>(null);
   /** Dossier en cours de nommage — création ou renommage, `null` si aucun. */
@@ -274,35 +274,14 @@ export function AppSidebar({
           <FolderNameRow target={naming} onDone={() => setNaming(null)} />
         ) : null}
 
-        {unfiled.length > 0 ? (
-          <>
-            <SectionLabel>Sans dossier</SectionLabel>
-            {unfiled.map((conversation) =>
-              renaming?.id === conversation.id ? (
-                <ConversationNameRow
-                  key={conversation.id}
-                  conversation={conversation}
-                  onDone={() => setRenaming(null)}
-                />
-              ) : (
-                <ConversationRow
-                  key={conversation.id}
-                  conversation={conversation}
-                  pathname={pathname}
-                  onOpen={go}
-                  onMenu={setConversationMenu}
-                />
-              ),
-            )}
-          </>
-        ) : null}
-
         {/* Discussions et tâches : le canal permanent (A.10), non déplaçable —
             il n'est pas une conversation parmi d'autres — puis toutes les
             conversations à plat, y compris celles déjà rangées dans un
             dossier. Ce n'est pas une duplication : la même conversation reste
             visible depuis son dossier, ci-dessus, et depuis cette vue
-            chronologique (§5.2, A.1). */}
+            chronologique (§5.2, A.1). Les conversations non rangées, elles,
+            n'apparaissent plus qu'ici — une section « Sans dossier » à part
+            aurait fait doublon avec cette liste, qui les contient déjà. */}
         <SectionLabel>Discussions et tâches</SectionLabel>
 
         <Button
