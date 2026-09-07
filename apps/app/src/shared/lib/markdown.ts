@@ -287,3 +287,58 @@ export function parseInline(source: string): InlineNode[] {
   if (rest.length > 0) nodes.push({ type: "text", value: rest });
   return nodes;
 }
+
+/**
+ * Aplatit un Markdown en texte continu, pour la synthèse vocale (§12.3).
+ *
+ * Lu tel quel, le Markdown ferait prononcer les astérisques d'un gras et
+ * l'URL entière d'un lien : seul le texte porté par chaque nœud compte ici,
+ * jamais sa syntaxe.
+ */
+export function markdownToSpeech(source: string): string {
+  return parseMarkdown(source)
+    .map(blockToSpeech)
+    .filter((text) => text.length > 0)
+    .join(". ");
+}
+
+function blockToSpeech(block: MarkdownBlock): string {
+  switch (block.type) {
+    case "paragraph":
+    case "heading":
+      return inlineToSpeech(block.content);
+    case "list":
+      return block.items
+        .map((item) =>
+          [inlineToSpeech(item.content), ...item.children.map(blockToSpeech)].join(". "),
+        )
+        .join(". ");
+    case "codeBlock":
+      return block.value;
+    case "quote":
+      return block.blocks.map(blockToSpeech).join(". ");
+    case "table":
+      return [block.header, ...block.rows]
+        .map((row) => row.map(inlineToSpeech).join(", "))
+        .join(". ");
+    case "rule":
+      return "";
+  }
+}
+
+function inlineToSpeech(nodes: InlineNode[]): string {
+  return nodes
+    .map((node) => {
+      switch (node.type) {
+        case "text":
+        case "code":
+          return node.value;
+        case "strong":
+        case "emphasis":
+        case "strike":
+        case "link":
+          return inlineToSpeech(node.children);
+      }
+    })
+    .join("");
+}

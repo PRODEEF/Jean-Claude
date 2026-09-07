@@ -21,6 +21,7 @@ import { Markdown } from "@/shared/ui/Markdown";
 import { contentColumn, READING_MAX_WIDTH } from "@/shared/ui/screen-shell";
 import { Composer } from "./Composer";
 import { THREAD_PAGE_SIZE, useConversationThread } from "./hooks/use-conversation-thread";
+import { useSpeech } from "./hooks/use-speech";
 import { useSuggestions } from "./hooks/use-suggestions";
 import { MessageRow } from "./MessageRow";
 import { QuestionCard } from "./QuestionCard";
@@ -82,6 +83,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
   const { messages, send, submit, edit, retry, stop, switchAside, streamingText, pendingUserText } =
     useConversationThread(conversationId, goToDedicatedConversation, restoreDraft);
   const { pending, resolved, resolve } = useSuggestions(conversationId);
+  const { speakingId, toggle: toggleSpeech } = useSpeech();
 
   const failure = messages.error ?? send.error ?? resolve.error ?? switchAside.error;
 
@@ -170,6 +172,8 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
             onRetry={retry}
             onEdit={edit}
             busy={send.isPending}
+            speaking={speakingId === message.id}
+            onToggleSpeech={toggleSpeech}
           />
 
           {/* Le canal permanent propose, l'utilisateur valide (§12.1, A.10). La
@@ -190,7 +194,15 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
         </>
       );
     },
-    [retry, edit, send.isPending, switchAside.mutate, switchAside.isPending],
+    [
+      retry,
+      edit,
+      send.isPending,
+      switchAside.mutate,
+      switchAside.isPending,
+      speakingId,
+      toggleSpeech,
+    ],
   );
 
   return (

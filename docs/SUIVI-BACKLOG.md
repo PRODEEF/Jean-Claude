@@ -7,6 +7,27 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **7 septembre 2026** — les réponses de l'assistant
+peuvent désormais s'écouter à voix haute, une todoliste datée pose désormais
+un créneau journée entière plutôt qu'un rendez-vous à heure fixe, pastille de
+non-lu sur les conversations, réglage « bandeau uni », section « Discussions
+et tâches » dans la barre latérale, trois ajustements du calendrier (clic sur
+un jour, détail d'un événement, détail d'une todoliste), et les issues #17,
+#18 et #20 qui se referment.
+
+**Les réponses de l'assistant peuvent désormais s'écouter à voix haute.**
+Premier étage de l'issue #25 (§12.3, A.12) : un bouton « Écouter » apparaît au
+survol de chaque réponse dans `MessageRow`, à côté de Copier — le geste manuel
+plutôt qu'une lecture automatique, pour rester sur le périmètre le plus simple
+avant d'attaquer la dictée. `useSpeech` (`features/conversation/hooks`) pilote
+`expo-speech` : un seul message se lit à la fois, démarrer une lecture coupe la
+précédente au lieu de l'empiler en file. Le Markdown est aplati en texte
+continu avant d'être donné à la synthèse (`markdownToSpeech`, dans
+`shared/lib/markdown.ts`) — lu tel quel, il ferait prononcer les astérisques
+d'un gras et l'URL entière d'un lien. Reste la dictée (STT) : le service
+(natif ou tiers) n'est pas tranché avec Antonin, et le natif sert de défaut
+pour ne pas bloquer la suite.
+
 Dernière mise à jour : **7 septembre 2026** — une todoliste datée pose
 désormais un créneau journée entière plutôt qu'un rendez-vous à heure fixe,
 pastille de non-lu sur les conversations, réglage « bandeau uni », section
@@ -785,7 +806,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                                                                                                                                                                                                                     |
 | A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule hors périmètre proposée puis validée par l'utilisateur (et retirée du contexte une fois faite), et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages. Le canal reçoit l'agenda des 7 jours et les dossiers existants — il peut enfin répondre sur le premier de ses trois sujets ; délivrance des rappels → #26 |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                                                                                                                                                                                                                           |
-| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                                                                                                                                                                                                                                                                           |
+| A.12 | Interaction vocale bout en bout                       |   🟡   | Lecture à voix haute des réponses : bouton « Écouter » sur chaque message de l'assistant (`expo-speech`, natif). Reste la dictée (STT), prévue sur le même service natif, sous réserve de confirmation avec Antonin.                                                                                                                                                                                                               |
 | A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte, vocal renvoyé à #25                                                                                                                                                                                                                                                                                                                                                                              |
 
 ---
