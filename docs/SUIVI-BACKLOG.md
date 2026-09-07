@@ -34,6 +34,30 @@ systématiquement l'heure à minuit dans le fuseau du profil, que l'expression
 source soit reconnue ou non ; `extractTaskList` (geste explicite
 « convertis en todoliste ») passe maintenant par ce même filet, qu'il
 court-circuitait jusqu'ici.
+Dernière mise à jour : **7 septembre 2026** — le rangement d'une conversation
+peut désormais être revu après coup et un nouveau dossier peut naître en
+sous-dossier d'un dossier existant, pastille de non-lu sur les conversations,
+réglage « bandeau uni », section « Discussions et tâches » dans la barre
+latérale, trois ajustements du calendrier (clic sur un jour, détail d'un
+événement, détail d'une todoliste), et les issues #17, #18 et #20 qui se
+referment.
+
+**Le rangement d'une conversation peut être revu après coup, et un nouveau
+dossier peut naître comme sous-dossier d'un dossier existant.** Signalé en
+retour d'un rangement fait en conditions réelles : demander explicitement un
+sous-dossier ou un déplacement n'aboutissait qu'à une promesse non tenue de
+l'assistant. En cause, `suggest_folders` disparaissait du jeu d'outils dès la
+conversation classée une première fois — l'outil reste désormais disponible
+tant que `folderOrganization` est actif, mais la consigne l'engage à ne s'en
+resservir que si l'utilisateur le demande explicitement (proposer de soi-même
+de revoir un rangement déjà fait resterait intrusif, §12.1) et lui indique le
+rangement actuel, puisque l'appel remplace l'ensemble plutôt que d'y ajouter
+(§5.2, A.1). Le nouveau dossier proposé (`newFolders`, qui remplace
+`newFolderNames`) porte en outre un `parent` optionnel, vérifié comme
+n'importe quel dossier repris dans la proposition (identifiant et nom
+recopiés de la même ligne), pour se poser en sous-dossier plutôt qu'à la
+racine — un parent halluciné ou supprimé entre-temps n'empêche pas la
+création, le dossier naît alors à la racine.
 
 **Pastille de non-lu sur les conversations**, hors cahier des charges. Un
 compteur de messages assistant reçus depuis la dernière ouverture s'affiche à

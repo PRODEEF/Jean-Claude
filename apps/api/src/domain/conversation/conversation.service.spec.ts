@@ -1748,7 +1748,7 @@ describe("ConversationService", () => {
       expect(system).toContain("`suggest_folders`");
     });
 
-    it("n'offre pas de rangement à un fil déjà classé", async () => {
+    it("continue d'offrir le rangement à un fil déjà classé, pour le cas où on demande de le revoir", async () => {
       const llm = makeLlm();
       const repo = makeRepository({
         findById: jest.fn().mockResolvedValue(makeConversation({ folderIds: ["folder-1"] })),
@@ -1756,7 +1756,28 @@ describe("ConversationService", () => {
 
       await drain(makeService(repo, llm));
 
-      expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_folders");
+      // Sinon « déplace-la plutôt dans Documents » n'aurait aucun outil à sa
+      // portée une fois le premier rangement fait (§12.1).
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_folders");
+    });
+
+    it("dit au modèle le rangement actuel d'un fil déjà classé, et de n'y revenir que sur demande explicite", async () => {
+      const llm = makeLlm();
+      const folders = makeFolderRepository([
+        makeFolder({ id: "folder-1", name: "Projet professionnel" }),
+      ]);
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ folderIds: ["folder-1"] })),
+      });
+
+      await drain(makeService(repo, llm, makeSuggestionRepository(), folders));
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("Elle est déjà rangée dans Projet professionnel.");
+      expect(system).toContain("que si l'utilisateur demande explicitement");
+      // L'outil remplace le rangement en entier : le modèle doit savoir qu'un
+      // dossier actuel omis de l'appel en est retiré.
+      expect(system).toContain("un dossier actuel absent de l'appel en");
     });
 
     it("ne relance pas un rangement tant que la proposition précédente attend", async () => {
@@ -1781,12 +1802,12 @@ describe("ConversationService", () => {
     const TAXES = "11111111-1111-4111-8111-111111111111";
     const OTHER = "22222222-2222-4222-8222-222222222222";
 
-    /** Le rangement tel que le modèle le rend, dossiers existants compris. */
-    function filing(existingFolders: unknown, newFolderNames: string[] = []): LlmToolCall {
+    /** Le rangement tel que le modèle le rend, dossiers existants et nouveaux compris. */
+    function filing(existingFolders: unknown, newFolders: unknown[] = []): LlmToolCall {
       return {
         id: "call-1",
         name: "suggest_folders",
-        input: { message: "Je range ça où il faut ?", existingFolders, newFolderNames },
+        input: { message: "Je range ça où il faut ?", existingFolders, newFolders },
       };
     }
 
@@ -1852,7 +1873,7 @@ describe("ConversationService", () => {
       const folders = makeFolderRepository([makeFolder({ id: TAXES, name: "Impôts" })]);
       const llm = makeLlm(
         ["Je te range ça."],
-        [filing([{ id: OTHER, name: "Impôts" }], ["Déclarations"])],
+        [filing([{ id: OTHER, name: "Impôts" }], [{ name: "Déclarations" }])],
       );
 
       await drain(makeService(makeRepository(), llm, suggestions, folders));
@@ -1861,7 +1882,39 @@ describe("ConversationService", () => {
       // Le dossier neuf survit : perdre tout le rangement pour une ligne
       // fautive coûterait plus cher que de l'écarter.
       expect(payload["existingFolderIds"]).toEqual([]);
-      expect(payload["newFolderNames"]).toEqual(["Déclarations"]);
+      expect(payload["newFolders"]).toEqual([{ name: "Déclarations" }]);
+      jest.restoreAllMocks();
+    });
+
+    it("rattache un nouveau dossier vérifié à son parent existant", async () => {
+      const suggestions = makeSuggestionRepository();
+      const folders = makeFolderRepository([makeFolder({ id: TAXES, name: "Impôts" })]);
+      const llm = makeLlm(
+        ["Je te crée le sous-dossier."],
+        [filing([], [{ name: "Déclarations", parent: { id: TAXES, name: "Impôts" } }])],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions, folders));
+
+      expect(capturedPayload(suggestions)["newFolders"]).toEqual([
+        { name: "Déclarations", parentId: TAXES },
+      ]);
+    });
+
+    it("pose le nouveau dossier à la racine quand son parent proposé est introuvable", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const folders = makeFolderRepository([makeFolder({ id: TAXES, name: "Impôts" })]);
+      const llm = makeLlm(
+        ["Je te crée le dossier."],
+        [filing([], [{ name: "Déclarations", parent: { id: OTHER, name: "Impôts" } }])],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions, folders));
+
+      // Le parent recopié de travers ne fait pas perdre le nouveau dossier :
+      // il naît à la racine plutôt que de perdre toute la proposition.
+      expect(capturedPayload(suggestions)["newFolders"]).toEqual([{ name: "Déclarations" }]);
       jest.restoreAllMocks();
     });
 
@@ -2164,7 +2217,7 @@ describe("ConversationService", () => {
           {
             id: "call-1",
             name: "suggest_folders",
-            input: { message: "Je range ça dans Santé ?", newFolderNames: ["Santé"] },
+            input: { message: "Je range ça dans Santé ?", newFolders: [{ name: "Santé" }] },
           },
         ],
       );

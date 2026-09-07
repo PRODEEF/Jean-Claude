@@ -359,16 +359,27 @@ export class AssistantService {
       else logger.warn(SCOPE, "Dossier proposé inconnu, ignoré", suggestion.id);
     }
 
-    for (const name of payload.data.newFolderNames) {
-      const existing = known.find((folder) => sameName(folder.name, name));
+    for (const proposed of payload.data.newFolders) {
+      const existing = known.find((folder) => sameName(folder.name, proposed.name));
       if (existing) {
         targetIds.add(existing.id);
         continue;
       }
 
+      // Un parent supprimé entre la proposition et son acceptation ne doit
+      // pas faire échouer tout le rangement : le dossier naît alors à la
+      // racine plutôt que de perdre la proposition entière.
+      const parentId =
+        proposed.parentId && known.some((folder) => folder.id === proposed.parentId)
+          ? proposed.parentId
+          : null;
+      if (proposed.parentId && parentId === null) {
+        logger.warn(SCOPE, "Dossier parent introuvable à l'acceptation, posé à la racine", suggestion.id);
+      }
+
       const folder = await this.folders.create(
         userId,
-        { name, parentId: null, createdByAssistant: true },
+        { name: proposed.name, parentId, createdByAssistant: true },
         accessToken,
       );
       created.push(folder);
@@ -491,12 +502,12 @@ function retainedFolders(
     existingFolderIds: proposed.data.existingFolderIds.filter((id) =>
       selection.existingFolderIds.includes(id),
     ),
-    newFolderNames: proposed.data.newFolderNames.filter((name) =>
-      selection.newFolderNames.some((kept) => sameName(kept, name)),
+    newFolders: proposed.data.newFolders.filter((folder) =>
+      selection.newFolders.some((kept) => sameName(kept.name, folder.name)),
     ),
   };
 
-  if (retained.existingFolderIds.length + retained.newFolderNames.length === 0) {
+  if (retained.existingFolderIds.length + retained.newFolders.length === 0) {
     throw httpError(400, "Aucun des dossiers retenus ne figure dans la proposition.");
   }
 

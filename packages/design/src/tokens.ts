@@ -82,7 +82,7 @@ export const lightPalette: Palette = {
   border: "#E4E4E7",
   text: "#18181B",
   textMuted: "#71717A",
-  accent: "#6366F1",
+  accent: "#107FEA",
   accentText: "#FFFFFF",
   accentSoft: "#E3E4FC",
   accentSoftText: "#18181B",
@@ -106,7 +106,7 @@ export const darkPalette: Palette = {
 };
 
 /** Couleur d'assistant par défaut, avant tout choix de l'utilisateur. */
-export const DEFAULT_ACCENT = "#6366F1";
+export const DEFAULT_ACCENT = "#107FEA";
 
 /**
  * Couleurs d'assistant proposées dans les réglages (§4.5).
@@ -117,7 +117,7 @@ export const DEFAULT_ACCENT = "#6366F1";
  * les deux thèmes.
  */
 export const ASSISTANT_ACCENTS: readonly { value: string; label: string }[] = [
-  { value: DEFAULT_ACCENT, label: "Indigo" },
+  { value: DEFAULT_ACCENT, label: "Azur" },
   { value: "#8B5CF6", label: "Violet" },
   { value: "#2563EB", label: "Bleu" },
   { value: "#0D9488", label: "Turquoise" },
