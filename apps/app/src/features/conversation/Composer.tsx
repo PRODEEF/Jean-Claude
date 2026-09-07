@@ -113,10 +113,6 @@ export function Composer({
     setInputMode("voice");
     onChangeText(text);
   });
-  // Signalé seulement à l'usage, plutôt qu'en permanence pour qui n'a jamais
-  // touché au micro : Brave et Firefox n'implémentent pas encore cette API
-  // côté web, et le geste resterait sinon sans le moindre effet visible.
-  const [dictationUnavailable, setDictationUnavailable] = useState(false);
 
   const handleSubmit = useCallback(() => {
     onSubmit(inputMode);
@@ -199,14 +195,7 @@ export function Composer({
             l'efface pas. Visible même pendant `busy` — le champ, lui, reste
             éditable pendant qu'une réponse se génère. */}
         <Pressable
-          onPress={() => {
-            if (!dictation.supported) {
-              setDictationUnavailable(true);
-              return;
-            }
-            if (dictation.listening) dictation.stop();
-            else dictation.start(value);
-          }}
+          onPress={() => (dictation.listening ? dictation.stop() : dictation.start(value))}
           accessibilityRole="button"
           accessibilityLabel={dictation.listening ? "Arrêter la dictée" : "Dicter le message"}
           hitSlop={8}
@@ -244,10 +233,8 @@ export function Composer({
         </Pressable>
       </Pressable>
 
-      {dictationUnavailable ? (
-        <Text style={[styles.notice, { color: palette.textMuted }]}>
-          La dictée n'est pas disponible sur ce navigateur.
-        </Text>
+      {dictation.error ? (
+        <Text style={[styles.notice, { color: palette.textMuted }]}>{dictation.error}</Text>
       ) : null}
     </View>
   );
