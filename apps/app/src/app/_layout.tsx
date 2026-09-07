@@ -1,4 +1,4 @@
-import "./reanimated-logger";
+import "@/shared/lib/reanimated-logger";
 import "../../global.css";
 
 import { useEffect, type ReactNode } from "react";
