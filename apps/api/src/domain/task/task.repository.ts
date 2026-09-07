@@ -85,14 +85,28 @@ const TASK_COLUMNS =
 const LIST_WITH_TASKS_COLUMNS = `${LIST_COLUMNS}, tasks(${TASK_COLUMNS})`;
 
 export const taskRepository: ITaskRepository = {
-  async findAll(accessToken) {
-    const { data, error } = await forUser(accessToken)
+  async findAll(accessToken, options) {
+    let query = forUser(accessToken)
       .from("task_lists")
       .select(LIST_WITH_TASKS_COLUMNS)
-      .order("updated_at", { ascending: false });
+      .order("updated_at", { ascending: false })
+      // Une ligne de plus que demandé : la présence du surplus indique qu'il
+      // reste des résultats, sans requête `count` supplémentaire.
+      .limit(options.limit + 1);
 
+    if (options.cursor) query = query.lt("updated_at", options.cursor);
+
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
-    return (data as unknown as (TaskListRow & { tasks: TaskRow[] })[]).map(toListWithTasks);
+
+    const rows = data as unknown as (TaskListRow & { tasks: TaskRow[] })[];
+    const hasMore = rows.length > options.limit;
+    const page = hasMore ? rows.slice(0, options.limit) : rows;
+
+    return {
+      items: page.map(toListWithTasks),
+      nextCursor: hasMore ? (page[page.length - 1]?.updated_at ?? null) : null,
+    };
   },
 
   async findById(id, accessToken) {

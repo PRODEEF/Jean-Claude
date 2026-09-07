@@ -89,14 +89,19 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
   // ordonnée par date : ce que l'assistant a fait se relit au moment où il l'a
   // fait, pas empilé au bas du fil. Ce qui attend encore un geste reste en
   // pied de liste, là où l'utilisateur écrit.
-  const items = useMemo(
-    (): ThreadItem[] =>
-      [
-        ...(messages.data?.items ?? []).map((message): ThreadItem => ({ id: message.id, message })),
-        ...resolved.map((suggestion): ThreadItem => ({ id: suggestion.id, suggestion })),
-      ].sort((a, b) => itemDate(a) - itemDate(b)),
-    [messages.data, resolved],
-  );
+  //
+  // `previous` est calculé ici, une fois pour toute la liste, plutôt que dans
+  // `renderItem` à partir de l'index : sans quoi `renderItem` devrait fermer
+  // sur `items` entier et changerait d'identité à chaque message, empêchant
+  // `React.memo(MessageRow)` de sauter le rendu des lignes inchangées.
+  const items = useMemo((): ThreadItem[] => {
+    const sorted = [
+      ...(messages.data?.items ?? []).map((message): ThreadItem => ({ id: message.id, message })),
+      ...resolved.map((suggestion): ThreadItem => ({ id: suggestion.id, suggestion })),
+    ].sort((a, b) => itemDate(a) - itemDate(b));
+
+    return sorted.map((item, index) => ({ ...item, previous: sorted[index - 1]?.message }));
+  }, [messages.data, resolved]);
 
   // Réponses proposées sous la dernière question de l'assistant, tant qu'elle
   // n'a pas reçu de réponse : un message plus récent, une réponse en cours de
@@ -147,20 +152,23 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
     submit(content);
   }, [draft, send.isPending, submit]);
 
+  // Ne dépend ni de `items` (voir le calcul de `previous` ci-dessus) ni de
+  // `switchAside`/`send` en entier : ces deux mutations sont de nouveaux
+  // objets à chaque rendu, seules leurs propriétés `mutate` et `isPending`
+  // comptent ici.
   const renderItem = useCallback(
-    ({ item, index }: { item: ThreadItem; index: number }) => {
+    ({ item }: { item: ThreadItem }) => {
       if (!item.message) return <ResolvedSuggestionNote suggestion={item.suggestion} />;
 
       const message = item.message;
-      const previous = items[index - 1]?.message;
 
       return (
         <>
           <MessageRow
             message={message}
-            answeredQuestion={answeredQuestion(message, previous)}
-            onRetry={() => retry(message.id)}
-            onEdit={(content) => edit(message.id, content)}
+            answeredQuestion={answeredQuestion(message, item.previous)}
+            onRetry={retry}
+            onEdit={edit}
             busy={send.isPending}
           />
 
@@ -174,7 +182,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
               onSwitch={() =>
                 switchAside.mutate({
                   messageId: message.id,
-                  draft: previous?.role === "user" ? previous.content : "",
+                  draft: item.previous?.role === "user" ? item.previous.content : "",
                 })
               }
             />
@@ -182,7 +190,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
         </>
       );
     },
-    [items, retry, edit, send.isPending, switchAside],
+    [retry, edit, send.isPending, switchAside.mutate, switchAside.isPending],
   );
 
   return (
@@ -347,10 +355,14 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
 /**
  * Une entrée du fil : un message, ou la trace d'une proposition tranchée. La
  * seconde forme n'a pas de `message`, ce qui suffit à les distinguer.
+ *
+ * `previous` porte le message de l'entrée précédente dans le fil trié, quand
+ * il y en a un — calculé une fois avec le tri plutôt que relu par index.
  */
-type ThreadItem =
+type ThreadItem = (
   | { id: string; message: Message; suggestion?: undefined }
-  | { id: string; message?: undefined; suggestion: Suggestion };
+  | { id: string; message?: undefined; suggestion: Suggestion }
+) & { previous?: Message };
 
 /**
  * La question à laquelle ce message répond, quand la réponse a été choisie

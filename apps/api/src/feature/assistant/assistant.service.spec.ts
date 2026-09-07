@@ -201,7 +201,9 @@ function makeTaskRepository(): ITaskRepository {
   let sequence = 0;
 
   return {
-    findAll: jest.fn().mockImplementation(() => Promise.resolve([...lists.values()])),
+    findAll: jest
+      .fn()
+      .mockImplementation(() => Promise.resolve({ items: [...lists.values()], nextCursor: null })),
     findById: jest.fn().mockImplementation((id: string) => Promise.resolve(lists.get(id) ?? null)),
     findByConversation: jest
       .fn()
@@ -777,7 +779,7 @@ describe("AssistantService", () => {
         tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      const created = await tasks.findAll(TOKEN);
+      const created = (await tasks.findAll(TOKEN, { limit: 100 })).items;
       expect(resolved.taskLists).toHaveLength(2);
       expect(created.map((list) => list.tasks.map((task) => task.title))).toEqual([
         ["Terreau"],
@@ -963,7 +965,9 @@ describe("AssistantService", () => {
         tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
       if (!travaux) throw new Error("La liste de travaux devrait exister");
       return { tasks, listId: travaux.id };
     }
@@ -985,7 +989,9 @@ describe("AssistantService", () => {
         tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
       expect(travaux?.tasks.map((task) => task.title)).toEqual([
         "Désherber",
         "Tondre",
@@ -1013,7 +1019,9 @@ describe("AssistantService", () => {
         tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
       expect(travaux?.tasks.map((task) => task.position)).toEqual([0, 1, 2]);
     });
 
@@ -1073,7 +1081,9 @@ describe("AssistantService", () => {
     it("rattache la liste à son créneau", async () => {
       const { second, tasks } = await acceptBothCards();
 
-      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
 
       // Sans ce lien, le calendrier montrerait deux fois la même échéance : la
       // liste datée et le créneau posé pour elle.

@@ -34,6 +34,7 @@ import type {
   LlmTool,
   LlmToolCall,
 } from "../../core/llm/llm.port.js";
+import { logger } from "../../core/logger.js";
 import {
   ASK_QUESTION,
   ASSISTANT_TOOLS,
@@ -70,6 +71,8 @@ const RECENT_DECISIONS = 5;
 
 /** Fuseau retenu quand le profil est illisible — celui du schéma partagé. */
 const DEFAULT_TIMEZONE = userPreferencesSchema.shape.timezone.parse(undefined);
+
+const SCOPE = "conversation.service";
 
 /**
  * Cadre de rédaction commun aux deux registres.
@@ -570,7 +573,7 @@ export class ConversationService {
         // les réglages ne doit produire aucune suggestion, quel que soit le
         // chemin par lequel l'appel arrive (A.10).
         if (!isAllowedByScope(toolCall.name, context.scope)) {
-          console.warn(`Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
+          logger.warn(SCOPE, `Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
         await this.suggestions.capture(
@@ -606,7 +609,7 @@ export class ConversationService {
     request: LlmCompletionRequest,
     toolCalls: LlmToolCall[],
   ): AsyncGenerator<string> {
-    console.warn("Tour sans réponse écrite : second appel pour répondre à l'utilisateur.");
+    logger.warn(SCOPE, "Tour sans réponse écrite : second appel pour répondre à l'utilisateur.");
 
     try {
       const stream = this.llm.stream({
@@ -619,7 +622,8 @@ export class ConversationService {
         if (chunk.type === "text") yield chunk.text;
       }
     } catch (error) {
-      console.error(
+      logger.error(
+        SCOPE,
         "Rattrapage de réponse impossible :",
         error instanceof Error ? error.message : error,
       );
@@ -639,7 +643,7 @@ export class ConversationService {
     const profile = await this.users.findById(userId, accessToken);
 
     if (!profile) {
-      console.warn("Profil introuvable au moment de borner l'assistant : réglages par défaut.");
+      logger.warn(SCOPE, "Profil introuvable au moment de borner l'assistant : réglages par défaut.");
       return {
         name: DEFAULT_ASSISTANT_NAME,
         displayName: null,
@@ -780,7 +784,7 @@ export class ConversationService {
 
     const title = labelSchema.safeParse(call.input["title"]);
     if (!title.success) {
-      console.warn("Appel `name_conversation` sans titre exploitable : renommage ignoré.");
+      logger.warn(SCOPE, "Appel `name_conversation` sans titre exploitable : renommage ignoré.");
       return;
     }
 
@@ -808,14 +812,15 @@ export class ConversationService {
 
     const memory = userMemorySchema.safeParse(call.input["memory"]);
     if (!memory.success) {
-      console.warn("Appel `finish_onboarding` sans mémoire exploitable : accueil non clos.");
+      logger.warn(SCOPE, "Appel `finish_onboarding` sans mémoire exploitable : accueil non clos.");
       return;
     }
 
     try {
       await this.users.completeOnboarding(userId, memory.data, accessToken);
     } catch (error) {
-      console.error(
+      logger.error(
+        SCOPE,
         "Clôture de l'accueil impossible :",
         error instanceof Error ? error.message : error,
       );
@@ -840,7 +845,7 @@ function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[])
 
   const title = labelSchema.safeParse(call.input["title"]);
   if (!title.success) {
-    console.warn("Appel `open_new_conversation` sans titre exploitable : bascule ignorée.");
+    logger.warn(SCOPE, "Appel `open_new_conversation` sans titre exploitable : bascule ignorée.");
     return null;
   }
 
@@ -875,13 +880,13 @@ function withVerifiedFolders(toolCall: LlmToolCall, known: FolderTreeNode[]): Ll
   for (const entry of proposed) {
     const candidate = readProposedFolder(entry);
     if (!candidate) {
-      console.warn("Dossier proposé sans identifiant ni nom exploitables, écarté.");
+      logger.warn(SCOPE, "Dossier proposé sans identifiant ni nom exploitables, écarté.");
       continue;
     }
 
     const folder = folders.find((known) => known.id === candidate.id);
     if (!folder) {
-      console.warn("Dossier proposé inconnu, écarté du rangement.");
+      logger.warn(SCOPE, "Dossier proposé inconnu, écarté du rangement.");
       continue;
     }
 
@@ -889,7 +894,7 @@ function withVerifiedFolders(toolCall: LlmToolCall, known: FolderTreeNode[]): Ll
     // affiche « Administratif > Assurances », et reprendre la ligne entière est
     // une lecture fidèle, pas une confusion.
     if (!sameName(folder.name, candidate.name) && !sameName(folder.path, candidate.name)) {
-      console.warn("Dossier proposé dont le nom contredit l'identifiant, écarté.");
+      logger.warn(SCOPE, "Dossier proposé dont le nom contredit l'identifiant, écarté.");
       continue;
     }
 
@@ -1311,7 +1316,7 @@ function readQuestion(toolCalls: LlmToolCall[]): AskedQuestion | null {
 
   const asked = askedQuestionSchema.safeParse(call.input);
   if (!asked.success) {
-    console.warn("Appel `ask_question` inexploitable : réponses proposées ignorées.");
+    logger.warn(SCOPE, "Appel `ask_question` inexploitable : réponses proposées ignorées.");
     return null;
   }
 
@@ -1366,7 +1371,8 @@ function formatInstant(
   try {
     return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: timezone }).format(instant);
   } catch (error) {
-    console.warn(
+    logger.warn(
+      SCOPE,
       "Fuseau horaire illisible, repli sur le défaut :",
       error instanceof Error ? error.message : error,
     );

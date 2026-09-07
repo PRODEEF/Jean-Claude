@@ -218,18 +218,26 @@ export function useConversationThread(
     },
   });
 
-  const submit = useCallback((content: string) => send.mutate({ kind: "send", content }), [send]);
+  const submit = useCallback(
+    (content: string) => send.mutate({ kind: "send", content }),
+    [send.mutate],
+  );
 
+  // Dépend de `send.mutate` et non de `send` : TanStack Query rend un nouvel
+  // objet à chaque rendu, mais `mutate` lui-même est stable. Dépendre de
+  // l'objet entier recréerait ces fonctions à chaque jeton reçu en flux, ce
+  // qui priverait `React.memo(MessageRow)` de tout effet au moment où il
+  // compte le plus.
   /** Corrige un message envoyé : la suite du fil part avec l'ancien texte. */
   const edit = useCallback(
     (messageId: string, content: string) => send.mutate({ kind: "edit", messageId, content }),
-    [send],
+    [send.mutate],
   );
 
   /** Redemande une réponse au modèle à partir de ce point du fil. */
   const retry = useCallback(
     (messageId: string) => send.mutate({ kind: "retry", messageId }),
-    [send],
+    [send.mutate],
   );
 
   /**
