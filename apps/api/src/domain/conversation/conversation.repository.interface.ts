@@ -30,6 +30,9 @@ export interface IConversationRepository {
 
   delete(id: string, accessToken: string): Promise<void>;
 
+  /** Remet le compteur de messages non lus à zéro (pastille de la barre latérale). */
+  markRead(id: string, accessToken: string): Promise<Conversation>;
+
   /** Remplace l'ensemble des rattachements de la conversation (§5.2, A.1). */
   setFolders(
     conversationId: string,

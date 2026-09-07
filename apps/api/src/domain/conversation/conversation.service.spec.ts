@@ -37,6 +37,8 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
     lastMessageAt: null,
     createdAt: "2026-08-31T08:00:00.000Z",
     updatedAt: "2026-08-31T08:00:00.000Z",
+    unreadCount: 0,
+    hasPendingQuestion: false,
     ...overrides,
   };
 }
@@ -70,6 +72,7 @@ function makeRepository(overrides: Partial<IConversationRepository> = {}): IConv
     create: jest.fn().mockResolvedValue(makeConversation()),
     update: jest.fn().mockResolvedValue(makeConversation()),
     delete: jest.fn().mockResolvedValue(undefined),
+    markRead: jest.fn().mockResolvedValue(makeConversation()),
     setFolders: jest.fn().mockResolvedValue([]),
     // Le fil tel que le serveur le relit après avoir écrit la demande : la
     // génération part toujours d'au moins un message, jamais du vide.
@@ -289,6 +292,7 @@ function makePreferences(
     assistantName: "Jean-Claude",
     assistantColor: "#6366F1",
     theme: "system",
+    flatBanner: false,
     timezone: "Europe/Paris",
     speakResponses: false,
     llmModel: null,
@@ -459,6 +463,19 @@ describe("ConversationService", () => {
       );
 
       await expect(service.getById("absente", TOKEN)).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe("markRead", () => {
+    it("délègue la remise à zéro du compteur au dépôt", async () => {
+      const repo = makeRepository({
+        markRead: jest.fn().mockResolvedValue(makeConversation({ unreadCount: 0 })),
+      });
+
+      const conversation = await makeService(repo).markRead("conv-1", TOKEN);
+
+      expect(repo.markRead).toHaveBeenCalledWith("conv-1", TOKEN);
+      expect(conversation.unreadCount).toBe(0);
     });
   });
 

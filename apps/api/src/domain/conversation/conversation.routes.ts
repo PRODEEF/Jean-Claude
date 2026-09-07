@@ -81,6 +81,11 @@ export const conversationRoutes = new Hono<AuthEnv>()
     return c.body(null, 204);
   })
 
+  /** Marque la conversation comme lue, à l'ouverture du fil (pastille de la barre latérale). */
+  .post("/:id/read", idParam, async (c) =>
+    c.json(await service.markRead(c.req.valid("param").id, c.get("user").accessToken)),
+  )
+
   /**
    * Remplace l'ensemble des rattachements. Une conversation peut appartenir à
    * plusieurs dossiers simultanément sans être dupliquée (§5.2, A.1).
