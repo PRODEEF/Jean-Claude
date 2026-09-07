@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import { Platform, ScrollView, View, type GestureResponderEvent } from "react-native";
+import { Platform, Pressable, ScrollView, View, type GestureResponderEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DialogPrimitive from "@rn-primitives/dialog";
 import { X } from "lucide-react-native";
@@ -26,6 +26,15 @@ export type ModalAction = {
   disabled?: boolean;
 };
 
+/** Une icône du bandeau de titre, avant le bouton de fermeture. */
+export type ModalHeaderAction = {
+  icon: typeof X;
+  label: string;
+  onPress: () => void;
+  /** Rouge, pour une action de suppression — même traitement que `destructiveAction` du pied. */
+  destructive?: boolean;
+};
+
 export type ModalProps = {
   open: boolean;
   onClose: () => void;
@@ -49,6 +58,12 @@ export type ModalProps = {
   actions: ModalAction[];
   /** Suppression : isolée à l'opposé des actions de validation. */
   destructiveAction?: ModalAction;
+  /**
+   * Icônes supplémentaires dans le bandeau de titre, avant la fermeture — la
+   * modale de détail d'un événement ou d'une todoliste y pose la suppression et
+   * la modification, à la manière de Google Calendar (§4.2).
+   */
+  headerActions?: ModalHeaderAction[];
 };
 
 /**
@@ -75,6 +90,7 @@ export function Modal({
   error = null,
   actions,
   destructiveAction,
+  headerActions,
 }: ModalProps) {
   const compact = useBreakpoint() === "compact";
   const insets = useSafeAreaInsets();
@@ -136,6 +152,31 @@ export function Modal({
                       </DialogPrimitive.Description>
                     ) : null}
                   </View>
+
+                  {headerActions && headerActions.length > 0 ? (
+                    <View className="-mt-1 flex-row items-center gap-1">
+                      {headerActions.map((action) => (
+                        <Pressable
+                          key={action.label}
+                          onPress={action.onPress}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel={action.label}
+                          className={cn(
+                            "size-8 items-center justify-center rounded-full",
+                            "active:bg-muted",
+                            Platform.select({ web: "hover:bg-muted transition-colors" }),
+                          )}
+                        >
+                          <Icon
+                            as={action.icon}
+                            size={16}
+                            className={action.destructive ? "text-destructive" : "text-muted-foreground"}
+                          />
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
 
                   {/* Dans le flux et non en position absolue : posé par-dessus,
                       il chevauchait le titre dès que celui-ci passait à la ligne. */}
