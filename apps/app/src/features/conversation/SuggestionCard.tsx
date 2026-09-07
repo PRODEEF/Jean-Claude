@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { Check } from "lucide-react-native";
+import { Check, X } from "lucide-react-native";
 import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
@@ -9,7 +9,9 @@ import {
   createTaskListsPayloadSchema,
   scheduleListsPayloadSchema,
   type AssignFoldersPayload,
+  type CreateTaskListsPayload,
   type Suggestion,
+  type TaskListKind,
 } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
@@ -17,14 +19,25 @@ import { api } from "@/shared/lib/api";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
 
-export type SuggestionCardProps = {
-  suggestion: Suggestion;
+/** Ce qu'accepter transmet en plus de l'action, selon la nature de la proposition. */
+export type SuggestionAcceptInput = {
   /**
    * Les dossiers restés cochés, quand la proposition en fait cocher.
    * `undefined` — rien n'a été décoché — laisse le serveur appliquer la
    * proposition entière.
    */
-  onAccept: (folderSelection?: AssignFoldersPayload) => void;
+  folderSelection?: AssignFoldersPayload;
+  /**
+   * Les listes telles que relues et corrigées avant validation (§13.4.1, #17).
+   * Toujours transmis pour une todoliste : contrairement au rangement, il n'y
+   * a ici aucune donnée externe (arborescence) que la carte ignorerait encore.
+   */
+  taskListEdits?: CreateTaskListsPayload;
+};
+
+export type SuggestionCardProps = {
+  suggestion: Suggestion;
+  onAccept: (input?: SuggestionAcceptInput) => void;
   onDismiss: () => void;
   /** Une réponse est en cours d'envoi : les deux gestes sont neutralisés. */
   isPending: boolean;
@@ -45,6 +58,8 @@ export function SuggestionCard({
 }: SuggestionCardProps) {
   const { palette } = useTheme();
   const preview = useSuggestionPreview(suggestion);
+  const editableTaskLists = suggestion.kind === "create_task_list";
+  const editable = useEditableTaskLists(suggestion);
 
   // Les dossiers écartés, et non ceux retenus : un rangement propose de
   // ranger, pas de choisir à partir de rien. Décochés plutôt que cochés aussi
@@ -54,8 +69,21 @@ export function SuggestionCard({
 
   const selection = selectedFolders(preview.lines, excluded);
   const choosable = preview.lines.some((line) => line.choice);
-  const emptied =
-    choosable && selection.existingFolderIds.length + selection.newFolderNames.length === 0;
+  const editedPayload = editablePayload(editable.lists);
+  const emptied = editableTaskLists
+    ? editedPayload.lists.length === 0
+    : choosable && selection.existingFolderIds.length + selection.newFolderNames.length === 0;
+
+  const accept = () => {
+    if (editableTaskLists) {
+      onAccept({ taskListEdits: editedPayload });
+      return;
+    }
+    // Rien n'est envoyé tant que rien n'a été décoché : le serveur applique
+    // alors la proposition entière, y compris un dossier que l'arborescence
+    // en cache ne sait pas encore nommer.
+    onAccept(excluded.length > 0 ? { folderSelection: selection } : undefined);
+  };
 
   return (
     <View
@@ -66,9 +94,18 @@ export function SuggestionCard({
     >
       <Text style={[styles.message, { color: palette.text }]}>{suggestion.message}</Text>
 
-      {/* L'aperçu est un confort : une charge utile illisible ne doit pas
-          empêcher l'utilisateur de trancher. */}
-      {preview.lines.length > 0 ? (
+      {editableTaskLists ? (
+        <EditableTaskLists
+          lists={editable.lists}
+          disabled={isPending}
+          onRenameList={editable.renameList}
+          onRemoveList={editable.removeList}
+          onRenameItem={editable.renameItem}
+          onRemoveItem={editable.removeItem}
+        />
+      ) : /* L'aperçu est un confort : une charge utile illisible ne doit pas
+             empêcher l'utilisateur de trancher. */
+      preview.lines.length > 0 ? (
         <View
           style={choosable ? styles.choices : [styles.tree, { borderLeftColor: palette.border }]}
         >
@@ -108,10 +145,7 @@ export function SuggestionCard({
 
       <View style={styles.actions}>
         <Pressable
-          // Rien n'est envoyé tant que rien n'a été décoché : le serveur
-          // applique alors la proposition entière, y compris un dossier que
-          // l'arborescence en cache ne sait pas encore nommer.
-          onPress={() => onAccept(excluded.length > 0 ? selection : undefined)}
+          onPress={accept}
           disabled={isPending || emptied}
           accessibilityRole="button"
           accessibilityLabel={preview.acceptLabel}
@@ -189,6 +223,187 @@ function FolderChoice({
           <Text style={[styles.hint, { color: palette.textMuted }]}> · {line.hint}</Text>
         ) : null}
       </Text>
+    </Pressable>
+  );
+}
+
+type EditableItem = { key: string; title: string };
+type EditableList = {
+  key: string;
+  title: string;
+  kind: TaskListKind;
+  dueAt: string | null;
+  items: EditableItem[];
+};
+
+/**
+ * État d'édition d'une proposition `create_task_list` avant validation (#17).
+ *
+ * Le brouillon reste local à la carte : rien n'est écrit en base tant que
+ * l'utilisateur n'a pas validé, comme pour n'importe quelle autre suggestion
+ * (§12.1). Les clés sont générées une fois à l'initialisation, pas recalculées
+ * à partir de l'index — supprimer une ligne du milieu ne doit pas faire
+ * sauter le focus sur sa voisine.
+ */
+function useEditableTaskLists(suggestion: Suggestion) {
+  const [lists, setLists] = useState<EditableList[]>(() => {
+    if (suggestion.kind !== "create_task_list") return [];
+    const parsed = createTaskListsPayloadSchema.safeParse(suggestion.payload);
+    if (!parsed.success) return [];
+
+    return parsed.data.lists.map((list, listIndex) => ({
+      key: `list-${listIndex}`,
+      title: list.title,
+      kind: list.kind,
+      dueAt: list.dueAt,
+      items: list.items.map((item, itemIndex) => ({
+        key: `item-${listIndex}-${itemIndex}`,
+        title: item.title,
+      })),
+    }));
+  });
+
+  return {
+    lists,
+    renameList: (key: string, title: string) =>
+      setLists((current) => current.map((list) => (list.key === key ? { ...list, title } : list))),
+    removeList: (key: string) => setLists((current) => current.filter((list) => list.key !== key)),
+    renameItem: (listKey: string, itemKey: string, title: string) =>
+      setLists((current) =>
+        current.map((list) =>
+          list.key === listKey
+            ? {
+                ...list,
+                items: list.items.map((item) => (item.key === itemKey ? { ...item, title } : item)),
+              }
+            : list,
+        ),
+      ),
+    // Une liste vidée de ses lignes disparaît avec la dernière : la garder à
+    // l'écran, vide, n'inviterait qu'à se demander pourquoi le bouton refuse
+    // de valider.
+    removeItem: (listKey: string, itemKey: string) =>
+      setLists((current) =>
+        current
+          .map((list) =>
+            list.key === listKey
+              ? { ...list, items: list.items.filter((item) => item.key !== itemKey) }
+              : list,
+          )
+          .filter((list) => list.items.length > 0),
+      ),
+  };
+}
+
+/**
+ * Charge utile telle qu'elle partirait vers le serveur.
+ *
+ * Une ligne réduite à un titre blanc — vidé sans passer par le bouton de
+ * suppression — est écartée ici plutôt que d'échouer la validation côté
+ * serveur avec un titre vide.
+ */
+function editablePayload(lists: EditableList[]): CreateTaskListsPayload {
+  return {
+    lists: lists
+      .map((list) => ({
+        title: list.title.trim(),
+        kind: list.kind,
+        dueAt: list.dueAt,
+        items: list.items
+          .map((item) => ({ title: item.title.trim() }))
+          .filter((item) => item.title.length > 0),
+      }))
+      .filter((list) => list.title.length > 0 && list.items.length > 0),
+  };
+}
+
+/**
+ * Listes proposées, éditables avant validation (§13.4.1, #17).
+ *
+ * Un champ de texte par titre plutôt que l'éditeur complet des todolistes
+ * réelles (`TaskListEditor`) : ici il n'y a qu'à corriger ce que le modèle a
+ * extrait, pas à composer une liste — pas d'indentation, pas de nouvelle
+ * ligne au clavier.
+ */
+function EditableTaskLists({
+  lists,
+  disabled,
+  onRenameList,
+  onRemoveList,
+  onRenameItem,
+  onRemoveItem,
+}: {
+  lists: EditableList[];
+  disabled: boolean;
+  onRenameList: (key: string, title: string) => void;
+  onRemoveList: (key: string) => void;
+  onRenameItem: (listKey: string, itemKey: string, title: string) => void;
+  onRemoveItem: (listKey: string, itemKey: string) => void;
+}) {
+  const { palette } = useTheme();
+
+  return (
+    <View style={styles.editableLists}>
+      {lists.map((list) => (
+        <View key={list.key} style={styles.editableList}>
+          <View style={styles.editableRow}>
+            <TextInput
+              value={list.title}
+              onChangeText={(text) => onRenameList(list.key, text)}
+              editable={!disabled}
+              accessibilityLabel={`Titre de la liste ${list.title}`}
+              style={[styles.input, styles.listTitleInput, { color: palette.text }]}
+            />
+            <RemoveButton
+              label={`Supprimer la liste ${list.title || "sans titre"}`}
+              disabled={disabled}
+              onPress={() => onRemoveList(list.key)}
+            />
+          </View>
+
+          {list.items.map((item) => (
+            <View key={item.key} style={[styles.editableRow, styles.editableNested]}>
+              <TextInput
+                value={item.title}
+                onChangeText={(text) => onRenameItem(list.key, item.key, text)}
+                editable={!disabled}
+                accessibilityLabel={`Élément ${item.title} de la liste ${list.title}`}
+                style={[styles.input, { color: palette.text }]}
+              />
+              <RemoveButton
+                label={`Supprimer ${item.title || "cette ligne"}`}
+                disabled={disabled}
+                onPress={() => onRemoveItem(list.key, item.key)}
+              />
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function RemoveButton({
+  label,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const { palette } = useTheme();
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={[styles.removeButton, { opacity: disabled ? 0.4 : 1 }]}
+    >
+      <X size={14} color={palette.textMuted} />
     </Pressable>
   );
 }
@@ -452,6 +667,23 @@ const styles = StyleSheet.create({
   folder: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   nested: { paddingLeft: spacing.md, fontWeight: fontWeight.regular },
   hint: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.regular },
+  editableLists: { gap: spacing.sm },
+  editableList: { gap: spacing.xs },
+  editableRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  editableNested: { paddingLeft: spacing.md },
+  input: {
+    flex: 1,
+    fontFamily: FONT_FAMILY,
+    fontSize: fontSize.sm,
+    minHeight: MIN_TOUCH_TARGET,
+  },
+  listTitleInput: { fontWeight: fontWeight.semibold },
+  removeButton: {
+    width: MIN_TOUCH_TARGET / 2,
+    height: MIN_TOUCH_TARGET / 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   note: {
     alignSelf: "flex-start",
     maxWidth: "85%",

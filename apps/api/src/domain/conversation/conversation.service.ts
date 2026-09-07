@@ -35,6 +35,7 @@ import type {
   LlmToolCall,
 } from "../../core/llm/llm.port.js";
 import { logger } from "../../core/logger.js";
+import { parseRelativeDateFr } from "../../core/relative-date.js";
 import {
   ASK_QUESTION,
   ASSISTANT_TOOLS,
@@ -399,6 +400,63 @@ export class ConversationService {
   }
 
   /**
+   * Convertit la conversation en todoliste à la demande de l'utilisateur,
+   * plutôt que d'attendre que l'assistant la propose de lui-même (A.2, #17).
+   *
+   * Un appel dédié au modèle, hors du tour de dialogue ordinaire : rien n'est
+   * écrit dans le fil, et un seul outil lui est proposé. Le résultat reste une
+   * suggestion en attente comme n'importe quelle autre proposition — déclenchée
+   * à la demande ou non, l'assistant propose, il n'exécute pas (§12.1).
+   */
+  async extractTaskList(
+    conversationId: string,
+    userId: string,
+    accessToken: string,
+  ): Promise<Suggestion> {
+    const conversation = await this.getById(conversationId, accessToken);
+    if (conversation.kind === "assistant") {
+      throw httpError(422, "Le canal permanent ne se convertit pas en todoliste.");
+    }
+
+    const context = await this.contextFor(userId, accessToken);
+    if (!isAllowedByScope(SUGGEST_TASK_LIST.name, context.scope)) {
+      throw httpError(403, "La détection de todolistes est désactivée dans les réglages.");
+    }
+
+    const history = await this.conversations.listMessages(conversationId, accessToken, {
+      limit: CONTEXT_WINDOW_MESSAGES,
+    });
+    const dialogue = forgetSwitchedAside(history.items).filter((m) => m.role !== "system");
+
+    if (dialogue.length === 0) {
+      throw httpError(422, "Il n'y a rien à convertir dans cette conversation.");
+    }
+
+    const request: LlmCompletionRequest = {
+      system: buildExtractionPrompt(context, new Date()),
+      messages: dialogue.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      tools: [SUGGEST_TASK_LIST],
+      ...(context.model ? { model: context.model } : {}),
+    };
+
+    const toolCalls: LlmToolCall[] = [];
+    for await (const chunk of this.llm.stream(request)) {
+      if (chunk.type === "tool_call") toolCalls.push(chunk.toolCall);
+    }
+
+    const call = toolCalls.find((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name);
+    const suggestion = call
+      ? await this.suggestions.capture(userId, conversationId, call, accessToken)
+      : null;
+
+    if (!suggestion) {
+      throw httpError(422, "Aucune todoliste n'a pu être extraite de cette conversation.");
+    }
+
+    return suggestion;
+  }
+
+  /**
    * Ouvre la conversation dédiée que le canal permanent a proposée (A.10).
    *
    * Rien n'est ouvert tant que l'utilisateur n'a pas validé : le canal propose,
@@ -576,12 +634,12 @@ export class ConversationService {
           logger.warn(SCOPE, `Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
-        await this.suggestions.capture(
-          userId,
-          conversationId,
+        const corrected = withCorrectedDueDates(
           withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
-          accessToken,
+          now,
+          context.timezone,
         );
+        await this.suggestions.capture(userId, conversationId, corrected, accessToken);
       }
 
       await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
@@ -904,6 +962,35 @@ function withVerifiedFolders(toolCall: LlmToolCall, known: FolderTreeNode[]): Ll
   return { ...toolCall, input: { ...toolCall.input, existingFolderIds: verified } };
 }
 
+/**
+ * Corrige les échéances relatives d'un `suggest_task_list` avant capture (A.3, #18).
+ *
+ * Le modèle calcule déjà `dueAt` lui-même, mais se trompe parfois dans
+ * l'arithmétique des jours de la semaine. Quand il a aussi recopié
+ * l'expression source (`dueAtText`) et qu'elle est reconnue avec certitude,
+ * le calcul déterministe du serveur remplace le sien ; sinon `dueAt` reste
+ * tel quel — un filet de sécurité qui ne couvre qu'un cas ne doit jamais
+ * faire pire que son absence.
+ */
+function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: string): LlmToolCall {
+  if (toolCall.name !== SUGGEST_TASK_LIST.name) return toolCall;
+
+  const lists = toolCall.input["lists"];
+  if (!Array.isArray(lists)) return toolCall;
+
+  const corrected = lists.map((entry) => {
+    if (typeof entry !== "object" || entry === null) return entry;
+
+    const dueAtText = (entry as Record<string, unknown>)["dueAtText"];
+    if (typeof dueAtText !== "string") return entry;
+
+    const parsed = parseRelativeDateFr(dueAtText, now, timezone);
+    return parsed ? { ...entry, dueAt: parsed } : entry;
+  });
+
+  return { ...toolCall, input: { ...toolCall.input, lists: corrected } };
+}
+
 /** Un dossier tel que le modèle le rend, ou `null` si la forme n'y est pas. */
 function readProposedFolder(entry: unknown): { id: string; name: string } | null {
   if (typeof entry !== "object" || entry === null) return null;
@@ -1108,6 +1195,22 @@ function buildSystemPrompt(
       "un rendez-vous récurrent. Le cas échéant, appelle l'outil correspondant",
       "pour le proposer — sans interrompre le fil de la conversation, et sans",
       "jamais présenter la chose comme déjà faite : c'est une proposition.",
+      "",
+      "Prends aussi les devants une fois la réponse donnée : si elle débouche",
+      "clairement sur une suite concrète — contacter quelqu'un, comparer une",
+      "offre, décider avant une date — propose-la avec l'outil correspondant",
+      "plutôt que d'attendre qu'on te la demande. Réserve ça aux cas nets, pas",
+      "à chaque réponse : dans le doute, n'ajoute rien.",
+    );
+  }
+
+  if (todo.tools.includes(SUGGEST_TASK_LIST)) {
+    lines.push(
+      "",
+      "Si l'utilisateur demande explicitement de transformer l'échange en",
+      "todoliste, ne le décris pas en texte : appelle `suggest_task_list` tout",
+      "de suite, comme pour n'importe quelle autre proposition — la demande",
+      "explicite ne dispense pas de la faire valider.",
     );
   }
 
@@ -1195,6 +1298,27 @@ function buildOnboardingPrompt(assistantName: string, preamble: string[]): strin
     "ne crée rien : il affiche une proposition que l'utilisateur valide d'un geste.",
     "Ne présente donc jamais les dossiers comme déjà créés.",
     ...TOOL_ANSWER_RULE,
+  ].join("\n");
+}
+
+/**
+ * Consigne du geste « convertir en todoliste » (§13.4.1, #17).
+ *
+ * Distincte de `buildSystemPrompt` : ce n'est pas un tour de dialogue mais un
+ * appel ponctuel où un seul outil a un sens. Reprendre toute la consigne
+ * habituelle — format de réponse, autres outils — n'apporterait rien à un
+ * appel qui ne produit jamais de texte.
+ */
+function buildExtractionPrompt(context: AssistantContext, now: Date): string {
+  return [
+    `Tu es ${context.name}, l'assistant d'organisation personnelle de l'utilisateur.`,
+    ...describeNow(context.timezone, now),
+    "",
+    "L'utilisateur vient de demander explicitement de transformer cette",
+    "conversation en todoliste. Relis l'échange et appelle `suggest_task_list`",
+    "avec ce qui en ressort — une liste d'achats et une liste de tâches",
+    "distinctes s'il y a lieu, jamais fusionnées. N'écris aucun texte : la",
+    "carte de proposition suffit, comme pour n'importe quelle autre suggestion.",
   ].join("\n");
 }
 

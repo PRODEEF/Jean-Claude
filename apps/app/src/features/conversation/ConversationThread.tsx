@@ -268,11 +268,14 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
                     key={suggestion.id}
                     suggestion={suggestion}
                     isPending={resolve.isPending && resolve.variables?.id === suggestion.id}
-                    onAccept={(folderSelection) =>
+                    onAccept={(input) =>
                       resolve.mutate({
                         id: suggestion.id,
                         action: "accept",
-                        ...(folderSelection ? { folderSelection } : {}),
+                        ...(input?.folderSelection
+                          ? { folderSelection: input.folderSelection }
+                          : {}),
+                        ...(input?.taskListEdits ? { taskListEdits: input.taskListEdits } : {}),
                       })
                     }
                     onDismiss={() => resolve.mutate({ id: suggestion.id, action: "dismiss" })}
