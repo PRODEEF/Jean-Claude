@@ -218,50 +218,6 @@ export function AppSidebar({
       </View>
 
       <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
-        {/* Discussions et tâches : le canal permanent (A.10), non déplaçable —
-            il n'est pas une conversation parmi d'autres — puis toutes les
-            conversations à plat, y compris celles déjà rangées dans un
-            dossier. Ce n'est pas une duplication : la même conversation reste
-            visible depuis son dossier, ci-dessous, et depuis cette vue
-            chronologique (§5.2, A.1). */}
-        <SectionLabel>Discussions et tâches</SectionLabel>
-
-        <Button
-          variant="ghost"
-          onPress={() => go("/assistant")}
-          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
-          className={cx("h-auto justify-start gap-2 px-2 py-1.5", pathname === "/assistant")}
-        >
-          <View className="size-7 items-center justify-center rounded-md bg-primary">
-            <Icon as={MessageCircle} size={14} className="text-primary-foreground" />
-          </View>
-          <Text className="flex-1 text-sm font-semibold text-foreground" numberOfLines={1}>
-            {assistantName}
-          </Text>
-          <UnreadBadge
-            count={channel?.unreadCount ?? 0}
-            pendingQuestion={channel?.hasPendingQuestion ?? false}
-          />
-        </Button>
-
-        {all.map((conversation) =>
-          renaming?.id === conversation.id ? (
-            <ConversationNameRow
-              key={conversation.id}
-              conversation={conversation}
-              onDone={() => setRenaming(null)}
-            />
-          ) : (
-            <ConversationRow
-              key={conversation.id}
-              conversation={conversation}
-              pathname={pathname}
-              onOpen={go}
-              onMenu={setConversationMenu}
-            />
-          ),
-        )}
-
         {/* L'en-tête fait office de zone racine : y déposer un dossier le sort
             de son parent. Sans elle, le geste serait à sens unique — on saurait
             ranger un dossier, jamais l'en ressortir. */}
@@ -340,6 +296,51 @@ export function AppSidebar({
             )}
           </>
         ) : null}
+
+        {/* Discussions et tâches : le canal permanent (A.10), non déplaçable —
+            il n'est pas une conversation parmi d'autres — puis toutes les
+            conversations à plat, y compris celles déjà rangées dans un
+            dossier. Ce n'est pas une duplication : la même conversation reste
+            visible depuis son dossier, ci-dessus, et depuis cette vue
+            chronologique (§5.2, A.1). */}
+        <SectionLabel>Discussions et tâches</SectionLabel>
+
+        <Button
+          variant="ghost"
+          onPress={() => go("/assistant")}
+          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+          className={cx("h-auto justify-start gap-2 px-2 py-1.5", pathname === "/assistant")}
+        >
+          <View className="size-7 items-center justify-center rounded-md bg-primary">
+            <Icon as={MessageCircle} size={14} className="text-primary-foreground" />
+          </View>
+          <Text className="flex-1 text-sm" numberOfLines={1}>
+            <Text className="font-semibold text-foreground">{assistantName}</Text>
+            <Text className="font-normal text-muted-foreground"> - Canal permanent</Text>
+          </Text>
+          <UnreadBadge
+            count={channel?.unreadCount ?? 0}
+            pendingQuestion={channel?.hasPendingQuestion ?? false}
+          />
+        </Button>
+
+        {all.map((conversation) =>
+          renaming?.id === conversation.id ? (
+            <ConversationNameRow
+              key={conversation.id}
+              conversation={conversation}
+              onDone={() => setRenaming(null)}
+            />
+          ) : (
+            <ConversationRow
+              key={conversation.id}
+              conversation={conversation}
+              pathname={pathname}
+              onOpen={go}
+              onMenu={setConversationMenu}
+            />
+          ),
+        )}
       </ScrollView>
 
       <Separator />

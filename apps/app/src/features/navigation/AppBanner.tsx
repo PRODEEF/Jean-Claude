@@ -35,17 +35,17 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
   const [searching, setSearching] = useState(false);
 
   // Option « bandeau uni » (demande produit) : le fond pastel dérivé de la
-  // couleur d'assistant cède la place à un ton neutre, celui de la barre
-  // latérale — le reste des usages de `accent-soft` (bulles, cartes de
-  // question, calendrier) n'est pas concerné.
+  // couleur d'assistant cède la place à son aplat plein — « uni » comme
+  // « sans dégradé de teinte », pas comme « neutre ». Le reste des usages de
+  // `accent-soft` (bulles, cartes de question, calendrier) n'est pas concerné.
   const flat = profile?.preferences.flatBanner ?? false;
-  const fg = flat ? "text-foreground" : "text-accent-soft-foreground";
+  const fg = flat ? "text-primary-foreground" : "text-accent-soft-foreground";
 
   return (
     <View
       className={cn(
         "h-14 flex-row items-center gap-2 border-b border-border px-3",
-        flat ? "bg-secondary" : "bg-accent-soft",
+        flat ? "bg-primary" : "bg-accent-soft",
       )}
     >
       {/* `min-w-0` est indispensable : sans lui, une zone en `flex-1` refuse de
@@ -110,6 +110,10 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
               onPress={() => router.push(link.href)}
               accessibilityLabel={link.label}
               accessibilityState={{ selected: active }}
+              // Sur bandeau uni, le fond du bouton actif (`bg-primary`) est
+              // désormais celui du bandeau lui-même : sans cet anneau, l'onglet
+              // ouvert deviendrait indiscernable du reste de la barre.
+              className={cn(flat && active && "ring-2 ring-primary-foreground/60")}
             >
               <Icon as={link.icon} size={18} className={active ? "text-primary-foreground" : fg} />
             </Button>
