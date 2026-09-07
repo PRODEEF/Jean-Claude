@@ -116,18 +116,6 @@ export function AppSidebar({
   };
 
   /**
-   * Capture sans friction (§13.4.1) : la conversation naît sans qu'on demande
-   * où la ranger. Le classement vient après, jamais avant.
-   */
-  const create = useMutation({
-    mutationFn: (folderIds: string[]) => api.conversations.create({ folderIds }),
-    onSuccess: async (conversation) => {
-      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      go(`/chat/${conversation.id}`);
-    },
-  });
-
-  /**
    * Conversion à la demande (A.2, #17) : la carte de proposition se lit dans
    * le fil de la conversation visée, comme n'importe quelle autre suggestion
    * — l'assistant propose, il n'exécute pas (§12.1).
@@ -207,8 +195,7 @@ export function AppSidebar({
 
         <Button
           variant="outline"
-          onPress={() => create.mutate([])}
-          disabled={create.isPending}
+          onPress={() => go("/chat")}
           accessibilityLabel="Démarrer une nouvelle conversation"
           className="justify-start gap-2"
         >
@@ -262,7 +249,7 @@ export function AppSidebar({
             onOpen={go}
             onMenu={setMenuTarget}
             onCloseNaming={() => setNaming(null)}
-            onNewConversation={(folderId) => create.mutate([folderId])}
+            onNewConversation={(folderId) => go(`/chat?folderId=${folderId}`)}
             onConversationMenu={setConversationMenu}
             onCloseRenaming={() => setRenaming(null)}
             onDropConversation={dropOnFolder}
