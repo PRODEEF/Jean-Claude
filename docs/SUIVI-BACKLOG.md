@@ -7,11 +7,33 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **7 septembre 2026** — pastille de non-lu sur les
-conversations, réglage « bandeau uni », section « Discussions et tâches »
-dans la barre latérale, trois ajustements du calendrier (clic sur un jour,
-détail d'un événement, détail d'une todoliste), et les issues #17, #18 et #20
-qui se referment.
+Dernière mise à jour : **7 septembre 2026** — une todoliste datée pose
+désormais un créneau journée entière plutôt qu'un rendez-vous à heure fixe,
+pastille de non-lu sur les conversations, réglage « bandeau uni », section
+« Discussions et tâches » dans la barre latérale, trois ajustements du
+calendrier (clic sur un jour, détail d'un événement, détail d'une todoliste),
+et les issues #17, #18 et #20 qui se referment.
+
+**Une todoliste datée pose désormais un créneau journée entière, jamais un
+rendez-vous à heure fixe.** Signalé en usage réel : un événement créé par
+l'assistant n'était jamais journée entière et semblait commencer à 23h59.
+`scheduleTasks` (`feature/assistant`) forçait `allDay: false` sur tout
+événement né d'une todoliste acceptée — la seule voie par laquelle l'assistant
+pose un rendez-vous, `suggest_recurring_event` restant sans module pour
+l'exécuter (A.11). Il pose maintenant systématiquement un créneau journée
+entière (`allDay: true`, `endsAt: null`), la même convention que la création
+manuelle d'un événement journée entière (`event-form.ts`) : une todoliste date
+un jour, jamais un horaire. En cause aussi, `dueAt` n'atterrissait pas
+toujours à minuit : le filet déterministe (`parseRelativeDateFr`) ne corrige
+que les tournures qu'il reconnaît (« lundi prochain », « dans 3 jours »...),
+et pour le reste — dates absolues, tournures non couvertes — le calcul du
+modèle restait tel quel ; un LLM laissé libre retombe souvent sur une
+convention de « fin de journée » (23h59) plutôt que sur minuit, malgré la
+consigne qui le demande. `withCorrectedDueDates` ramène désormais
+systématiquement l'heure à minuit dans le fuseau du profil, que l'expression
+source soit reconnue ou non ; `extractTaskList` (geste explicite
+« convertis en todoliste ») passe maintenant par ce même filet, qu'il
+court-circuitait jusqu'ici.
 
 **Pastille de non-lu sur les conversations**, hors cahier des charges. Un
 compteur de messages assistant reçus depuis la dernière ouverture s'affiche à

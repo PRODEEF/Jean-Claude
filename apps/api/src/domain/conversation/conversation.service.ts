@@ -36,6 +36,7 @@ import type {
 } from "../../core/llm/llm.port.js";
 import { logger } from "../../core/logger.js";
 import { parseRelativeDateFr } from "../../core/relative-date.js";
+import { fromWall, toWall } from "../../core/timezone.js";
 import {
   ASK_QUESTION,
   ASSISTANT_TOOLS,
@@ -437,8 +438,9 @@ export class ConversationService {
       throw httpError(422, "Il n'y a rien à convertir dans cette conversation.");
     }
 
+    const now = new Date();
     const request: LlmCompletionRequest = {
-      system: buildExtractionPrompt(context, new Date()),
+      system: buildExtractionPrompt(context, now),
       messages: dialogue.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
       tools: [SUGGEST_TASK_LIST],
       ...(context.model ? { model: context.model } : {}),
@@ -450,8 +452,11 @@ export class ConversationService {
     }
 
     const call = toolCalls.find((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name);
-    const suggestion = call
-      ? await this.suggestions.capture(userId, conversationId, call, accessToken)
+    // Même filet que le tour de dialogue ordinaire : sans lui, une échéance
+    // extraite ici échapperait à la correction de date (A.3, #18).
+    const corrected = call ? withCorrectedDueDates(call, now, context.timezone) : null;
+    const suggestion = corrected
+      ? await this.suggestions.capture(userId, conversationId, corrected, accessToken)
       : null;
 
     if (!suggestion) {
@@ -968,14 +973,19 @@ function withVerifiedFolders(toolCall: LlmToolCall, known: FolderTreeNode[]): Ll
 }
 
 /**
- * Corrige les échéances relatives d'un `suggest_task_list` avant capture (A.3, #18).
+ * Corrige les échéances d'un `suggest_task_list` avant capture (A.3, #18).
  *
  * Le modèle calcule déjà `dueAt` lui-même, mais se trompe parfois dans
  * l'arithmétique des jours de la semaine. Quand il a aussi recopié
  * l'expression source (`dueAtText`) et qu'elle est reconnue avec certitude,
- * le calcul déterministe du serveur remplace le sien ; sinon `dueAt` reste
- * tel quel — un filet de sécurité qui ne couvre qu'un cas ne doit jamais
- * faire pire que son absence.
+ * le calcul déterministe du serveur remplace le sien.
+ *
+ * Dans tous les cas, l'heure est ensuite ramenée à minuit dans le fuseau du
+ * profil : une todoliste date un jour, jamais un horaire — laissé à sa propre
+ * arithmétique, un LLM retombe souvent sur une convention de « fin de
+ * journée » (23h59) plutôt que sur minuit, ce qui posait un événement à la
+ * mauvaise heure une fois `schedule_task` accepté au lieu d'un créneau
+ * journée entière.
  */
 function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: string): LlmToolCall {
   if (toolCall.name !== SUGGEST_TASK_LIST.name) return toolCall;
@@ -987,13 +997,33 @@ function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: strin
     if (typeof entry !== "object" || entry === null) return entry;
 
     const dueAtText = (entry as Record<string, unknown>)["dueAtText"];
-    if (typeof dueAtText !== "string") return entry;
+    const parsed =
+      typeof dueAtText === "string" ? parseRelativeDateFr(dueAtText, now, timezone) : null;
+    if (parsed) return { ...entry, dueAt: parsed };
 
-    const parsed = parseRelativeDateFr(dueAtText, now, timezone);
-    return parsed ? { ...entry, dueAt: parsed } : entry;
+    const dueAt = (entry as Record<string, unknown>)["dueAt"];
+    if (typeof dueAt !== "string") return entry;
+
+    const midnight = truncateToMidnight(dueAt, timezone);
+    return midnight ? { ...entry, dueAt: midnight } : entry;
   });
 
   return { ...toolCall, input: { ...toolCall.input, lists: corrected } };
+}
+
+/**
+ * Minuit du même jour mural que `iso`, dans le fuseau donné.
+ *
+ * `null` si `iso` est illisible — la valeur du modèle reste alors telle
+ * quelle, un filet qui invente est pire qu'un filet absent.
+ */
+function truncateToMidnight(iso: string, timeZone: string): string | null {
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) return null;
+
+  const wall = toWall(instant, timeZone);
+  const midnightWallMs = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate());
+  return fromWall(midnightWallMs, timeZone).toISOString();
 }
 
 /** Un dossier tel que le modèle le rend, ou `null` si la forme n'y est pas. */
