@@ -367,7 +367,7 @@ export function SettingsScreen() {
               </Text>
             </View>
             <Switch
-              value={profile?.preferences.flatBanner ?? false}
+              value={profile?.preferences.flatBanner ?? true}
               onValueChange={(value) => updateProfile.mutate({ flatBanner: value })}
               disabled={!profile || updateProfile.isPending}
               accessibilityLabel="Bandeau uni"

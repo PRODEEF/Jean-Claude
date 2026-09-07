@@ -38,7 +38,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
   // couleur d'assistant cède la place à son aplat plein — « uni » comme
   // « sans dégradé de teinte », pas comme « neutre ». Le reste des usages de
   // `accent-soft` (bulles, cartes de question, calendrier) n'est pas concerné.
-  const flat = profile?.preferences.flatBanner ?? false;
+  const flat = profile?.preferences.flatBanner ?? true;
   const fg = flat ? "text-primary-foreground" : "text-accent-soft-foreground";
 
   return (
