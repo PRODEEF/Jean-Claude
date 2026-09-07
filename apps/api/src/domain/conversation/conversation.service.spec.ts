@@ -2314,4 +2314,128 @@ describe("ConversationService", () => {
       ).rejects.toMatchObject({ status: 422 });
     });
   });
+
+  describe("correction des échéances relatives (A.3, #18)", () => {
+    it("remplace l'échéance du modèle par le calcul déterministe quand l'expression est reconnue", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  // Date fautive du modèle : le serveur doit la corriger.
+                  // NOW est un mercredi (2 septembre) : le prochain vendredi
+                  // est le 4, minuit Paris.
+                  dueAt: "2026-09-01T00:00:00.000Z",
+                  dueAtText: "vendredi",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain pour vendredi.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ title: "Courses", dueAt: "2026-09-03T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("laisse l'échéance du modèle inchangée quand l'expression n'est pas reconnue", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  dueAt: "2026-09-15T00:00:00.000Z",
+                  dueAtText: "le 15 septembre",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain pour le 15.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-15T00:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("garde le calcul du modèle quand la liste ne porte pas d'expression source", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  dueAt: "2026-09-10T00:00:00.000Z",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-10T00:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+  });
 });

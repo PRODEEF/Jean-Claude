@@ -35,6 +35,7 @@ import type {
   LlmToolCall,
 } from "../../core/llm/llm.port.js";
 import { logger } from "../../core/logger.js";
+import { parseRelativeDateFr } from "../../core/relative-date.js";
 import {
   ASK_QUESTION,
   ASSISTANT_TOOLS,
@@ -633,12 +634,12 @@ export class ConversationService {
           logger.warn(SCOPE, `Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
-        await this.suggestions.capture(
-          userId,
-          conversationId,
+        const corrected = withCorrectedDueDates(
           withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
-          accessToken,
+          now,
+          context.timezone,
         );
+        await this.suggestions.capture(userId, conversationId, corrected, accessToken);
       }
 
       await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
@@ -959,6 +960,35 @@ function withVerifiedFolders(toolCall: LlmToolCall, known: FolderTreeNode[]): Ll
   }
 
   return { ...toolCall, input: { ...toolCall.input, existingFolderIds: verified } };
+}
+
+/**
+ * Corrige les échéances relatives d'un `suggest_task_list` avant capture (A.3, #18).
+ *
+ * Le modèle calcule déjà `dueAt` lui-même, mais se trompe parfois dans
+ * l'arithmétique des jours de la semaine. Quand il a aussi recopié
+ * l'expression source (`dueAtText`) et qu'elle est reconnue avec certitude,
+ * le calcul déterministe du serveur remplace le sien ; sinon `dueAt` reste
+ * tel quel — un filet de sécurité qui ne couvre qu'un cas ne doit jamais
+ * faire pire que son absence.
+ */
+function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: string): LlmToolCall {
+  if (toolCall.name !== SUGGEST_TASK_LIST.name) return toolCall;
+
+  const lists = toolCall.input["lists"];
+  if (!Array.isArray(lists)) return toolCall;
+
+  const corrected = lists.map((entry) => {
+    if (typeof entry !== "object" || entry === null) return entry;
+
+    const dueAtText = (entry as Record<string, unknown>)["dueAtText"];
+    if (typeof dueAtText !== "string") return entry;
+
+    const parsed = parseRelativeDateFr(dueAtText, now, timezone);
+    return parsed ? { ...entry, dueAt: parsed } : entry;
+  });
+
+  return { ...toolCall, input: { ...toolCall.input, lists: corrected } };
 }
 
 /** Un dossier tel que le modèle le rend, ou `null` si la forme n'y est pas. */
