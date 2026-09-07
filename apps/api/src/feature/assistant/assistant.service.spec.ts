@@ -496,7 +496,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolderNames: [] }),
+            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolders: [] }),
           ),
       });
       const folders = makeFolderRepository([
@@ -523,7 +523,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [], newFolderNames: ["Assurances"] }),
+            makeFilingSuggestion({ existingFolderIds: [], newFolders: [{ name: "Assurances" }] }),
           ),
       });
       const folders = makeFolderRepository();
@@ -550,7 +550,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [], newFolderNames: ["assurances"] }),
+            makeFilingSuggestion({ existingFolderIds: [], newFolders: [{ name: "assurances" }] }),
           ),
       });
       const folders = makeFolderRepository([makeFolder({ id: ASSURANCES, name: "Assurances" })]);
@@ -567,12 +567,70 @@ describe("AssistantService", () => {
       expect(assignedFolders(conversations)).toEqual([ASSURANCES]);
     });
 
+    it("crée le nouveau dossier comme sous-dossier de son parent existant", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeFilingSuggestion({
+            existingFolderIds: [],
+            newFolders: [{ name: "Documents", parentId: SANTE }],
+          }),
+        ),
+      });
+      const folders = makeFolderRepository([
+        makeFolder({ id: SANTE, name: "Projet professionnel" }),
+      ]);
+      const conversations = makeConversationRepository();
+
+      await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      expect(folders.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ name: "Documents", parentId: SANTE, createdByAssistant: true }),
+        TOKEN,
+      );
+    });
+
+    it("pose le nouveau dossier à la racine quand son parent a disparu avant l'acceptation", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeFilingSuggestion({
+            existingFolderIds: [],
+            newFolders: [{ name: "Documents", parentId: INVENTE }],
+          }),
+        ),
+      });
+      const folders = makeFolderRepository();
+      const conversations = makeConversationRepository();
+
+      await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      // Le parent introuvable ne fait pas échouer toute l'acceptation : le
+      // dossier naît à la racine plutôt que de perdre la proposition entière.
+      expect(folders.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ name: "Documents", parentId: null, createdByAssistant: true }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
     it("accepte un dossier situé profond dans l'arborescence", async () => {
       const suggestions = makeSuggestionRepository({
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [ASSURANCES], newFolderNames: [] }),
+            makeFilingSuggestion({ existingFolderIds: [ASSURANCES], newFolders: [] }),
           ),
       });
       const intermediaire = "a1b2c3d4-0004-4000-8000-000000000004";
@@ -602,7 +660,7 @@ describe("AssistantService", () => {
         findById: jest.fn().mockResolvedValue(
           makeFilingSuggestion({
             existingFolderIds: [SANTE, INVENTE],
-            newFolderNames: [],
+            newFolders: [],
           }),
         ),
       });
@@ -629,7 +687,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [INVENTE], newFolderNames: [] }),
+            makeFilingSuggestion({ existingFolderIds: [INVENTE], newFolders: [] }),
           ),
       });
       const conversations = makeConversationRepository();
@@ -653,7 +711,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolderNames: ["Assurances"] }),
+            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolders: [{ name: "Assurances" }] }),
           ),
       });
       const folders = makeFolderRepository([makeFolder({ id: SANTE, name: "Santé" })]);
@@ -664,7 +722,7 @@ describe("AssistantService", () => {
         "sug-1",
         {
           action: "accept",
-          folderSelection: { existingFolderIds: [SANTE], newFolderNames: [] },
+          folderSelection: { existingFolderIds: [SANTE], newFolders: [] },
         },
         TOKEN,
       );
@@ -680,7 +738,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolderNames: [] }),
+            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolders: [] }),
           ),
       });
       const folders = makeFolderRepository([
@@ -693,7 +751,7 @@ describe("AssistantService", () => {
         "sug-1",
         {
           action: "accept",
-          folderSelection: { existingFolderIds: [ASSURANCES], newFolderNames: [] },
+          folderSelection: { existingFolderIds: [ASSURANCES], newFolders: [] },
         },
         TOKEN,
       );
@@ -702,7 +760,7 @@ describe("AssistantService", () => {
       // ce qui a été fait, pas ce qui avait été proposé.
       expect(suggestions.markResolved).toHaveBeenCalledWith("sug-1", "accepted", TOKEN, {
         existingFolderIds: [ASSURANCES],
-        newFolderNames: [],
+        newFolders: [],
       });
     });
 
@@ -711,7 +769,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolderNames: [] }),
+            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolders: [] }),
           ),
       });
       const conversations = makeConversationRepository();
@@ -722,7 +780,7 @@ describe("AssistantService", () => {
           "sug-1",
           {
             action: "accept",
-            folderSelection: { existingFolderIds: [ASSURANCES], newFolderNames: [] },
+            folderSelection: { existingFolderIds: [ASSURANCES], newFolders: [] },
           },
           TOKEN,
         ),

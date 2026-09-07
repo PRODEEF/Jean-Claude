@@ -123,7 +123,7 @@ const APPLIED_DIRECTLY = new Set([
  */
 type Housekeeping = {
   tools: LlmTool[];
-  filing: { folders: FolderTreeNode[] } | null;
+  filing: { folders: FolderTreeNode[]; currentFolderIds: string[] } | null;
   /**
    * Ce que le canal permanent doit savoir de l'utilisateur pour proposer juste :
    * ses dossiers, et son agenda proche. `null` partout ailleurs — une
@@ -737,7 +737,8 @@ export class ConversationService {
    * proche — il annonce les rappels comme premier de ses trois sujets, et sans
    * cette lecture il ne pourrait qu'inventer. Une conversation classique reçoit
    * de quoi se nommer tant qu'elle porte le titre par défaut, et de quoi se
-   * ranger tant qu'elle n'est dans aucun dossier.
+   * ranger — d'office tant qu'elle n'est dans aucun dossier, sur demande
+   * explicite une fois classée (§12.1).
    *
    * Dans les deux registres, une proposition qui attend déjà une réponse retire
    * l'outil correspondant du jeu : la relancer à chaque message empilerait les
@@ -787,10 +788,10 @@ export class ConversationService {
       return { tools: structuring, filing: null, channel: { folders, agenda }, lists: [], decided };
     }
 
-    // L'arborescence n'est utile qu'à un fil non classé dont le rangement reste
-    // autorisé : les deux se savent sans lire la base, et la lecture part alors
-    // en même temps que les propositions plutôt qu'après elles.
-    const mayFile = conversation.folderIds.length === 0 && scope.folderOrganization;
+    // Autorisé tant que la capacité reste active — classé ou non : une
+    // conversation déjà rangée doit pouvoir être reclassée sur demande
+    // explicite (§12.1), pas seulement lors de son premier rangement.
+    const mayFile = scope.folderOrganization;
 
     const [decided, tree, lists] = await Promise.all([
       this.suggestions.listForConversation(conversation.id, accessToken),
@@ -825,7 +826,13 @@ export class ConversationService {
     }
 
     tools.push(SUGGEST_FOLDERS);
-    return { tools, filing: { folders: tree }, channel: null, lists, decided };
+    return {
+      tools,
+      filing: { folders: tree, currentFolderIds: conversation.folderIds },
+      channel: null,
+      lists,
+      decided,
+    };
   }
 
   /**
@@ -925,46 +932,87 @@ function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[])
  * étranger au sujet, et rien en aval ne peut le détecter. C'est le seul endroit
  * où les deux informations sont connues ensemble.
  *
- * L'appel est traduit vers `existingFolderIds`, la forme que la charge utile
- * persistée porte depuis le début : les cartes déjà en base et le client
- * restent lisibles à l'identique.
+ * Deux champs vérifiés indépendamment : `existingFolders`, traduit vers
+ * `existingFolderIds`, la forme que la charge utile persistée porte depuis le
+ * début ; et le `parent` de chaque nouveau dossier, qui suit la même règle
+ * puisqu'il désigne lui aussi un dossier existant.
  */
 function withVerifiedFolders(toolCall: LlmToolCall, known: FolderTreeNode[]): LlmToolCall {
   if (toolCall.name !== SUGGEST_FOLDERS.name) return toolCall;
 
-  const proposed = toolCall.input["existingFolders"];
+  const folders = flattenWithPath(known);
+  const input = { ...toolCall.input };
+
+  const existingProposed = toolCall.input["existingFolders"];
   // Le modèle s'en est tenu aux nouveaux dossiers, ou a répondu dans l'ancienne
   // forme : la capture sait déjà écarter un identifiant qui n'est pas un UUID.
-  if (!Array.isArray(proposed)) return toolCall;
-
-  const folders = flattenWithPath(known);
-  const verified: string[] = [];
-
-  for (const entry of proposed) {
-    const candidate = readProposedFolder(entry);
-    if (!candidate) {
-      logger.warn(SCOPE, "Dossier proposé sans identifiant ni nom exploitables, écarté.");
-      continue;
-    }
-
-    const folder = folders.find((known) => known.id === candidate.id);
-    if (!folder) {
-      logger.warn(SCOPE, "Dossier proposé inconnu, écarté du rangement.");
-      continue;
-    }
-
-    // Le chemin complet est accepté au même titre que le nom seul : la consigne
-    // affiche « Administratif > Assurances », et reprendre la ligne entière est
-    // une lecture fidèle, pas une confusion.
-    if (!sameName(folder.name, candidate.name) && !sameName(folder.path, candidate.name)) {
-      logger.warn(SCOPE, "Dossier proposé dont le nom contredit l'identifiant, écarté.");
-      continue;
-    }
-
-    verified.push(folder.id);
+  if (Array.isArray(existingProposed)) {
+    input["existingFolderIds"] = existingProposed.flatMap((entry) => {
+      const folder = matchProposedFolder(entry, folders);
+      return folder ? [folder.id] : [];
+    });
   }
 
-  return { ...toolCall, input: { ...toolCall.input, existingFolderIds: verified } };
+  const newProposed = toolCall.input["newFolders"];
+  if (Array.isArray(newProposed)) {
+    input["newFolders"] = newProposed.flatMap((entry) => verifyNewFolder(entry, folders));
+  }
+
+  return { ...toolCall, input };
+}
+
+/**
+ * Un dossier proposé — dossier existant à réutiliser, ou parent d'un nouveau
+ * dossier — vérifié contre l'arborescence connue.
+ */
+function matchProposedFolder(
+  entry: unknown,
+  known: { id: string; name: string; path: string }[],
+): { id: string; name: string; path: string } | null {
+  const candidate = readProposedFolder(entry);
+  if (!candidate) {
+    logger.warn(SCOPE, "Dossier proposé sans identifiant ni nom exploitables, écarté.");
+    return null;
+  }
+
+  const folder = known.find((candidateFolder) => candidateFolder.id === candidate.id);
+  if (!folder) {
+    logger.warn(SCOPE, "Dossier proposé inconnu, écarté du rangement.");
+    return null;
+  }
+
+  // Le chemin complet est accepté au même titre que le nom seul : la consigne
+  // affiche « Administratif > Assurances », et reprendre la ligne entière est
+  // une lecture fidèle, pas une confusion.
+  if (!sameName(folder.name, candidate.name) && !sameName(folder.path, candidate.name)) {
+    logger.warn(SCOPE, "Dossier proposé dont le nom contredit l'identifiant, écarté.");
+    return null;
+  }
+
+  return folder;
+}
+
+/**
+ * Un nouveau dossier proposé, son `parent` vérifié quand il en porte un.
+ *
+ * Un parent introuvable ne fait pas perdre le nouveau dossier lui-même : il
+ * naît alors à la racine plutôt que de faire échouer toute la proposition
+ * pour une seule ligne mal recopiée.
+ */
+function verifyNewFolder(
+  entry: unknown,
+  known: { id: string; name: string; path: string }[],
+): { name: string; parentId?: string }[] {
+  if (typeof entry !== "object" || entry === null || !("name" in entry)) return [];
+
+  const { name } = entry as Record<string, unknown>;
+  if (typeof name !== "string") return [];
+
+  const parent = (entry as Record<string, unknown>)["parent"];
+  if (parent === undefined) return [{ name }];
+
+  const folder = matchProposedFolder(parent, known);
+  return [folder ? { name, parentId: folder.id } : { name }];
 }
 
 /**
@@ -1248,11 +1296,30 @@ function buildSystemPrompt(
   }
 
   if (todo.filing) {
+    const alreadyFiled = todo.filing.currentFolderIds.length > 0;
+
     lines.push(
       "",
-      "Elle n'est rangée dans aucun dossier. Dès que son sujet est clair, appelle",
-      "`suggest_folders` pour proposer où la ranger. N'attends pas qu'on te le",
-      "demande, et ne le fais qu'une fois.",
+      alreadyFiled
+        ? describeCurrentFiling(todo.filing.currentFolderIds, todo.filing.folders)
+        : "Elle n'est rangée dans aucun dossier. Dès que son sujet est clair, appelle " +
+            "`suggest_folders` pour proposer où la ranger. N'attends pas qu'on te le " +
+            "demande, et ne le fais qu'une fois.",
+    );
+
+    if (alreadyFiled) {
+      lines.push(
+        "",
+        "N'appelle `suggest_folders` que si l'utilisateur demande explicitement de",
+        "revoir ce rangement — le changer, l'étendre à un autre dossier, lui créer un",
+        "sous-dossier. Ne le reproposer jamais de toi-même : elle est déjà rangée.",
+        "L'appel remplace alors le rangement actuel en entier : reprends les dossiers",
+        "à garder en plus de ceux à changer, un dossier actuel absent de l'appel en",
+        "est retiré.",
+      );
+    }
+
+    lines.push(
       "",
       "Ne propose que des dossiers dont cette conversation-ci traite réellement.",
       "Elle peut en relever de plusieurs à la fois — la mutuelle est à la fois",
@@ -1262,7 +1329,9 @@ function buildSystemPrompt(
       "",
       todo.filing.folders.length > 0
         ? "Dossiers existants. Pour en réutiliser un, recopie son identifiant ET son nom" +
-          " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas."
+          " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas." +
+          " Un nouveau dossier peut aussi naître comme sous-dossier de l'un d'eux : reprends-le" +
+          " alors en `parent`, de la même façon."
         : "L'utilisateur n'a encore aucun dossier : propose-en un nouveau, sobrement nommé.",
       ...describeFolders(todo.filing.folders),
     );
@@ -1509,6 +1578,26 @@ function formatInstant(
       instant,
     );
   }
+}
+
+/**
+ * Rangement actuel d'une conversation déjà classée, tel que lu dans la consigne.
+ *
+ * Sans cette phrase, le modèle qui reçoit à nouveau `suggest_folders` — parce
+ * que l'utilisateur demande de le changer — ne saurait pas ce qu'il modifie :
+ * l'appel remplace le rangement entier, encore faut-il connaître celui qu'il
+ * remplace pour décider quoi garder.
+ */
+function describeCurrentFiling(currentFolderIds: string[], tree: FolderTreeNode[]): string {
+  const known = flattenWithPath(tree);
+  const paths = currentFolderIds.flatMap((id) => {
+    const folder = known.find((candidate) => candidate.id === id);
+    return folder ? [folder.path] : [];
+  });
+
+  return paths.length > 0
+    ? `Elle est déjà rangée dans ${paths.join(", ")}.`
+    : "Elle est déjà rangée, dans un dossier qui n'apparaît plus dans son arborescence actuelle.";
 }
 
 /**

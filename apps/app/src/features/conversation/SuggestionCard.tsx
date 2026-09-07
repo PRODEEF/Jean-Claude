@@ -72,7 +72,7 @@ export function SuggestionCard({
   const editedPayload = editablePayload(editable.lists);
   const emptied = editableTaskLists
     ? editedPayload.lists.length === 0
-    : choosable && selection.existingFolderIds.length + selection.newFolderNames.length === 0;
+    : choosable && selection.existingFolderIds.length + selection.newFolders.length === 0;
 
   const accept = () => {
     if (editableTaskLists) {
@@ -421,8 +421,8 @@ function selectedFolders(lines: PreviewLine[], excluded: readonly string[]): Ass
     existingFolderIds: kept.flatMap((line) =>
       line.choice && "existingFolderId" in line.choice ? [line.choice.existingFolderId] : [],
     ),
-    newFolderNames: kept.flatMap((line) =>
-      line.choice && "newFolderName" in line.choice ? [line.choice.newFolderName] : [],
+    newFolders: kept.flatMap((line) =>
+      line.choice && "newFolder" in line.choice ? [line.choice.newFolder] : [],
     ),
   };
 }
@@ -483,7 +483,7 @@ type PreviewLine = {
   nested: boolean;
   hint?: string;
   /** Dossier cochable, et ce qu'il vaut dans la réponse envoyée au serveur. */
-  choice?: { existingFolderId: string } | { newFolderName: string };
+  choice?: { existingFolderId: string } | { newFolder: { name: string; parentId?: string } };
 };
 
 /**
@@ -599,12 +599,14 @@ function useSuggestionPreview(suggestion: Suggestion): {
           ? [{ key: id, label: name, nested: false, choice: { existingFolderId: id } }]
           : [];
       }),
-      ...proposed.data.newFolderNames.map((name) => ({
-        key: `nouveau:${name}`,
-        label: name,
+      ...proposed.data.newFolders.map((folder) => ({
+        key: `nouveau:${folder.parentId ?? ""}:${folder.name}`,
+        label: folder.name,
         nested: false,
-        hint: "nouveau dossier",
-        choice: { newFolderName: name },
+        hint: folder.parentId
+          ? `nouveau sous-dossier de ${byId.get(folder.parentId) ?? "dossier existant"}`
+          : "nouveau dossier",
+        choice: { newFolder: folder },
       })),
     ],
   };
