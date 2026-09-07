@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Link } from "expo-router";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -106,6 +107,10 @@ export function SignInScreen() {
           <Text style={[styles.legal, { color: palette.textMuted }]}>
             Aucun mot de passe à créer ni à retenir : le code reçu par e-mail suffit.
           </Text>
+
+          <Link href="/privacy" style={[styles.legal, styles.link, { color: palette.textMuted }]}>
+            Politique de confidentialité
+          </Link>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -141,4 +146,5 @@ const styles = StyleSheet.create({
   },
   buttonLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, fontWeight: fontWeight.semibold },
   legal: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, textAlign: "center", lineHeight: 18 },
+  link: { textDecorationLine: "underline" },
 });

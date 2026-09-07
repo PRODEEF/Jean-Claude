@@ -7,13 +7,70 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **7 septembre 2026** — pastille de non-lu sur les
+Dernière mise à jour : **7 septembre 2026** — préparation du déploiement
+stores (issue #21) : politique de confidentialité publiée, `eas.json`,
+documentation du processus de soumission ; pastille de non-lu sur les
 conversations, réglage « bandeau uni », section « Discussions et tâches »
 dans la barre latérale, trois ajustements du calendrier (clic sur un jour,
 détail d'un événement, détail d'une todoliste), et les issues #17, #18 et #20
 qui se referment.
 
-**Pastille de non-lu sur les conversations**, hors cahier des charges. Un
+**Issue #21 amorcée : préparation du déploiement stores**, hors code
+applicatif pour l'essentiel — documentée en détail dans
+`docs/DEPLOIEMENT-STORES.md`. Périmètre volontairement restreint à ce qui ne
+demande pas les comptes développeur (non créés — à voir avec Nicolas) : une
+politique de confidentialité, `eas.json`, et le processus documenté.
+
+La politique de confidentialité est un écran réel (`/privacy`), pas un
+simple fichier : les stores exigent une page consultable sans compte, donc
+`AuthGate` (`apps/app/src/app/_layout.tsx`) l'exempte explicitement de la
+redirection vers la connexion. Liée depuis l'écran de connexion et depuis
+Réglages. Son contenu (`features/legal/privacy-policy.content.ts`) recense
+les données réellement en base — vérifié contre les migrations Supabase, pas
+supposé — et porte des champs `[À COMPLÉTER]` explicites pour ce qui relève
+d'informations légales (raison sociale, SIREN, adresse, région d'hébergement
+Supabase — déjà un point ouvert plus bas) : mieux vaut un brouillon honnête
+sur ses trous qu'un texte plausible mais inventé sur des sujets RGPD.
+
+Point notable découvert en rédigeant : un seul des cinq modèles proposés
+dans les réglages (Mistral) est opéré en UE ; les quatre autres impliquent un
+transfert du contenu des conversations hors UE selon le modèle choisi par
+l'utilisateur. La politique le mentionne, avec un rappel que les garanties
+contractuelles de chaque fournisseur contre la réutilisation à des fins
+d'entraînement restent à vérifier avant mise en production.
+
+`eas.json` pose les trois profils standards (`development`, `preview`,
+`production`) mais ne suffit pas à lancer un build : il manque un compte
+Expo et `eas init`, en plus des comptes Apple/Google pour la soumission —
+enchaînement détaillé dans `docs/DEPLOIEMENT-STORES.md`. Au passage,
+`edgeToEdgeEnabled` retiré d'`app.json` : la clé est obsolète depuis
+qu'Android 16 rend l'edge-to-edge obligatoire, `expo prebuild` le signalait
+en avertissement.
+
+**Un test de faisabilité mobile a été mené avant de s'engager sur ce
+périmètre**, la question s'étant posée : le code permet-il seulement un
+build natif ? `expo prebuild --platform android` réussit proprement
+(manifeste cohérent, aucune fuite d'API web hors garde-fous détectée à
+l'audit). La compilation Gradle complète échoue dans cet environnement pour
+une raison d'infrastructure précise et non liée au code — JDK 17 requis par
+le plugin Gradle React Native/Expo, absent ici, impossible à récupérer
+(résolveur de toolchain bloqué par le proxy, miroir Ubuntu de secours en
+404). Reste donc une inconnue résiduelle et assumée comme telle : aucun
+build natif complet n'a réussi nulle part à ce jour, y compris sur poste de
+développement ou EAS Build — à vérifier au premier `eas build` réel. Deux
+lacunes déjà connues et tracées ailleurs, pas des découvertes : la dictée
+vocale n'a aucune implémentation derrière ses permissions déclarées (issue
+#25), et `userInterfaceStyle: "automatic"` demande `expo-system-ui`, non
+installé, pour être pris en compte nativement.
+
+Point volontairement mis de côté, à reprendre avant la soumission Apple :
+l'authentification par code à usage unique envoyé par e-mail, sans mot de
+passe, ne permet pas de fournir un compte de démonstration classique aux
+reviewers. Deux pistes identifiées et non tranchées — un trigger Supabase
+donnant un code fixe à une adresse dédiée, ou une boîte mail de review
+surveillée manuellement — consignées dans `docs/DEPLOIEMENT-STORES.md`.
+
+Auparavant le même jour : **pastille de non-lu sur les conversations**, hors cahier des charges. Un
 compteur de messages assistant reçus depuis la dernière ouverture s'affiche à
 droite de chaque conversation — canal Jean-Claude compris — et un « ? »
 remplace le chiffre quand une question de l'assistant reste sans réponse
@@ -746,15 +803,18 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Déploiement stores (§7)
 
+Détail complet : `docs/DEPLOIEMENT-STORES.md`.
+
 | Point                                        | Statut | Note                                                    |
 | -------------------------------------------- | :----: | ------------------------------------------------------- |
 | Identifiants de bundle réservés              |   ✅   | `fr.prodeef.jeanclaude` (iOS + Android) dans `app.json` |
 | Permissions micro déclarées                  |   ✅   | `NSMicrophoneUsageDescription`, `RECORD_AUDIO`          |
+| Config EAS Build (`eas.json`)                |   ✅   | Profils `development`/`preview`/`production` — build réel nécessite encore un compte Expo (`eas init`) |
+| Processus et délais de review documentés     |   ✅   | `docs/DEPLOIEMENT-STORES.md`                            |
+| Politique de confidentialité                 |   🔵   | Brouillon publié sur `/privacy` — **Obligatoire** (santé, administratif), champs légaux `[À COMPLÉTER]` avant publication effective |
 | Compte Apple Developer                       |   ⬜   | À voir avec Nicolas                                     |
 | Compte Google Play Console                   |   ⬜   | À voir avec Nicolas                                     |
-| Fiches store (icônes, captures, description) |   ⬜   | Phase C                                                 |
-| Politique de confidentialité                 |   ⬜   | **Obligatoire** — données de santé et administratives   |
-| Processus de review documenté                |   ⬜   | Phase C                                                 |
+| Fiches store (icônes, captures, description) |   ⬜   | Phase C — specs documentées, visuels non produits        |
 
 ---
 

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
+import { Link } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { Palette } from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
@@ -385,6 +386,17 @@ export function SettingsScreen() {
           >
             <Text className="text-base text-foreground">Donner votre avis</Text>
           </Pressable>
+
+          <Link href="/privacy" asChild>
+            <Pressable
+              className="flex-row items-center justify-between"
+              style={{ minHeight: MIN_TOUCH_TARGET }}
+              accessibilityRole="link"
+              accessibilityLabel="Politique de confidentialité"
+            >
+              <Text className="text-base text-foreground">Politique de confidentialité</Text>
+            </Pressable>
+          </Link>
         </Section>
 
         {updateProfile.isError ? (

@@ -17,7 +17,6 @@
     },
     "android": {
       "package": "fr.prodeef.jeanclaude",
-      "edgeToEdgeEnabled": true,
       "permissions": ["RECORD_AUDIO"]
     },
     "web": {

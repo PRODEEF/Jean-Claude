@@ -15,10 +15,11 @@ export type MarkdownProps = {
 };
 
 /**
- * Rendu d'une réponse Markdown.
+ * Rendu d'un texte Markdown : réponses de l'assistant, et contenus statiques
+ * (pages légales).
  *
- * Réservé à la parole de l'assistant : le message de l'utilisateur est du texte
- * qu'il a tapé, l'interpréter ferait disparaître ses astérisques.
+ * Jamais sur un message d'utilisateur : c'est du texte qu'il a tapé,
+ * l'interpréter ferait disparaître ses astérisques.
  */
 export function Markdown({ children }: MarkdownProps) {
   const blocks = useMemo(() => parseMarkdown(children), [children]);

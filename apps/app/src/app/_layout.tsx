@@ -40,8 +40,11 @@ function AuthGate() {
     if (isLoading) return;
 
     const inAuthFlow = segments[0] === "(auth)";
+    // Politique de confidentialité (§7) : les stores l'exigent consultable
+    // avant même la création d'un compte, un reviewer ne s'authentifie pas.
+    const isPublicRoute = segments[0] === "privacy";
 
-    if (!session && !inAuthFlow) {
+    if (!session && !inAuthFlow && !isPublicRoute) {
       router.replace("/(auth)/sign-in");
     } else if (session && inAuthFlow) {
       router.replace("/");
