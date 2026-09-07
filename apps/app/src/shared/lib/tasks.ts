@@ -135,3 +135,12 @@ export function titleMatchesQuery(title: string, query: string): boolean {
   const needle = comparable(query.trim());
   return needle.length > 0 && comparable(title).includes(needle);
 }
+
+/**
+ * Retrait d'un niveau de sous-tâche, en points.
+ *
+ * Assez pour se lire, assez peu pour tenir sur un téléphone — un choix propre
+ * à la todoliste, pas un jeton générique de `spacing`. Partagé entre
+ * `TaskListEditor` et `TaskRow` pour que les deux rendus restent alignés.
+ */
+export const TASK_INDENT = 22;

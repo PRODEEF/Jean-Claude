@@ -86,7 +86,13 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
         // La ligne de titre ne fait qu'une vingtaine de points de haut : le
         // débord lui rend la cible tactile de 44 pt sans épaissir la bannière.
         hitSlop={12}
-        className="shrink"
+        // `flex-1` et non `shrink` seul : avec `flex-basis: auto`, l'élément
+        // se dimensionne d'abord sur son contenu (le texte entier), et
+        // `max-width: 100%` sur le texte n'a alors plus rien à limiter. Il
+        // faut `flex-basis: 0` — comme sur les deux zones latérales — pour
+        // que l'espace disponible soit réparti avant que le texte ne s'y
+        // borne et tronque.
+        className="min-w-0 flex-1"
       >
         <Text className={cn("text-center text-sm", fg)} numberOfLines={1}>
           <Text className={cn("text-sm font-bold uppercase", fg)}>{assistantName}</Text>
