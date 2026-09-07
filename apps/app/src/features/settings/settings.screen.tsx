@@ -363,7 +363,7 @@ export function SettingsScreen() {
             <View className="flex-1">
               <Text className="text-base text-foreground">Bandeau uni</Text>
               <Text className="text-sm text-muted-foreground">
-                Le bandeau du haut perd sa teinte de couleur d'assistant.
+                Le bandeau du haut passe à l'aplat plein de la couleur d'assistant, sans dégradé.
               </Text>
             </View>
             <Switch
