@@ -10,11 +10,22 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-spe
  */
 export function useDictation(onTranscript: (text: string) => void) {
   const [listening, setListening] = useState(false);
-  const baseText = useRef("");
+  // Ce qui était dans le champ avant le geste, puis chaque segment que la
+  // reconnaissance continue a confirmé comme définitif. En continu, chaque
+  // résultat — final ou non — ne couvre que le segment en cours depuis le
+  // dernier résultat final, jamais le cumul de la session : un résultat
+  // provisoire s'affiche par-dessus ce texte sans jamais y être ajouté, et ne
+  // s'y intègre qu'au moment où il devient définitif.
+  const committed = useRef("");
 
   useSpeechRecognitionEvent("result", (event) => {
     const transcript = event.results[0]?.transcript ?? "";
-    onTranscript(joinDictation(baseText.current, transcript));
+    if (event.isFinal) {
+      committed.current = joinDictation(committed.current, transcript);
+      onTranscript(committed.current);
+    } else {
+      onTranscript(joinDictation(committed.current, transcript));
+    }
   });
 
   useSpeechRecognitionEvent("end", () => setListening(false));
@@ -28,7 +39,7 @@ export function useDictation(onTranscript: (text: string) => void) {
   });
 
   const start = useCallback((currentText: string) => {
-    baseText.current = currentText;
+    committed.current = currentText;
     setListening(true);
     ExpoSpeechRecognitionModule.requestPermissionsAsync()
       .then((permission) => {
@@ -36,7 +47,16 @@ export function useDictation(onTranscript: (text: string) => void) {
           setListening(false);
           return;
         }
-        ExpoSpeechRecognitionModule.start({ lang: "fr-FR", interimResults: true });
+        // Sans `continuous`, le reconnaisseur s'arrête de lui-même à la
+        // première pause de parole détectée : le bouton semblait se
+        // désactiver tout seul après une phrase, avant même que
+        // l'utilisateur ait fini de dicter. Il ne s'arrête maintenant que
+        // sur `stop()` — le geste explicite de l'utilisateur.
+        ExpoSpeechRecognitionModule.start({
+          lang: "fr-FR",
+          interimResults: true,
+          continuous: true,
+        });
       })
       .catch((error: unknown) => {
         console.warn("Dictée impossible :", error instanceof Error ? error.message : error);
