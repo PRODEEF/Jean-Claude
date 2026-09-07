@@ -10,6 +10,7 @@ import {
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import type { LlmToolCall } from "../../core/llm/llm.port.js";
+import { logger } from "../../core/logger.js";
 import {
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
@@ -20,6 +21,8 @@ import type { ISuggestionRepository } from "./suggestion.repository.interface.js
 
 /** Longueur maximale de `message`, alignée sur la contrainte CHECK de la table. */
 const MESSAGE_MAX_LENGTH = 500;
+
+const SCOPE = "suggestion.service";
 
 export class SuggestionService {
   constructor(private readonly suggestions: ISuggestionRepository) {}
@@ -49,7 +52,7 @@ export class SuggestionService {
     const message = typeof raw === "string" ? raw.trim() : "";
 
     if (message.length === 0 || message.length > MESSAGE_MAX_LENGTH) {
-      console.warn(`Appel d'outil \`${toolCall.name}\` sans phrase à afficher : ignoré.`);
+      logger.warn(SCOPE, `Appel d'outil \`${toolCall.name}\` sans phrase à afficher : ignoré.`);
       return null;
     }
 
@@ -144,35 +147,63 @@ function translate(
     const payload = addTaskListItemsPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "add_task_list_items", payload: payload.data };
   } else {
-    console.warn(`Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
+    logger.warn(SCOPE, `Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
     return null;
   }
 
-  console.warn(`Appel d'outil \`${toolCall.name}\` inexploitable : suggestion ignorée.`);
+  logger.warn(SCOPE, `Appel d'outil \`${toolCall.name}\` inexploitable : suggestion ignorée.`);
   return null;
 }
 
 /**
- * Écarte les identifiants de dossier qui ne sont pas des UUID.
+ * Écarte les identifiants de dossier qui ne sont pas des UUID — ceux des
+ * dossiers existants, et le `parentId` d'un nouveau dossier.
  *
  * Le modèle reprend parfois le nom d'un dossier là où la consigne demandait son
  * identifiant. Sans ce filtre, une seule valeur inventée fait échouer la
  * validation de la charge entière et la proposition est perdue — alors que
  * l'acceptation, elle, sait déjà passer outre un dossier qu'elle ne retrouve
- * pas. Écarter la ligne fautive plutôt que le rangement tout entier.
+ * pas. Écarter la ligne fautive plutôt que le rangement tout entier ; pour un
+ * `parentId` inexploitable, le nouveau dossier survit, simplement posé à la
+ * racine plutôt que sous son parent.
  *
  * Si le filtre ne laisse rien et qu'aucun nouveau dossier n'est proposé, le
  * schéma échoue à son tour : une proposition sans dossier n'aurait rien à
  * appliquer.
  */
 function withUuidFolderIds(input: Record<string, unknown>): Record<string, unknown> {
-  const ids = input["existingFolderIds"];
-  if (!Array.isArray(ids)) return input;
+  const result = { ...input };
 
-  const kept = ids.filter((id) => uuidSchema.safeParse(id).success);
-  if (kept.length < ids.length) {
-    console.warn("Identifiants de dossier inexploitables écartés du rangement proposé.");
+  const ids = input["existingFolderIds"];
+  if (Array.isArray(ids)) {
+    const kept = ids.filter((id) => uuidSchema.safeParse(id).success);
+    if (kept.length < ids.length) {
+      logger.warn(SCOPE, "Identifiants de dossier inexploitables écartés du rangement proposé.");
+    }
+    result["existingFolderIds"] = kept;
   }
 
-  return { ...input, existingFolderIds: kept };
+  const newFolders = input["newFolders"];
+  if (Array.isArray(newFolders)) {
+    result["newFolders"] = newFolders.map(withoutInvalidParentId);
+  }
+
+  return result;
+}
+
+/**
+ * Écarte un `parentId` qui n'est pas un UUID exploitable, sans perdre le
+ * nouveau dossier lui-même — il naît alors à la racine plutôt que de faire
+ * échouer tout le rangement pour un identifiant de parent inventé.
+ */
+function withoutInvalidParentId(entry: unknown): unknown {
+  if (typeof entry !== "object" || entry === null || !("parentId" in entry)) return entry;
+
+  const parentId = (entry as Record<string, unknown>)["parentId"];
+  if (uuidSchema.safeParse(parentId).success) return entry;
+
+  logger.warn(SCOPE, "Identifiant de dossier parent inexploitable, nouveau dossier posé à la racine.");
+  const rest: Record<string, unknown> = { ...(entry as Record<string, unknown>) };
+  delete rest["parentId"];
+  return rest;
 }

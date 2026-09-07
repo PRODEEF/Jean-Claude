@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Plus,
 } from "lucide-react-native";
+import { ApiError } from "@jc/api-client";
 import type { Conversation, Folder, FolderTreeNode, TaskList } from "@jc/domain";
 import { api } from "@/shared/lib/api";
 import { cn } from "@/shared/lib/utils";
@@ -85,7 +86,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const assistantName = useAssistantName();
-  const { groups, unfiled, all, isLoading, error } = useSidebarData();
+  const { groups, all, channel, isLoading, error } = useSidebarData();
   const [deleting, setDeleting] = useState<Folder | null>(null);
   const [menuTarget, setMenuTarget] = useState<FolderMenuTarget | null>(null);
   /** Dossier en cours de nommage — création ou renommage, `null` si aucun. */
@@ -104,6 +105,8 @@ export function AppSidebar({
   const [drop, setDrop] = useState<ConversationDrop | null>(null);
   /** Ce qu'a répondu le serveur au dernier déplacement raté, `null` sinon. */
   const [moveError, setMoveError] = useState<string | null>(null);
+  /** Ce qu'a répondu le serveur à la dernière conversion en todoliste ratée. */
+  const [extractError, setExtractError] = useState<string | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const { move } = useFolderActions();
 
@@ -122,6 +125,21 @@ export function AppSidebar({
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       go(`/chat/${conversation.id}`);
     },
+  });
+
+  /**
+   * Conversion à la demande (A.2, #17) : la carte de proposition se lit dans
+   * le fil de la conversation visée, comme n'importe quelle autre suggestion
+   * — l'assistant propose, il n'exécute pas (§12.1).
+   */
+  const extractTaskList = useMutation({
+    mutationFn: (id: string) => api.conversations.extractTaskList(id),
+    onSuccess: async (_suggestion, id) => {
+      setExtractError(null);
+      await queryClient.invalidateQueries({ queryKey: ["conversation", id, "suggestions"] });
+      go(`/chat/${id}`);
+    },
+    onError: (cause: Error) => setExtractError(extractErrorMessage(cause)),
   });
 
   const createRootFolder = () => setNaming({ kind: "create", parentId: null });
@@ -172,25 +190,6 @@ export function AppSidebar({
   return (
     <View className="h-full border-r border-border bg-secondary" style={{ width }}>
       <View className="gap-2 p-3">
-        {/* Canal permanent Jean-Claude (A.10) : borné aux rappels, à
-            l'organisation de l'outil et à la structure du projet. Il tient la
-            place de l'en-tête de la barre parce qu'il n'est pas une
-            conversation parmi d'autres. */}
-        <Button
-          variant="ghost"
-          onPress={() => go("/assistant")}
-          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
-          className={cx("h-auto justify-start gap-3 px-2 py-2", pathname === "/assistant")}
-        >
-          <View className="size-8 items-center justify-center rounded-md bg-primary">
-            <Icon as={MessageCircle} size={16} className="text-primary-foreground" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-sm font-semibold text-foreground">{assistantName}</Text>
-            <Text className="text-xs font-normal text-muted-foreground">Canal permanent</Text>
-          </View>
-        </Button>
-
         {/* Signalement direct, distinct des suggestions du modèle (§12.1) : un
             geste utilisateur, jamais une proposition (A.10). Même traitement
             visuel que le canal permanent, en rouge, pour rester aussi visible. */}
@@ -229,6 +228,10 @@ export function AppSidebar({
         </View>
 
         {moveError ? <Text className="text-destructive px-2 py-1 text-xs">{moveError}</Text> : null}
+
+        {extractError ? (
+          <Text className="text-destructive px-2 py-1 text-xs">{extractError}</Text>
+        ) : null}
 
         {/* Message fixe, et non `error.message` : une erreur brute de fetch ou
             du serveur peut porter des fragments de requête, donc des données
@@ -271,28 +274,52 @@ export function AppSidebar({
           <FolderNameRow target={naming} onDone={() => setNaming(null)} />
         ) : null}
 
-        {unfiled.length > 0 ? (
-          <>
-            <SectionLabel>Sans dossier</SectionLabel>
-            {unfiled.map((conversation) =>
-              renaming?.id === conversation.id ? (
-                <ConversationNameRow
-                  key={conversation.id}
-                  conversation={conversation}
-                  onDone={() => setRenaming(null)}
-                />
-              ) : (
-                <ConversationRow
-                  key={conversation.id}
-                  conversation={conversation}
-                  pathname={pathname}
-                  onOpen={go}
-                  onMenu={setConversationMenu}
-                />
-              ),
-            )}
-          </>
-        ) : null}
+        {/* Discussions et tâches : le canal permanent (A.10), non déplaçable —
+            il n'est pas une conversation parmi d'autres — puis toutes les
+            conversations à plat, y compris celles déjà rangées dans un
+            dossier. Ce n'est pas une duplication : la même conversation reste
+            visible depuis son dossier, ci-dessus, et depuis cette vue
+            chronologique (§5.2, A.1). Les conversations non rangées, elles,
+            n'apparaissent plus qu'ici — une section « Sans dossier » à part
+            aurait fait doublon avec cette liste, qui les contient déjà. */}
+        <SectionLabel>Discussions et tâches</SectionLabel>
+
+        <Button
+          variant="ghost"
+          onPress={() => go("/assistant")}
+          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+          className={cx("h-auto justify-start gap-2 px-2 py-1.5", pathname === "/assistant")}
+        >
+          <View className="size-7 items-center justify-center rounded-md bg-primary">
+            <Icon as={MessageCircle} size={14} className="text-primary-foreground" />
+          </View>
+          <Text className="flex-1 text-sm" numberOfLines={1}>
+            <Text className="font-semibold text-foreground">{assistantName}</Text>
+            <Text className="font-normal text-muted-foreground"> - Canal permanent</Text>
+          </Text>
+          <UnreadBadge
+            count={channel?.unreadCount ?? 0}
+            pendingQuestion={channel?.hasPendingQuestion ?? false}
+          />
+        </Button>
+
+        {all.map((conversation) =>
+          renaming?.id === conversation.id ? (
+            <ConversationNameRow
+              key={conversation.id}
+              conversation={conversation}
+              onDone={() => setRenaming(null)}
+            />
+          ) : (
+            <ConversationRow
+              key={conversation.id}
+              conversation={conversation}
+              pathname={pathname}
+              onOpen={go}
+              onMenu={setConversationMenu}
+            />
+          ),
+        )}
       </ScrollView>
 
       <Separator />
@@ -356,6 +383,10 @@ export function AppSidebar({
         onFile={({ conversation }) => {
           setConversationMenu(null);
           setFiling(conversation);
+        }}
+        onConvertToTaskList={({ conversation }) => {
+          setConversationMenu(null);
+          extractTaskList.mutate(conversation.id);
         }}
         onDelete={({ conversation }) => {
           setConversationMenu(null);
@@ -831,6 +862,16 @@ function findGroup(groups: SidebarGroup[], id: string): SidebarGroup | null {
   return null;
 }
 
+/**
+ * Un 4xx dit pourquoi la conversion en todoliste a été refusée — rien
+ * d'exploitable dans le fil, ou capacité désactivée dans les réglages
+ * (A.10) : le message du serveur est déjà écrit pour l'utilisateur.
+ */
+function extractErrorMessage(cause: Error): string {
+  if (cause instanceof ApiError && cause.status >= 400 && cause.status < 500) return cause.message;
+  return "La conversion en todoliste a échoué. Réessayez dans un instant.";
+}
+
 /** Le dossier, ou l'un de ses descendants, porte-t-il la conversation ouverte ? */
 function containsPath(group: SidebarGroup, pathname: string): boolean {
   return (
@@ -927,10 +968,32 @@ function ConversationRow({
         </Text>
       </Button>
 
+      <UnreadBadge
+        count={conversation.unreadCount}
+        pendingQuestion={conversation.hasPendingQuestion}
+      />
+
       <RowMenuButton
         label={`Actions pour ${conversation.title}`}
         onOpen={(x, y) => onMenu({ conversation, x, y })}
       />
+    </View>
+  );
+}
+
+/**
+ * Pastille de non-lu — messages de l'assistant depuis la dernière ouverture,
+ * ou un « ? » quand une question reste sans réponse malgré une ouverture déjà
+ * faite (0 message non lu au sens strict, mais rien n'y a répondu).
+ */
+function UnreadBadge({ count, pendingQuestion }: { count: number; pendingQuestion: boolean }) {
+  if (count === 0 && !pendingQuestion) return null;
+
+  return (
+    <View className="min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5" style={{ height: 18 }}>
+      <Text className="text-[10px] font-semibold leading-none text-primary-foreground">
+        {count > 0 ? count : "?"}
+      </Text>
     </View>
   );
 }

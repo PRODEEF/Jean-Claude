@@ -15,6 +15,7 @@ import {
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { validate } from "../../core/http.js";
 import { llm } from "../../core/llm/providers/gateway.provider.js";
+import { rateLimit } from "../../core/rate-limit/rate-limit.middleware.js";
 import { calendarRepository } from "../calendar/calendar.repository.js";
 import { CalendarService } from "../calendar/calendar.service.js";
 import { folderRepository } from "../folder/folder.repository.js";
@@ -80,6 +81,11 @@ export const conversationRoutes = new Hono<AuthEnv>()
     return c.body(null, 204);
   })
 
+  /** Marque la conversation comme lue, à l'ouverture du fil (pastille de la barre latérale). */
+  .post("/:id/read", idParam, async (c) =>
+    c.json(await service.markRead(c.req.valid("param").id, c.get("user").accessToken)),
+  )
+
   /**
    * Remplace l'ensemble des rattachements. Une conversation peut appartenir à
    * plusieurs dossiers simultanément sans être dupliquée (§5.2, A.1).
@@ -104,7 +110,7 @@ export const conversationRoutes = new Hono<AuthEnv>()
     ),
   )
 
-  .post("/:id/messages", idParam, validate("json", sendMessageSchema), (c) => {
+  .post("/:id/messages", idParam, validate("json", sendMessageSchema), rateLimit, (c) => {
     const user = c.get("user");
     return streamTurn(
       c,
@@ -123,20 +129,42 @@ export const conversationRoutes = new Hono<AuthEnv>()
    * `PUT` et non `PATCH` : le texte est remplacé en entier, et la suite du fil
    * — qui répondait à l'ancien — disparaît avec lui.
    */
-  .put("/:id/messages/:messageId", messageParam, validate("json", editMessageSchema), (c) => {
-    const user = c.get("user");
-    const { id, messageId } = c.req.valid("param");
-    return streamTurn(
-      c,
-      service.editMessage(id, user.id, messageId, c.req.valid("json"), user.accessToken),
-    );
-  })
+  .put(
+    "/:id/messages/:messageId",
+    messageParam,
+    validate("json", editMessageSchema),
+    rateLimit,
+    (c) => {
+      const user = c.get("user");
+      const { id, messageId } = c.req.valid("param");
+      return streamTurn(
+        c,
+        service.editMessage(id, user.id, messageId, c.req.valid("json"), user.accessToken),
+      );
+    },
+  )
 
   /** Redemande une réponse au modèle sur ce point du fil. */
-  .post("/:id/messages/:messageId/retry", messageParam, (c) => {
+  .post("/:id/messages/:messageId/retry", messageParam, rateLimit, (c) => {
     const user = c.get("user");
     const { id, messageId } = c.req.valid("param");
     return streamTurn(c, service.retryMessage(id, user.id, messageId, user.accessToken));
+  })
+
+  /**
+   * Convertit la conversation en todoliste à la demande de l'utilisateur,
+   * plutôt que d'attendre une suggestion spontanée (A.2, #17).
+   *
+   * `201` comme toute création : le résultat est une suggestion en attente,
+   * jamais les todolistes elles-mêmes — l'assistant propose, il n'exécute
+   * pas (§12.1).
+   */
+  .post("/:id/extract-task-list", idParam, rateLimit, async (c) => {
+    const user = c.get("user");
+    return c.json(
+      await service.extractTaskList(c.req.valid("param").id, user.id, user.accessToken),
+      201,
+    );
   })
 
   /**

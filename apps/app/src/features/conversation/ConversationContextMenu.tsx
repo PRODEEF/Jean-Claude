@@ -14,6 +14,8 @@ export type ConversationContextMenuProps = {
   onClose: () => void;
   onRename: (target: ConversationMenuTarget) => void;
   onFile: (target: ConversationMenuTarget) => void;
+  /** Conversion à la demande, plutôt que d'attendre une suggestion (A.2, #17). */
+  onConvertToTaskList: (target: ConversationMenuTarget) => void;
   onDelete: (target: ConversationMenuTarget) => void;
 };
 
@@ -30,6 +32,7 @@ export function ConversationContextMenu({
   onClose,
   onRename,
   onFile,
+  onConvertToTaskList,
   onDelete,
 }: ConversationContextMenuProps) {
   if (!target) return null;
@@ -37,6 +40,7 @@ export function ConversationContextMenu({
   const items: ContextMenuItem[] = [
     { label: "Renommer", onPress: () => onRename(target) },
     { label: "Ranger dans des dossiers", onPress: () => onFile(target) },
+    { label: "Convertir en todoliste", onPress: () => onConvertToTaskList(target) },
     { label: "Supprimer", destructive: true, onPress: () => onDelete(target) },
   ];
 

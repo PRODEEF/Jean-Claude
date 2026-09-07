@@ -1,6 +1,7 @@
 import type {
   CreateTask,
   CreateTaskList,
+  Paginated,
   Task,
   TaskList,
   TaskListWithTasks,
@@ -47,8 +48,16 @@ export type TaskRowInput = {
 export type TaskListOrigin = { conversationId?: string; createdByAssistant?: boolean };
 
 export interface ITaskRepository {
-  /** Toutes les listes de l'utilisateur, tâches comprises, tous dossiers confondus (A.2). */
-  findAll(accessToken: string): Promise<TaskListWithTasks[]>;
+  /**
+   * Les listes de l'utilisateur, tâches comprises, tous dossiers confondus
+   * (A.2), triées par dernière modification — même pagination par curseur
+   * que les conversations, pour ne pas tout charger d'un coup à mesure que
+   * le compte en accumule.
+   */
+  findAll(
+    accessToken: string,
+    options: { cursor?: string; limit: number },
+  ): Promise<Paginated<TaskListWithTasks>>;
   findById(id: string, accessToken: string): Promise<TaskListWithTasks | null>;
   /** Listes nées d'une conversation donnée — celles que l'assistant peut compléter. */
   findByConversation(conversationId: string, accessToken: string): Promise<TaskListWithTasks[]>;

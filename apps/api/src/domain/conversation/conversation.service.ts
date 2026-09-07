@@ -34,6 +34,9 @@ import type {
   LlmTool,
   LlmToolCall,
 } from "../../core/llm/llm.port.js";
+import { logger } from "../../core/logger.js";
+import { parseRelativeDateFr } from "../../core/relative-date.js";
+import { fromWall, toWall } from "../../core/timezone.js";
 import {
   ASK_QUESTION,
   ASSISTANT_TOOLS,
@@ -70,6 +73,8 @@ const RECENT_DECISIONS = 5;
 
 /** Fuseau retenu quand le profil est illisible — celui du schéma partagé. */
 const DEFAULT_TIMEZONE = userPreferencesSchema.shape.timezone.parse(undefined);
+
+const SCOPE = "conversation.service";
 
 /**
  * Cadre de rédaction commun aux deux registres.
@@ -119,7 +124,7 @@ const APPLIED_DIRECTLY = new Set([
  */
 type Housekeeping = {
   tools: LlmTool[];
-  filing: { folders: FolderTreeNode[] } | null;
+  filing: { folders: FolderTreeNode[]; currentFolderIds: string[] } | null;
   /**
    * Ce que le canal permanent doit savoir de l'utilisateur pour proposer juste :
    * ses dossiers, et son agenda proche. `null` partout ailleurs — une
@@ -275,6 +280,11 @@ export class ConversationService {
     await this.conversations.delete(id, accessToken);
   }
 
+  /** Remet le compteur de messages non lus à zéro (pastille de la barre latérale). */
+  markRead(id: string, accessToken: string): Promise<Conversation> {
+    return this.conversations.markRead(id, accessToken);
+  }
+
   /**
    * Rattache la conversation à un ensemble de dossiers (§5.2, A.1).
    *
@@ -393,6 +403,67 @@ export class ConversationService {
     }
 
     yield* this.generate(conversation, userId, accessToken);
+  }
+
+  /**
+   * Convertit la conversation en todoliste à la demande de l'utilisateur,
+   * plutôt que d'attendre que l'assistant la propose de lui-même (A.2, #17).
+   *
+   * Un appel dédié au modèle, hors du tour de dialogue ordinaire : rien n'est
+   * écrit dans le fil, et un seul outil lui est proposé. Le résultat reste une
+   * suggestion en attente comme n'importe quelle autre proposition — déclenchée
+   * à la demande ou non, l'assistant propose, il n'exécute pas (§12.1).
+   */
+  async extractTaskList(
+    conversationId: string,
+    userId: string,
+    accessToken: string,
+  ): Promise<Suggestion> {
+    const conversation = await this.getById(conversationId, accessToken);
+    if (conversation.kind === "assistant") {
+      throw httpError(422, "Le canal permanent ne se convertit pas en todoliste.");
+    }
+
+    const context = await this.contextFor(userId, accessToken);
+    if (!isAllowedByScope(SUGGEST_TASK_LIST.name, context.scope)) {
+      throw httpError(403, "La détection de todolistes est désactivée dans les réglages.");
+    }
+
+    const history = await this.conversations.listMessages(conversationId, accessToken, {
+      limit: CONTEXT_WINDOW_MESSAGES,
+    });
+    const dialogue = forgetSwitchedAside(history.items).filter((m) => m.role !== "system");
+
+    if (dialogue.length === 0) {
+      throw httpError(422, "Il n'y a rien à convertir dans cette conversation.");
+    }
+
+    const now = new Date();
+    const request: LlmCompletionRequest = {
+      system: buildExtractionPrompt(context, now),
+      messages: dialogue.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      tools: [SUGGEST_TASK_LIST],
+      ...(context.model ? { model: context.model } : {}),
+    };
+
+    const toolCalls: LlmToolCall[] = [];
+    for await (const chunk of this.llm.stream(request)) {
+      if (chunk.type === "tool_call") toolCalls.push(chunk.toolCall);
+    }
+
+    const call = toolCalls.find((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name);
+    // Même filet que le tour de dialogue ordinaire : sans lui, une échéance
+    // extraite ici échapperait à la correction de date (A.3, #18).
+    const corrected = call ? withCorrectedDueDates(call, now, context.timezone) : null;
+    const suggestion = corrected
+      ? await this.suggestions.capture(userId, conversationId, corrected, accessToken)
+      : null;
+
+    if (!suggestion) {
+      throw httpError(422, "Aucune todoliste n'a pu être extraite de cette conversation.");
+    }
+
+    return suggestion;
   }
 
   /**
@@ -570,15 +641,15 @@ export class ConversationService {
         // les réglages ne doit produire aucune suggestion, quel que soit le
         // chemin par lequel l'appel arrive (A.10).
         if (!isAllowedByScope(toolCall.name, context.scope)) {
-          console.warn(`Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
+          logger.warn(SCOPE, `Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
-        await this.suggestions.capture(
-          userId,
-          conversationId,
+        const corrected = withCorrectedDueDates(
           withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
-          accessToken,
+          now,
+          context.timezone,
         );
+        await this.suggestions.capture(userId, conversationId, corrected, accessToken);
       }
 
       await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
@@ -606,7 +677,7 @@ export class ConversationService {
     request: LlmCompletionRequest,
     toolCalls: LlmToolCall[],
   ): AsyncGenerator<string> {
-    console.warn("Tour sans réponse écrite : second appel pour répondre à l'utilisateur.");
+    logger.warn(SCOPE, "Tour sans réponse écrite : second appel pour répondre à l'utilisateur.");
 
     try {
       const stream = this.llm.stream({
@@ -619,7 +690,8 @@ export class ConversationService {
         if (chunk.type === "text") yield chunk.text;
       }
     } catch (error) {
-      console.error(
+      logger.error(
+        SCOPE,
         "Rattrapage de réponse impossible :",
         error instanceof Error ? error.message : error,
       );
@@ -639,7 +711,7 @@ export class ConversationService {
     const profile = await this.users.findById(userId, accessToken);
 
     if (!profile) {
-      console.warn("Profil introuvable au moment de borner l'assistant : réglages par défaut.");
+      logger.warn(SCOPE, "Profil introuvable au moment de borner l'assistant : réglages par défaut.");
       return {
         name: DEFAULT_ASSISTANT_NAME,
         displayName: null,
@@ -670,7 +742,8 @@ export class ConversationService {
    * proche — il annonce les rappels comme premier de ses trois sujets, et sans
    * cette lecture il ne pourrait qu'inventer. Une conversation classique reçoit
    * de quoi se nommer tant qu'elle porte le titre par défaut, et de quoi se
-   * ranger tant qu'elle n'est dans aucun dossier.
+   * ranger — d'office tant qu'elle n'est dans aucun dossier, sur demande
+   * explicite une fois classée (§12.1).
    *
    * Dans les deux registres, une proposition qui attend déjà une réponse retire
    * l'outil correspondant du jeu : la relancer à chaque message empilerait les
@@ -720,10 +793,10 @@ export class ConversationService {
       return { tools: structuring, filing: null, channel: { folders, agenda }, lists: [], decided };
     }
 
-    // L'arborescence n'est utile qu'à un fil non classé dont le rangement reste
-    // autorisé : les deux se savent sans lire la base, et la lecture part alors
-    // en même temps que les propositions plutôt qu'après elles.
-    const mayFile = conversation.folderIds.length === 0 && scope.folderOrganization;
+    // Autorisé tant que la capacité reste active — classé ou non : une
+    // conversation déjà rangée doit pouvoir être reclassée sur demande
+    // explicite (§12.1), pas seulement lors de son premier rangement.
+    const mayFile = scope.folderOrganization;
 
     const [decided, tree, lists] = await Promise.all([
       this.suggestions.listForConversation(conversation.id, accessToken),
@@ -758,7 +831,13 @@ export class ConversationService {
     }
 
     tools.push(SUGGEST_FOLDERS);
-    return { tools, filing: { folders: tree }, channel: null, lists, decided };
+    return {
+      tools,
+      filing: { folders: tree, currentFolderIds: conversation.folderIds },
+      channel: null,
+      lists,
+      decided,
+    };
   }
 
   /**
@@ -780,7 +859,7 @@ export class ConversationService {
 
     const title = labelSchema.safeParse(call.input["title"]);
     if (!title.success) {
-      console.warn("Appel `name_conversation` sans titre exploitable : renommage ignoré.");
+      logger.warn(SCOPE, "Appel `name_conversation` sans titre exploitable : renommage ignoré.");
       return;
     }
 
@@ -808,14 +887,15 @@ export class ConversationService {
 
     const memory = userMemorySchema.safeParse(call.input["memory"]);
     if (!memory.success) {
-      console.warn("Appel `finish_onboarding` sans mémoire exploitable : accueil non clos.");
+      logger.warn(SCOPE, "Appel `finish_onboarding` sans mémoire exploitable : accueil non clos.");
       return;
     }
 
     try {
       await this.users.completeOnboarding(userId, memory.data, accessToken);
     } catch (error) {
-      console.error(
+      logger.error(
+        SCOPE,
         "Clôture de l'accueil impossible :",
         error instanceof Error ? error.message : error,
       );
@@ -840,7 +920,7 @@ function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[])
 
   const title = labelSchema.safeParse(call.input["title"]);
   if (!title.success) {
-    console.warn("Appel `open_new_conversation` sans titre exploitable : bascule ignorée.");
+    logger.warn(SCOPE, "Appel `open_new_conversation` sans titre exploitable : bascule ignorée.");
     return null;
   }
 
@@ -857,46 +937,141 @@ function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[])
  * étranger au sujet, et rien en aval ne peut le détecter. C'est le seul endroit
  * où les deux informations sont connues ensemble.
  *
- * L'appel est traduit vers `existingFolderIds`, la forme que la charge utile
- * persistée porte depuis le début : les cartes déjà en base et le client
- * restent lisibles à l'identique.
+ * Deux champs vérifiés indépendamment : `existingFolders`, traduit vers
+ * `existingFolderIds`, la forme que la charge utile persistée porte depuis le
+ * début ; et le `parent` de chaque nouveau dossier, qui suit la même règle
+ * puisqu'il désigne lui aussi un dossier existant.
  */
 function withVerifiedFolders(toolCall: LlmToolCall, known: FolderTreeNode[]): LlmToolCall {
   if (toolCall.name !== SUGGEST_FOLDERS.name) return toolCall;
 
-  const proposed = toolCall.input["existingFolders"];
+  const folders = flattenWithPath(known);
+  const input = { ...toolCall.input };
+
+  const existingProposed = toolCall.input["existingFolders"];
   // Le modèle s'en est tenu aux nouveaux dossiers, ou a répondu dans l'ancienne
   // forme : la capture sait déjà écarter un identifiant qui n'est pas un UUID.
-  if (!Array.isArray(proposed)) return toolCall;
-
-  const folders = flattenWithPath(known);
-  const verified: string[] = [];
-
-  for (const entry of proposed) {
-    const candidate = readProposedFolder(entry);
-    if (!candidate) {
-      console.warn("Dossier proposé sans identifiant ni nom exploitables, écarté.");
-      continue;
-    }
-
-    const folder = folders.find((known) => known.id === candidate.id);
-    if (!folder) {
-      console.warn("Dossier proposé inconnu, écarté du rangement.");
-      continue;
-    }
-
-    // Le chemin complet est accepté au même titre que le nom seul : la consigne
-    // affiche « Administratif > Assurances », et reprendre la ligne entière est
-    // une lecture fidèle, pas une confusion.
-    if (!sameName(folder.name, candidate.name) && !sameName(folder.path, candidate.name)) {
-      console.warn("Dossier proposé dont le nom contredit l'identifiant, écarté.");
-      continue;
-    }
-
-    verified.push(folder.id);
+  if (Array.isArray(existingProposed)) {
+    input["existingFolderIds"] = existingProposed.flatMap((entry) => {
+      const folder = matchProposedFolder(entry, folders);
+      return folder ? [folder.id] : [];
+    });
   }
 
-  return { ...toolCall, input: { ...toolCall.input, existingFolderIds: verified } };
+  const newProposed = toolCall.input["newFolders"];
+  if (Array.isArray(newProposed)) {
+    input["newFolders"] = newProposed.flatMap((entry) => verifyNewFolder(entry, folders));
+  }
+
+  return { ...toolCall, input };
+}
+
+/**
+ * Un dossier proposé — dossier existant à réutiliser, ou parent d'un nouveau
+ * dossier — vérifié contre l'arborescence connue.
+ */
+function matchProposedFolder(
+  entry: unknown,
+  known: { id: string; name: string; path: string }[],
+): { id: string; name: string; path: string } | null {
+  const candidate = readProposedFolder(entry);
+  if (!candidate) {
+    logger.warn(SCOPE, "Dossier proposé sans identifiant ni nom exploitables, écarté.");
+    return null;
+  }
+
+  const folder = known.find((candidateFolder) => candidateFolder.id === candidate.id);
+  if (!folder) {
+    logger.warn(SCOPE, "Dossier proposé inconnu, écarté du rangement.");
+    return null;
+  }
+
+  // Le chemin complet est accepté au même titre que le nom seul : la consigne
+  // affiche « Administratif > Assurances », et reprendre la ligne entière est
+  // une lecture fidèle, pas une confusion.
+  if (!sameName(folder.name, candidate.name) && !sameName(folder.path, candidate.name)) {
+    logger.warn(SCOPE, "Dossier proposé dont le nom contredit l'identifiant, écarté.");
+    return null;
+  }
+
+  return folder;
+}
+
+/**
+ * Un nouveau dossier proposé, son `parent` vérifié quand il en porte un.
+ *
+ * Un parent introuvable ne fait pas perdre le nouveau dossier lui-même : il
+ * naît alors à la racine plutôt que de faire échouer toute la proposition
+ * pour une seule ligne mal recopiée.
+ */
+function verifyNewFolder(
+  entry: unknown,
+  known: { id: string; name: string; path: string }[],
+): { name: string; parentId?: string }[] {
+  if (typeof entry !== "object" || entry === null || !("name" in entry)) return [];
+
+  const { name } = entry as Record<string, unknown>;
+  if (typeof name !== "string") return [];
+
+  const parent = (entry as Record<string, unknown>)["parent"];
+  if (parent === undefined) return [{ name }];
+
+  const folder = matchProposedFolder(parent, known);
+  return [folder ? { name, parentId: folder.id } : { name }];
+}
+
+/**
+ * Corrige les échéances d'un `suggest_task_list` avant capture (A.3, #18).
+ *
+ * Le modèle calcule déjà `dueAt` lui-même, mais se trompe parfois dans
+ * l'arithmétique des jours de la semaine. Quand il a aussi recopié
+ * l'expression source (`dueAtText`) et qu'elle est reconnue avec certitude,
+ * le calcul déterministe du serveur remplace le sien.
+ *
+ * Dans tous les cas, l'heure est ensuite ramenée à minuit dans le fuseau du
+ * profil : une todoliste date un jour, jamais un horaire — laissé à sa propre
+ * arithmétique, un LLM retombe souvent sur une convention de « fin de
+ * journée » (23h59) plutôt que sur minuit, ce qui posait un événement à la
+ * mauvaise heure une fois `schedule_task` accepté au lieu d'un créneau
+ * journée entière.
+ */
+function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: string): LlmToolCall {
+  if (toolCall.name !== SUGGEST_TASK_LIST.name) return toolCall;
+
+  const lists = toolCall.input["lists"];
+  if (!Array.isArray(lists)) return toolCall;
+
+  const corrected = lists.map((entry) => {
+    if (typeof entry !== "object" || entry === null) return entry;
+
+    const dueAtText = (entry as Record<string, unknown>)["dueAtText"];
+    const parsed =
+      typeof dueAtText === "string" ? parseRelativeDateFr(dueAtText, now, timezone) : null;
+    if (parsed) return { ...entry, dueAt: parsed };
+
+    const dueAt = (entry as Record<string, unknown>)["dueAt"];
+    if (typeof dueAt !== "string") return entry;
+
+    const midnight = truncateToMidnight(dueAt, timezone);
+    return midnight ? { ...entry, dueAt: midnight } : entry;
+  });
+
+  return { ...toolCall, input: { ...toolCall.input, lists: corrected } };
+}
+
+/**
+ * Minuit du même jour mural que `iso`, dans le fuseau donné.
+ *
+ * `null` si `iso` est illisible — la valeur du modèle reste alors telle
+ * quelle, un filet qui invente est pire qu'un filet absent.
+ */
+function truncateToMidnight(iso: string, timeZone: string): string | null {
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) return null;
+
+  const wall = toWall(instant, timeZone);
+  const midnightWallMs = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate());
+  return fromWall(midnightWallMs, timeZone).toISOString();
 }
 
 /** Un dossier tel que le modèle le rend, ou `null` si la forme n'y est pas. */
@@ -1103,6 +1278,22 @@ function buildSystemPrompt(
       "un rendez-vous récurrent. Le cas échéant, appelle l'outil correspondant",
       "pour le proposer — sans interrompre le fil de la conversation, et sans",
       "jamais présenter la chose comme déjà faite : c'est une proposition.",
+      "",
+      "Prends aussi les devants une fois la réponse donnée : si elle débouche",
+      "clairement sur une suite concrète — contacter quelqu'un, comparer une",
+      "offre, décider avant une date — propose-la avec l'outil correspondant",
+      "plutôt que d'attendre qu'on te la demande. Réserve ça aux cas nets, pas",
+      "à chaque réponse : dans le doute, n'ajoute rien.",
+    );
+  }
+
+  if (todo.tools.includes(SUGGEST_TASK_LIST)) {
+    lines.push(
+      "",
+      "Si l'utilisateur demande explicitement de transformer l'échange en",
+      "todoliste, ne le décris pas en texte : appelle `suggest_task_list` tout",
+      "de suite, comme pour n'importe quelle autre proposition — la demande",
+      "explicite ne dispense pas de la faire valider.",
     );
   }
 
@@ -1135,11 +1326,30 @@ function buildSystemPrompt(
   }
 
   if (todo.filing) {
+    const alreadyFiled = todo.filing.currentFolderIds.length > 0;
+
     lines.push(
       "",
-      "Elle n'est rangée dans aucun dossier. Dès que son sujet est clair, appelle",
-      "`suggest_folders` pour proposer où la ranger. N'attends pas qu'on te le",
-      "demande, et ne le fais qu'une fois.",
+      alreadyFiled
+        ? describeCurrentFiling(todo.filing.currentFolderIds, todo.filing.folders)
+        : "Elle n'est rangée dans aucun dossier. Dès que son sujet est clair, appelle " +
+            "`suggest_folders` pour proposer où la ranger. N'attends pas qu'on te le " +
+            "demande, et ne le fais qu'une fois.",
+    );
+
+    if (alreadyFiled) {
+      lines.push(
+        "",
+        "N'appelle `suggest_folders` que si l'utilisateur demande explicitement de",
+        "revoir ce rangement — le changer, l'étendre à un autre dossier, lui créer un",
+        "sous-dossier. Ne le reproposer jamais de toi-même : elle est déjà rangée.",
+        "L'appel remplace alors le rangement actuel en entier : reprends les dossiers",
+        "à garder en plus de ceux à changer, un dossier actuel absent de l'appel en",
+        "est retiré.",
+      );
+    }
+
+    lines.push(
       "",
       "Ne propose que des dossiers dont cette conversation-ci traite réellement.",
       "Elle peut en relever de plusieurs à la fois — la mutuelle est à la fois",
@@ -1149,7 +1359,9 @@ function buildSystemPrompt(
       "",
       todo.filing.folders.length > 0
         ? "Dossiers existants. Pour en réutiliser un, recopie son identifiant ET son nom" +
-          " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas."
+          " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas." +
+          " Un nouveau dossier peut aussi naître comme sous-dossier de l'un d'eux : reprends-le" +
+          " alors en `parent`, de la même façon."
         : "L'utilisateur n'a encore aucun dossier : propose-en un nouveau, sobrement nommé.",
       ...describeFolders(todo.filing.folders),
     );
@@ -1190,6 +1402,27 @@ function buildOnboardingPrompt(assistantName: string, preamble: string[]): strin
     "ne crée rien : il affiche une proposition que l'utilisateur valide d'un geste.",
     "Ne présente donc jamais les dossiers comme déjà créés.",
     ...TOOL_ANSWER_RULE,
+  ].join("\n");
+}
+
+/**
+ * Consigne du geste « convertir en todoliste » (§13.4.1, #17).
+ *
+ * Distincte de `buildSystemPrompt` : ce n'est pas un tour de dialogue mais un
+ * appel ponctuel où un seul outil a un sens. Reprendre toute la consigne
+ * habituelle — format de réponse, autres outils — n'apporterait rien à un
+ * appel qui ne produit jamais de texte.
+ */
+function buildExtractionPrompt(context: AssistantContext, now: Date): string {
+  return [
+    `Tu es ${context.name}, l'assistant d'organisation personnelle de l'utilisateur.`,
+    ...describeNow(context.timezone, now),
+    "",
+    "L'utilisateur vient de demander explicitement de transformer cette",
+    "conversation en todoliste. Relis l'échange et appelle `suggest_task_list`",
+    "avec ce qui en ressort — une liste d'achats et une liste de tâches",
+    "distinctes s'il y a lieu, jamais fusionnées. N'écris aucun texte : la",
+    "carte de proposition suffit, comme pour n'importe quelle autre suggestion.",
   ].join("\n");
 }
 
@@ -1311,7 +1544,7 @@ function readQuestion(toolCalls: LlmToolCall[]): AskedQuestion | null {
 
   const asked = askedQuestionSchema.safeParse(call.input);
   if (!asked.success) {
-    console.warn("Appel `ask_question` inexploitable : réponses proposées ignorées.");
+    logger.warn(SCOPE, "Appel `ask_question` inexploitable : réponses proposées ignorées.");
     return null;
   }
 
@@ -1366,7 +1599,8 @@ function formatInstant(
   try {
     return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: timezone }).format(instant);
   } catch (error) {
-    console.warn(
+    logger.warn(
+      SCOPE,
       "Fuseau horaire illisible, repli sur le défaut :",
       error instanceof Error ? error.message : error,
     );
@@ -1374,6 +1608,26 @@ function formatInstant(
       instant,
     );
   }
+}
+
+/**
+ * Rangement actuel d'une conversation déjà classée, tel que lu dans la consigne.
+ *
+ * Sans cette phrase, le modèle qui reçoit à nouveau `suggest_folders` — parce
+ * que l'utilisateur demande de le changer — ne saurait pas ce qu'il modifie :
+ * l'appel remplace le rangement entier, encore faut-il connaître celui qu'il
+ * remplace pour décider quoi garder.
+ */
+function describeCurrentFiling(currentFolderIds: string[], tree: FolderTreeNode[]): string {
+  const known = flattenWithPath(tree);
+  const paths = currentFolderIds.flatMap((id) => {
+    const folder = known.find((candidate) => candidate.id === id);
+    return folder ? [folder.path] : [];
+  });
+
+  return paths.length > 0
+    ? `Elle est déjà rangée dans ${paths.join(", ")}.`
+    : "Elle est déjà rangée, dans un dossier qui n'apparaît plus dans son arborescence actuelle.";
 }
 
 /**

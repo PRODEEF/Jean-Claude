@@ -3,6 +3,9 @@ import { HTTPException } from "hono/http-exception";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { validator } from "hono/validator";
 import type { z } from "zod";
+import { logger } from "./logger.js";
+
+const SCOPE = "core.http";
 
 /** Forme unique des erreurs sortantes — la seule que les clients ont à lire. */
 export type ApiErrorBody = {
@@ -65,7 +68,7 @@ export function onError(error: Error, c: Context): Response {
     );
   }
 
-  console.error("Exception non gérée", error.stack ?? error);
+  logger.error(SCOPE, "Exception non gérée", error.stack ?? error);
   return c.json(
     { statusCode: 500, message: "Une erreur interne est survenue." } satisfies ApiErrorBody,
     500,

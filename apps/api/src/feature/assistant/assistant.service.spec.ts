@@ -149,6 +149,8 @@ function makeConversation(folderIds: string[] = []): Conversation {
     lastMessageAt: null,
     createdAt: NOW,
     updatedAt: NOW,
+    unreadCount: 0,
+    hasPendingQuestion: false,
   };
 }
 
@@ -164,6 +166,7 @@ function makeConversationRepository(
     create: jest.fn().mockResolvedValue(conversation),
     update: jest.fn().mockResolvedValue(conversation),
     delete: jest.fn().mockResolvedValue(undefined),
+    markRead: jest.fn().mockResolvedValue(conversation),
     setFolders: jest.fn().mockResolvedValue([]),
     listMessages: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
     appendMessage: jest.fn(),
@@ -201,7 +204,9 @@ function makeTaskRepository(): ITaskRepository {
   let sequence = 0;
 
   return {
-    findAll: jest.fn().mockImplementation(() => Promise.resolve([...lists.values()])),
+    findAll: jest
+      .fn()
+      .mockImplementation(() => Promise.resolve({ items: [...lists.values()], nextCursor: null })),
     findById: jest.fn().mockImplementation((id: string) => Promise.resolve(lists.get(id) ?? null)),
     findByConversation: jest
       .fn()
@@ -491,7 +496,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolderNames: [] }),
+            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolders: [] }),
           ),
       });
       const folders = makeFolderRepository([
@@ -518,7 +523,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [], newFolderNames: ["Assurances"] }),
+            makeFilingSuggestion({ existingFolderIds: [], newFolders: [{ name: "Assurances" }] }),
           ),
       });
       const folders = makeFolderRepository();
@@ -545,7 +550,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [], newFolderNames: ["assurances"] }),
+            makeFilingSuggestion({ existingFolderIds: [], newFolders: [{ name: "assurances" }] }),
           ),
       });
       const folders = makeFolderRepository([makeFolder({ id: ASSURANCES, name: "Assurances" })]);
@@ -562,12 +567,70 @@ describe("AssistantService", () => {
       expect(assignedFolders(conversations)).toEqual([ASSURANCES]);
     });
 
+    it("crée le nouveau dossier comme sous-dossier de son parent existant", async () => {
+      const suggestions = makeSuggestionRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeFilingSuggestion({
+            existingFolderIds: [],
+            newFolders: [{ name: "Documents", parentId: SANTE }],
+          }),
+        ),
+      });
+      const folders = makeFolderRepository([
+        makeFolder({ id: SANTE, name: "Projet professionnel" }),
+      ]);
+      const conversations = makeConversationRepository();
+
+      await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      expect(folders.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ name: "Documents", parentId: SANTE, createdByAssistant: true }),
+        TOKEN,
+      );
+    });
+
+    it("pose le nouveau dossier à la racine quand son parent a disparu avant l'acceptation", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeFilingSuggestion({
+            existingFolderIds: [],
+            newFolders: [{ name: "Documents", parentId: INVENTE }],
+          }),
+        ),
+      });
+      const folders = makeFolderRepository();
+      const conversations = makeConversationRepository();
+
+      await makeService(suggestions, folders, conversations).resolve(
+        USER,
+        "sug-1",
+        { action: "accept" },
+        TOKEN,
+      );
+
+      // Le parent introuvable ne fait pas échouer toute l'acceptation : le
+      // dossier naît à la racine plutôt que de perdre la proposition entière.
+      expect(folders.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ name: "Documents", parentId: null, createdByAssistant: true }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
     it("accepte un dossier situé profond dans l'arborescence", async () => {
       const suggestions = makeSuggestionRepository({
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [ASSURANCES], newFolderNames: [] }),
+            makeFilingSuggestion({ existingFolderIds: [ASSURANCES], newFolders: [] }),
           ),
       });
       const intermediaire = "a1b2c3d4-0004-4000-8000-000000000004";
@@ -597,7 +660,7 @@ describe("AssistantService", () => {
         findById: jest.fn().mockResolvedValue(
           makeFilingSuggestion({
             existingFolderIds: [SANTE, INVENTE],
-            newFolderNames: [],
+            newFolders: [],
           }),
         ),
       });
@@ -624,7 +687,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [INVENTE], newFolderNames: [] }),
+            makeFilingSuggestion({ existingFolderIds: [INVENTE], newFolders: [] }),
           ),
       });
       const conversations = makeConversationRepository();
@@ -648,7 +711,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolderNames: ["Assurances"] }),
+            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolders: [{ name: "Assurances" }] }),
           ),
       });
       const folders = makeFolderRepository([makeFolder({ id: SANTE, name: "Santé" })]);
@@ -659,7 +722,7 @@ describe("AssistantService", () => {
         "sug-1",
         {
           action: "accept",
-          folderSelection: { existingFolderIds: [SANTE], newFolderNames: [] },
+          folderSelection: { existingFolderIds: [SANTE], newFolders: [] },
         },
         TOKEN,
       );
@@ -675,7 +738,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolderNames: [] }),
+            makeFilingSuggestion({ existingFolderIds: [SANTE, ASSURANCES], newFolders: [] }),
           ),
       });
       const folders = makeFolderRepository([
@@ -688,7 +751,7 @@ describe("AssistantService", () => {
         "sug-1",
         {
           action: "accept",
-          folderSelection: { existingFolderIds: [ASSURANCES], newFolderNames: [] },
+          folderSelection: { existingFolderIds: [ASSURANCES], newFolders: [] },
         },
         TOKEN,
       );
@@ -697,7 +760,7 @@ describe("AssistantService", () => {
       // ce qui a été fait, pas ce qui avait été proposé.
       expect(suggestions.markResolved).toHaveBeenCalledWith("sug-1", "accepted", TOKEN, {
         existingFolderIds: [ASSURANCES],
-        newFolderNames: [],
+        newFolders: [],
       });
     });
 
@@ -706,7 +769,7 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolderNames: [] }),
+            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolders: [] }),
           ),
       });
       const conversations = makeConversationRepository();
@@ -717,7 +780,7 @@ describe("AssistantService", () => {
           "sug-1",
           {
             action: "accept",
-            folderSelection: { existingFolderIds: [ASSURANCES], newFolderNames: [] },
+            folderSelection: { existingFolderIds: [ASSURANCES], newFolders: [] },
           },
           TOKEN,
         ),
@@ -777,7 +840,7 @@ describe("AssistantService", () => {
         tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      const created = await tasks.findAll(TOKEN);
+      const created = (await tasks.findAll(TOKEN, { limit: 100 })).items;
       expect(resolved.taskLists).toHaveLength(2);
       expect(created.map((list) => list.tasks.map((task) => task.title))).toEqual([
         ["Terreau"],
@@ -950,6 +1013,75 @@ describe("AssistantService", () => {
       expect(resolved.taskLists).toEqual([]);
       expect(tasks.createList).not.toHaveBeenCalled();
     });
+
+    it("crée les listes telles que corrigées avant validation, plutôt que la proposition d'origine (#17)", async () => {
+      const tasks = makeTaskRepository();
+
+      const resolved = await makeService(
+        makeSuggestionStore(makeJardinSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(
+        USER,
+        "sug-1",
+        {
+          action: "accept",
+          taskListEdits: {
+            lists: [
+              {
+                title: "Achats jardin",
+                kind: "shopping",
+                dueAt: null,
+                items: [{ title: "Terreau" }, { title: "Gants" }],
+              },
+            ],
+          },
+        },
+        TOKEN,
+      );
+
+      // La liste des travaux, écartée par l'édition, n'est pas créée : c'est ce
+      // que l'utilisateur a retenu qui compte, pas ce que le modèle proposait.
+      expect(createdLists(tasks).map((list) => list.title)).toEqual(["Achats jardin"]);
+      expect(resolved.taskLists).toHaveLength(1);
+      const created = (await tasks.findAll(TOKEN, { limit: 100 })).items[0];
+      expect(created?.tasks.map((task) => task.title)).toEqual(["Terreau", "Gants"]);
+    });
+
+    it("laisse dans le fil la trace de ce qui a réellement été créé, édition comprise (#17)", async () => {
+      const suggestions = makeSuggestionStore(makeJardinSuggestion());
+
+      await makeService(suggestions, makeFolderRepository(), makeConversationRepository()).resolve(
+        USER,
+        "sug-1",
+        {
+          action: "accept",
+          taskListEdits: {
+            lists: [
+              {
+                title: "Courses de printemps",
+                kind: "shopping",
+                dueAt: null,
+                items: [{ title: "Terreau" }],
+              },
+            ],
+          },
+        },
+        TOKEN,
+      );
+
+      expect(suggestions.markResolved).toHaveBeenCalledWith(
+        "sug-1",
+        "accepted",
+        TOKEN,
+        expect.objectContaining({
+          lists: [
+            { title: "Courses de printemps", kind: "shopping", dueAt: null, items: [{ title: "Terreau" }] },
+          ],
+        }),
+      );
+    });
   });
 
   describe("acceptation d'une complétion de liste (§12.1, A.2)", () => {
@@ -963,7 +1095,9 @@ describe("AssistantService", () => {
         tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
       if (!travaux) throw new Error("La liste de travaux devrait exister");
       return { tasks, listId: travaux.id };
     }
@@ -985,7 +1119,9 @@ describe("AssistantService", () => {
         tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
       expect(travaux?.tasks.map((task) => task.title)).toEqual([
         "Désherber",
         "Tondre",
@@ -1013,7 +1149,9 @@ describe("AssistantService", () => {
         tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
       expect(travaux?.tasks.map((task) => task.position)).toEqual([0, 1, 2]);
     });
 
@@ -1057,15 +1195,22 @@ describe("AssistantService", () => {
       return { second, tasks, events };
     }
 
-    it("pose un créneau par liste datée, sans heure de fin inventée", async () => {
+    it("pose un créneau journée entière par liste datée, jamais un horaire précis", async () => {
       const { second, events } = await acceptBothCards();
 
       // Un seul créneau pour les deux tâches du jardin : c'est la liste qui
       // porte l'échéance, pas chacune de ses lignes.
       expect(second.events).toHaveLength(1);
+      // Une todoliste ne porte jamais d'horaire, seulement un jour : le
+      // créneau posé est une journée entière, pas un rendez-vous à heure fixe.
       expect(events.create).toHaveBeenCalledWith(
         USER,
-        { title: "Travaux jardin", startsAt: DESHERBAGE, endsAt: null, allDay: false },
+        {
+          title: "Travaux jardin",
+          startsAt: DESHERBAGE,
+          endsAt: null,
+          allDay: true,
+        },
         TOKEN,
       );
     });
@@ -1073,7 +1218,9 @@ describe("AssistantService", () => {
     it("rattache la liste à son créneau", async () => {
       const { second, tasks } = await acceptBothCards();
 
-      const travaux = (await tasks.findAll(TOKEN)).find((list) => list.title === "Travaux jardin");
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
 
       // Sans ce lien, le calendrier montrerait deux fois la même échéance : la
       // liste datée et le créneau posé pour elle.

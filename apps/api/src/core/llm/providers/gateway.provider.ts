@@ -2,7 +2,10 @@ import { isSovereignModel } from "@jc/domain";
 import { createGateway, jsonSchema, streamText, tool, type ToolSet } from "ai";
 import type { HTTPException } from "hono/http-exception";
 import { config } from "../../config.js";
+import { logger } from "../../logger.js";
 import { toHttpException } from "../llm-error.js";
+
+const SCOPE = "gateway.provider";
 import type {
   LlmCompletionRequest,
   LlmProvider,
@@ -138,8 +141,8 @@ class GatewayProvider implements LlmProvider {
     }
   }
 
-  private fail(context: string, error: unknown): HTTPException {
-    console.error(context, error instanceof Error ? error.stack : error);
+  private fail(message: string, error: unknown): HTTPException {
+    logger.error(SCOPE, message, error instanceof Error ? error.stack : error);
     return toHttpException(error);
   }
 }

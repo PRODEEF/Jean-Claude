@@ -89,7 +89,7 @@ export function MonthGrid({
                 accessibilityState={{ selected }}
               />
 
-              <View pointerEvents="none" className="flex-row justify-end">
+              <View className="flex-row justify-end" style={{ pointerEvents: "none" }}>
                 <Text
                   className={`text-xs ${outside ? "text-muted-foreground" : "text-foreground"} ${
                     isToday
@@ -102,7 +102,10 @@ export function MonthGrid({
               </View>
 
               {compact ? (
-                <View pointerEvents="none" className="flex-row flex-wrap items-center gap-0.5">
+                <View
+                  className="flex-row flex-wrap items-center gap-0.5"
+                  style={{ pointerEvents: "none" }}
+                >
                   {dayEvents.slice(0, MAX_PILLS_PER_CELL).map((event) => (
                     <View key={event.id} className="bg-primary h-1.5 w-1.5 rounded-full" />
                   ))}
@@ -112,7 +115,7 @@ export function MonthGrid({
                 // `box-none` et non `none` : la colonne elle-même laisse
                 // passer l'appui vers le sélecteur de jour, mais les
                 // rendez-vous qu'elle porte restent pressables.
-                <View pointerEvents="box-none" className="gap-0.5">
+                <View className="gap-0.5" style={{ pointerEvents: "box-none" }}>
                   {/* Avant les rendez-vous : au-delà de trois lignes la cellule
                       déborde, et la charge de la journée doit rester visible. */}
                   {dayTasks > 0 ? <TaskBadge count={dayTasks} /> : null}
@@ -135,7 +138,7 @@ export function MonthGrid({
                     </Pressable>
                   ))}
                   {dayEvents.length > MAX_PILLS_PER_CELL ? (
-                    <View pointerEvents="none">
+                    <View style={{ pointerEvents: "none" }}>
                       <Text className="text-muted-foreground px-1 text-[11px]">
                         +{dayEvents.length - MAX_PILLS_PER_CELL}
                       </Text>
@@ -161,7 +164,7 @@ export function MonthGrid({
 function TaskBadge({ count, compact }: { count: number; compact?: boolean }) {
   if (compact) {
     return (
-      <View pointerEvents="none" className="flex-row items-center gap-0.5">
+      <View className="flex-row items-center gap-0.5" style={{ pointerEvents: "none" }}>
         <Icon as={ListChecks} size={10} className="text-muted-foreground" />
         <Text className="text-muted-foreground text-[10px]">{count}</Text>
       </View>
@@ -170,8 +173,8 @@ function TaskBadge({ count, compact }: { count: number; compact?: boolean }) {
 
   return (
     <View
-      pointerEvents="none"
       className="border-border flex-row items-center gap-1 rounded border px-1 py-0.5"
+      style={{ pointerEvents: "none" }}
     >
       <Icon as={ListChecks} size={10} className="text-muted-foreground" />
       <Text className="text-muted-foreground text-[11px] leading-4">

@@ -106,42 +106,42 @@ export const createProjectFoldersPayloadSchema = z.object({
 export type CreateProjectFoldersPayload = z.infer<typeof createProjectFoldersPayloadSchema>;
 
 /**
+ * Nouveau dossier proposé par un rangement (A.1).
+ *
+ * `parentId` en fait un sous-dossier d'un dossier existant plutôt qu'un
+ * nouveau dossier à la racine — vérifié comme n'importe quel dossier existant
+ * repris dans la proposition (identifiant et nom recopiés de la même ligne)
+ * avant d'atteindre ce schéma.
+ */
+const newFolderSchema = z.object({
+  name: labelSchema,
+  parentId: uuidSchema.optional(),
+});
+
+/**
  * Charge utile d'une suggestion `assign_folders` (A.1).
  *
  * Deux listes et non une : l'assistant peut ranger dans des dossiers qui
  * existent déjà **et** en proposer de nouveaux dans le même geste. Une
  * conversation appartient à plusieurs dossiers à la fois — ce n'est pas une
  * duplication, c'est la même donnée vue de plusieurs endroits (§5.2).
+ *
+ * Sert aussi bien le premier rangement d'une conversation que la révision
+ * d'un rangement déjà fait : dans les deux cas, la charge utile porte
+ * l'ensemble complet des dossiers visés, pas un ajout au rangement actuel —
+ * un dossier qui n'y figure plus en est retiré.
  */
 export const assignFoldersPayloadSchema = z
   .object({
     existingFolderIds: z.array(uuidSchema).max(8).default([]),
-    newFolderNames: z.array(labelSchema).max(8).default([]),
+    newFolders: z.array(newFolderSchema).max(8).default([]),
   })
   .refine(
-    (payload) => payload.existingFolderIds.length + payload.newFolderNames.length > 0,
+    (payload) => payload.existingFolderIds.length + payload.newFolders.length > 0,
     "Un rangement sans dossier n'a rien à appliquer.",
   );
 
 export type AssignFoldersPayload = z.infer<typeof assignFoldersPayloadSchema>;
-
-/**
- * Réponse de l'utilisateur à une proposition (§12.1).
- *
- * `folderSelection` porte les dossiers cochés dans la carte de rangement :
- * une conversation appartient à plusieurs dossiers, et l'utilisateur doit
- * pouvoir n'en retenir qu'une partie sans refuser toute la proposition
- * (§5.2, A.1). Même forme que la charge utile, parce que c'en est un
- * sous-ensemble : le serveur n'applique que ce qui avait été proposé, jamais
- * un dossier venu du client. Absente, la proposition s'applique en entier —
- * le cas des natures qui n'ont rien à cocher.
- */
-export const resolveSuggestionSchema = z.object({
-  action: z.enum(["accept", "dismiss"]),
-  folderSelection: assignFoldersPayloadSchema.optional(),
-});
-
-export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
 
 /**
  * Charge utile d'une suggestion `create_task_list` (§12.1, A.2).
@@ -175,6 +175,32 @@ export const createTaskListsPayloadSchema = z.object({
 });
 
 export type CreateTaskListsPayload = z.infer<typeof createTaskListsPayloadSchema>;
+
+/**
+ * Réponse de l'utilisateur à une proposition (§12.1).
+ *
+ * `folderSelection` porte les dossiers cochés dans la carte de rangement :
+ * une conversation appartient à plusieurs dossiers, et l'utilisateur doit
+ * pouvoir n'en retenir qu'une partie sans refuser toute la proposition
+ * (§5.2, A.1). Même forme que la charge utile, parce que c'en est un
+ * sous-ensemble : le serveur n'applique que ce qui avait été proposé, jamais
+ * un dossier venu du client. Absente, la proposition s'applique en entier —
+ * le cas des natures qui n'ont rien à cocher.
+ *
+ * `taskListEdits` porte les listes relues et corrigées avant validation
+ * (§13.4.1, #17) : contrairement au rangement, ce n'est pas un sous-ensemble
+ * de la proposition — l'utilisateur peut y corriger un titre, pas seulement
+ * en écarter une partie. Le même schéma que la proposition initiale suffit à
+ * le border : ce n'est ni plus ni moins que ce qu'accepterait la création
+ * d'une todoliste ordinaire.
+ */
+export const resolveSuggestionSchema = z.object({
+  action: z.enum(["accept", "dismiss"]),
+  folderSelection: assignFoldersPayloadSchema.optional(),
+  taskListEdits: createTaskListsPayloadSchema.optional(),
+});
+
+export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
 
 /**
  * Charge utile d'une suggestion `add_task_list_items` (§12.1, A.2).

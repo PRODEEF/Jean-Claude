@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { Check, Copy, Pencil, RotateCcw, ThumbsDown, ThumbsUp } from "lucide-react-native";
@@ -30,10 +30,16 @@ export type MessageRowProps = {
    * ensemble : « Oui » seul, relu plus tard, ne dit plus à quoi il répondait.
    */
   answeredQuestion?: string | null;
-  /** Redemande une réponse au modèle à partir de ce point du fil. */
-  onRetry: () => void;
-  /** Remplace le texte du message et rejoue le tour. */
-  onEdit: (content: string) => void;
+  /**
+   * Redemande une réponse au modèle à partir de ce point du fil.
+   *
+   * Reçoit l'identifiant plutôt qu'être déjà lié au message : `renderItem`
+   * peut ainsi transmettre la même référence à chaque ligne, condition pour
+   * que la mémoïsation de ce composant serve à quelque chose.
+   */
+  onRetry: (messageId: string) => void;
+  /** Remplace le texte du message et rejoue le tour. Même raison pour l'identifiant. */
+  onEdit: (messageId: string, content: string) => void;
   /** Un tour est déjà en cours : les deux gestes sont neutralisés. */
   busy: boolean;
 };
@@ -53,8 +59,11 @@ export type MessageRowProps = {
  *
  * Sans souris, `onHoverIn` ne se déclenche jamais : l'appui long prend le
  * relais, comme partout ailleurs dans l'application.
+ *
+ * Mémoïsé : `renderItem` en rend un par message du fil, et l'arrivée d'un
+ * nouveau message ne doit pas redessiner tous les précédents.
  */
-export function MessageRow({
+export const MessageRow = memo(function MessageRow({
   message,
   answeredQuestion = null,
   onRetry,
@@ -110,7 +119,7 @@ export function MessageRow({
             return;
           }
           setEditing(false);
-          onEdit(content);
+          onEdit(message.id, content);
         }}
       />
     );
@@ -165,7 +174,7 @@ export function MessageRow({
             <IconAction
               icon={RotateCcw}
               label="Réessayer"
-              onPress={onRetry}
+              onPress={() => onRetry(message.id)}
               disabled={busy}
               onHoverIn={reveal}
               onHoverOut={scheduleHide}
@@ -250,7 +259,7 @@ export function MessageRow({
       ) : null}
     </Pressable>
   );
-}
+});
 
 /** Saisie qui prend la place du message le temps de le corriger. */
 function MessageEditor({

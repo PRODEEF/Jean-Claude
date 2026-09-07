@@ -19,6 +19,8 @@ function makeConversation(id: string, title = "Conversation"): Conversation {
     lastMessageAt: "2026-09-01T10:00:00.000Z",
     createdAt: "2026-09-01T09:00:00.000Z",
     updatedAt: "2026-09-01T10:00:00.000Z",
+    unreadCount: 0,
+    hasPendingQuestion: false,
   };
 }
 

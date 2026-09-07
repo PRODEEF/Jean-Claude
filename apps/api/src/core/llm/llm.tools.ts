@@ -48,6 +48,17 @@ export const SUGGEST_TASK_LIST: LlmTool = {
                 "Sans heure précise, viser minuit — c'est ce qui signifie « dans la " +
                 "journée » plutôt qu'un créneau décidé.",
             },
+            dueAtText: {
+              type: "string",
+              description:
+                "Si `dueAt` est renseigné à partir d'une expression relative (« lundi » " +
+                "« vendredi prochain », « dans deux semaines », « demain », « ce week-end », " +
+                "« avant le week-end »), recopier cette expression telle quelle — quelques " +
+                "mots, pas la phrase entière. Le serveur la relit pour fiabiliser le calcul " +
+                "de date, qu'un modèle de langage fait parfois mal (confondre le jour de " +
+                "cette semaine avec celui de la prochaine). Omettre si l'échéance vient " +
+                "d'une date absolue (« le 15 septembre ») ou d'une heure précise.",
+            },
             items: {
               type: "array",
               items: {
@@ -122,6 +133,12 @@ export const SUGGEST_FOLDERS: LlmTool = {
   description:
     "À appeler dès que l'échange en dit assez sur le sujet de la conversation pour " +
     "savoir où la ranger. Ne pas attendre qu'on le demande. " +
+    "Sert aussi à revoir le rangement d'une conversation déjà classée — mais seulement " +
+    "si l'utilisateur le demande explicitement (« déplace-la », « range-la plutôt dans... », " +
+    "« ajoute-la aussi à... », « crée un sous-dossier... ») : ne jamais reproposer de " +
+    "toi-même un rangement déjà fait, la consigne indique lequel. Cet appel remplace alors " +
+    "ce rangement en entier — reprendre les dossiers à garder en plus de ceux à changer, un " +
+    "dossier actuel absent de l'appel en est retiré. " +
     "Ne retenir que les dossiers dont la conversation traite réellement. Elle peut en " +
     "relever de plusieurs à la fois (une conversation sur la mutuelle relève à la fois de " +
     "« Santé » et de « Administratif > Assurances »), mais un dossier seulement voisin du " +
@@ -131,7 +148,9 @@ export const SUGGEST_FOLDERS: LlmTool = {
     "la ligne dont les deux ne se correspondent pas, et un identifiant reconstitué de " +
     "mémoire range la conversation dans un dossier qui n'a rien à voir. " +
     "N'en proposer un nouveau que si aucun ne convient, et remplir au moins l'une des deux " +
-    "listes : une proposition sans aucun dossier n'a rien à ranger. " +
+    "listes : une proposition sans aucun dossier n'a rien à ranger. Un nouveau dossier peut " +
+    "lui-même naître comme sous-dossier d'un dossier existant plutôt qu'à la racine — " +
+    "reprendre alors ce dossier existant en `parent`, identifiant et nom, de la même façon. " +
     "S'aligner sur la façon dont l'utilisateur nomme déjà ses dossiers plutôt que d'imposer " +
     "une nomenclature standard.",
   inputSchema: {
@@ -142,9 +161,12 @@ export const SUGGEST_FOLDERS: LlmTool = {
         description:
           "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
           "de question — ex. « Je range ça dans Santé et j'ouvre un dossier Assurances ? ». " +
-          "Les dossiers sont proposés ensemble et non comme un choix exclusif : l'utilisateur " +
-          "décoche ceux qu'il ne retient pas. Écrire « dans X et Y ? », jamais « dans X ou Y ? ». " +
-          "Ne jamais présenter le rangement comme déjà fait. 500 caractères maximum.",
+          "Pour la révision d'un rangement déjà fait, formuler le changement — ex. « Je la " +
+          "range plutôt dans Documents ? » ou « Je te crée le sous-dossier Documents et je " +
+          "l'y range ? ». Les dossiers sont proposés ensemble et non comme un choix exclusif : " +
+          "l'utilisateur décoche ceux qu'il ne retient pas. Écrire « dans X et Y ? », jamais " +
+          "« dans X ou Y ? ». Ne jamais présenter le rangement comme déjà fait. 500 caractères " +
+          "maximum.",
       },
       existingFolders: {
         type: "array",
@@ -169,11 +191,34 @@ export const SUGGEST_FOLDERS: LlmTool = {
           required: ["id", "name"],
         },
       },
-      newFolderNames: {
+      newFolders: {
         type: "array",
         description: "Dossiers à créer, quand aucun dossier existant ne convient.",
         maxItems: 8,
-        items: { type: "string" },
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string", description: "Nom du nouveau dossier." },
+            parent: {
+              type: "object",
+              description:
+                "Dossier existant sous lequel créer celui-ci, pour en faire un sous-dossier. " +
+                "Omettre pour un dossier à la racine.",
+              properties: {
+                id: {
+                  type: "string",
+                  description: "Identifiant du dossier parent, recopié caractère pour caractère.",
+                },
+                name: {
+                  type: "string",
+                  description: "Nom du dossier parent tel qu'il figure sur cette ligne.",
+                },
+              },
+              required: ["id", "name"],
+            },
+          },
+          required: ["name"],
+        },
       },
     },
     required: ["message"],

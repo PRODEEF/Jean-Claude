@@ -360,6 +360,36 @@ describe("SuggestionService", () => {
       );
     });
 
+    it("écarte le parent d'un nouveau dossier inventé sans perdre le nouveau dossier", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je te crée le sous-dossier Documents ?",
+            newFolders: [{ name: "Documents", parentId: "Projet professionnel" }],
+          },
+          "suggest_folders",
+        ),
+        TOKEN,
+      );
+
+      // Le `parentId` halluciné échouerait sur la clé étrangère : le nouveau
+      // dossier survit, simplement posé à la racine plutôt que perdu avec lui.
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "assign_folders",
+          payload: expect.objectContaining({
+            newFolders: [{ name: "Documents" }],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
     it("renonce au rangement quand aucun dossier proposé n'est exploitable", async () => {
       const repo = makeRepository();
 

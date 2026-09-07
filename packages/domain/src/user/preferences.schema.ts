@@ -135,7 +135,7 @@ export function toAssistantModel(value: unknown): AssistantModel | null {
 export const userPreferencesSchema = z.object({
   /** L'assistant est renommable — « Jean-Claude » n'est que la valeur par défaut. */
   assistantName: z.string().trim().min(1).max(40).default(DEFAULT_ASSISTANT_NAME),
-  assistantColor: hexColorSchema.default("#6366F1"),
+  assistantColor: hexColorSchema.default("#107FEA"),
   theme: themeSchema.default("system"),
   scope: assistantScopeSchema,
   /** Fuseau IANA — indispensable au calcul des rappels du matin (A.10). */
@@ -148,6 +148,8 @@ export const userPreferencesSchema = z.object({
    * d'en changer par configuration sans réécrire les profils existants.
    */
   llmModel: assistantModelSchema.nullable().default(null),
+  /** Bandeau du haut sur fond neutre plutôt que la couleur d'assistant adoucie. */
+  flatBanner: z.boolean().default(true),
 });
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
@@ -202,6 +204,8 @@ export const updateUserProfileSchema = z
     scope: assistantScopeSchema.partial(),
     /** `null` rend la main au modèle retenu par le serveur (§5.1). */
     llmModel: assistantModelSchema.nullable(),
+    /** Bandeau du haut sur fond neutre plutôt que la couleur d'assistant adoucie. */
+    flatBanner: z.boolean(),
   })
   .partial();
 

@@ -69,9 +69,7 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
       <HueSlider hue={hsv.h} onDrag={(h) => preview({ ...hsv, h })} onCommit={() => commit(hsv)} />
 
       <View style={styles.hexRow}>
-        <View
-          style={[styles.swatch, { backgroundColor: hexDraft, borderColor: palette.border }]}
-        />
+        <View style={[styles.swatch, { backgroundColor: hexDraft, borderColor: palette.border }]} />
         <Input
           value={hexDraft}
           onChangeText={setHexDraft}
@@ -163,10 +161,10 @@ function SaturationValuePad({
           </Svg>
 
           <View
-            pointerEvents="none"
             style={[
               styles.thumb,
               {
+                pointerEvents: "none",
                 left: saturation * size - THUMB_SIZE / 2,
                 top: (1 - value) * size - THUMB_SIZE / 2,
                 backgroundColor: rgbToHex(hsvToRgb({ h: hue, s: saturation, v: value })),
@@ -239,10 +237,10 @@ function HueSlider({
           </Svg>
 
           <View
-            pointerEvents="none"
             style={[
               styles.hueThumb,
               {
+                pointerEvents: "none",
                 left: (hue / 360) * width - THUMB_SIZE / 2,
                 backgroundColor: rgbToHex(hsvToRgb({ h: hue, s: 1, v: 1 })),
               },

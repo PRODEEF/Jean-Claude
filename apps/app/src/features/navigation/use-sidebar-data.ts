@@ -15,8 +15,6 @@ export type SidebarGroup = {
 
 export type SidebarData = {
   groups: SidebarGroup[];
-  /** Conversations rattachées à aucun dossier — capture sans friction (§13.4.1). */
-  unfiled: Conversation[];
   /**
    * Toutes les conversations de la barre, à plat.
    *
@@ -24,6 +22,8 @@ export type SidebarData = {
    * conversation, et notamment les dossiers où elle est déjà rangée.
    */
   all: Conversation[];
+  /** Canal permanent Jean-Claude (A.10) — pour sa pastille de non-lu. */
+  channel: Conversation | null;
   isLoading: boolean;
   error: Error | null;
 };
@@ -52,6 +52,15 @@ export function useSidebarData(): SidebarData {
 
   const taskLists = useTaskLists();
 
+  // Sa pastille de non-lu se lit comme celle de n'importe quelle conversation
+  // (A.10) : un rappel proactif du canal mérite le même signal que les autres.
+  // Hors de `isLoading`/`error` du reste de la barre, comme les todolistes —
+  // une panne ici ne doit pas effacer l'arborescence des dossiers.
+  const channel = useQuery({
+    queryKey: ["conversations", "assistant"],
+    queryFn: () => api.conversations.assistantChannel(),
+  });
+
   return useMemo(() => {
     // Le canal permanent a son entrée dédiée en haut de la barre (A.10) : le
     // laisser aussi dans la liste le ferait apparaître deux fois.
@@ -71,8 +80,8 @@ export function useSidebarData(): SidebarData {
 
     return {
       groups: (folders.data ?? []).filter((node) => node.parentId === null).map(build),
-      unfiled: items.filter((item) => item.folderIds.length === 0),
       all: items,
+      channel: channel.data ?? null,
       isLoading: folders.isLoading || conversations.isLoading,
       error: (folders.error ?? conversations.error) as Error | null,
     };
@@ -84,5 +93,6 @@ export function useSidebarData(): SidebarData {
     conversations.isLoading,
     conversations.error,
     taskLists.data,
+    channel.data,
   ]);
 }

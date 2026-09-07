@@ -41,7 +41,7 @@ function makeList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithTasks
 
 function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskRepository {
   return {
-    findAll: jest.fn().mockResolvedValue([]),
+    findAll: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
     findById: jest.fn().mockResolvedValue(makeList()),
     findByConversation: jest.fn().mockResolvedValue([]),
     createList: jest
@@ -67,15 +67,30 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
 
 describe("TaskService", () => {
   describe("list", () => {
-    it("rend toutes les listes, tous dossiers confondus", async () => {
+    it("rend une page de listes, tous dossiers confondus", async () => {
       const lists = [makeList(), makeList({ id: "list-2", title: "Courses", kind: "shopping" })];
-      const repo = makeRepository({ findAll: jest.fn().mockResolvedValue(lists) });
+      const page = { items: lists, nextCursor: "2026-09-01T08:00:00.000Z" };
+      const repo = makeRepository({ findAll: jest.fn().mockResolvedValue(page) });
 
-      await expect(new TaskService(repo).list(TOKEN)).resolves.toEqual(lists);
+      await expect(new TaskService(repo).list(TOKEN, { limit: 30 })).resolves.toEqual(page);
     });
 
-    it("rend une liste vide quand aucune todoliste n'existe encore", async () => {
-      await expect(new TaskService(makeRepository()).list(TOKEN)).resolves.toEqual([]);
+    it("rend une page vide quand aucune todoliste n'existe encore", async () => {
+      await expect(new TaskService(makeRepository()).list(TOKEN, { limit: 30 })).resolves.toEqual({
+        items: [],
+        nextCursor: null,
+      });
+    });
+
+    it("transmet le curseur et la limite reçus au Repository", async () => {
+      const repo = makeRepository();
+
+      await new TaskService(repo).list(TOKEN, { cursor: "2026-09-01T08:00:00.000Z", limit: 10 });
+
+      expect(repo.findAll).toHaveBeenCalledWith(TOKEN, {
+        cursor: "2026-09-01T08:00:00.000Z",
+        limit: 10,
+      });
     });
   });
 

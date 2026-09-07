@@ -76,7 +76,9 @@ par `npm run db:types`. Ne pas l'éditer à la main.
 ## Logs
 
 - ❌ Pas de `console.log` en production
-- ✅ Backend : `console.error` sur un chemin d’erreur, jamais ailleurs
+- ❌ Pas d’appel direct à `console.warn`/`console.error` dans `apps/api` — passer
+  par `logger.warn()`/`logger.error()` de `core/logger.ts`, qui préfixe chaque
+  ligne par le module qui parle
 - ✅ App : retirer les logs avant de committer
 
 ## Nommage

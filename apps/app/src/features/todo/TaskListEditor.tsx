@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   Platform,
   Pressable,
@@ -55,7 +55,15 @@ export type TaskListEditorProps = {
  * milieu décale toutes les suivantes — l'envoyer geste par geste laisserait la
  * liste incohérente entre deux appels.
  */
-export function TaskListEditor({ list, query, onOpenTask }: TaskListEditorProps) {
+/**
+ * Mémoïsé : `ListsBoard` en rend une par todoliste, et un rafraîchissement
+ * du cache ne doit pas redessiner celles dont le contenu n'a pas changé.
+ */
+export const TaskListEditor = memo(function TaskListEditor({
+  list,
+  query,
+  onOpenTask,
+}: TaskListEditorProps) {
   const { palette } = useTheme();
   const { replaceTasks, updateTask } = useTaskActions();
 
@@ -396,7 +404,7 @@ export function TaskListEditor({ list, query, onOpenTask }: TaskListEditorProps)
       ) : null}
     </View>
   );
-}
+});
 
 /**
  * Identifiants rendus par le serveur, replacés sur les lignes qui les ont

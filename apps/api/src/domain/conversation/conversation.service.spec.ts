@@ -37,6 +37,8 @@ function makeConversation(overrides: Partial<Conversation> = {}): Conversation {
     lastMessageAt: null,
     createdAt: "2026-08-31T08:00:00.000Z",
     updatedAt: "2026-08-31T08:00:00.000Z",
+    unreadCount: 0,
+    hasPendingQuestion: false,
     ...overrides,
   };
 }
@@ -70,6 +72,7 @@ function makeRepository(overrides: Partial<IConversationRepository> = {}): IConv
     create: jest.fn().mockResolvedValue(makeConversation()),
     update: jest.fn().mockResolvedValue(makeConversation()),
     delete: jest.fn().mockResolvedValue(undefined),
+    markRead: jest.fn().mockResolvedValue(makeConversation()),
     setFolders: jest.fn().mockResolvedValue([]),
     // Le fil tel que le serveur le relit après avoir écrit la demande : la
     // génération part toujours d'au moins un message, jamais du vide.
@@ -289,6 +292,7 @@ function makePreferences(
     assistantName: "Jean-Claude",
     assistantColor: "#6366F1",
     theme: "system",
+    flatBanner: false,
     timezone: "Europe/Paris",
     speakResponses: false,
     llmModel: null,
@@ -459,6 +463,19 @@ describe("ConversationService", () => {
       );
 
       await expect(service.getById("absente", TOKEN)).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe("markRead", () => {
+    it("délègue la remise à zéro du compteur au dépôt", async () => {
+      const repo = makeRepository({
+        markRead: jest.fn().mockResolvedValue(makeConversation({ unreadCount: 0 })),
+      });
+
+      const conversation = await makeService(repo).markRead("conv-1", TOKEN);
+
+      expect(repo.markRead).toHaveBeenCalledWith("conv-1", TOKEN);
+      expect(conversation.unreadCount).toBe(0);
     });
   });
 
@@ -1055,6 +1072,22 @@ describe("ConversationService", () => {
       // Seuls les deux messages du tour sont écrits : aucune todoliste n'est
       // créée à la volée. L'assistant propose, il n'exécute pas.
       expect(repo.appendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("pousse le modèle à proposer une action après coup, même hors sujet actionnable explicite (A.8)", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm), {
+        content: "Il me faut du terreau et des bulbes.",
+        inputMode: "text",
+      });
+
+      // Le trou identifié dans #20 : le modèle ne fait alors que repérer du
+      // contenu déjà actionnable, jamais déduire une suite après avoir
+      // répondu sur un sujet qui n'en a lui-même rien d'actionnable.
+      expect(lastRequest(llm).system ?? "").toContain(
+        "Prends aussi les devants une fois la réponse donnée",
+      );
     });
 
     it("ne propose pas de compléter une liste quand le fil n'en a produit aucune", async () => {
@@ -1715,7 +1748,7 @@ describe("ConversationService", () => {
       expect(system).toContain("`suggest_folders`");
     });
 
-    it("n'offre pas de rangement à un fil déjà classé", async () => {
+    it("continue d'offrir le rangement à un fil déjà classé, pour le cas où on demande de le revoir", async () => {
       const llm = makeLlm();
       const repo = makeRepository({
         findById: jest.fn().mockResolvedValue(makeConversation({ folderIds: ["folder-1"] })),
@@ -1723,7 +1756,28 @@ describe("ConversationService", () => {
 
       await drain(makeService(repo, llm));
 
-      expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_folders");
+      // Sinon « déplace-la plutôt dans Documents » n'aurait aucun outil à sa
+      // portée une fois le premier rangement fait (§12.1).
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_folders");
+    });
+
+    it("dit au modèle le rangement actuel d'un fil déjà classé, et de n'y revenir que sur demande explicite", async () => {
+      const llm = makeLlm();
+      const folders = makeFolderRepository([
+        makeFolder({ id: "folder-1", name: "Projet professionnel" }),
+      ]);
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ folderIds: ["folder-1"] })),
+      });
+
+      await drain(makeService(repo, llm, makeSuggestionRepository(), folders));
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("Elle est déjà rangée dans Projet professionnel.");
+      expect(system).toContain("que si l'utilisateur demande explicitement");
+      // L'outil remplace le rangement en entier : le modèle doit savoir qu'un
+      // dossier actuel omis de l'appel en est retiré.
+      expect(system).toContain("un dossier actuel absent de l'appel en");
     });
 
     it("ne relance pas un rangement tant que la proposition précédente attend", async () => {
@@ -1748,12 +1802,12 @@ describe("ConversationService", () => {
     const TAXES = "11111111-1111-4111-8111-111111111111";
     const OTHER = "22222222-2222-4222-8222-222222222222";
 
-    /** Le rangement tel que le modèle le rend, dossiers existants compris. */
-    function filing(existingFolders: unknown, newFolderNames: string[] = []): LlmToolCall {
+    /** Le rangement tel que le modèle le rend, dossiers existants et nouveaux compris. */
+    function filing(existingFolders: unknown, newFolders: unknown[] = []): LlmToolCall {
       return {
         id: "call-1",
         name: "suggest_folders",
-        input: { message: "Je range ça où il faut ?", existingFolders, newFolderNames },
+        input: { message: "Je range ça où il faut ?", existingFolders, newFolders },
       };
     }
 
@@ -1819,7 +1873,7 @@ describe("ConversationService", () => {
       const folders = makeFolderRepository([makeFolder({ id: TAXES, name: "Impôts" })]);
       const llm = makeLlm(
         ["Je te range ça."],
-        [filing([{ id: OTHER, name: "Impôts" }], ["Déclarations"])],
+        [filing([{ id: OTHER, name: "Impôts" }], [{ name: "Déclarations" }])],
       );
 
       await drain(makeService(makeRepository(), llm, suggestions, folders));
@@ -1828,7 +1882,39 @@ describe("ConversationService", () => {
       // Le dossier neuf survit : perdre tout le rangement pour une ligne
       // fautive coûterait plus cher que de l'écarter.
       expect(payload["existingFolderIds"]).toEqual([]);
-      expect(payload["newFolderNames"]).toEqual(["Déclarations"]);
+      expect(payload["newFolders"]).toEqual([{ name: "Déclarations" }]);
+      jest.restoreAllMocks();
+    });
+
+    it("rattache un nouveau dossier vérifié à son parent existant", async () => {
+      const suggestions = makeSuggestionRepository();
+      const folders = makeFolderRepository([makeFolder({ id: TAXES, name: "Impôts" })]);
+      const llm = makeLlm(
+        ["Je te crée le sous-dossier."],
+        [filing([], [{ name: "Déclarations", parent: { id: TAXES, name: "Impôts" } }])],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions, folders));
+
+      expect(capturedPayload(suggestions)["newFolders"]).toEqual([
+        { name: "Déclarations", parentId: TAXES },
+      ]);
+    });
+
+    it("pose le nouveau dossier à la racine quand son parent proposé est introuvable", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const folders = makeFolderRepository([makeFolder({ id: TAXES, name: "Impôts" })]);
+      const llm = makeLlm(
+        ["Je te crée le dossier."],
+        [filing([], [{ name: "Déclarations", parent: { id: OTHER, name: "Impôts" } }])],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions, folders));
+
+      // Le parent recopié de travers ne fait pas perdre le nouveau dossier :
+      // il naît à la racine plutôt que de perdre toute la proposition.
+      expect(capturedPayload(suggestions)["newFolders"]).toEqual([{ name: "Déclarations" }]);
       jest.restoreAllMocks();
     });
 
@@ -2131,7 +2217,7 @@ describe("ConversationService", () => {
           {
             id: "call-1",
             name: "suggest_folders",
-            input: { message: "Je range ça dans Santé ?", newFolderNames: ["Santé"] },
+            input: { message: "Je range ça dans Santé ?", newFolders: [{ name: "Santé" }] },
           },
         ],
       );
@@ -2215,6 +2301,296 @@ describe("ConversationService", () => {
         ),
       ).rejects.toMatchObject({ status: 404 });
       expect(repo.setFolders).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("extractTaskList (§13.4.1, #17)", () => {
+    it("convertit l'historique du fil en todoliste, sans rien écrire dans la conversation", async () => {
+      const repo = makeRepository();
+      const created = makeSuggestion({
+        kind: "create_task_list",
+        payload: { lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }] },
+      });
+      const suggestions = makeSuggestionRepository({ create: jest.fn().mockResolvedValue(created) });
+      const llm = makeLlm([], [
+        {
+          id: "call-1",
+          name: "suggest_task_list",
+          input: {
+            message: "Je t'organise ça ?",
+            lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }],
+          },
+        },
+      ]);
+
+      const suggestion = await makeService(repo, llm, suggestions).extractTaskList(
+        "conv-1",
+        USER,
+        TOKEN,
+      );
+
+      expect(suggestion).toBe(created);
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ conversationId: "conv-1", kind: "create_task_list" }),
+        TOKEN,
+      );
+      // Un appel dédié, hors du tour de dialogue ordinaire : rien n'est écrit
+      // dans le fil, contrairement à un envoi de message classique.
+      expect(repo.appendMessage).not.toHaveBeenCalled();
+    });
+
+    it("ramène aussi l'échéance à minuit local ici (A.3, #18)", async () => {
+      const repo = makeRepository();
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm([], [
+        {
+          id: "call-1",
+          name: "suggest_task_list",
+          input: {
+            message: "Je t'organise ça ?",
+            lists: [
+              {
+                title: "Courses",
+                kind: "shopping",
+                // Convention de « fin de journée » qu'un LLM produit souvent :
+                // sans ce même filet qu'au fil du dialogue ordinaire, cette
+                // échéance extraite ici y échapperait.
+                dueAt: "2026-09-10T23:59:00.000+02:00",
+                items: [{ title: "Terreau" }],
+              },
+            ],
+          },
+        },
+      ]);
+
+      await makeService(repo, llm, suggestions).extractTaskList("conv-1", USER, TOKEN);
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-09T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ne propose que l'outil de conversion au modèle, pas le jeu habituel", async () => {
+      const llm = makeLlm();
+
+      await expect(
+        makeService(makeRepository(), llm).extractTaskList("conv-1", USER, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+
+      // Sans appel exploitable, il n'y a rien à capturer : le geste explicite
+      // n'a pas plus de garantie qu'une proposition spontanée.
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toEqual(["suggest_task_list"]);
+    });
+
+    it("refuse de convertir le canal permanent", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+
+      await expect(
+        makeService(repo).extractTaskList("conv-1", USER, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+
+    it("refuse quand la détection de todolistes est désactivée dans les réglages (A.10)", async () => {
+      const users = makeUserRepository({ proactiveTaskDetection: false });
+
+      await expect(
+        makeService(
+          makeRepository(),
+          makeLlm(),
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          users,
+        ).extractTaskList("conv-1", USER, TOKEN),
+      ).rejects.toMatchObject({ status: 403 });
+    });
+
+    it("refuse une conversation sans historique exploitable", async () => {
+      const repo = makeRepository({ listMessages: emptyThread() });
+
+      await expect(
+        makeService(repo).extractTaskList("conv-1", USER, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  describe("correction des échéances relatives (A.3, #18)", () => {
+    it("remplace l'échéance du modèle par le calcul déterministe quand l'expression est reconnue", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  // Date fautive du modèle : le serveur doit la corriger.
+                  // NOW est un mercredi (2 septembre) : le prochain vendredi
+                  // est le 4, minuit Paris.
+                  dueAt: "2026-09-01T00:00:00.000Z",
+                  dueAtText: "vendredi",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain pour vendredi.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ title: "Courses", dueAt: "2026-09-03T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ramène l'échéance du modèle à minuit local quand l'expression n'est pas reconnue", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  // Minuit UTC, mais « le 15 septembre » n'est pas reconnu par
+                  // le filet déterministe : le calcul du modèle reste la base,
+                  // mais son heure est tout de même ramenée à minuit à Paris —
+                  // une todoliste ne porte jamais d'horaire (A.3, #18).
+                  dueAt: "2026-09-15T00:00:00.000Z",
+                  dueAtText: "le 15 septembre",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain pour le 15.",
+        inputMode: "text",
+      });
+
+      // Minuit à Paris le 15 septembre, encore à l'heure d'été (UTC+2).
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-14T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ramène l'échéance du modèle à minuit local quand la liste ne porte pas d'expression source", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  dueAt: "2026-09-10T00:00:00.000Z",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-09T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("corrige une échéance que le modèle a calée en fin de journée plutôt qu'à minuit", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  // Un LLM laissé libre retombe souvent sur cette convention de
+                  // « fin de journée » plutôt que sur minuit : sans correction,
+                  // un `schedule_task` accepté poserait un rendez-vous à 23h59
+                  // au lieu d'un créneau journée entière.
+                  dueAt: "2026-09-10T23:59:00.000+02:00",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain pour vendredi soir.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-09T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
     });
   });
 });

@@ -127,12 +127,14 @@ export class JeanClaudeClient {
   /**
    * Todolistes (A.2).
    *
-   * Une seule lecture rend toutes les listes avec leurs tâches : la vue
-   * hebdomadaire et la vue « toutes mes listes » se dérivent du même
-   * chargement, et basculer de l'une à l'autre ne recharge rien.
+   * `lists` est paginée par curseur, comme les conversations — un garde-fou
+   * pour un compte qui en accumule beaucoup, la vue hebdomadaire et la vue
+   * « toutes mes listes » continuant de se dériver du même chargement côté
+   * app (`useTaskLists`, qui enchaîne les pages).
    */
   readonly tasks = {
-    lists: () => this.http.request<TaskListWithTasks[]>("/tasks"),
+    lists: (params: { cursor?: string; limit?: number } = {}) =>
+      this.http.request<Paginated<TaskListWithTasks>>("/tasks", { query: params }),
 
     createList: (input: CreateTaskList) =>
       this.http.request<TaskList>("/tasks", { method: "POST", body: input }),
@@ -234,12 +236,27 @@ export class JeanClaudeClient {
 
     remove: (id: string) => this.http.request<void>(`/conversations/${id}`, { method: "DELETE" }),
 
+    /** Marque la conversation comme lue (pastille de la barre latérale). */
+    markRead: (id: string) =>
+      this.http.request<Conversation>(`/conversations/${id}/read`, { method: "POST" }),
+
     /** Rangement matriciel : remplace l'ensemble des dossiers (§5.2, A.1). */
     assignFolders: (id: string, input: AssignFolders) =>
       this.http.request<Conversation>(`/conversations/${id}/folders`, {
         method: "PUT",
         body: input,
       }),
+
+    /**
+     * Convertit la conversation en todoliste à la demande, plutôt que
+     * d'attendre une suggestion spontanée (A.2, #17).
+     *
+     * Rend une suggestion en attente comme n'importe quelle autre
+     * proposition : même déclenchée à la demande, il reste un geste à
+     * valider (§12.1).
+     */
+    extractTaskList: (id: string) =>
+      this.http.request<Suggestion>(`/conversations/${id}/extract-task-list`, { method: "POST" }),
 
     messages: (id: string, params: { cursor?: string; limit?: number } = {}) =>
       this.http.request<Paginated<Message>>(`/conversations/${id}/messages`, { query: params }),

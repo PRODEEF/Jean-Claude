@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Conversation, Message, MessageStreamEvent, Paginated } from "@jc/domain";
 import { api } from "@/shared/lib/api";
@@ -85,6 +85,19 @@ export function useConversationThread(
     queryKey: ["conversation", conversationId, "messages"],
     queryFn: () => api.conversations.messages(conversationId, { limit: THREAD_PAGE_SIZE }),
   });
+
+  /**
+   * Marque la conversation comme lue à l'ouverture du fil (pastille de la
+   * barre latérale). Tiré une fois par conversation, sans bloquer l'affichage
+   * du fil si l'appel échoue.
+   */
+  const markRead = useMutation({
+    mutationFn: () => api.conversations.markRead(conversationId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+  useEffect(() => {
+    markRead.mutate();
+  }, [conversationId, markRead.mutate]);
 
   const send = useMutation({
     mutationFn: async (turn: Turn) => {
@@ -218,18 +231,26 @@ export function useConversationThread(
     },
   });
 
-  const submit = useCallback((content: string) => send.mutate({ kind: "send", content }), [send]);
+  const submit = useCallback(
+    (content: string) => send.mutate({ kind: "send", content }),
+    [send.mutate],
+  );
 
+  // Dépend de `send.mutate` et non de `send` : TanStack Query rend un nouvel
+  // objet à chaque rendu, mais `mutate` lui-même est stable. Dépendre de
+  // l'objet entier recréerait ces fonctions à chaque jeton reçu en flux, ce
+  // qui priverait `React.memo(MessageRow)` de tout effet au moment où il
+  // compte le plus.
   /** Corrige un message envoyé : la suite du fil part avec l'ancien texte. */
   const edit = useCallback(
     (messageId: string, content: string) => send.mutate({ kind: "edit", messageId, content }),
-    [send],
+    [send.mutate],
   );
 
   /** Redemande une réponse au modèle à partir de ce point du fil. */
   const retry = useCallback(
     (messageId: string) => send.mutate({ kind: "retry", messageId }),
-    [send],
+    [send.mutate],
   );
 
   /**

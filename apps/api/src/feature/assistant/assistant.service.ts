@@ -6,6 +6,7 @@ import {
   scheduleListsPayloadSchema,
   type AssignFoldersPayload,
   type CalendarEvent,
+  type CreateTaskListsPayload,
   type Folder,
   type FolderPurpose,
   type FolderTreeNode,
@@ -16,6 +17,7 @@ import {
   type TaskListKind,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
+import { logger } from "../../core/logger.js";
 import type { CalendarService } from "../../domain/calendar/calendar.service.js";
 import type { ConversationService } from "../../domain/conversation/conversation.service.js";
 import type { FolderService } from "../../domain/folder/folder.service.js";
@@ -43,6 +45,8 @@ export type ResolvedSuggestion = {
 
 /** Ce que l'acceptation a produit, hors de la suggestion elle-même. */
 type Applied = Omit<ResolvedSuggestion, "suggestion">;
+
+const SCOPE = "assistant.service";
 
 /** Un refus, ou une proposition qui n'a rien créé. */
 function nothingApplied(): Applied {
@@ -93,19 +97,22 @@ export class AssistantService {
       };
     }
 
-    // L'utilisateur a pu décocher des dossiers avant d'accepter : c'est le
-    // rangement retenu qui s'applique, et c'est lui qui est réécrit dans la
-    // proposition — la trace laissée dans le fil doit dire ce qui a été fait.
+    // L'utilisateur a pu décocher des dossiers, ou corriger une todoliste,
+    // avant d'accepter : c'est ce qu'il a retenu qui s'applique, et c'est lui
+    // qui est réécrit dans la proposition — la trace laissée dans le fil doit
+    // dire ce qui a été fait.
     const retained = retainedFolders(suggestion, input.folderSelection);
+    const edited = editedTaskLists(suggestion, input.taskListEdits);
+    const payload = retained ?? edited;
     const applied = await this.apply(
       userId,
-      retained ? { ...suggestion, payload: retained } : suggestion,
+      payload ? { ...suggestion, payload } : suggestion,
       accessToken,
     );
 
     return {
       ...applied,
-      suggestion: await this.suggestions.markResolved(id, "accepted", accessToken, retained),
+      suggestion: await this.suggestions.markResolved(id, "accepted", accessToken, payload),
     };
   }
 
@@ -165,7 +172,7 @@ export class AssistantService {
     const payload = createTaskListsPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success || !suggestion.conversationId) {
-      console.error("Charge utile de todoliste illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de todoliste illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -235,7 +242,7 @@ export class AssistantService {
     const payload = addTaskListItemsPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
-      console.error("Charge utile de complétion illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de complétion illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -275,10 +282,10 @@ export class AssistantService {
    * et poser autant d'événements qu'elle a d'items remplirait la journée de
    * doublons pour une seule chose à faire.
    *
-   * L'événement n'a pas de fin : une échéance déduite d'une conversation dit
-   * quand, pas combien de temps. Le calendrier lui donne déjà une durée
-   * implicite à l'affichage — en inventer une ici la ferait passer pour une
-   * information venue de l'utilisateur.
+   * Une échéance déduite d'une conversation dit quand, pas combien de temps :
+   * une todoliste ne porte jamais d'horaire, seulement un jour (§12.1) — le
+   * créneau posé est donc une journée entière, jamais un rendez-vous à heure
+   * fixe (#18, A.3).
    */
   private async scheduleTasks(
     userId: string,
@@ -288,7 +295,7 @@ export class AssistantService {
     const payload = scheduleListsPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
-      console.error("Charge utile de créneau illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de créneau illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -297,7 +304,12 @@ export class AssistantService {
     for (const entry of payload.data.lists) {
       const event = await this.calendar.create(
         userId,
-        { title: entry.title, startsAt: entry.dueAt, endsAt: null, allDay: false },
+        {
+          title: entry.title,
+          startsAt: entry.dueAt,
+          endsAt: null,
+          allDay: true,
+        },
         accessToken,
       );
 
@@ -307,7 +319,7 @@ export class AssistantService {
         // Liste supprimée entre la proposition et son acceptation : le créneau
         // reste, il porte l'information. Faire échouer l'acceptation entière
         // annulerait les créneaux déjà posés pour les listes précédentes.
-        console.warn("Liste introuvable au moment de poser son créneau", entry.listId);
+        logger.warn(SCOPE, "Liste introuvable au moment de poser son créneau", entry.listId);
       }
 
       events.push(event);
@@ -331,7 +343,7 @@ export class AssistantService {
     const payload = assignFoldersPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success || !suggestion.conversationId) {
-      console.error("Charge utile de rangement illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de rangement illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -344,19 +356,30 @@ export class AssistantService {
       // Un identifiant inventé par le modèle échouerait sur la clé étrangère :
       // on l'écarte plutôt que de perdre tout le rangement avec lui.
       if (known.some((folder) => folder.id === id)) targetIds.add(id);
-      else console.warn("Dossier proposé inconnu, ignoré", suggestion.id);
+      else logger.warn(SCOPE, "Dossier proposé inconnu, ignoré", suggestion.id);
     }
 
-    for (const name of payload.data.newFolderNames) {
-      const existing = known.find((folder) => sameName(folder.name, name));
+    for (const proposed of payload.data.newFolders) {
+      const existing = known.find((folder) => sameName(folder.name, proposed.name));
       if (existing) {
         targetIds.add(existing.id);
         continue;
       }
 
+      // Un parent supprimé entre la proposition et son acceptation ne doit
+      // pas faire échouer tout le rangement : le dossier naît alors à la
+      // racine plutôt que de perdre la proposition entière.
+      const parentId =
+        proposed.parentId && known.some((folder) => folder.id === proposed.parentId)
+          ? proposed.parentId
+          : null;
+      if (proposed.parentId && parentId === null) {
+        logger.warn(SCOPE, "Dossier parent introuvable à l'acceptation, posé à la racine", suggestion.id);
+      }
+
       const folder = await this.folders.create(
         userId,
-        { name, parentId: null, createdByAssistant: true },
+        { name: proposed.name, parentId, createdByAssistant: true },
         accessToken,
       );
       created.push(folder);
@@ -364,7 +387,7 @@ export class AssistantService {
     }
 
     if (targetIds.size === 0) {
-      console.error("Rangement sans dossier applicable", suggestion.id);
+      logger.error(SCOPE, "Rangement sans dossier applicable", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -395,7 +418,7 @@ export class AssistantService {
     if (!payload.success) {
       // La charge utile a été validée à la capture : échouer ici signifie que
       // le contrat a changé depuis. Le détail reste côté serveur.
-      console.error("Charge utile de suggestion illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de suggestion illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -479,16 +502,32 @@ function retainedFolders(
     existingFolderIds: proposed.data.existingFolderIds.filter((id) =>
       selection.existingFolderIds.includes(id),
     ),
-    newFolderNames: proposed.data.newFolderNames.filter((name) =>
-      selection.newFolderNames.some((kept) => sameName(kept, name)),
+    newFolders: proposed.data.newFolders.filter((folder) =>
+      selection.newFolders.some((kept) => sameName(kept.name, folder.name)),
     ),
   };
 
-  if (retained.existingFolderIds.length + retained.newFolderNames.length === 0) {
+  if (retained.existingFolderIds.length + retained.newFolders.length === 0) {
     throw httpError(400, "Aucun des dossiers retenus ne figure dans la proposition.");
   }
 
   return retained;
+}
+
+/**
+ * Listes effectivement retenues par l'utilisateur, corrigées avant validation
+ * (§13.4.1, #17), ou `undefined` s'il n'y a rien à substituer.
+ *
+ * Contrairement à `retainedFolders`, ce n'est pas une intersection avec la
+ * proposition d'origine : l'utilisateur peut y corriger un titre que le
+ * modèle a mal transcrit, pas seulement en écarter une partie. Le schéma de
+ * la charge utile reste le même garde-fou que pour une création ordinaire.
+ */
+function editedTaskLists(
+  suggestion: Suggestion,
+  edits: CreateTaskListsPayload | undefined,
+): CreateTaskListsPayload | undefined {
+  return suggestion.kind === "create_task_list" ? edits : undefined;
 }
 
 /**

@@ -4,13 +4,25 @@ module.exports = function (api) {
     // `jsxImportSource: "nativewind"` fait passer chaque élément JSX par le
     // wrapper de NativeWind, qui traduit `className` en styles React Native.
     // Sans lui, les classes utilitaires seraient ignorées sur iOS et Android.
+    //
+    // `nativewind/babel` n'est pas utilisé tel quel : il ré-enregistre le
+    // plugin worklets sans options, et ce plugin prend `option.value` dans un
+    // `style={}` pour un shared value Reanimated — d'où le déluge d'avertissements
+    // à chaque pastille, bouton ou classe `hover:`. On le pose nous-mêmes, en
+    // dernier (les presets s'exécutent en ordre inverse).
     presets: [
-      ["babel-preset-expo", { jsxImportSource: "nativewind" }],
-      "nativewind/babel",
+      {
+        plugins: [["react-native-worklets/plugin", { disableInlineStylesWarning: true }]],
+      },
+      [
+        "babel-preset-expo",
+        {
+          jsxImportSource: "nativewind",
+          worklets: false,
+          reanimated: false,
+        },
+      ],
     ],
-    // Pas de `react-native-reanimated/plugin` ici : depuis Reanimated 4, le
-    // plugin a migré vers `react-native-worklets/plugin`, que `babel-preset-expo`
-    // ajoute déjà de lui-même dès que le paquet est installé. Le déclarer une
-    // seconde fois le ferait s'appliquer deux fois aux mêmes fichiers.
+    plugins: [require("react-native-css-interop/dist/babel-plugin").default],
   };
 };
