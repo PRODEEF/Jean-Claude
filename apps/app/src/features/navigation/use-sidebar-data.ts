@@ -15,8 +15,6 @@ export type SidebarGroup = {
 
 export type SidebarData = {
   groups: SidebarGroup[];
-  /** Conversations rattachées à aucun dossier — capture sans friction (§13.4.1). */
-  unfiled: Conversation[];
   /**
    * Toutes les conversations de la barre, à plat.
    *
@@ -82,7 +80,6 @@ export function useSidebarData(): SidebarData {
 
     return {
       groups: (folders.data ?? []).filter((node) => node.parentId === null).map(build),
-      unfiled: items.filter((item) => item.folderIds.length === 0),
       all: items,
       channel: channel.data ?? null,
       isLoading: folders.isLoading || conversations.isLoading,
