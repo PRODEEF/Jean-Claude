@@ -25,7 +25,7 @@ export class TaskService {
   /**
    * Les listes, tâches comprises, par page — garde-fou pour un compte qui en
    * accumule beaucoup (Phase C : conversion conversation → todoliste, A.2).
-   * L'onglet TODOLISTE reste la vue « tous dossiers confondus » : c'est le
+   * L'onglet Mes listes reste la vue « tous dossiers confondus » : c'est le
    * client qui recompose l'ensemble en enchaînant les pages, pas l'API qui
    * borne la vue.
    */

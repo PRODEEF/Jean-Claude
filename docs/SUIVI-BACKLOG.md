@@ -7,10 +7,35 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **4 septembre 2026** — un moyen de remonter un avis
-utilisateur (hors cahier des charges), et deux points d'A.1 et A.4 vérifiés et
-complétés : le classement matriciel multi-dossiers (#16) et les sous-dossiers
-automatiques de projet (#19).
+Dernière mise à jour : **4 septembre 2026** — l'onglet Todoliste devient Mes
+listes, sa vue Semaine rejoint le calendrier comme cinquième vue « Todo »
+(mois complet), et un raccourci direct vers l'avis général rejoint la barre
+latérale.
+
+**Mes listes perd sa vue Semaine, reprise dans le calendrier.** L'onglet
+Todoliste s'appelle désormais Mes listes, et n'a plus qu'une lecture — la
+liste, tous dossiers confondus, loupe désormais alignée sur la même ligne que
+les dossiers plutôt que reléguée au-dessus. Sa vue Semaine (un bloc par jour,
+par moment, pour les todolistes échues) faisait doublon avec celle du
+calendrier : elle est retirée d'ici. Le segment « Todo » du calendrier, qui
+n'était jusque-là qu'un raccourci vers cet onglet, en devient la cinquième vue
+à part entière — élargie au mois entier plutôt que bornée à sept jours, avec
+une bascule qui masque par défaut les jours sans liste (sur un mois complet,
+les afficher tous aurait noyé ceux qui comptent). Comme le reste du
+calendrier, cette vue reste en lecture seule : l'appui sur une liste ouvre Mes
+listes, qui en reste l'écran d'édition (même principe déjà posé par
+`DayAgenda`).
+
+**Un raccourci direct vers l'avis général rejoint la barre latérale.** Le
+bouton « PROBLÈME », sous le canal permanent Jean-Claude, en reprend le
+traitement visuel en rouge et ouvre la même fenêtre d'avis général déjà
+accessible depuis le canal et les Réglages — un troisième point d'entrée,
+pas un nouveau mécanisme.
+
+Auparavant le même jour : un moyen de remonter un avis utilisateur (hors
+cahier des charges), et deux points d'A.1 et A.4 vérifiés et complétés : le
+classement matriciel multi-dossiers (#16) et les sous-dossiers automatiques de
+projet (#19).
 
 **Un moyen de remonter un avis existe, hors cahier des charges.** Deux formes :
 un avis général (bug, idée, autre) accessible depuis le canal Jean-Claude et
@@ -582,7 +607,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | ---- | ----------------------------------------------------- | :----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                                                                                                                                                                                           |
 | A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer d'une conversation sur un dossier (ajouter ou déplacer, au choix) **et d'un dossier dans un autre**, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                 |
-| A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet TODOLISTE (« Mes listes » puis « Semaine », filtrables par dossier, cherchables à la loupe), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Le contenu s'édite comme un texte — une ligne par tâche, deux niveaux d'indentation, réécrit en un appel. Listes groupées par dossier dans l'agenda du calendrier, où « + Tâches » en ouvre une sur le jour affiché. L'assistant propose désormais les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation. Restent la conversion à la demande et l'édition avant validation → #17                              |
+| A.2  | Conversion conversation → todoliste                   |   🟡   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet Mes listes (une seule lecture, filtrable par dossier, cherchable à la loupe ; la lecture par semaine vit désormais dans le calendrier, vue Todo — mois complet), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Le contenu s'édite comme un texte — une ligne par tâche, deux niveaux d'indentation, réécrit en un appel. Listes groupées par dossier dans l'agenda du calendrier, où « + Tâches » en ouvre une sur le jour affiché. L'assistant propose désormais les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation. Restent la conversion à la demande et l'édition avant validation → #17                              |
 | A.3  | Détection de tâches datées                            |   🟡   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte désormais sur la **liste** et non sur ses lignes : le modèle date la liste qu'il propose, puis une seconde proposition bloque un créneau d'agenda par liste datée. Reste le parsing des dates relatives, laissé au modèle pour l'instant → #18                                                                                             |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste — consigne de détection reprise, avec un critère explicite (#19). Une todoliste acceptée rejoint son sous-dossier typé (ACHAT, TODO) quand il existe, au lieu du dossier de projet. Restent PRENDRE RDV — `calendar_events` ne porte aucun dossier — et IDÉE, faute de concept de note dans le produit                |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                                                                                          |

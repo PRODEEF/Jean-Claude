@@ -76,7 +76,7 @@ export function DayAgenda({ day, events, lists, onOpenEvent }: DayAgendaProps) {
         ))
       )}
 
-      {/* Les listes se cochent dans l'onglet Todoliste, pas ici : le calendrier
+      {/* Les listes se cochent dans l'onglet Mes listes, pas ici : le calendrier
           dit ce que porte la journée, il n'est pas un second endroit où gérer
           les mêmes listes. L'appui y conduit, sur la liste concernée.
           Regroupées par dossier, parce qu'une journée mélange le jardin et les

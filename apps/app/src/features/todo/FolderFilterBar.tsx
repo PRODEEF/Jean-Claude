@@ -14,7 +14,7 @@ export type FolderFilterBarProps = {
 };
 
 /**
- * Filtre par dossier de l'onglet Todoliste.
+ * Filtre par dossier de l'onglet Mes listes.
  *
  * Des boutons alignés plutôt qu'un menu déroulant : le choix se lit sans
  * l'ouvrir, et il y a rarement plus de quelques dossiers porteurs de listes.
