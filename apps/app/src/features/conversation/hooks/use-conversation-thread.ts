@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Conversation, Message, MessageStreamEvent, Paginated } from "@jc/domain";
 import { api } from "@/shared/lib/api";
@@ -85,6 +85,19 @@ export function useConversationThread(
     queryKey: ["conversation", conversationId, "messages"],
     queryFn: () => api.conversations.messages(conversationId, { limit: THREAD_PAGE_SIZE }),
   });
+
+  /**
+   * Marque la conversation comme lue à l'ouverture du fil (pastille de la
+   * barre latérale). Tiré une fois par conversation, sans bloquer l'affichage
+   * du fil si l'appel échoue.
+   */
+  const markRead = useMutation({
+    mutationFn: () => api.conversations.markRead(conversationId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+  useEffect(() => {
+    markRead.mutate();
+  }, [conversationId, markRead.mutate]);
 
   const send = useMutation({
     mutationFn: async (turn: Turn) => {
