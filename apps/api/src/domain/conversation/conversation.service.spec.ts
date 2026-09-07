@@ -2340,6 +2340,43 @@ describe("ConversationService", () => {
       expect(repo.appendMessage).not.toHaveBeenCalled();
     });
 
+    it("ramène aussi l'échéance à minuit local ici (A.3, #18)", async () => {
+      const repo = makeRepository();
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm([], [
+        {
+          id: "call-1",
+          name: "suggest_task_list",
+          input: {
+            message: "Je t'organise ça ?",
+            lists: [
+              {
+                title: "Courses",
+                kind: "shopping",
+                // Convention de « fin de journée » qu'un LLM produit souvent :
+                // sans ce même filet qu'au fil du dialogue ordinaire, cette
+                // échéance extraite ici y échapperait.
+                dueAt: "2026-09-10T23:59:00.000+02:00",
+                items: [{ title: "Terreau" }],
+              },
+            ],
+          },
+        },
+      ]);
+
+      await makeService(repo, llm, suggestions).extractTaskList("conv-1", USER, TOKEN);
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-09T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
     it("ne propose que l'outil de conversion au modèle, pas le jeu habituel", async () => {
       const llm = makeLlm();
 
@@ -2429,7 +2466,7 @@ describe("ConversationService", () => {
       );
     });
 
-    it("laisse l'échéance du modèle inchangée quand l'expression n'est pas reconnue", async () => {
+    it("ramène l'échéance du modèle à minuit local quand l'expression n'est pas reconnue", async () => {
       const suggestions = makeSuggestionRepository();
       const llm = makeLlm(
         [],
@@ -2443,6 +2480,10 @@ describe("ConversationService", () => {
                 {
                   title: "Courses",
                   kind: "shopping",
+                  // Minuit UTC, mais « le 15 septembre » n'est pas reconnu par
+                  // le filet déterministe : le calcul du modèle reste la base,
+                  // mais son heure est tout de même ramenée à minuit à Paris —
+                  // une todoliste ne porte jamais d'horaire (A.3, #18).
                   dueAt: "2026-09-15T00:00:00.000Z",
                   dueAtText: "le 15 septembre",
                   items: [{ title: "Pain" }],
@@ -2458,18 +2499,19 @@ describe("ConversationService", () => {
         inputMode: "text",
       });
 
+      // Minuit à Paris le 15 septembre, encore à l'heure d'été (UTC+2).
       expect(suggestions.create).toHaveBeenCalledWith(
         USER,
         expect.objectContaining({
           payload: expect.objectContaining({
-            lists: [expect.objectContaining({ dueAt: "2026-09-15T00:00:00.000Z" })],
+            lists: [expect.objectContaining({ dueAt: "2026-09-14T22:00:00.000Z" })],
           }),
         }),
         TOKEN,
       );
     });
 
-    it("garde le calcul du modèle quand la liste ne porte pas d'expression source", async () => {
+    it("ramène l'échéance du modèle à minuit local quand la liste ne porte pas d'expression source", async () => {
       const suggestions = makeSuggestionRepository();
       const llm = makeLlm(
         [],
@@ -2501,7 +2543,50 @@ describe("ConversationService", () => {
         USER,
         expect.objectContaining({
           payload: expect.objectContaining({
-            lists: [expect.objectContaining({ dueAt: "2026-09-10T00:00:00.000Z" })],
+            lists: [expect.objectContaining({ dueAt: "2026-09-09T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("corrige une échéance que le modèle a calée en fin de journée plutôt qu'à minuit", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  // Un LLM laissé libre retombe souvent sur cette convention de
+                  // « fin de journée » plutôt que sur minuit : sans correction,
+                  // un `schedule_task` accepté poserait un rendez-vous à 23h59
+                  // au lieu d'un créneau journée entière.
+                  dueAt: "2026-09-10T23:59:00.000+02:00",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me faut du pain pour vendredi soir.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-09T22:00:00.000Z" })],
           }),
         }),
         TOKEN,

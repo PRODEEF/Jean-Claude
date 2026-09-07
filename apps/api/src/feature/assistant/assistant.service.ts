@@ -48,16 +48,6 @@ type Applied = Omit<ResolvedSuggestion, "suggestion">;
 
 const SCOPE = "assistant.service";
 
-/**
- * Durée posée aux créneaux nés d'une todoliste datée, faute d'en connaître une
- * réelle (A.3, #18). Le calendrier affichait déjà cette même durée à titre
- * indicatif pour un événement sans fin (`IMPLICIT_DURATION_MINUTES`,
- * apps/app/src/features/calendar/lib/calendar-dates.ts) : la poser pour de
- * vrai ne change donc rien à ce que l'utilisateur voit, mais donne au créneau
- * une fin exploitable (rappel, superposition avec un autre rendez-vous).
- */
-const DEFAULT_TASK_EVENT_DURATION_MINUTES = 60;
-
 /** Un refus, ou une proposition qui n'a rien créé. */
 function nothingApplied(): Applied {
   return { folders: [], taskLists: [], events: [], next: null };
@@ -293,8 +283,9 @@ export class AssistantService {
    * doublons pour une seule chose à faire.
    *
    * Une échéance déduite d'une conversation dit quand, pas combien de temps :
-   * faute de mieux, le créneau prend la durée par défaut plutôt que de rester
-   * sans fin (#18, A.3).
+   * une todoliste ne porte jamais d'horaire, seulement un jour (§12.1) — le
+   * créneau posé est donc une journée entière, jamais un rendez-vous à heure
+   * fixe (#18, A.3).
    */
   private async scheduleTasks(
     userId: string,
@@ -316,8 +307,8 @@ export class AssistantService {
         {
           title: entry.title,
           startsAt: entry.dueAt,
-          endsAt: addMinutes(entry.dueAt, DEFAULT_TASK_EVENT_DURATION_MINUTES),
-          allDay: false,
+          endsAt: null,
+          allDay: true,
         },
         accessToken,
       );
@@ -521,11 +512,6 @@ function retainedFolders(
   }
 
   return retained;
-}
-
-/** Instant ISO 8601 décalé du nombre de minutes donné. */
-function addMinutes(iso: string, minutes: number): string {
-  return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
 }
 
 /**

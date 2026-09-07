@@ -1195,19 +1195,21 @@ describe("AssistantService", () => {
       return { second, tasks, events };
     }
 
-    it("pose un créneau par liste datée, sur une heure par défaut faute d'en connaître une réelle", async () => {
+    it("pose un créneau journée entière par liste datée, jamais un horaire précis", async () => {
       const { second, events } = await acceptBothCards();
 
       // Un seul créneau pour les deux tâches du jardin : c'est la liste qui
       // porte l'échéance, pas chacune de ses lignes.
       expect(second.events).toHaveLength(1);
+      // Une todoliste ne porte jamais d'horaire, seulement un jour : le
+      // créneau posé est une journée entière, pas un rendez-vous à heure fixe.
       expect(events.create).toHaveBeenCalledWith(
         USER,
         {
           title: "Travaux jardin",
           startsAt: DESHERBAGE,
-          endsAt: "2026-09-07T10:00:00.000Z",
-          allDay: false,
+          endsAt: null,
+          allDay: true,
         },
         TOKEN,
       );
