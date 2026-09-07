@@ -10,6 +10,11 @@ import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-spe
  */
 export function useDictation(onTranscript: (text: string) => void) {
   const [listening, setListening] = useState(false);
+  // Ne change pas en cours de session : calculé une seule fois. Sur le web,
+  // Brave et Firefox n'implémentent pas encore cette API (contrairement à la
+  // synthèse vocale) — sans ce contrôle, le geste reste sans le moindre
+  // effet, avec pour seule trace un `console.warn` que personne ne voit.
+  const [supported] = useState(() => ExpoSpeechRecognitionModule.isRecognitionAvailable());
   // Ce qui était dans le champ avant le geste, puis chaque segment que la
   // reconnaissance continue a confirmé comme définitif. En continu, chaque
   // résultat — final ou non — ne couvre que le segment en cours depuis le
@@ -40,31 +45,35 @@ export function useDictation(onTranscript: (text: string) => void) {
     setListening(false);
   });
 
-  const start = useCallback((currentText: string) => {
-    committed.current = currentText;
-    setListening(true);
-    ExpoSpeechRecognitionModule.requestPermissionsAsync()
-      .then((permission) => {
-        if (!permission.granted) {
+  const start = useCallback(
+    (currentText: string) => {
+      if (!supported) return;
+      committed.current = currentText;
+      setListening(true);
+      ExpoSpeechRecognitionModule.requestPermissionsAsync()
+        .then((permission) => {
+          if (!permission.granted) {
+            setListening(false);
+            return;
+          }
+          // Sans `continuous`, le reconnaisseur s'arrête de lui-même à la
+          // première pause de parole détectée : le bouton semblait se
+          // désactiver tout seul après une phrase, avant même que
+          // l'utilisateur ait fini de dicter. Il ne s'arrête maintenant que
+          // sur `stop()` — le geste explicite de l'utilisateur.
+          ExpoSpeechRecognitionModule.start({
+            lang: "fr-FR",
+            interimResults: true,
+            continuous: true,
+          });
+        })
+        .catch((error: unknown) => {
+          console.warn("Dictée impossible :", error instanceof Error ? error.message : error);
           setListening(false);
-          return;
-        }
-        // Sans `continuous`, le reconnaisseur s'arrête de lui-même à la
-        // première pause de parole détectée : le bouton semblait se
-        // désactiver tout seul après une phrase, avant même que
-        // l'utilisateur ait fini de dicter. Il ne s'arrête maintenant que
-        // sur `stop()` — le geste explicite de l'utilisateur.
-        ExpoSpeechRecognitionModule.start({
-          lang: "fr-FR",
-          interimResults: true,
-          continuous: true,
         });
-      })
-      .catch((error: unknown) => {
-        console.warn("Dictée impossible :", error instanceof Error ? error.message : error);
-        setListening(false);
-      });
-  }, []);
+    },
+    [supported],
+  );
 
   const stop = useCallback(() => ExpoSpeechRecognitionModule.stop(), []);
 
@@ -76,7 +85,7 @@ export function useDictation(onTranscript: (text: string) => void) {
     return () => ExpoSpeechRecognitionModule.abort();
   }, []);
 
-  return { listening, start, stop };
+  return { listening, supported, start, stop };
 }
 
 /**
