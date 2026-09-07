@@ -196,7 +196,7 @@ export function SearchDialog({ open, onClose, onSelect }: SearchDialogProps) {
         accessibilityLabel="Fermer la recherche"
       />
 
-      <View style={styles.centering} pointerEvents="box-none">
+      <View style={styles.centering}>
         <View
           style={[
             styles.panel,
@@ -508,7 +508,12 @@ const styles = StyleSheet.create({
   // La fenêtre se pose au quart supérieur plutôt qu'au centre : c'est là que
   // l'œil part chercher un champ de recherche, et la liste a la place de
   // s'allonger vers le bas sans que le champ ne bouge.
-  centering: { flex: 1, alignItems: "center", paddingTop: spacing.xxxl + spacing.xl },
+  centering: {
+    flex: 1,
+    alignItems: "center",
+    paddingTop: spacing.xxxl + spacing.xl,
+    pointerEvents: "box-none",
+  },
   panel: {
     borderWidth: 1,
     borderRadius: radius.lg,

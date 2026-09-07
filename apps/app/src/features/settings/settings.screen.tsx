@@ -212,14 +212,15 @@ export function SettingsScreen() {
                 donne la teinte franche, celle des boutons. */}
             <View className="flex-row flex-wrap gap-3" accessibilityRole="radiogroup">
               {ASSISTANT_ACCENTS.map((option) => {
-                const selected = !showColorPicker && option.value.toLowerCase() === accent.toLowerCase();
+                const color = option.value;
+                const selected = !showColorPicker && color.toLowerCase() === accent.toLowerCase();
 
                 return (
                   <Pressable
                     key={option.value}
                     onPress={() => {
                       setCustomRequested(false);
-                      updateProfile.mutate({ assistantColor: option.value });
+                      updateProfile.mutate({ assistantColor: color });
                     }}
                     disabled={updateProfile.isPending}
                     // Une rangée de pastilles de 44 pt paraîtrait grossière ;
@@ -228,7 +229,7 @@ export function SettingsScreen() {
                     hitSlop={(MIN_TOUCH_TARGET - SWATCH_SIZE) / 2}
                     style={[
                       styles.swatch,
-                      { borderColor: selected ? option.value : palette.border },
+                      { borderColor: selected ? color : palette.border },
                       selected && styles.swatchSelected,
                     ]}
                     accessibilityRole="radio"
@@ -239,17 +240,17 @@ export function SettingsScreen() {
                       <View
                         style={[
                           styles.swatchHalf,
-                          { backgroundColor: softenAccent(option.value, "light") },
+                          { backgroundColor: softenAccent(color, "light") },
                         ]}
                       />
                       <View
                         style={[
                           styles.swatchHalf,
-                          { backgroundColor: softenAccent(option.value, "dark") },
+                          { backgroundColor: softenAccent(color, "dark") },
                         ]}
                       />
                     </View>
-                    <View style={[styles.swatchCore, { backgroundColor: option.value }]} />
+                    <View style={[styles.swatchCore, { backgroundColor: color }]} />
                   </Pressable>
                 );
               })}
@@ -264,7 +265,10 @@ export function SettingsScreen() {
                 hitSlop={(MIN_TOUCH_TARGET - SWATCH_SIZE) / 2}
                 style={[
                   styles.swatch,
-                  { backgroundColor: palette.surface, borderColor: showColorPicker ? accent : palette.border },
+                  {
+                    backgroundColor: palette.surface,
+                    borderColor: showColorPicker ? accent : palette.border,
+                  },
                   showColorPicker && styles.swatchSelected,
                 ]}
                 accessibilityRole="radio"

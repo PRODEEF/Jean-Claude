@@ -273,7 +273,7 @@ export function AppSidebar({
 
         {unfiled.length > 0 ? (
           <>
-            <SectionLabel>Sans dossier</SectionLabel>
+            <SectionLabel>Discussions et tâches</SectionLabel>
             {unfiled.map((conversation) =>
               renaming?.id === conversation.id ? (
                 <ConversationNameRow
