@@ -243,6 +243,17 @@ export class JeanClaudeClient {
         body: input,
       }),
 
+    /**
+     * Convertit la conversation en todoliste à la demande, plutôt que
+     * d'attendre une suggestion spontanée (A.2, #17).
+     *
+     * Rend une suggestion en attente comme n'importe quelle autre
+     * proposition : même déclenchée à la demande, il reste un geste à
+     * valider (§12.1).
+     */
+    extractTaskList: (id: string) =>
+      this.http.request<Suggestion>(`/conversations/${id}/extract-task-list`, { method: "POST" }),
+
     messages: (id: string, params: { cursor?: string; limit?: number } = {}) =>
       this.http.request<Paginated<Message>>(`/conversations/${id}/messages`, { query: params }),
 

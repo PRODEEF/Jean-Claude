@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Plus,
 } from "lucide-react-native";
+import { ApiError } from "@jc/api-client";
 import type { Conversation, Folder, FolderTreeNode, TaskList } from "@jc/domain";
 import { api } from "@/shared/lib/api";
 import { cn } from "@/shared/lib/utils";
@@ -104,6 +105,8 @@ export function AppSidebar({
   const [drop, setDrop] = useState<ConversationDrop | null>(null);
   /** Ce qu'a répondu le serveur au dernier déplacement raté, `null` sinon. */
   const [moveError, setMoveError] = useState<string | null>(null);
+  /** Ce qu'a répondu le serveur à la dernière conversion en todoliste ratée. */
+  const [extractError, setExtractError] = useState<string | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const { move } = useFolderActions();
 
@@ -122,6 +125,21 @@ export function AppSidebar({
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       go(`/chat/${conversation.id}`);
     },
+  });
+
+  /**
+   * Conversion à la demande (A.2, #17) : la carte de proposition se lit dans
+   * le fil de la conversation visée, comme n'importe quelle autre suggestion
+   * — l'assistant propose, il n'exécute pas (§12.1).
+   */
+  const extractTaskList = useMutation({
+    mutationFn: (id: string) => api.conversations.extractTaskList(id),
+    onSuccess: async (_suggestion, id) => {
+      setExtractError(null);
+      await queryClient.invalidateQueries({ queryKey: ["conversation", id, "suggestions"] });
+      go(`/chat/${id}`);
+    },
+    onError: (cause: Error) => setExtractError(extractErrorMessage(cause)),
   });
 
   const createRootFolder = () => setNaming({ kind: "create", parentId: null });
@@ -229,6 +247,10 @@ export function AppSidebar({
         </View>
 
         {moveError ? <Text className="text-destructive px-2 py-1 text-xs">{moveError}</Text> : null}
+
+        {extractError ? (
+          <Text className="text-destructive px-2 py-1 text-xs">{extractError}</Text>
+        ) : null}
 
         {/* Message fixe, et non `error.message` : une erreur brute de fetch ou
             du serveur peut porter des fragments de requête, donc des données
@@ -356,6 +378,10 @@ export function AppSidebar({
         onFile={({ conversation }) => {
           setConversationMenu(null);
           setFiling(conversation);
+        }}
+        onConvertToTaskList={({ conversation }) => {
+          setConversationMenu(null);
+          extractTaskList.mutate(conversation.id);
         }}
         onDelete={({ conversation }) => {
           setConversationMenu(null);
@@ -829,6 +855,16 @@ function findGroup(groups: SidebarGroup[], id: string): SidebarGroup | null {
     if (found) return found;
   }
   return null;
+}
+
+/**
+ * Un 4xx dit pourquoi la conversion en todoliste a été refusée — rien
+ * d'exploitable dans le fil, ou capacité désactivée dans les réglages
+ * (A.10) : le message du serveur est déjà écrit pour l'utilisateur.
+ */
+function extractErrorMessage(cause: Error): string {
+  if (cause instanceof ApiError && cause.status >= 400 && cause.status < 500) return cause.message;
+  return "La conversion en todoliste a échoué. Réessayez dans un instant.";
 }
 
 /** Le dossier, ou l'un de ses descendants, porte-t-il la conversation ouverte ? */
