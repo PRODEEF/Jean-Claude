@@ -1,10 +1,19 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { Platform, Pressable, StyleSheet, TextInput, useWindowDimensions } from "react-native";
-import { ArrowUp, Square } from "lucide-react-native";
-import { MESSAGE_MAX_LENGTH } from "@jc/domain";
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { ArrowUp, Mic, Square } from "lucide-react-native";
+import { MESSAGE_MAX_LENGTH, type MessageInputMode } from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { useDictation } from "./hooks/use-dictation";
 
 /**
  * Part de la hauteur de fenêtre au-delà de laquelle la saisie cesse de
@@ -31,8 +40,14 @@ function asTextArea(node: unknown): HTMLTextAreaElement | null {
 export type ComposerProps = {
   value: string;
   onChangeText: (value: string) => void;
-  /** Appelé sur Entrée comme sur la flèche. À l'appelant de vider le champ. */
-  onSubmit: () => void;
+  /**
+   * Appelé sur Entrée comme sur la flèche. À l'appelant de vider le champ.
+   *
+   * Porte le mode d'entrée du message qui part : « voice » si le dernier
+   * geste sur ce brouillon a été un fragment dicté, « text » sinon — retapé
+   * par-dessus, il n'y a plus lieu de le lire à voix haute (§12.3, A.12).
+   */
+  onSubmit: (inputMode: MessageInputMode) => void;
   placeholder: string;
   /** Un tour est en cours : la flèche devient un bouton d'arrêt. */
   busy?: boolean;
@@ -80,6 +95,34 @@ export function Composer({
   const [contentHeight, setContentHeight] = useState(MIN_INPUT_HEIGHT);
   const maxHeight = Math.max(MIN_INPUT_HEIGHT * 3, Math.round(windowHeight * MAX_HEIGHT_RATIO));
 
+  // Origine du brouillon courant (§12.3, A.12) : local au composant, jamais
+  // remonté tant que rien n'est envoyé. Un caractère retapé au clavier
+  // ramène en « text » — un message qu'on a soi-même corrigé n'est plus
+  // fidèlement ce qui a été dit.
+  const [inputMode, setInputMode] = useState<MessageInputMode>("text");
+
+  const handleChangeText = useCallback(
+    (text: string) => {
+      setInputMode("text");
+      onChangeText(text);
+    },
+    [onChangeText],
+  );
+
+  const dictation = useDictation((text) => {
+    setInputMode("voice");
+    onChangeText(text);
+  });
+  // Signalé seulement à l'usage, plutôt qu'en permanence pour qui n'a jamais
+  // touché au micro : Brave et Firefox n'implémentent pas encore cette API
+  // côté web, et le geste resterait sinon sans le moindre effet visible.
+  const [dictationUnavailable, setDictationUnavailable] = useState(false);
+
+  const handleSubmit = useCallback(() => {
+    onSubmit(inputMode);
+    setInputMode("text");
+  }, [onSubmit, inputMode]);
+
   // L'appelant garde la main sur le champ — le fil y rend le focus après un
   // envoi — sans que le composant perde la référence dont il a besoin ici.
   const attach = useCallback(
@@ -103,83 +146,116 @@ export function Composer({
   }, [value, maxHeight]);
 
   return (
-    <Pressable
-      onPress={() => node.current?.focus()}
-      // Rien à annoncer : le champ et la flèche portent déjà leurs libellés,
-      // et une cible de plus dans l'ordre de lecture ne dirait rien de neuf.
-      accessible={false}
-      className="web:cursor-text"
-      style={[styles.shell, { backgroundColor: palette.surface, borderColor: palette.border }]}
-    >
-      <TextInput
-        ref={attach}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={palette.textMuted}
-        autoFocus={autoFocus}
-        multiline
-        // Bornée ici comme elle l'est au contrat partagé : sans cela, un texte
-        // trop long partait au serveur, revenait en 400 générique, et le
-        // brouillon était perdu en chemin.
-        maxLength={MESSAGE_MAX_LENGTH}
-        onSubmitEditing={onSubmit}
-        // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde un
-        // retour à la ligne, la saisie multiligne y étant la norme.
-        blurOnSubmit={Platform.OS === "web"}
-        accessibilityLabel={placeholder}
-        // Le cadre est porté par la coque : celui du champ ferait double trait.
-        // `web:` seulement — sur mobile, `outline` n'existe pas et le retrait
-        // du liseré de focus enlèverait le repère de navigation au clavier,
-        // qui est ici la coque elle-même.
-        className="web:outline-none"
-        onContentSizeChange={(event) => setContentHeight(event.nativeEvent.contentSize.height)}
-        style={[
-          styles.input,
-          { color: palette.text, maxHeight },
-          // Sur web, la hauteur est posée sur le nœud lui-même : un style de
-          // plus ici la remettrait à sa valeur de rendu à chaque frappe.
-          Platform.OS === "web"
-            ? null
-            : { height: Math.min(Math.max(contentHeight, MIN_INPUT_HEIGHT), maxHeight) },
-        ]}
-        // Un `textarea` s'ouvre sur deux rangées par défaut : le champ naissait
-        // donc deux fois trop haut, texte collé en haut et flèche en bas. Sur
-        // mobile, `numberOfLines` bornerait au contraire la saisie à une ligne.
-        {...(Platform.OS === "web" ? { numberOfLines: 1 } : {})}
-      />
-
-      {/* Pendant la génération, le même bouton arrête la réponse plutôt que de
-          rester grisé : c'est ce que font ChatGPT, Claude et Perplexity (§4.2),
-          et rien n'est perdu — le serveur conserve le texte déjà produit. */}
+    <View style={styles.root}>
       <Pressable
-        onPress={stoppable ? onStop : onSubmit}
-        disabled={stoppable ? false : busy || empty}
-        accessibilityRole="button"
-        accessibilityLabel={stoppable ? "Arrêter la réponse en cours" : "Envoyer le message"}
-        // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie, plus
-        // 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
-        // `MIN_TOUCH_TARGET` sans faire grandir le champ.
-        hitSlop={8}
-        style={[
-          styles.send,
-          {
-            backgroundColor: palette.accent,
-            opacity: !stoppable && (busy || empty) ? 0.4 : 1,
-          },
-        ]}
+        onPress={() => node.current?.focus()}
+        // Rien à annoncer : le champ et la flèche portent déjà leurs libellés,
+        // et une cible de plus dans l'ordre de lecture ne dirait rien de neuf.
+        accessible={false}
+        className="web:cursor-text"
+        style={[styles.shell, { backgroundColor: palette.surface, borderColor: palette.border }]}
       >
-        {stoppable ? (
-          <Square size={14} fill={palette.accentText} color={palette.accentText} />
-        ) : (
-          <ArrowUp size={18} color={palette.accentText} />
-        )}
+        <TextInput
+          ref={attach}
+          value={value}
+          onChangeText={handleChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={palette.textMuted}
+          autoFocus={autoFocus}
+          multiline
+          // Bornée ici comme elle l'est au contrat partagé : sans cela, un
+          // texte trop long partait au serveur, revenait en 400 générique, et
+          // le brouillon était perdu en chemin.
+          maxLength={MESSAGE_MAX_LENGTH}
+          onSubmitEditing={handleSubmit}
+          // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde
+          // un retour à la ligne, la saisie multiligne y étant la norme.
+          blurOnSubmit={Platform.OS === "web"}
+          accessibilityLabel={placeholder}
+          // Le cadre est porté par la coque : celui du champ ferait double
+          // trait. `web:` seulement — sur mobile, `outline` n'existe pas et
+          // le retrait du liseré de focus enlèverait le repère de navigation
+          // au clavier, qui est ici la coque elle-même.
+          className="web:outline-none"
+          onContentSizeChange={(event) => setContentHeight(event.nativeEvent.contentSize.height)}
+          style={[
+            styles.input,
+            { color: palette.text, maxHeight },
+            // Sur web, la hauteur est posée sur le nœud lui-même : un style
+            // de plus ici la remettrait à sa valeur de rendu à chaque frappe.
+            Platform.OS === "web"
+              ? null
+              : { height: Math.min(Math.max(contentHeight, MIN_INPUT_HEIGHT), maxHeight) },
+          ]}
+          // Un `textarea` s'ouvre sur deux rangées par défaut : le champ
+          // naissait donc deux fois trop haut, texte collé en haut et flèche
+          // en bas. Sur mobile, `numberOfLines` bornerait au contraire la
+          // saisie à une ligne.
+          {...(Platform.OS === "web" ? { numberOfLines: 1 } : {})}
+        />
+
+        {/* Seconde porte d'entrée vers le même champ, jamais un mode à part
+            (§12.3, A.12) : la dictée complète ce qui est déjà tapé, elle ne
+            l'efface pas. Visible même pendant `busy` — le champ, lui, reste
+            éditable pendant qu'une réponse se génère. */}
+        <Pressable
+          onPress={() => {
+            if (!dictation.supported) {
+              setDictationUnavailable(true);
+              return;
+            }
+            if (dictation.listening) dictation.stop();
+            else dictation.start(value);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={dictation.listening ? "Arrêter la dictée" : "Dicter le message"}
+          hitSlop={8}
+          style={[styles.mic, dictation.listening ? { backgroundColor: palette.accent } : null]}
+        >
+          <Mic size={16} color={dictation.listening ? palette.accentText : palette.textMuted} />
+        </Pressable>
+
+        {/* Pendant la génération, le même bouton arrête la réponse plutôt que
+            de rester grisé : c'est ce que font ChatGPT, Claude et Perplexity
+            (§4.2), et rien n'est perdu — le serveur conserve le texte déjà
+            produit. */}
+        <Pressable
+          onPress={stoppable ? onStop : handleSubmit}
+          disabled={stoppable ? false : busy || empty}
+          accessibilityRole="button"
+          accessibilityLabel={stoppable ? "Arrêter la réponse en cours" : "Envoyer le message"}
+          // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie,
+          // plus 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
+          // `MIN_TOUCH_TARGET` sans faire grandir le champ.
+          hitSlop={8}
+          style={[
+            styles.send,
+            {
+              backgroundColor: palette.accent,
+              opacity: !stoppable && (busy || empty) ? 0.4 : 1,
+            },
+          ]}
+        >
+          {stoppable ? (
+            <Square size={14} fill={palette.accentText} color={palette.accentText} />
+          ) : (
+            <ArrowUp size={18} color={palette.accentText} />
+          )}
+        </Pressable>
       </Pressable>
-    </Pressable>
+
+      {dictationUnavailable ? (
+        <Text style={[styles.notice, { color: palette.textMuted }]}>
+          La dictée n'est pas disponible sur ce navigateur.
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { gap: spacing.xs },
+  notice: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, paddingHorizontal: spacing.md },
   shell: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -196,6 +272,13 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: spacing.xs,
     fontSize: fontSize.md,
+  },
+  mic: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
   },
   send: {
     width: 32,

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Sparkles } from "lucide-react-native";
 import { spacing } from "@jc/design";
 import { api } from "@/shared/lib/api";
@@ -18,21 +18,25 @@ import { useCurrentUser } from "@/shared/hooks/use-current-user";
  * côte ; l'espace sert donc à amorcer l'échange, comme le font ChatGPT, Claude
  * et Perplexity (§4.2).
  *
- * La saisie remplace le bouton « Nouvelle conversation » : le premier message
- * suffit à créer le fil, et faire cliquer avant d'écrire ajoutait un geste sans
- * rien demander de plus (§13.4.1 — capture sans friction).
+ * La saisie remplace le bouton « Nouvelle conversation », y compris celui d'un
+ * dossier vide (`folderId` en paramètre) : le premier message suffit à créer
+ * le fil, et faire cliquer avant d'écrire ajoutait un geste sans rien demander
+ * de plus (§13.4.1 — capture sans friction).
  */
 export default function ChatHomeScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { firstName } = useCurrentUser();
+  const { folderId } = useLocalSearchParams<{ folderId?: string }>();
   const [draft, setDraft] = useState("");
 
   // La conversation naît sans qu'on demande où la ranger ; le message part
   // avec elle et s'envoie à l'ouverture du fil, ce qui évite d'inventer un
-  // second chemin d'envoi (§13.4.1).
+  // second chemin d'envoi (§13.4.1). `folderId` est la seule exception : venir
+  // d'un dossier vide dit déjà où ranger, pas la peine de le redemander.
   const create = useMutation({
-    mutationFn: (_content: string) => api.conversations.create({ folderIds: [] }),
+    mutationFn: (_content: string) =>
+      api.conversations.create({ folderIds: folderId ? [folderId] : [] }),
     onSuccess: async (conversation, content) => {
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       router.push({ pathname: "/chat/[id]", params: { id: conversation.id, draft: content } });

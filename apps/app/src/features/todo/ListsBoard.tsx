@@ -131,16 +131,20 @@ function ListCard({
             </Text>
             {/* Le dossier est rappelé ici parce que la liste s'y voit aussi
               (A.2) : c'est la même liste, pas une copie rangée ailleurs. */}
-            <Text className="text-muted-foreground text-xs">
+            <Text className="text-muted-foreground text-xs" numberOfLines={1}>
               {shopping ? "Liste d'achats" : "Liste de tâches"}
               {folderName ? ` · ${folderName}` : ""}
             </Text>
           </View>
 
           {/* L'échéance porte sur la liste entière : elle se lit en tête, pas
-              en face d'une de ses lignes. */}
+              en face d'une de ses lignes. `flex-1` et non `shrink` seul :
+              avec `flex-basis: 0` des deux côtés, le titre et l'échéance se
+              partagent l'espace restant à parts égales une fois les icônes
+              et boutons posés — sinon ce bloc garde sa largeur de contenu
+              pleine et le titre, seul à céder, s'écrase à presque rien. */}
           {due ? (
-            <View className="flex-row items-center gap-1">
+            <View className="min-w-0 flex-1 flex-row items-center gap-1">
               <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
               <Text className="text-muted-foreground text-xs" numberOfLines={1}>
                 {due}
