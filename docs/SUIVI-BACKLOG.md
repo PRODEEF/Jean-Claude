@@ -7,10 +7,59 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **7 septembre 2026** — l'issue #18 se referme à son
-tour : le parsing des dates relatives passe d'un calcul confié au seul modèle
-à un filet de sécurité déterministe sur les tournures les plus sujettes à
-erreur.
+Dernière mise à jour : **7 septembre 2026** — pastille de non-lu sur les
+conversations, réglage « bandeau uni », section « Discussions et tâches »
+dans la barre latérale, trois ajustements du calendrier (clic sur un jour,
+détail d'un événement, détail d'une todoliste), et les issues #17, #18 et #20
+qui se referment.
+
+**Pastille de non-lu sur les conversations**, hors cahier des charges. Un
+compteur de messages assistant reçus depuis la dernière ouverture s'affiche à
+droite de chaque conversation — canal Jean-Claude compris — et un « ? »
+remplace le chiffre quand une question de l'assistant reste sans réponse
+malgré une ouverture déjà faite (0 message non lu au sens strict). Maintenu
+par trigger Postgres sur l'insertion d'un message plutôt que recalculé à la
+lecture : la liste des conversations se recharge à chaque ouverture de la
+barre latérale, un agrégat par conversation y coûterait une jointure. Limite
+connue et consignée dans la migration : une correction ou une reprise de tour
+supprime des messages assistant déjà comptés sans décrémenter le compteur, le
+trigger ne réagissant qu'à l'insertion — sans conséquence en pratique, les
+deux gestes supposant la conversation déjà ouverte, et `markRead` la remet
+alors à zéro dans le même geste.
+
+**Réglage « bandeau uni »**, hors cahier des charges, demandé directement.
+Une option dans Réglages > Apparence bascule le bandeau du haut sur un fond
+neutre plutôt que la couleur d'assistant adoucie ; les autres usages de cette
+teinte (bulles de conversation, carte de question, événements du calendrier)
+ne sont pas concernés.
+
+**La section « Discussions et tâches » regroupe le canal Jean-Claude et
+toutes les conversations, dossiers ou non.** Le canal passe à une ligne,
+cadre et icône réduits ; il restait déjà non déplaçable. La liste à plat
+n'est pas une duplication : une conversation déjà rangée dans un dossier
+reste visible à la fois ici et sous « Dossiers », même principe que le
+rangement multi-dossiers du §5.2. Point relevé au passage : un commit poussé
+directement sur `dev` juste avant cette demande avait renommé la section
+« Sans dossier » en « Discussions et tâches » sans en changer le contenu —
+elle retrouve ici son nom, qui distingue toujours les conversations non
+classées sous « Dossiers ».
+
+**Trois ajustements du calendrier, à la manière de Google Calendar (§4.2).**
+Un clic sur un jour en vue mois ouvre directement la création d'un
+événement, jusque-là réservée aux créneaux vides des vues jour et semaine.
+Point non tranché, à surveiller : la sélection du jour, qui alimente aussi
+l'agenda affiché sous la grille, se fait toujours au même geste — sur
+téléphone, un simple survol de plusieurs jours sans intention de créer ouvre
+donc désormais une modale à chaque fois, un usage que la vue mois `compact`
+permettait jusqu'ici. Un clic sur un événement ou sur une todoliste échue
+ouvre par ailleurs un **détail** — titre, date, notes, icônes supprimer et
+modifier — avant tout formulaire de modification, qui reste un pas de plus.
+`Modal` (`shared/ui`) gagne au passage un slot d'icônes de bandeau
+(`headerActions`), qu'un futur usage pourra réemployer.
+
+Auparavant le même jour : l'issue #18 se referme à son tour : le parsing des
+dates relatives passe d'un calcul confié au seul modèle à un filet de
+sécurité déterministe sur les tournures les plus sujettes à erreur.
 
 **#18 est close.** `chrono-node`, la bibliothèque candidate évidente pour ce
 point, a été testée et rejetée : son support français calcule un jour de la
@@ -746,6 +795,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | `listPending` sans appelant             | `ConversationService` lit `listForConversation` et en déduit les propositions en attente. La méthode du Repository n'a plus d'appelant : à retirer, ou à consommer là où la déduction se fait                           |
 | État visuel de la notation par message  | Le pouce sélectionné n'est pas restauré après un rechargement : la notation n'est pas renvoyée avec les messages aujourd'hui. La donnée est bien persistée (`message_ratings`), seul l'indicateur visuel est local à la session |
 | Pagination des dossiers absente, décision assumée | `GET /api/folders` rend toujours l'arborescence complète, contrairement aux tâches et aux conversations. `FolderService.getTree()` doit de toute façon recharger tous les dossiers en mémoire pour vérifier profondeur et acyclicité, y compris à l'écriture (`create`/`update`) : paginer la réponse réduirait la taille du JSON renvoyé, pas la charge réelle du serveur, pour un coût de développement réel (reprendre l'agrégation des compteurs par dossier). Aucun compte n'approche aujourd'hui un volume de dossiers qui le justifie — à revisiter si un vrai volume apparaît |
+| Compteur de non-lu sur-compte après édition ou reprise | `unread_count` est incrémenté par trigger à l'insertion d'un message assistant, jamais décrémenté à la suppression. Une correction de message ou une reprise de tour supprime des messages déjà comptés puis en insère de nouveaux : le compteur peut monter sans qu'aucun message ne reste réellement non lu. Sans conséquence observée — ces deux gestes supposent la conversation déjà ouverte, et `markRead` la remet à zéro dans le même geste |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo
 (`app.config.js` / `metro.config.js`).

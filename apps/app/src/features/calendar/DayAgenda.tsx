@@ -1,5 +1,4 @@
 import { Pressable, View } from "react-native";
-import { useRouter } from "expo-router";
 import { ListChecks } from "lucide-react-native";
 import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
@@ -16,6 +15,8 @@ export type DayAgendaProps = {
   /** Todolistes échues ce jour-là, listées sous les rendez-vous (A.2). */
   lists: TaskListWithTasks[];
   onOpenEvent: (event: CalendarEvent) => void;
+  /** Ouvre le détail de la liste, à la façon de Google Calendar (§4.2). */
+  onOpenList: (list: TaskListWithTasks) => void;
 };
 
 /**
@@ -25,8 +26,7 @@ export type DayAgendaProps = {
  * qu'une pastille, le contenu se lit ici (§4.2 — Calendrier iOS, Google
  * Calendar).
  */
-export function DayAgenda({ day, events, lists, onOpenEvent }: DayAgendaProps) {
-  const router = useRouter();
+export function DayAgenda({ day, events, lists, onOpenEvent, onOpenList }: DayAgendaProps) {
   const folders = useFolderChoices();
   const dayEvents = eventsOfDay(events, day);
   const groups = groupByFolder(listsOfDay(lists, day).sort(byDueDate));
@@ -92,7 +92,7 @@ export function DayAgenda({ day, events, lists, onOpenEvent }: DayAgendaProps) {
           {group.lists.map((list) => (
             <Pressable
               key={list.id}
-              onPress={() => router.push(`/todo?list=${list.id}` as never)}
+              onPress={() => onOpenList(list)}
               accessibilityRole="button"
               accessibilityLabel={`Ouvrir la liste ${list.title}`}
               style={{ minHeight: MIN_TOUCH_TARGET }}
@@ -116,7 +116,7 @@ export function DayAgenda({ day, events, lists, onOpenEvent }: DayAgendaProps) {
 }
 
 /** Ce qu'il reste à faire dans une liste échue aujourd'hui. */
-function remainingLabel(remaining: number): string {
+export function remainingLabel(remaining: number): string {
   if (remaining === 0) return "Tout est coché";
   return remaining === 1 ? "1 tâche à faire" : `${remaining} tâches à faire`;
 }

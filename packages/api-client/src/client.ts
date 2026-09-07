@@ -236,6 +236,10 @@ export class JeanClaudeClient {
 
     remove: (id: string) => this.http.request<void>(`/conversations/${id}`, { method: "DELETE" }),
 
+    /** Marque la conversation comme lue (pastille de la barre latérale). */
+    markRead: (id: string) =>
+      this.http.request<Conversation>(`/conversations/${id}/read`, { method: "POST" }),
+
     /** Rangement matriciel : remplace l'ensemble des dossiers (§5.2, A.1). */
     assignFolders: (id: string, input: AssignFolders) =>
       this.http.request<Conversation>(`/conversations/${id}/folders`, {

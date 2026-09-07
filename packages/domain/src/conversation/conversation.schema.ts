@@ -36,6 +36,17 @@ export const conversationSchema = z.object({
   lastMessageAt: isoDateTimeSchema.nullable(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
+  /**
+   * Messages de l'assistant reçus depuis la dernière ouverture (pastille de la
+   * barre latérale). Maintenu par trigger côté base, jamais recalculé ici.
+   */
+  unreadCount: z.number().int().min(0),
+  /**
+   * Le dernier message est une question de l'assistant restée sans réponse.
+   * Reste vrai même une fois la conversation ouverte : seule une réponse de
+   * l'utilisateur la lève.
+   */
+  hasPendingQuestion: z.boolean(),
 });
 
 export type Conversation = z.infer<typeof conversationSchema>;

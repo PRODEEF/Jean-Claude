@@ -86,7 +86,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const assistantName = useAssistantName();
-  const { groups, unfiled, all, isLoading, error } = useSidebarData();
+  const { groups, unfiled, all, channel, isLoading, error } = useSidebarData();
   const [deleting, setDeleting] = useState<Folder | null>(null);
   const [menuTarget, setMenuTarget] = useState<FolderMenuTarget | null>(null);
   /** Dossier en cours de nommage — création ou renommage, `null` si aucun. */
@@ -190,25 +190,6 @@ export function AppSidebar({
   return (
     <View className="h-full border-r border-border bg-secondary" style={{ width }}>
       <View className="gap-2 p-3">
-        {/* Canal permanent Jean-Claude (A.10) : borné aux rappels, à
-            l'organisation de l'outil et à la structure du projet. Il tient la
-            place de l'en-tête de la barre parce qu'il n'est pas une
-            conversation parmi d'autres. */}
-        <Button
-          variant="ghost"
-          onPress={() => go("/assistant")}
-          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
-          className={cx("h-auto justify-start gap-3 px-2 py-2", pathname === "/assistant")}
-        >
-          <View className="size-8 items-center justify-center rounded-md bg-primary">
-            <Icon as={MessageCircle} size={16} className="text-primary-foreground" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-sm font-semibold text-foreground">{assistantName}</Text>
-            <Text className="text-xs font-normal text-muted-foreground">Canal permanent</Text>
-          </View>
-        </Button>
-
         {/* Signalement direct, distinct des suggestions du modèle (§12.1) : un
             geste utilisateur, jamais une proposition (A.10). Même traitement
             visuel que le canal permanent, en rouge, pour rester aussi visible. */}
@@ -237,6 +218,50 @@ export function AppSidebar({
       </View>
 
       <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
+        {/* Discussions et tâches : le canal permanent (A.10), non déplaçable —
+            il n'est pas une conversation parmi d'autres — puis toutes les
+            conversations à plat, y compris celles déjà rangées dans un
+            dossier. Ce n'est pas une duplication : la même conversation reste
+            visible depuis son dossier, ci-dessous, et depuis cette vue
+            chronologique (§5.2, A.1). */}
+        <SectionLabel>Discussions et tâches</SectionLabel>
+
+        <Button
+          variant="ghost"
+          onPress={() => go("/assistant")}
+          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+          className={cx("h-auto justify-start gap-2 px-2 py-1.5", pathname === "/assistant")}
+        >
+          <View className="size-7 items-center justify-center rounded-md bg-primary">
+            <Icon as={MessageCircle} size={14} className="text-primary-foreground" />
+          </View>
+          <Text className="flex-1 text-sm font-semibold text-foreground" numberOfLines={1}>
+            {assistantName}
+          </Text>
+          <UnreadBadge
+            count={channel?.unreadCount ?? 0}
+            pendingQuestion={channel?.hasPendingQuestion ?? false}
+          />
+        </Button>
+
+        {all.map((conversation) =>
+          renaming?.id === conversation.id ? (
+            <ConversationNameRow
+              key={conversation.id}
+              conversation={conversation}
+              onDone={() => setRenaming(null)}
+            />
+          ) : (
+            <ConversationRow
+              key={conversation.id}
+              conversation={conversation}
+              pathname={pathname}
+              onOpen={go}
+              onMenu={setConversationMenu}
+            />
+          ),
+        )}
+
         {/* L'en-tête fait office de zone racine : y déposer un dossier le sort
             de son parent. Sans elle, le geste serait à sens unique — on saurait
             ranger un dossier, jamais l'en ressortir. */}
@@ -295,7 +320,7 @@ export function AppSidebar({
 
         {unfiled.length > 0 ? (
           <>
-            <SectionLabel>Discussions et tâches</SectionLabel>
+            <SectionLabel>Sans dossier</SectionLabel>
             {unfiled.map((conversation) =>
               renaming?.id === conversation.id ? (
                 <ConversationNameRow
@@ -963,10 +988,32 @@ function ConversationRow({
         </Text>
       </Button>
 
+      <UnreadBadge
+        count={conversation.unreadCount}
+        pendingQuestion={conversation.hasPendingQuestion}
+      />
+
       <RowMenuButton
         label={`Actions pour ${conversation.title}`}
         onOpen={(x, y) => onMenu({ conversation, x, y })}
       />
+    </View>
+  );
+}
+
+/**
+ * Pastille de non-lu — messages de l'assistant depuis la dernière ouverture,
+ * ou un « ? » quand une question reste sans réponse malgré une ouverture déjà
+ * faite (0 message non lu au sens strict, mais rien n'y a répondu).
+ */
+function UnreadBadge({ count, pendingQuestion }: { count: number; pendingQuestion: boolean }) {
+  if (count === 0 && !pendingQuestion) return null;
+
+  return (
+    <View className="min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5" style={{ height: 18 }}>
+      <Text className="text-[10px] font-semibold leading-none text-primary-foreground">
+        {count > 0 ? count : "?"}
+      </Text>
     </View>
   );
 }

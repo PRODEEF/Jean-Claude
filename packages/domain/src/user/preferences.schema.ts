@@ -148,6 +148,8 @@ export const userPreferencesSchema = z.object({
    * d'en changer par configuration sans réécrire les profils existants.
    */
   llmModel: assistantModelSchema.nullable().default(null),
+  /** Bandeau du haut sur fond neutre plutôt que la couleur d'assistant adoucie. */
+  flatBanner: z.boolean().default(false),
 });
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
@@ -202,6 +204,8 @@ export const updateUserProfileSchema = z
     scope: assistantScopeSchema.partial(),
     /** `null` rend la main au modèle retenu par le serveur (§5.1). */
     llmModel: assistantModelSchema.nullable(),
+    /** Bandeau du haut sur fond neutre plutôt que la couleur d'assistant adoucie. */
+    flatBanner: z.boolean(),
   })
   .partial();
 

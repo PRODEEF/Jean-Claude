@@ -8,7 +8,8 @@ import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useCurrentUser } from "@/shared/hooks/use-current-user";
-import { useAssistantName } from "@/shared/hooks/use-profile";
+import { useAssistantName, useProfile } from "@/shared/hooks/use-profile";
+import { cn } from "@/shared/lib/utils";
 import { SearchDialog } from "@/features/search/SearchDialog";
 import { UTILITY_LINKS } from "./utility-links";
 
@@ -30,10 +31,23 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
   const breakpoint = useBreakpoint();
   const { displayName, initials } = useCurrentUser();
   const assistantName = useAssistantName();
+  const { data: profile } = useProfile();
   const [searching, setSearching] = useState(false);
 
+  // Option « bandeau uni » (demande produit) : le fond pastel dérivé de la
+  // couleur d'assistant cède la place à un ton neutre, celui de la barre
+  // latérale — le reste des usages de `accent-soft` (bulles, cartes de
+  // question, calendrier) n'est pas concerné.
+  const flat = profile?.preferences.flatBanner ?? false;
+  const fg = flat ? "text-foreground" : "text-accent-soft-foreground";
+
   return (
-    <View className="h-14 flex-row items-center gap-2 border-b border-border bg-accent-soft px-3">
+    <View
+      className={cn(
+        "h-14 flex-row items-center gap-2 border-b border-border px-3",
+        flat ? "bg-secondary" : "bg-accent-soft",
+      )}
+    >
       {/* `min-w-0` est indispensable : sans lui, une zone en `flex-1` refuse de
           passer sous la largeur de son contenu, et les trois zones se
           chevauchent dès que la fenêtre se resserre. */}
@@ -45,7 +59,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
             onPress={onToggleSidebar}
             accessibilityLabel="Afficher ou masquer les conversations"
           >
-            <Icon as={PanelLeft} size={18} className="text-accent-soft-foreground" />
+            <Icon as={PanelLeft} size={18} className={fg} />
           </Button>
         ) : null}
 
@@ -58,7 +72,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
           onPress={() => setSearching(true)}
           accessibilityLabel="Rechercher une conversation"
         >
-          <Icon as={Search} size={18} className="text-accent-soft-foreground" />
+          <Icon as={Search} size={18} className={fg} />
         </Button>
       </View>
 
@@ -74,10 +88,8 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
         hitSlop={12}
         className="shrink"
       >
-        <Text className="text-center text-sm text-accent-soft-foreground" numberOfLines={1}>
-          <Text className="text-sm font-bold uppercase text-accent-soft-foreground">
-            {assistantName}
-          </Text>
+        <Text className={cn("text-center text-sm", fg)} numberOfLines={1}>
+          <Text className={cn("text-sm font-bold uppercase", fg)}>{assistantName}</Text>
           , ton assistant perso
         </Text>
       </Pressable>
@@ -99,11 +111,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
               accessibilityLabel={link.label}
               accessibilityState={{ selected: active }}
             >
-              <Icon
-                as={link.icon}
-                size={18}
-                className={active ? "text-primary-foreground" : "text-accent-soft-foreground"}
-              />
+              <Icon as={link.icon} size={18} className={active ? "text-primary-foreground" : fg} />
             </Button>
           );
         })}
@@ -123,7 +131,7 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
               titre le rendrait illisible sans rien apprendre à l'utilisateur,
               qui sait qui il est. */}
           {breakpoint === "expanded" ? (
-            <Text className="shrink text-sm text-accent-soft-foreground" numberOfLines={1}>
+            <Text className={cn("shrink text-sm", fg)} numberOfLines={1}>
               {displayName}
             </Text>
           ) : null}

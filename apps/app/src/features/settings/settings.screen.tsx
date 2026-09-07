@@ -358,6 +358,21 @@ export function SettingsScreen() {
               ))}
             </View>
           </Field>
+
+          <View className="flex-row items-center gap-3">
+            <View className="flex-1">
+              <Text className="text-base text-foreground">Bandeau uni</Text>
+              <Text className="text-sm text-muted-foreground">
+                Le bandeau du haut perd sa teinte de couleur d'assistant.
+              </Text>
+            </View>
+            <Switch
+              value={profile?.preferences.flatBanner ?? false}
+              onValueChange={(value) => updateProfile.mutate({ flatBanner: value })}
+              disabled={!profile || updateProfile.isPending}
+              accessibilityLabel="Bandeau uni"
+            />
+          </View>
         </Section>
 
         <Section title="Aide">

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { ListPlus, Plus } from "lucide-react-native";
-import type { CalendarEvent } from "@jc/domain";
+import type { CalendarEvent, TaskList, TaskListWithTasks } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { listsOfDay, unscheduledLists } from "@/shared/lib/tasks";
@@ -14,7 +14,9 @@ import { Text } from "@/shared/ui/text";
 import { CalendarToolbar, type CalendarView } from "./CalendarToolbar";
 import { DayAgenda } from "./DayAgenda";
 import { DueListsBoard } from "./DueListsBoard";
+import { EventDetailDialog } from "./EventDetailDialog";
 import { EventFormDialog, type EventDialogTarget } from "./EventFormDialog";
+import { TaskListDetailDialog } from "./TaskListDetailDialog";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
 import { MonthGrid } from "./MonthGrid";
 import { TimeGrid } from "./TimeGrid";
@@ -61,6 +63,10 @@ export function CalendarScreen() {
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [dialogTarget, setDialogTarget] = useState<EventDialogTarget | null>(null);
   const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
+  /** Détail d'un événement au clic, avant tout formulaire de modification (§4.2). */
+  const [eventDetail, setEventDetail] = useState<CalendarEvent | null>(null);
+  /** Détail d'une todoliste échue, au clic depuis l'agenda du jour. */
+  const [listDetail, setListDetail] = useState<TaskListWithTasks | null>(null);
   const router = useRouter();
 
   const days = useMemo(() => visibleDays(view, anchor), [view, anchor]);
@@ -111,8 +117,25 @@ export function CalendarScreen() {
   // d'horaire tant que l'utilisateur n'en pose pas un (§13.4.1).
   const dueDay = () => startOfDay(selectedDay).toISOString();
 
-  const openEvent = (event: CalendarEvent) => setDialogTarget({ mode: "edit", event });
+  // Le clic ouvre d'abord un détail, à la façon de Google Calendar (§4.2) — pas
+  // directement le formulaire de modification. `editEvent` est le pas de plus,
+  // déclenché depuis ce détail.
+  const openEvent = (event: CalendarEvent) => setEventDetail(event);
+  const editEvent = (event: CalendarEvent) => {
+    setEventDetail(null);
+    setDialogTarget({ mode: "edit", event });
+  };
   const createAt = (day: Date, minute: number) => setDialogTarget({ mode: "create", day, minute });
+  // Un jour cliqué en vue mois propose directement d'y poser un événement : la
+  // sélection continue par ailleurs d'alimenter l'agenda du jour, en dessous.
+  const selectDay = (day: Date) => {
+    setSelectedDay(day);
+    createAt(day, DEFAULT_CREATE_MINUTE);
+  };
+  const editList = (list: TaskList) => {
+    setListDetail(null);
+    setListTarget({ mode: "edit", list });
+  };
 
   return (
     <ScreenShell
@@ -169,11 +192,17 @@ export function CalendarScreen() {
             events={events}
             lists={dueLists}
             selectedDay={selectedDay}
-            onSelectDay={setSelectedDay}
+            onSelectDay={selectDay}
             onOpenEvent={openEvent}
             compact={compact}
           />
-          <DayAgenda day={selectedDay} events={events} lists={dueLists} onOpenEvent={openEvent} />
+          <DayAgenda
+            day={selectedDay}
+            events={events}
+            lists={dueLists}
+            onOpenEvent={openEvent}
+            onOpenList={setListDetail}
+          />
         </>
       ) : null}
 
@@ -227,6 +256,7 @@ export function CalendarScreen() {
       {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
 
       <EventFormDialog target={dialogTarget} onClose={() => setDialogTarget(null)} />
+      <EventDetailDialog event={eventDetail} onClose={() => setEventDetail(null)} onEdit={editEvent} />
 
       {/* La liste créée s'ouvre dans son onglet : c'est là qu'on la remplit,
           ligne par ligne, plutôt que dans une seconde saisie qui aurait à
@@ -236,6 +266,7 @@ export function CalendarScreen() {
         onClose={() => setListTarget(null)}
         onCreated={(created) => router.push(`/todo?list=${created.id}` as never)}
       />
+      <TaskListDetailDialog list={listDetail} onClose={() => setListDetail(null)} onEdit={editList} />
     </ScreenShell>
   );
 }

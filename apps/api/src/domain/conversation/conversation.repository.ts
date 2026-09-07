@@ -24,6 +24,8 @@ export type ConversationRow = {
   last_message_at: string | null;
   created_at: string;
   updated_at: string;
+  unread_count: number;
+  pending_question: boolean;
   conversation_folders?: { folder_id: string }[] | null;
 };
 
@@ -53,6 +55,8 @@ export function toConversation(row: ConversationRow): Conversation {
     lastMessageAt: row.last_message_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    unreadCount: row.unread_count,
+    hasPendingQuestion: row.pending_question,
   };
 }
 
@@ -73,7 +77,8 @@ function toMessage(row: MessageRow): Message {
 }
 
 export const CONVERSATION_COLUMNS =
-  "id, kind, title, archived_at, last_message_at, created_at, updated_at, conversation_folders(folder_id)";
+  "id, kind, title, archived_at, last_message_at, created_at, updated_at, unread_count, " +
+  "pending_question, conversation_folders(folder_id)";
 const MESSAGE_COLUMNS =
   "id, conversation_id, role, content, input_mode, provider, model, choices, " +
   "redirect_title, redirect_accepted_at, created_at";
@@ -177,6 +182,19 @@ export const conversationRepository: IConversationRepository = {
     const { error } = await forUser(accessToken).from("conversations").delete().eq("id", id);
 
     if (error) throw new Error(error.message);
+  },
+
+  async markRead(id, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("conversations")
+      .update({ unread_count: 0 })
+      .eq("id", id)
+      .select(CONVERSATION_COLUMNS)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) throw httpError(404, "Conversation introuvable.");
+    return toConversation(data as unknown as ConversationRow);
   },
 
   /**

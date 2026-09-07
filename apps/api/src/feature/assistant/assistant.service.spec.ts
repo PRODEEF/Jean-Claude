@@ -149,6 +149,8 @@ function makeConversation(folderIds: string[] = []): Conversation {
     lastMessageAt: null,
     createdAt: NOW,
     updatedAt: NOW,
+    unreadCount: 0,
+    hasPendingQuestion: false,
   };
 }
 
@@ -164,6 +166,7 @@ function makeConversationRepository(
     create: jest.fn().mockResolvedValue(conversation),
     update: jest.fn().mockResolvedValue(conversation),
     delete: jest.fn().mockResolvedValue(undefined),
+    markRead: jest.fn().mockResolvedValue(conversation),
     setFolders: jest.fn().mockResolvedValue([]),
     listMessages: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
     appendMessage: jest.fn(),

@@ -279,6 +279,11 @@ export class ConversationService {
     await this.conversations.delete(id, accessToken);
   }
 
+  /** Remet le compteur de messages non lus à zéro (pastille de la barre latérale). */
+  markRead(id: string, accessToken: string): Promise<Conversation> {
+    return this.conversations.markRead(id, accessToken);
+  }
+
   /**
    * Rattache la conversation à un ensemble de dossiers (§5.2, A.1).
    *
