@@ -21,6 +21,7 @@ function makeRecord(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       timezone: "Europe/Paris",
       speakResponses: false,
       llmModel: null,
+      flatBanner: false,
       scope: {
         morningReminders: true,
         folderOrganization: true,
@@ -162,6 +163,16 @@ describe("UserService", () => {
         OWNER.accessToken,
       );
       expect(findById).not.toHaveBeenCalled();
+    });
+
+    it("enregistre la préférence de bandeau uni", async () => {
+      const update = jest.fn().mockResolvedValue(makeRecord({ preferences: { ...makeRecord().preferences, flatBanner: true } }));
+      const service = new UserService(makeRepository({ update }));
+
+      const profile = await service.updateProfile(OWNER, { flatBanner: true });
+
+      expect(update).toHaveBeenCalledWith(OWNER.id, { flatBanner: true }, OWNER.accessToken);
+      expect(profile.preferences.flatBanner).toBe(true);
     });
 
     it("transmet le retour au modèle du serveur, qui est un choix et non un oubli", async () => {

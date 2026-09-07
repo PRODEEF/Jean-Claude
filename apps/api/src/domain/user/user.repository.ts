@@ -16,6 +16,7 @@ type ProfileRow = {
   speak_responses: boolean;
   llm_model: string | null;
   assistant_scope: AssistantScope;
+  flat_banner: boolean;
   created_at: string;
 };
 
@@ -43,12 +44,13 @@ function toEntity(row: ProfileRow): ProfileRecord {
       // comme « celui du serveur », plutôt que de rendre le profil illisible.
       llmModel: toAssistantModel(row.llm_model),
       scope: row.assistant_scope,
+      flatBanner: row.flat_banner,
     },
   };
 }
 
 const COLUMNS =
-  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, speak_responses, llm_model, assistant_scope, created_at";
+  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, speak_responses, llm_model, assistant_scope, flat_banner, created_at";
 
 export const userRepository: IUserRepository = {
   async findById(userId, accessToken) {
@@ -76,6 +78,7 @@ export const userRepository: IUserRepository = {
     // Le périmètre arrive complet du Service : l'écrire remplace le `jsonb`
     // entier, ce qui est la sémantique attendue ici.
     if (patch.scope !== undefined) payload["assistant_scope"] = patch.scope;
+    if (patch.flatBanner !== undefined) payload["flat_banner"] = patch.flatBanner;
 
     return write(userId, payload, accessToken);
   },
