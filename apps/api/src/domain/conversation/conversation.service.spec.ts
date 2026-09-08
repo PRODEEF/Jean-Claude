@@ -1219,6 +1219,53 @@ describe("ConversationService", () => {
       expect(repo.appendMessage).toHaveBeenCalledTimes(2);
     });
 
+    it("capture les suggestions suivantes même quand l'une d'elles échoue à s'enregistrer", async () => {
+      jest.spyOn(console, "error").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository({
+        create: jest
+          .fn()
+          .mockRejectedValueOnce(new Error("contrainte de la table non satisfaite"))
+          .mockResolvedValue(makeSuggestion()),
+      });
+      const llm = makeLlm(
+        ["Je m'en occupe."],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise les achats ?",
+              lists: [{ title: "Achats jardin", kind: "shopping", items: [{ title: "Terreau" }] }],
+            },
+          },
+          {
+            id: "call-2",
+            name: "suggest_folders",
+            input: { message: "Je range ça dans Jardin ?", newFolders: [{ name: "Jardin" }] },
+          },
+        ],
+      );
+
+      const events = await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Je me lance dans le jardin.",
+        inputMode: "text",
+      });
+
+      // Sans isolement, l'échec de la première capture aurait interrompu la
+      // boucle et emporté avec lui la seconde proposition, jamais capturée —
+      // exactement le symptôme rapporté (« l'IA ne propose que le 1er choix »).
+      expect(suggestions.create).toHaveBeenCalledTimes(2);
+      expect(suggestions.create).toHaveBeenNthCalledWith(
+        2,
+        USER,
+        expect.objectContaining({ kind: "assign_folders" }),
+        TOKEN,
+      );
+      // Le tour reste exploitable malgré l'échec : la réponse est bien écrite.
+      expect(events.some((event) => event.type === "done")).toBe(true);
+      jest.restoreAllMocks();
+    });
+
     it("propose la bascule sans ouvrir la conversation dédiée (A.10)", async () => {
       const repo = makeRepository({
         findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
@@ -2372,6 +2419,50 @@ describe("ConversationService", () => {
         expect.objectContaining({
           payload: expect.objectContaining({
             lists: [expect.objectContaining({ dueAt: "2026-09-09T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("regroupe plusieurs appels suggest_task_list séparés en une seule proposition", async () => {
+      const repo = makeRepository();
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise les achats ?",
+              lists: [{ title: "Achats jardin", kind: "shopping", items: [{ title: "Terreau" }] }],
+            },
+          },
+          {
+            id: "call-2",
+            name: "suggest_task_list",
+            input: {
+              message: "Et les travaux ?",
+              lists: [{ title: "Travaux jardin", kind: "todo", items: [{ title: "Désherber" }] }],
+            },
+          },
+        ],
+      );
+
+      await makeService(repo, llm, suggestions).extractTaskList("conv-1", USER, TOKEN);
+
+      // Sans le regroupement, seul le premier appel (`toolCalls.find`) survivait :
+      // la liste de travaux disparaissait silencieusement — le symptôme rapporté
+      // (« l'IA ne propose que le 1er choix »).
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [
+              expect.objectContaining({ title: "Achats jardin" }),
+              expect.objectContaining({ title: "Travaux jardin" }),
+            ],
           }),
         }),
         TOKEN,
