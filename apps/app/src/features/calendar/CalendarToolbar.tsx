@@ -35,10 +35,9 @@ const VIEWS: SegmentedOption<CalendarView>[] = [
 /**
  * En-tête du calendrier : choix de la vue, navigation, période affichée.
  *
- * Une seule ligne, packée à gauche : bascule de vue, « Aujourd'hui », période
- * affichée, puis les deux flèches. Le bloc Aujourd'hui/période/flèches suit
- * Google Agenda ; le sélecteur de vue est ici placé en tête plutôt qu'à
- * l'opposé du bandeau — choix produit (§4.2).
+ * Bascule de vue à gauche, bloc période/navigation à droite — écartés au
+ * maximum (`justify-between`). À l'intérieur de ce bloc : la période, les
+ * deux flèches, puis « Aujourd'hui » en bout de ligne (§4.2, choix produit).
  *
  * Sous le point de rupture, la période passe sur sa propre ligne : la bascule
  * et les commandes de navigation ne tiennent pas à côté d'elle sur la largeur
@@ -111,16 +110,19 @@ export function CalendarToolbar({
   }
 
   return (
-    <View className="flex-row items-center gap-3">
+    <View className="flex-row items-center justify-between gap-3">
       {switcher}
-      {todayButton}
-      {/* `min-w-0` : sans lui, react-native-web (vraie CSS flexbox) refuse de
-          rétrécir ce texte sous sa largeur intrinsèque, et une période longue
-          (vue Jour) pousserait les flèches hors du bandeau au lieu de tronquer. */}
-      <Text className="min-w-0 flex-shrink text-sm font-semibold" numberOfLines={1}>
-        {label}
-      </Text>
-      {arrows}
+      {/* `min-w-0` sur ce groupe et sur le texte qu'il porte : sans eux,
+          react-native-web (vraie CSS flexbox) refuse de rétrécir sous leur
+          largeur intrinsèque, et une période longue (vue Jour) ferait déborder
+          le bandeau au lieu de tronquer. */}
+      <View className="min-w-0 flex-row items-center gap-3">
+        <Text className="min-w-0 flex-shrink text-sm font-semibold" numberOfLines={1}>
+          {label}
+        </Text>
+        {arrows}
+        {todayButton}
+      </View>
     </View>
   );
 }
