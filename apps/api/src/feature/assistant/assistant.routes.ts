@@ -19,7 +19,7 @@ import { AssistantService } from "./assistant.service.js";
 
 const suggestions = new SuggestionService(suggestionRepository);
 const folders = new FolderService(folderRepository);
-const calendar = new CalendarService(calendarRepository);
+const calendar = new CalendarService(calendarRepository, taskRepository);
 const tasks = new TaskService(taskRepository);
 
 const service = new AssistantService(

@@ -346,6 +346,7 @@ function makeTaskRepository(lists: TaskListWithTasks[] = []): ITaskRepository {
     findAll: jest.fn().mockResolvedValue(lists),
     findById: jest.fn().mockResolvedValue(null),
     findByConversation: jest.fn().mockResolvedValue(lists),
+    findByEventId: jest.fn().mockResolvedValue(null),
     createList: jest.fn(),
     updateList: jest.fn(),
     deleteList: jest.fn(),
@@ -404,7 +405,7 @@ function makeService(
     new SuggestionService(suggestions),
     new FolderService(folders),
     users,
-    new CalendarService(calendar),
+    new CalendarService(calendar, tasks),
     new TaskService(tasks),
   );
 }

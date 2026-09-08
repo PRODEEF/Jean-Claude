@@ -215,6 +215,11 @@ function makeTaskRepository(): ITaskRepository {
           [...lists.values()].filter((list) => list.conversationId === conversationId),
         ),
       ),
+    findByEventId: jest
+      .fn()
+      .mockImplementation((eventId: string) =>
+        Promise.resolve([...lists.values()].find((list) => list.eventId === eventId) ?? null),
+      ),
     createList: jest
       .fn()
       .mockImplementation((_userId: string, input: CreateTaskList & TaskListOrigin) => {
@@ -313,7 +318,7 @@ function makeService(
 ): AssistantService {
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
-  const calendarService = new CalendarService(events);
+  const calendarService = new CalendarService(events, tasks);
   const taskService = new TaskService(tasks);
 
   return new AssistantService(

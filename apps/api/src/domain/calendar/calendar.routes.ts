@@ -8,10 +8,11 @@ import {
 } from "@jc/domain";
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { validate } from "../../core/http.js";
+import { taskRepository } from "../task/task.repository.js";
 import { calendarRepository } from "./calendar.repository.js";
 import { CalendarService } from "./calendar.service.js";
 
-const service = new CalendarService(calendarRepository);
+const service = new CalendarService(calendarRepository, taskRepository);
 
 const idParam = validate("param", z.object({ id: uuidSchema }));
 
