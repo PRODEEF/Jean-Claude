@@ -204,10 +204,13 @@ export function Modal({
                 ) : null}
 
                 <View
-                  className="border-border gap-4 border-t px-6 pb-5 pt-5"
-                  // La feuille touche le bord bas de l'écran : sans ce retrait,
-                  // le bouton principal passerait sous l'indicateur d'accueil.
-                  style={compact ? { paddingBottom: insets.bottom + spacing.xl } : undefined}
+                  className="border-border gap-4 border-t px-6 pt-5"
+                  // Le dialogue centré n'a pas de zone système à éviter, mais
+                  // mérite le même retrait que la feuille mobile pour ne pas
+                  // coller ses boutons au bord. En compact, la feuille touche
+                  // elle le bord bas de l'écran : sans l'ajout de l'inset, le
+                  // bouton principal passerait sous l'indicateur d'accueil.
+                  style={{ paddingBottom: compact ? insets.bottom + spacing.xl : spacing.xl }}
                 >
                   {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
 
