@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TextInput, View } from "react-native";
+import { ScrollView, TextInput, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { Plus, Search, X } from "lucide-react-native";
 import type { Task, TaskList } from "@jc/domain";
@@ -37,6 +37,7 @@ export function TodoScreen() {
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const search = useRef<TextInput>(null);
+  const scroll = useRef<ScrollView>(null);
 
   // Arriver depuis la barre latérale ouvre la liste visée : l'écran est déjà
   // monté quand le paramètre change, et l'état initial ne suffit donc pas. Le
@@ -113,6 +114,7 @@ export function TodoScreen() {
         </Button>
       }
       maxWidth={GRID_MAX_WIDTH}
+      scrollRef={scroll}
     >
       <View className="flex-row items-center gap-2">
         <View className="min-w-0 flex-1">
@@ -155,7 +157,7 @@ export function TodoScreen() {
       ) : (
         <ListsBoard
           lists={visibleLists}
-          {...(openedList ? { highlightedId: openedList } : {})}
+          {...(openedList ? { highlightedId: openedList, scrollRef: scroll } : {})}
           query={query}
           onEditList={(list: TaskList) => setListTarget({ mode: "edit", list })}
           onDeleteList={setDeletingList}

@@ -215,6 +215,11 @@ function makeTaskRepository(): ITaskRepository {
           [...lists.values()].filter((list) => list.conversationId === conversationId),
         ),
       ),
+    findByEventId: jest
+      .fn()
+      .mockImplementation((eventId: string) =>
+        Promise.resolve([...lists.values()].find((list) => list.eventId === eventId) ?? null),
+      ),
     createList: jest
       .fn()
       .mockImplementation((_userId: string, input: CreateTaskList & TaskListOrigin) => {
@@ -239,6 +244,7 @@ function makeTaskRepository(): ITaskRepository {
       const list = lists.get(id);
       if (!list) return Promise.reject(new Error("Liste introuvable"));
       if (patch.eventId !== undefined) list.eventId = patch.eventId;
+      if (patch.dueAt !== undefined) list.dueAt = patch.dueAt;
       return Promise.resolve(list);
     }),
     deleteList: jest.fn(),
@@ -312,7 +318,7 @@ function makeService(
 ): AssistantService {
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
-  const calendarService = new CalendarService(events);
+  const calendarService = new CalendarService(events, tasks);
   const taskService = new TaskService(tasks);
 
   return new AssistantService(
@@ -379,6 +385,23 @@ function makeJardinSuggestion(): Suggestion {
       ],
     },
   });
+}
+
+/** Crée la liste du jardin, puis rend l'identifiant de la liste de tâches. */
+async function withTravauxList() {
+  const tasks = makeTaskRepository();
+  await makeService(
+    makeSuggestionStore(makeJardinSuggestion()),
+    makeFolderRepository(),
+    makeConversationRepository(),
+    tasks,
+  ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+  const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+    (list) => list.title === "Travaux jardin",
+  );
+  if (!travaux) throw new Error("La liste de travaux devrait exister");
+  return { tasks, listId: travaux.id };
 }
 
 /** Listes créées, dans l'ordre, avec ce que le serveur y a posé. */
@@ -1085,23 +1108,6 @@ describe("AssistantService", () => {
   });
 
   describe("acceptation d'une complétion de liste (§12.1, A.2)", () => {
-    /** Crée la liste du jardin, puis rend l'identifiant de la liste de tâches. */
-    async function withTravauxList() {
-      const tasks = makeTaskRepository();
-      await makeService(
-        makeSuggestionStore(makeJardinSuggestion()),
-        makeFolderRepository(),
-        makeConversationRepository(),
-        tasks,
-      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
-
-      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
-        (list) => list.title === "Travaux jardin",
-      );
-      if (!travaux) throw new Error("La liste de travaux devrait exister");
-      return { tasks, listId: travaux.id };
-    }
-
     it("ajoute les lignes proposées à la liste existante, sans en créer une seconde", async () => {
       const { tasks, listId } = await withTravauxList();
       const before = (tasks.createList as jest.Mock).mock.calls.length;
@@ -1165,6 +1171,72 @@ describe("AssistantService", () => {
               kind: "add_task_list_items",
               message: "J'ajoute quelque chose ?",
               payload: { items: [{ title: "Arroser" }] },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  describe("acceptation d'une reprogrammation de liste (§12.1, A.2)", () => {
+    it("déplace l'échéance de la liste existante", async () => {
+      const { tasks, listId } = await withTravauxList();
+      const nouvelleEcheance = "2026-09-12T00:00:00.000Z";
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "update_task_list_due_date",
+            message: "Je décale Travaux jardin à samedi ?",
+            payload: { listId, dueAt: nouvelleEcheance },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
+      expect(travaux?.dueAt).toBe(nouvelleEcheance);
+    });
+
+    it("refuse une reprogrammation dont la liste visée n'existe plus", async () => {
+      const tasks = makeTaskRepository();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_task_list_due_date",
+              message: "Je décale Travaux jardin ?",
+              payload: {
+                listId: "11111111-1111-4111-8111-111111111111",
+                dueAt: "2026-09-12T00:00:00.000Z",
+              },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+
+    it("refuse une reprogrammation dont la charge utile est illisible", async () => {
+      const tasks = makeTaskRepository();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_task_list_due_date",
+              message: "Je décale la liste ?",
+              payload: { listId: "11111111-1111-4111-8111-111111111111" },
             }),
           ),
           makeFolderRepository(),

@@ -48,6 +48,7 @@ import {
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
   SUGGEST_TASK_LIST,
+  SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_TASK_LIST_ITEMS,
 } from "../../core/llm/llm.tools.js";
 import type { CalendarService } from "../calendar/calendar.service.js";
@@ -644,8 +645,12 @@ export class ConversationService {
           logger.warn(SCOPE, `Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
-        const corrected = withCorrectedDueDates(
-          withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+        const corrected = withCorrectedRescheduleDueDate(
+          withCorrectedDueDates(
+            withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+            now,
+            context.timezone,
+          ),
           now,
           context.timezone,
         );
@@ -821,6 +826,13 @@ export class ConversationService {
         !(
           tool === SUGGEST_TASK_LIST_ITEMS &&
           (lists.length === 0 || isPending(decided, "add_task_list_items"))
+        ) &&
+        // Même garde-fou pour la reprogrammation : rien à décaler sans liste
+        // née de ce fil, et une reprogrammation déjà proposée attend une
+        // réponse avant d'en empiler une seconde.
+        !(
+          tool === SUGGEST_TASK_LIST_DUE_DATE &&
+          (lists.length === 0 || isPending(decided, "update_task_list_due_date"))
         ),
     );
 
@@ -1034,6 +1046,12 @@ function verifyNewFolder(
  * journée » (23h59) plutôt que sur minuit, ce qui posait un événement à la
  * mauvaise heure une fois `schedule_task` accepté au lieu d'un créneau
  * journée entière.
+ *
+ * Une échéance qui retombe malgré tout dans le passé est effacée plutôt que
+ * gardée telle quelle : une todoliste proposée par l'assistant est toujours à
+ * faire, jamais déjà en retard le jour de sa création. Perdre l'échéance
+ * coûte moins cher que perdre la liste entière (§12.1) — c'est déjà la
+ * philosophie retenue pour une date illisible.
  */
 function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: string): LlmToolCall {
   if (toolCall.name !== SUGGEST_TASK_LIST.name) return toolCall;
@@ -1047,16 +1065,78 @@ function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: strin
     const dueAtText = (entry as Record<string, unknown>)["dueAtText"];
     const parsed =
       typeof dueAtText === "string" ? parseRelativeDateFr(dueAtText, now, timezone) : null;
-    if (parsed) return { ...entry, dueAt: parsed };
 
-    const dueAt = (entry as Record<string, unknown>)["dueAt"];
-    if (typeof dueAt !== "string") return entry;
+    const rawDueAt = (entry as Record<string, unknown>)["dueAt"];
+    const dueAt =
+      parsed ?? (typeof rawDueAt === "string" ? truncateToMidnight(rawDueAt, timezone) : null);
+    if (dueAt === null) return entry;
 
-    const midnight = truncateToMidnight(dueAt, timezone);
-    return midnight ? { ...entry, dueAt: midnight } : entry;
+    if (isPastDay(dueAt, now, timezone)) {
+      logger.warn(SCOPE, "Échéance de todoliste proposée dans le passé, effacée.");
+      return { ...entry, dueAt: null };
+    }
+
+    return { ...entry, dueAt };
   });
 
   return { ...toolCall, input: { ...toolCall.input, lists: corrected } };
+}
+
+/**
+ * Corrige l'échéance d'un `suggest_task_list_due_date` avant capture (A.2).
+ *
+ * Même filet que pour la création — expression relative fiabilisée, heure
+ * ramenée à minuit — mais une échéance dans le passé n'y est pas effaçable :
+ * contrairement à la création d'une liste, l'outil n'a rien à proposer
+ * d'autre qu'une nouvelle date. Le champ est retiré, ce qui fait échouer la
+ * validation du schéma en aval et abandonne la proposition entière plutôt que
+ * de reprogrammer une liste dans le passé (§12.1).
+ */
+function withCorrectedRescheduleDueDate(
+  toolCall: LlmToolCall,
+  now: Date,
+  timezone: string,
+): LlmToolCall {
+  if (toolCall.name !== SUGGEST_TASK_LIST_DUE_DATE.name) return toolCall;
+
+  const dueAtText = toolCall.input["dueAtText"];
+  const parsed = typeof dueAtText === "string" ? parseRelativeDateFr(dueAtText, now, timezone) : null;
+
+  const rawDueAt = toolCall.input["dueAt"];
+  const dueAt =
+    parsed ?? (typeof rawDueAt === "string" ? truncateToMidnight(rawDueAt, timezone) : null);
+
+  const input = { ...toolCall.input };
+  if (dueAt === null || isPastDay(dueAt, now, timezone)) {
+    if (dueAt !== null) {
+      logger.warn(SCOPE, "Reprogrammation de todoliste dans le passé, proposition abandonnée.");
+    }
+    delete input["dueAt"];
+  } else {
+    input["dueAt"] = dueAt;
+  }
+
+  return { ...toolCall, input };
+}
+
+/**
+ * Le jour porté par `iso` (dans le fuseau du profil) est-il déjà passé ?
+ *
+ * Comparaison de jours calendaires, pas d'instants : aujourd'hui reste
+ * valide même une fois son heure courante dépassée — une todoliste ne porte
+ * jamais d'horaire, seulement un jour (§12.1).
+ */
+function isPastDay(iso: string, now: Date, timeZone: string): boolean {
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) return false;
+
+  const today = toWall(now, timeZone);
+  const todayMs = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+
+  const wall = toWall(instant, timeZone);
+  const targetMs = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate());
+
+  return targetMs < todayMs;
 }
 
 /**
@@ -1298,19 +1378,34 @@ function buildSystemPrompt(
   }
 
   // Exposer l'outil ne suffit pas : sa description est lue au moment de choisir,
-  // pas au moment de décider s'il y a lieu de choisir. Les deux gestes
-  // d'entretien du fil sont donc demandés explicitement ici.
-  // Le modèle ne peut compléter que ce qu'il connaît : sans le contenu des
-  // listes, « complète la liste » n'a rien à désigner et il en propose une
-  // seconde, homonyme et vide.
+  // pas au moment de décider s'il y a lieu de choisir. Les gestes d'entretien
+  // du fil sont donc demandés explicitement ici.
+  // Le modèle ne peut agir que sur ce qu'il connaît : sans le contenu ni
+  // l'échéance des listes, « complète la liste » ou « décale-la » n'ont rien à
+  // désigner, et le modèle inventerait un identifiant ou une seconde liste.
+  if (todo.tools.includes(SUGGEST_TASK_LIST_ITEMS) || todo.tools.includes(SUGGEST_TASK_LIST_DUE_DATE)) {
+    lines.push("", "Todolistes déjà nées de cette conversation.", ...describeTaskLists(todo.lists));
+  }
+
   if (todo.tools.includes(SUGGEST_TASK_LIST_ITEMS)) {
     lines.push(
       "",
-      "Todolistes déjà nées de cette conversation. Pour en compléter une, appelle",
-      "`suggest_task_list_items` avec son identifiant recopié caractère pour",
-      "caractère. N'ouvre jamais une seconde liste pour un sujet que l'une d'elles",
-      "couvre déjà, et n'y propose que des lignes qui n'y figurent pas.",
-      ...describeTaskLists(todo.lists),
+      "Pour compléter une liste ci-dessus, appelle `suggest_task_list_items` avec",
+      "son identifiant recopié caractère pour caractère. N'ouvre jamais une seconde",
+      "liste pour un sujet que l'une d'elles couvre déjà, et n'y propose que des",
+      "lignes qui n'y figurent pas.",
+    );
+  }
+
+  if (todo.tools.includes(SUGGEST_TASK_LIST_DUE_DATE)) {
+    lines.push(
+      "",
+      "Pour décaler l'échéance d'une liste ci-dessus — l'utilisateur la reporte,",
+      "l'avance, ou en fixe une pour la première fois — appelle",
+      "`suggest_task_list_due_date` avec son identifiant recopié caractère pour",
+      "caractère et la nouvelle date. N'appelle cet outil que sur demande",
+      "explicite : ne reprogramme jamais une liste de ta propre initiative, et la",
+      "nouvelle échéance doit toujours tomber aujourd'hui ou après.",
     );
   }
 
@@ -1500,10 +1595,14 @@ function describeDecisions(suggestions: Suggestion[]): string[] {
  * Le contenu est repris ligne à ligne, pas résumé : c'est ce qui lui permet de
  * ne pas proposer une deuxième fois ce qui est déjà dans la liste. Le retrait
  * marque les sous-tâches, comme dans l'éditeur.
+ *
+ * L'échéance actuelle est incluse pour que « décale-la de 3 jours » se calcule
+ * depuis la date de la liste, pas depuis aujourd'hui.
  */
 function describeTaskLists(lists: TaskListWithTasks[]): string[] {
   return lists.map((list) => {
     const nature = list.kind === "shopping" ? "achats" : "tâches";
+    const due = list.dueAt === null ? "sans échéance" : `échéance ${list.dueAt}`;
     const content =
       list.tasks.length === 0
         ? "vide"
@@ -1511,7 +1610,7 @@ function describeTaskLists(lists: TaskListWithTasks[]): string[] {
             .map((task) => (task.parentId === null ? task.title : `> ${task.title}`))
             .join(", ");
 
-    return `- « ${list.title} » (identifiant ${list.id}, ${nature}) : ${content}`;
+    return `- « ${list.title} » (identifiant ${list.id}, ${nature}, ${due}) : ${content}`;
   });
 }
 

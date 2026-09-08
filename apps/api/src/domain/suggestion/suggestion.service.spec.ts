@@ -268,6 +268,49 @@ describe("SuggestionService", () => {
       expect(repo.create).not.toHaveBeenCalled();
     });
 
+    it("traduit une reprogrammation en proposition de nouvelle échéance", async () => {
+      const repo = makeRepository();
+      const listId = "11111111-1111-4111-8111-111111111111";
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          { message: "Je décale Courses à vendredi ?", listId, dueAt: NOW },
+          "suggest_task_list_due_date",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_task_list_due_date",
+          payload: { listId, dueAt: NOW },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ignore une reprogrammation sans nouvelle échéance exploitable", async () => {
+      const repo = makeRepository();
+
+      // C'est ce que rend le correcteur du service appelant quand la date
+      // proposée retombe dans le passé : le champ est retiré plutôt que gardé.
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          { message: "Je décale Courses ?", listId: "11111111-1111-4111-8111-111111111111" },
+          "suggest_task_list_due_date",
+        ),
+        TOKEN,
+      );
+
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
     it("ignore une proposition de todoliste sans aucune liste", async () => {
       const repo = makeRepository();
 

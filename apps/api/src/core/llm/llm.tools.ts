@@ -128,6 +128,63 @@ export const SUGGEST_TASK_LIST_ITEMS: LlmTool = {
   },
 };
 
+/**
+ * Décaler l'échéance d'une liste qui existe déjà (§12.1, A.2).
+ *
+ * Distinct de `suggest_task_list_items` : l'un ajoute des lignes, celui-ci
+ * déplace la date de la liste entière. Jamais de propre initiative — seule la
+ * demande explicite de l'utilisateur (« décale-la à... », « avance-la de... »,
+ * « il me la faut plutôt pour... ») déclenche cet outil.
+ */
+export const SUGGEST_TASK_LIST_DUE_DATE: LlmTool = {
+  name: "suggest_task_list_due_date",
+  description:
+    "À appeler uniquement quand l'utilisateur demande explicitement de reporter, " +
+    "avancer ou fixer l'échéance d'une todoliste qui existe déjà. Jamais de ta propre " +
+    "initiative : contrairement à `suggest_task_list`, ce n'est pas une détection " +
+    "proactive. " +
+    "Les listes existantes sont données dans la consigne avec leur identifiant et leur " +
+    "échéance actuelle : recopie l'identifiant caractère pour caractère, jamais " +
+    "reconstitué de mémoire ni remplacé par le titre de la liste. " +
+    "La nouvelle échéance doit toujours tomber aujourd'hui ou après : une todoliste ne " +
+    "se reprogramme jamais dans le passé.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question, nommant la liste et sa nouvelle échéance — ex. « Je décale " +
+          "Courses à vendredi ? ». Ne jamais présenter le changement comme déjà fait. " +
+          "500 caractères maximum.",
+      },
+      listId: {
+        type: "string",
+        description:
+          "Identifiant de la liste à reprogrammer, recopié caractère pour caractère " +
+          "depuis la consigne.",
+      },
+      dueAt: {
+        type: "string",
+        description:
+          "Nouvelle échéance ISO 8601 de la liste entière. Sans heure précise, viser " +
+          "minuit — comme pour la création d'une liste (§12.1).",
+      },
+      dueAtText: {
+        type: "string",
+        description:
+          "Si `dueAt` est calculé à partir d'une expression relative au jour même " +
+          "(« demain », « vendredi », « dans une semaine », « ce week-end »), recopier " +
+          "cette expression telle quelle : le serveur la relit pour fiabiliser le calcul. " +
+          "Omettre pour une expression relative à l'échéance actuelle de la liste " +
+          "(« décale-la de 3 jours ») ou une date absolue (« le 15 septembre »).",
+      },
+    },
+    required: ["message", "listId", "dueAt"],
+  },
+};
+
 export const SUGGEST_FOLDERS: LlmTool = {
   name: "suggest_folders",
   description:
@@ -435,6 +492,7 @@ export const ASK_QUESTION: LlmTool = {
 export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_ITEMS,
+  SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_FOLDERS,
   SUGGEST_RECURRING_EVENT,
   ASK_QUESTION,
@@ -466,6 +524,7 @@ export const ASSISTANT_TOOLS: LlmTool[] = [
 const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",
   [SUGGEST_TASK_LIST_ITEMS.name]: "proactiveTaskDetection",
+  [SUGGEST_TASK_LIST_DUE_DATE.name]: "proactiveTaskDetection",
   [SUGGEST_RECURRING_EVENT.name]: "proactiveScheduling",
   [SUGGEST_FOLDERS.name]: "folderOrganization",
   [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",

@@ -8,6 +8,7 @@ import {
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
   scheduleListsPayloadSchema,
+  updateTaskListDueDatePayloadSchema,
   type AssignFoldersPayload,
   type CreateTaskListsPayload,
   type Suggestion,
@@ -472,6 +473,8 @@ function outcomeLabel(suggestion: Suggestion): string {
       return "Liste complétée";
     case "schedule_task":
       return "Créneaux posés";
+    case "update_task_list_due_date":
+      return "Échéance déplacée";
     default:
       return "Dossiers créés";
   }
@@ -576,6 +579,19 @@ function useSuggestionPreview(suggestion: Suggestion): {
             nested: false,
             hint: dueLabel(list.dueAt),
           }))
+        : [],
+    };
+  }
+
+  // La liste visée est déjà nommée dans la phrase de l'assistant (« Je décale
+  // Courses à vendredi ? ») : l'aperçu se limite à la nouvelle date.
+  if (suggestion.kind === "update_task_list_due_date") {
+    const proposed = updateTaskListDueDatePayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Décaler la liste",
+      lines: proposed.success
+        ? [{ key: proposed.data.listId, label: dueLabel(proposed.data.dueAt), nested: false }]
         : [],
     };
   }
