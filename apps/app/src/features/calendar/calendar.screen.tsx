@@ -33,8 +33,6 @@ import {
   startOfDay,
   startOfWeek,
   weekDays,
-  weekdayLabel,
-  weekLabel,
   yearBounds,
   yearLabel,
 } from "@/shared/lib/dates";
@@ -191,7 +189,6 @@ export function CalendarScreen() {
     >
       <CalendarToolbar
         label={periodLabel(view, anchor)}
-        navLabel={navLabel(view, anchor)}
         view={view}
         onViewChange={setView}
         onPrevious={() => shift(-1)}
@@ -310,22 +307,16 @@ function shiftAnchor(view: CalendarView, anchor: Date, direction: 1 | -1): Date 
   return addYears(anchor, direction);
 }
 
+/**
+ * Période affichée dans le bandeau — seul texte de date, depuis la fusion
+ * avec l'ancien texte de navigation (§4.2, disposition Google Agenda).
+ *
+ * En vue Semaine, le mois seul : une plage complète (« Semaine du 7 au 13
+ * septembre ») ne tient pas à côté des autres commandes du bandeau, et le
+ * mois suffit à la situer.
+ */
 function periodLabel(view: CalendarView, anchor: Date): string {
   if (view === "day") return dayLabel(anchor);
-  if (view === "week") return weekLabel(anchor);
-  if (view === "month" || view === "todo") return monthLabel(anchor);
-  return yearLabel(anchor);
-}
-
-/**
- * Texte entre les flèches de navigation.
- *
- * Distinct du grand titre (`periodLabel`) : en vue jour, ce dernier porte déjà
- * la date complète, la navigation n'a besoin que du jour de la semaine. En
- * semaine et en mois, mois et année. En année, l'année suffit déjà.
- */
-function navLabel(view: CalendarView, anchor: Date): string {
-  if (view === "day") return weekdayLabel(anchor);
   if (view === "week" || view === "month" || view === "todo") return monthLabel(anchor);
   return yearLabel(anchor);
 }
