@@ -7,6 +7,53 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **8 septembre 2026** — une todoliste à heure précise
+s'affiche enfin à son heure dans la grille Jour/Semaine du calendrier, une
+suggestion de l'assistant ne peut plus en faire disparaître une autre du même
+tour, la todoliste se lit plus dense, et le tiroir de navigation se referme
+correctement sur mobile.
+
+**Une todoliste à heure précise s'affiche enfin à son heure, pas comme
+« toute la journée ».** Signalé en usage réel. En cause, `TimeGrid` (vues
+Jour et Semaine) plaçait systématiquement les todolistes échues dans un
+bandeau plat au-dessus de la grille horaire, sans jamais regarder si leur
+`dueAt` portait une heure précise — à la différence des rendez-vous, où seuls
+ceux marqués `allDay` y échappent. `layoutDayLists` (`calendar-dates.ts`)
+sépare désormais les deux cas avec la même convention que `momentOf` :
+minuit pile vaut « dans la journée », une heure précise se place dans la
+grille comme un rendez-vous.
+
+**Une suggestion de l'assistant ne peut plus en faire disparaître une autre
+du même tour.** Signalé en usage réel (« l'IA ne propose parfois que le
+1er choix »). Deux causes cumulées. D'abord, la contrainte CHECK de
+`assistant_suggestions.kind` n'avait jamais été mise à jour pour
+`update_task_list_due_date`, introduit plus tôt dans la journée : toute
+reprogrammation de todoliste échouait donc en base — et comme la boucle qui
+capture les suggestions d'un tour n'isolait pas ses erreurs, cet échec
+interrompait aussi la capture de toutes celles qui suivaient dans le même
+tour. La migration ajoute le kind manquant, et chaque capture est désormais
+isolée dans son propre `try`/`catch` (`conversation.service.ts`). Ensuite,
+plus étroit : le geste explicite « Extraire la todoliste » ne gardait que le
+premier appel d'outil (`toolCalls.find`) quand le modèle répondait par
+plusieurs appels `suggest_task_list` séparés plutôt qu'un seul groupé —
+`mergeTaskListCalls` les regroupe désormais avant capture.
+
+**La todoliste se lit plus dense.** Demandé directement. Les lignes de
+`TaskListEditor` et de `TaskRow` se rapprochent et la case à cocher rétrécit
+(`TASK_ROW_HEIGHT` : 32 pt, `TASK_CHECKBOX_SIZE` : 16 px) — sous
+`MIN_TOUCH_TARGET` (44 pt) par dérogation explicite à la règle
+d'accessibilité du projet (200-app.md), acceptée pour cette liste en
+particulier.
+
+**Le tiroir de navigation se referme correctement sur mobile.** Signalé en
+usage réel : le bouton l'ouvrait mais ne le refermait pas. En cause, la `View`
+plein écran posée par-dessus le contenu une fois le tiroir ouvert couvrait
+aussi la bannière, sans y porter aucun enfant — le second appui (fermeture)
+était capté par cette zone vide avant d'atteindre le bouton, qui ne pouvait
+donc qu'ouvrir le tiroir, jamais le refermer. Il lui manquait
+`pointerEvents: "box-none"`, déjà en usage ailleurs dans le calendrier pour
+le même besoin.
+
 Dernière mise à jour : **8 septembre 2026** — le bandeau du calendrier reprend
 la disposition de Google Agenda sur desktop.
 
