@@ -5,6 +5,7 @@ import type { TaskListWithTasks } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { formatFullDay, formatTime, isSameDay } from "@/shared/lib/dates";
 import { openTaskCount } from "@/shared/lib/tasks";
+import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { momentsOfDay } from "./lib/task-week";
@@ -25,9 +26,13 @@ export type DueListsBoardProps = {
  */
 export function DueListsBoard({ days, lists }: DueListsBoardProps) {
   const today = new Date();
+  // Resserré sur grand écran seulement : un mois entier de listes tient mal
+  // sur téléphone où l'espace généreux protège du doigt, mais gagne à se
+  // resserrer sur un écran large où plusieurs semaines sont visibles à la fois.
+  const desktop = useBreakpoint() === "expanded";
 
   return (
-    <View className="gap-3">
+    <View className={desktop ? "gap-2" : "gap-3"}>
       {days.map((day) => {
         const groups = momentsOfDay(lists, day);
         const remaining = groups.reduce(
@@ -39,7 +44,7 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
         return (
           <View
             key={day.toISOString()}
-            className={`gap-2 rounded-xl border p-3 ${
+            className={`gap-2 rounded-xl border ${desktop ? "p-2" : "p-3"} ${
               isToday ? "border-primary" : "border-border"
             }`}
           >
@@ -60,12 +65,12 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
               <Text className="text-muted-foreground text-sm">Rien de prévu ce jour-là.</Text>
             ) : (
               groups.map((group) => (
-                <View key={group.moment.key} className="gap-2">
+                <View key={group.moment.key} className={desktop ? "gap-1" : "gap-2"}>
                   <Text className="text-muted-foreground text-[11px] font-medium uppercase">
                     {group.moment.label}
                   </Text>
                   {group.lists.map((list) => (
-                    <DueList key={list.id} list={list} />
+                    <DueList key={list.id} list={list} desktop={desktop} />
                   ))}
                 </View>
               ))
@@ -84,7 +89,7 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
  * rien de ce qu'il reste à faire. Les lignes ne se cochent pas ici — l'appui
  * ouvre la liste dans Mes listes, où l'écriture comme le pointage ont lieu.
  */
-function DueList({ list }: { list: TaskListWithTasks }) {
+function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean }) {
   const router = useRouter();
   const shopping = list.kind === "shopping";
 
@@ -94,7 +99,7 @@ function DueList({ list }: { list: TaskListWithTasks }) {
       accessibilityRole="button"
       accessibilityLabel={`Ouvrir la liste ${list.title}`}
       style={{ minHeight: MIN_TOUCH_TARGET }}
-      className="border-border gap-0.5 rounded-lg border border-dashed p-2"
+      className={`border-border gap-0.5 rounded-lg border border-dashed ${desktop ? "p-1.5" : "p-2"}`}
     >
       <View className="flex-row items-center gap-2">
         <Icon
