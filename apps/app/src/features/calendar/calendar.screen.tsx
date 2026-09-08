@@ -33,6 +33,7 @@ import {
   startOfDay,
   startOfWeek,
   weekDays,
+  weekdayLabel,
   weekLabel,
   yearBounds,
   yearLabel,
@@ -127,7 +128,19 @@ export function CalendarScreen() {
   // Le clic ouvre d'abord un détail, à la façon de Google Calendar (§4.2) — pas
   // directement le formulaire de modification. `editEvent` est le pas de plus,
   // déclenché depuis ce détail.
-  const openEvent = (event: CalendarEvent) => setEventDetail(event);
+  //
+  // Une todoliste datée avec horaire porte un événement (`list.eventId`) : la
+  // grille l'affiche comme n'importe quel rendez-vous, mais le clic doit rouvrir
+  // le détail de la liste — cochable — et non un détail de rendez-vous générique
+  // qui ne montrerait rien de ce qu'il y a à faire.
+  const openEvent = (event: CalendarEvent) => {
+    const linkedList = lists?.find((list) => list.eventId === event.id);
+    if (linkedList) {
+      setListDetail(linkedList);
+      return;
+    }
+    setEventDetail(event);
+  };
   const editEvent = (event: CalendarEvent) => {
     setEventDetail(null);
     setDialogTarget({ mode: "edit", event });
@@ -178,7 +191,7 @@ export function CalendarScreen() {
     >
       <CalendarToolbar
         label={periodLabel(view, anchor)}
-        year={yearLabel(anchor)}
+        navLabel={navLabel(view, anchor)}
         view={view}
         onViewChange={setView}
         onPrevious={() => shift(-1)}
@@ -301,5 +314,18 @@ function periodLabel(view: CalendarView, anchor: Date): string {
   if (view === "day") return dayLabel(anchor);
   if (view === "week") return weekLabel(anchor);
   if (view === "month" || view === "todo") return monthLabel(anchor);
+  return yearLabel(anchor);
+}
+
+/**
+ * Texte entre les flèches de navigation.
+ *
+ * Distinct du grand titre (`periodLabel`) : en vue jour, ce dernier porte déjà
+ * la date complète, la navigation n'a besoin que du jour de la semaine. En
+ * semaine et en mois, mois et année. En année, l'année suffit déjà.
+ */
+function navLabel(view: CalendarView, anchor: Date): string {
+  if (view === "day") return weekdayLabel(anchor);
+  if (view === "week" || view === "month" || view === "todo") return monthLabel(anchor);
   return yearLabel(anchor);
 }

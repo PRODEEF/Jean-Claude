@@ -16,8 +16,11 @@ export type CalendarView = "day" | "week" | "month" | "year" | "todo";
 
 export type CalendarToolbarProps = {
   label: string;
-  /** Année en cours, affichée entre les deux flèches de navigation. */
-  year: string;
+  /**
+   * Texte affiché entre les deux flèches de navigation — son contenu dépend
+   * de la vue (jour de la semaine, mois et année, ou année seule).
+   */
+  navLabel: string;
   view: CalendarView;
   onViewChange: (view: CalendarView) => void;
   onPrevious: () => void;
@@ -39,7 +42,7 @@ const VIEWS: SegmentedOption<CalendarView>[] = [
  * Les trois références du domaine placent identiquement ces trois blocs —
  * période à gauche, bascule de vue au centre, navigation à droite (§4.2) —
  * et c'est aussi la disposition de la maquette web. À l'intérieur du bloc de
- * navigation : « Aujourd'hui », puis les flèches encadrant l'année en cours.
+ * navigation : « Aujourd'hui », puis les flèches encadrant `navLabel`.
  *
  * Sous le point de rupture, la période passe sur sa propre ligne : la bascule
  * et les trois commandes de navigation ne tiennent pas à côté d'elle sur la
@@ -47,7 +50,7 @@ const VIEWS: SegmentedOption<CalendarView>[] = [
  */
 export function CalendarToolbar({
   label,
-  year,
+  navLabel,
   view,
   onViewChange,
   onPrevious,
@@ -80,7 +83,7 @@ export function CalendarToolbar({
         <Icon as={ChevronLeft} className="size-4" />
       </Button>
       <Text className="text-sm font-semibold" numberOfLines={1}>
-        {year}
+        {navLabel}
       </Text>
       <Button
         variant="ghost"

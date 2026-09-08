@@ -79,7 +79,9 @@ function Detail({
         },
         { icon: Pencil, label: "Modifier l'événement", onPress: () => onEdit(event) },
       ]}
-      actions={[{ label: "Fermer", onPress: onClose }]}
+      // Pas de bouton "Fermer" : il ferait doublon avec la croix du bandeau,
+      // seule fermeture de cette lecture.
+      actions={[]}
     />
   );
 }
