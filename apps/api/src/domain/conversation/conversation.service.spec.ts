@@ -2592,5 +2592,165 @@ describe("ConversationService", () => {
         TOKEN,
       );
     });
+
+    it("efface l'échéance d'une todoliste que le modèle propose dans le passé", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  // NOW est le 2 septembre : une échéance calée la veille ne
+                  // doit jamais atteindre la carte proposée (§12.1).
+                  dueAt: "2026-09-01T00:00:00.000Z",
+                  items: [{ title: "Pain" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il me fallait du pain hier.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: null })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+  });
+
+  describe("reprogrammation d'une todoliste existante (§12.1, A.2)", () => {
+    const EXISTING_LIST = makeTaskList({
+      id: "11111111-1111-4111-8111-111111111111",
+      title: "Travaux jardin",
+      kind: "todo",
+      dueAt: "2026-09-05T00:00:00.000Z",
+      conversationId: "conv-1",
+    });
+
+    it("expose l'outil de reprogrammation dès qu'une liste est née de ce fil", async () => {
+      const llm = makeLlm();
+      const tasks = makeTaskRepository([EXISTING_LIST]);
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          tasks,
+        ),
+      );
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_task_list_due_date");
+      expect(lastRequest(llm).system ?? "").toContain("échéance 2026-09-05T00:00:00.000Z");
+    });
+
+    it("ne propose pas de reprogrammer quand le fil n'a encore aucune liste", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain(
+        "suggest_task_list_due_date",
+      );
+    });
+
+    it("capture une reprogrammation vers une date résolue par le filet déterministe", async () => {
+      const suggestions = makeSuggestionRepository();
+      const tasks = makeTaskRepository([EXISTING_LIST]);
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list_due_date",
+            input: {
+              message: "Je décale Travaux jardin à vendredi ?",
+              listId: EXISTING_LIST.id,
+              // Date fautive du modèle, comme pour la création : le calcul
+              // déterministe du serveur la remplace.
+              dueAt: "2026-09-01T00:00:00.000Z",
+              dueAtText: "vendredi",
+            },
+          },
+        ],
+      );
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          tasks,
+        ),
+        { content: "Décale les travaux du jardin à vendredi.", inputMode: "text" },
+      );
+
+      // Vendredi 4 septembre, minuit à Paris.
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_task_list_due_date",
+          payload: { listId: EXISTING_LIST.id, dueAt: "2026-09-03T22:00:00.000Z" },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("abandonne une reprogrammation dont la nouvelle échéance retombe dans le passé", async () => {
+      const suggestions = makeSuggestionRepository();
+      const tasks = makeTaskRepository([EXISTING_LIST]);
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list_due_date",
+            input: {
+              message: "Je décale Travaux jardin ?",
+              listId: EXISTING_LIST.id,
+              dueAt: "2026-09-01T00:00:00.000Z",
+            },
+          },
+        ],
+      );
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          tasks,
+        ),
+        { content: "Décale les travaux du jardin au 1er.", inputMode: "text" },
+      );
+
+      expect(suggestions.create).not.toHaveBeenCalled();
+    });
   });
 });
