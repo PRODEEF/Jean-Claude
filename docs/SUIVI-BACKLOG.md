@@ -7,6 +7,60 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **8 septembre 2026** — la moitié sombre des pastilles
+de couleur des réglages n'était plus qu'un aplat noir, le modèle IA par
+défaut sort du catalogue de test pour rejoindre celui des réglages, cliquer
+une todoliste échue depuis les vues Jour/Semaine/Mois ouvre enfin son détail
+au lieu d'une fiche de rendez-vous vide, la vue Todo du calendrier se coche
+directement, et le texte entre les flèches de navigation varie selon la vue.
+
+**La moitié sombre des pastilles de couleur, en réglages, n'était plus
+qu'un aplat noir.** Signalé en usage réel : les huit pastilles de « Sa
+couleur » devenaient indiscernables les unes des autres côté thème sombre.
+En cause, `softenAccent(couleur, "dark")` mélange 72 % de noir — le bon aplat
+pour une grande surface (bulles, calendrier), mais qui écrase toute teinte
+sur un disque de 20 px. Un aperçu propre à cet écran (`previewDarkHalf`,
+réglages.screen.tsx, mélange à 55 %) remplace ce demi-cercle ; l'aplat réel
+utilisé ailleurs dans l'app (bulles de conversation, calendrier en thème
+sombre) n'a volontairement pas changé.
+
+**Le modèle IA par défaut sort du catalogue de test pour rejoindre celui
+des réglages (§5.1).** Signalé en usage réel : à l'inscription comme pour
+tout profil n'ayant encore rien choisi, le sélecteur de « Modèle » n'affichait
+rien de coché. En cause, `LLM_MODEL` par défaut (`anthropic/claude-opus-5`)
+n'appartenait pas aux cinq modèles du catalogue de `@jc/domain` — geste
+délibéré à l'origine (« éprouver un moteur avant de le proposer »), mais qui
+laisse un profil neuf sans rien coché ni expliqué. Le défaut serveur passe à
+`mistral/mistral-medium-3.5`, dans le catalogue. Une variable d'environnement
+`LLM_MODEL` déjà positionnée explicitement sur un déploiement (Vercel) prime
+toujours sur ce défaut de code et reste à mettre à jour séparément si besoin.
+
+**Cliquer une todoliste échue depuis les vues Jour/Semaine/Mois ouvre enfin
+son détail, cochable.** Signalé en usage réel : une todoliste dont le
+créneau est représenté par un rendez-vous (« Bloquer le créneau » accepté)
+ouvrait, au clic, la fiche générique d'un événement — sans la liste, rien à
+cocher, et un bouton « Fermer » qui doublonnait la croix de fermeture du
+bandeau. En cause, la grille route tout clic sur un événement vers
+`EventDetailDialog`, qu'il représente une todoliste ou non. `calendar.screen`
+cherche désormais la todoliste que l'événement représente (`list.eventId`)
+et ouvre `TaskListDetailDialog` à sa place ; celle-ci embarque la liste,
+cochable via `TaskRow` (déjà écrit, jamais branché nulle part), plutôt que de
+renvoyer systématiquement vers Mes listes. Le bouton « Fermer » superflu est
+retiré de `EventDetailDialog`, et `Modal` n'affiche plus de pied vide quand
+il ne reste aucune action.
+
+**La vue Todo du calendrier se coche directement.** Jusqu'ici en lecture
+seule par choix assumé (« on coche dans Mes listes, qui en reste l'écran »).
+`DueListsBoard` sépare désormais l'en-tête de chaque carte (icône, titre,
+heure — toujours pressable, toujours vers Mes listes) du contenu, rendu par
+`TaskRow` au lieu d'un simple texte barré.
+
+**Le texte entre les flèches de navigation du calendrier varie selon la
+vue.** Avant, toujours l'année — y compris en vue Jour ou Semaine, où ça ne
+dit rien de la période affichée et double le titre en vue Mois. Vue Jour : le
+jour de la semaine seul (« lundi »). Semaine et Mois : mois et année. Année :
+inchangé.
+
 Dernière mise à jour : **8 septembre 2026** — l'assistant sait reprogrammer
 une todoliste existante et ne peut plus lui en proposer une dans le passé, la
 vue Todo du calendrier retrouve les listes déjà liées à un rendez-vous,
@@ -863,7 +917,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 | Réf. | Exigence                                               | Statut | Note                                                                                                                                                                                                                                                                                                                                                                                      |
 | ---- | ------------------------------------------------------ | :----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                                                                                                                                                                                                                                                                                                                           |
+| §5.1 | Moteur IA Claude en V1                                 |   ✅   | Défaut serveur ramené à `mistral/mistral-medium-3.5` (8 sept.) : `anthropic/claude-opus-5`, hors catalogue utilisateur, laissait le sélecteur des réglages sans rien coché tant que rien n'était choisi. Claude reste joignable via `LLM_MODEL`, hors défaut                                                                                                                            |
 | §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code                                                                                                                                                                                                                                                                                   |
 | §5.1 | Timeouts, quotas et erreurs                            |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés                                                                                                                                                                                                                                                                                               |
 | §5.1 | Choix du modèle par l'utilisateur                      |   ✅   | Catalogue de trois modèles dans `@jc/domain`, choisi dans les réglages et porté par `profiles.llm_model`. `LLM_MODEL` devient le repli, servi tant que rien n'est choisi                                                                                                                                                                                                                  |
