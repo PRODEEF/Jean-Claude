@@ -51,8 +51,16 @@ export default function AppLayout() {
           plutôt que de le comprimer : à cette largeur, la partager laisserait
           les deux illisibles. */}
       {!expanded && visible ? (
-        <View className="absolute inset-0 flex-row" style={{ paddingTop: insets.top + 56 }}>
+        <View
+          className="absolute inset-0 flex-row"
+          style={{ paddingTop: insets.top + 56, pointerEvents: "box-none" }}
+        >
           <AppSidebar onNavigate={() => setPreference(false)} />
+          {/* `box-none` sur le conteneur : sa zone de padding, au-dessus de la
+              barre latérale, n'a aucun enfant mais couvrait déjà la bannière —
+              sans lui, le second appui sur le bouton hamburger (fermeture) y
+              était capté au lieu d'atteindre le bouton, qui ne pouvait donc
+              qu'ouvrir le tiroir, jamais le refermer. */}
           {/* Noir littéral et non un jeton de la palette : le modificateur
               d'opacité de Tailwind ne sait pas calculer d'alpha sur une
               variable CSS, et un voile clair en thème sombre n'assombrirait
