@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import {
   Platform,
   Pressable,
@@ -9,6 +9,14 @@ import {
   View,
 } from "react-native";
 import { ArrowUp, Mic, Square } from "lucide-react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 import { MESSAGE_MAX_LENGTH, type MessageInputMode } from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
@@ -114,6 +122,23 @@ export function Composer({
     onChangeText(text);
   });
 
+  // Pulsation tant que la dictée écoute : avec l'icône, le seul repère que
+  // l'enregistrement est actif — sans elle, le bouton ne se distinguait que
+  // par la couleur de son fond, fixe.
+  const reducedMotion = useReducedMotion();
+  const micPulse = useSharedValue(1);
+
+  useEffect(() => {
+    micPulse.value =
+      dictation.listening && !reducedMotion
+        ? withRepeat(withTiming(1.3, { duration: 650, easing: Easing.inOut(Easing.ease) }), -1, true)
+        : withTiming(1, { duration: 150 });
+  }, [dictation.listening, reducedMotion, micPulse]);
+
+  const micPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: micPulse.value }],
+  }));
+
   const handleSubmit = useCallback(() => {
     onSubmit(inputMode);
     setInputMode("text");
@@ -199,9 +224,20 @@ export function Composer({
           accessibilityRole="button"
           accessibilityLabel={dictation.listening ? "Arrêter la dictée" : "Dicter le message"}
           hitSlop={8}
-          style={[styles.mic, dictation.listening ? { backgroundColor: palette.accent } : null]}
         >
-          <Mic size={16} color={dictation.listening ? palette.accentText : palette.textMuted} />
+          <Animated.View
+            style={[
+              styles.mic,
+              dictation.listening ? { backgroundColor: palette.accent } : null,
+              micPulseStyle,
+            ]}
+          >
+            {dictation.listening ? (
+              <Square size={14} fill={palette.accentText} color={palette.accentText} />
+            ) : (
+              <Mic size={16} color={palette.textMuted} />
+            )}
+          </Animated.View>
         </Pressable>
 
         {/* Pendant la génération, le même bouton arrête la réponse plutôt que

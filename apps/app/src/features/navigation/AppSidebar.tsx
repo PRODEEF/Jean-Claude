@@ -190,7 +190,7 @@ export function AppSidebar({
           <View className="size-8 items-center justify-center rounded-md bg-destructive">
             <Icon as={MessageCircle} size={16} className="text-white" />
           </View>
-          <Text className="text-sm font-semibold text-foreground">PROBLÈME</Text>
+          <Text className="text-sm font-semibold text-foreground">SIGNALER UN PROBLÈME</Text>
         </Button>
 
         <Button
@@ -442,6 +442,11 @@ function ResizeHandle({ width, onResize }: { width: number; onResize: (width: nu
         );
         latest.current.onResize(next);
       },
+      // Sans ce refus, un mouvement rapide qui passe par-dessus la liste des
+      // conversations ou le contenu du fil peut céder le geste à leur propre
+      // responder (défilement, glisser-déposer) : la poignée n'a que 12 pt de
+      // large, le curseur en sort facilement pendant un glissement rapide.
+      onPanResponderTerminationRequest: () => false,
     }),
   ).current;
 
