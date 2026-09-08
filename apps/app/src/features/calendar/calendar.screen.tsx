@@ -171,6 +171,7 @@ export function CalendarScreen() {
     >
       <CalendarToolbar
         label={periodLabel(view, anchor)}
+        year={yearLabel(anchor)}
         view={view}
         onViewChange={setView}
         onPrevious={() => shift(-1)}
