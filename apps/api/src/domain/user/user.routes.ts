@@ -32,4 +32,14 @@ export const userRoutes = new Hono<AuthEnv>()
    */
   .post("/onboarding/complete", async (c) =>
     c.json(await service.completeOnboarding(c.get("user"))),
-  );
+  )
+
+  /**
+   * Suppression du compte (§8, §13.4.6) — irréversible, sans délai de grâce.
+   * Aucun `:id`, pour la même raison que le reste de ce fichier : on ne peut
+   * supprimer que le sien.
+   */
+  .delete("/", async (c) => {
+    await service.deleteAccount(c.get("user"));
+    return c.body(null, 204);
+  });

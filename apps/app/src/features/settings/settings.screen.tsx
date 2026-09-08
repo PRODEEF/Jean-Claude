@@ -5,6 +5,7 @@ import { Palette } from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
 import { ASSISTANT_MODELS, type AssistantScope, type Theme } from "@jc/domain";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
+import { AccountDeleteDialog } from "@/features/settings/AccountDeleteDialog";
 import { useProfile, useUpdateProfile } from "@/shared/hooks/use-profile";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -85,6 +86,7 @@ export function SettingsScreen() {
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
 
   const health = useQuery({ queryKey: ["health"], queryFn: () => api.health.check() });
 
@@ -384,6 +386,18 @@ export function SettingsScreen() {
           </Pressable>
         </Section>
 
+        <Section title="Supprimer le compte">
+          <Pressable
+            onPress={() => setDeleteAccountOpen(true)}
+            className="flex-row items-center justify-between"
+            style={{ minHeight: MIN_TOUCH_TARGET }}
+            accessibilityRole="button"
+            accessibilityLabel="Supprimer mon compte"
+          >
+            <Text className="text-base text-destructive">Supprimer mon compte</Text>
+          </Pressable>
+        </Section>
+
         {updateProfile.isError ? (
           <Text className="text-sm text-destructive">
             Vos réglages n'ont pas pu être enregistrés. Réessayez.
@@ -392,6 +406,7 @@ export function SettingsScreen() {
       </View>
 
       <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      <AccountDeleteDialog open={deleteAccountOpen} onClose={() => setDeleteAccountOpen(false)} />
     </ScreenShell>
   );
 }
