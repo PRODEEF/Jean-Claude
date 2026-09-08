@@ -145,6 +145,11 @@ export function dayLabel(date: Date): string {
   return `${formatFullDay(date)} ${date.getFullYear()}`;
 }
 
+/** Ex. « lundi » — jour seul, pour la navigation resserrée du calendrier (vue jour). */
+export function weekdayLabel(date: Date): string {
+  return WEEKDAY_FULL[(date.getDay() + 6) % 7] ?? "";
+}
+
 /** Ex. « 14h30 », « 9h ». Format parlé plutôt que « 14:30 », comme la maquette. */
 export function formatTime(iso: string): string {
   const date = new Date(iso);

@@ -1,9 +1,12 @@
 import { useState } from "react";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { Pencil, Trash2 } from "lucide-react-native";
 import type { TaskList, TaskListWithTasks } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Modal } from "@/shared/ui/modal";
+import { Text } from "@/shared/ui/text";
+import { TaskRow } from "@/features/todo/TaskRow";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { openTaskCount } from "@/shared/lib/tasks";
 import { remainingLabel } from "./DayAgenda";
@@ -74,7 +77,7 @@ function Detail({
     <Modal
       open
       onClose={onClose}
-      variant="confirm"
+      variant="form"
       title={list.title}
       description={remainingLabel(openTaskCount(list))}
       headerActions={[
@@ -96,7 +99,21 @@ function Detail({
           },
         },
       ]}
-    />
+    >
+      {/* Cochable ici même : le calendrier dit ce que porte la journée, mais
+          n'oblige plus à changer d'onglet pour rayer ce qui est fait.
+          "Ouvrir la liste" reste la voie vers l'édition complète — renommer,
+          ajouter une tâche, poser une note. */}
+      {list.tasks.length === 0 ? (
+        <Text className="text-muted-foreground text-sm">Liste vide.</Text>
+      ) : (
+        <View className="gap-1">
+          {list.tasks.map((task) => (
+            <TaskRow key={task.id} task={task} />
+          ))}
+        </View>
+      )}
+    </Modal>
   );
 }
 
