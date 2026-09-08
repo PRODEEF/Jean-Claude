@@ -4,6 +4,7 @@ import {
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
   scheduleListsPayloadSchema,
+  updateTaskListDueDatePayloadSchema,
   type AssignFoldersPayload,
   type CalendarEvent,
   type CreateTaskListsPayload,
@@ -141,6 +142,10 @@ export class AssistantService {
       const events = await this.scheduleTasks(userId, suggestion, accessToken);
       return { ...nothingApplied(), events };
     }
+    if (suggestion.kind === "update_task_list_due_date") {
+      const taskLists = await this.rescheduleTaskList(suggestion, accessToken);
+      return { ...nothingApplied(), taskLists };
+    }
 
     // Reste le rendez-vous récurrent (A.11), inscrit au contrat mais sans
     // module pour l'exécuter.
@@ -251,6 +256,33 @@ export class AssistantService {
     }
 
     return [];
+  }
+
+  /**
+   * Déplace l'échéance d'une todoliste qui existe déjà (§12.1, A.2).
+   *
+   * La liste est relue avant d'écrire — c'est ce que fait `updateList` — donc
+   * une liste supprimée entre la proposition et son acceptation rend un 404
+   * plutôt que d'écrire dans le vide.
+   */
+  private async rescheduleTaskList(
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<TaskList[]> {
+    const payload = updateTaskListDueDatePayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de reprogrammation illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    const updated = await this.tasks.updateList(
+      payload.data.listId,
+      { dueAt: payload.data.dueAt },
+      accessToken,
+    );
+
+    return [updated];
   }
 
   /**

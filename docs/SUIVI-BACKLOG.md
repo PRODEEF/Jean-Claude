@@ -7,6 +7,89 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **8 septembre 2026** — l'assistant sait reprogrammer
+une todoliste existante et ne peut plus lui en proposer une dans le passé, la
+vue Todo du calendrier retrouve les listes déjà liées à un rendez-vous,
+déplacer un rendez-vous lié à une todoliste met désormais à jour son
+échéance, sélectionner une liste depuis la barre latérale y fait désormais
+défiler l'écran, et Mes listes comme la vue Todo du calendrier se resserrent
+sur grand écran.
+
+**L'assistant sait reprogrammer une todoliste existante (§12.1, A.2).**
+Jusqu'ici, seule la création portait une échéance : « décale les courses à
+vendredi » n'avait aucun outil à sa portée. Un nouvel outil,
+`suggest_task_list_due_date`, et une nouvelle nature de suggestion,
+`update_task_list_due_date`, suivent exactement le même principe que le
+reste — une proposition en attente, jamais une écriture directe (§12.1). Il
+n'est offert que si le fil a déjà produit au moins une liste, et jamais deux
+fois de suite pour la même reprogrammation en attente, comme
+`suggest_task_list_items`. La consigne système porte désormais l'échéance
+actuelle de chaque liste du fil, pas seulement son contenu : sans elle,
+« décale-la de 3 jours » n'aurait rien à décaler *depuis*. Même filet
+déterministe que la création (`dueAtText`, `parseRelativeDateFr`) pour les
+tournures relatives au jour même.
+
+**Une todoliste proposée par l'assistant ne peut plus tomber dans le
+passé.** Signalé en relecture : rien n'empêchait le modèle de proposer une
+échéance déjà passée, ni à la création ni à la reprogrammation. Le calcul
+d'une date reste faillible (arithmétique de jours de semaine, fuseau), et le
+filet `withCorrectedDueDates` ne couvrait que la mise à minuit, pas la
+question du jour. Une échéance de création qui retombe dans le passé est
+désormais effacée plutôt que gardée — même philosophie qu'une date illisible,
+la liste vaut mieux sans échéance que pas de liste du tout. Une
+reprogrammation dans le passé, elle, n'a rien d'autre à proposer : la
+suggestion entière est abandonnée plutôt que persistée.
+
+**La vue Todo du calendrier retrouve les listes déjà liées à un
+rendez-vous.** Signalé en usage réel : une todoliste dont le créneau avait
+été posé dans l'agenda (proposition « Bloquer le créneau » acceptée)
+disparaissait purement et simplement de l'onglet Todo. En cause,
+`unscheduledLists` exclut à raison les listes déjà représentées par un
+rendez-vous — pour ne pas doubler la même échéance dans les vues Jour/
+Semaine/Mois, qui affichent les deux ensemble. Mais la vue Todo, elle,
+n'affiche aucun rendez-vous : une liste ainsi exclue n'avait donc plus nulle
+part où apparaître. Le calendrier calcule maintenant deux ensembles distincts
+— les listes non représentées par un événement pour les grilles, toutes les
+listes datées pour l'onglet Todo, qui n'a rien avec quoi faire double emploi.
+
+**Sélectionner une todoliste depuis la barre latérale y fait défiler
+l'écran.** La liste visée était déjà mise en avant d'une bordure à
+l'arrivée sur Mes listes, mais rien ne l'amenait à l'écran : sur une liste de
+todolistes assez longue pour déborder, la carte mise en avant restait hors
+champ. `ListsBoard` mesure désormais la carte visée par rapport au
+défilement de l'écran (`measureLayout`, indépendant du nombre de vues
+intermédiaires) et y défile une fois, à l'arrivée.
+
+**Mes listes et la vue Todo du calendrier se resserrent, sur grand écran
+seulement.** Paddings de carte et espacements entre listes diminuent d'un
+cran quand `useBreakpoint()` rend `"expanded"`. Les rangées cochables
+(`TaskRow`, `TaskListEditor`) gardent leur hauteur plancher de 44 pt partout
+— c'est l'invariant tactile du projet (200-app.md), pas un simple choix de
+densité — le resserrement ne touche donc qu'à ce qui les entoure. Sur
+téléphone, l'espacement ne change pas : la marge au doigt reste ce qu'elle
+était.
+
+**Déplacer un rendez-vous lié à une todoliste met à jour son échéance.**
+Signalé en usage réel : « la date d'une todoliste ne se met pas à jour quand
+on la modifie depuis le calendrier ». Le circuit direct
+(`TaskListDetailDialog` → « Modifier » → `TaskListDialog`) a été relu de bout
+en bout sans y trouver de défaut — le geste en cause était en réalité la
+fiche du *rendez-vous* d'une liste déjà pourvue d'un créneau (« Bloquer le
+créneau » accepté, cf. point précédent) : `domain/calendar` ne touchait
+jamais `task_lists`, les deux dates vivaient donc de façon indépendante dès
+qu'on déplaçait l'une des deux depuis sa propre fiche. `CalendarService`
+reçoit désormais aussi `ITaskRepository` — geste délibérément signalé plutôt
+que tranché seul, c'est le seul endroit du projet où un service `domain/` en
+consulte directement un autre plutôt que de passer par `feature/`, la
+composition résidant normalement là. `update()` retrouve, après avoir écrit
+le rendez-vous, la todoliste dont `event_id` le désigne (`findByEventId`,
+au plus une par rendez-vous) et lui applique la même date — silencieusement
+quand aucune liste n'y est rattachée, ce qui couvre l'immense majorité des
+événements. Reste délibérément hors périmètre : le sens inverse (modifier la
+liste déplacerait le rendez-vous) n'a pas été demandé et n'est pas construit
+ici ; la suppression d'un rendez-vous lié, elle, ne détache pas encore
+`task_lists.event_id`, dette préexistante et distincte de ce point.
+
 Dernière mise à jour : **7 septembre 2026** — un message peut désormais se
 dicter dans la conversation, les réponses de l'assistant peuvent s'écouter à
 voix haute, une todoliste datée pose désormais un créneau journée entière

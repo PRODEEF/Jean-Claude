@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { View } from "react-native";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { findNodeHandle, ScrollView, View } from "react-native";
 import {
   CalendarClock,
   ChevronDown,
@@ -15,6 +15,7 @@ import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
+import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
 import { TaskListEditor } from "./TaskListEditor";
 
@@ -22,6 +23,8 @@ export type ListsBoardProps = {
   lists: TaskListWithTasks[];
   /** Liste ouverte depuis la barre latérale : mise en avant à l'arrivée. */
   highlightedId?: string;
+  /** Défilement de l'écran — pour amener la liste mise en avant à l'écran. */
+  scrollRef?: RefObject<ScrollView | null>;
   /** Recherche en cours, transmise aux lignes pour les mettre en avant. */
   query: string;
   onEditList: (list: TaskList) => void;
@@ -39,12 +42,17 @@ export type ListsBoardProps = {
 export function ListsBoard({
   lists,
   highlightedId,
+  scrollRef,
   query,
   onEditList,
   onDeleteList,
   onOpenTask,
 }: ListsBoardProps) {
   const folders = useFolderChoices();
+  // Resserré sur grand écran seulement : au doigt, l'espace généreux laisse
+  // de la marge à l'erreur, alors que la souris pointe avec précision et
+  // profite d'en voir plus à la fois.
+  const desktop = useBreakpoint() === "expanded";
 
   if (lists.length === 0) {
     return (
@@ -56,13 +64,15 @@ export function ListsBoard({
   }
 
   return (
-    <View className="gap-3">
+    <View className={desktop ? "gap-2" : "gap-3"}>
       {lists.map((list) => (
         <ListCard
           key={list.id}
           list={list}
           folderName={folders.find((folder) => folder.id === list.folderId)?.name}
           highlighted={list.id === highlightedId}
+          desktop={desktop}
+          {...(scrollRef ? { scrollRef } : {})}
           query={query}
           onEdit={() => onEditList(list)}
           onDelete={() => onDeleteList(list)}
@@ -73,10 +83,15 @@ export function ListsBoard({
   );
 }
 
+/** Marge laissée au-dessus de la carte mise en avant, pour ne pas la coller au bandeau. */
+const HIGHLIGHT_SCROLL_MARGIN = 16;
+
 function ListCard({
   list,
   folderName,
   highlighted,
+  desktop,
+  scrollRef,
   query,
   onEdit,
   onDelete,
@@ -85,6 +100,8 @@ function ListCard({
   list: TaskListWithTasks;
   folderName: string | undefined;
   highlighted: boolean;
+  desktop: boolean;
+  scrollRef?: RefObject<ScrollView | null>;
   query: string;
   onEdit: () => void;
   onDelete: () => void;
@@ -94,6 +111,28 @@ function ListCard({
   const [open, setOpen] = useState(true);
   /** Point d'ouverture du menu, `null` s'il est fermé. */
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const card = useRef<View>(null);
+
+  // Amène la carte visée depuis la barre latérale à l'écran : la mettre en
+  // avant ne suffit pas quand « Mes listes » en compte assez pour déborder
+  // l'écran, la carte reste alors hors champ malgré sa bordure.
+  useEffect(() => {
+    if (!highlighted || !scrollRef) return;
+
+    const frame = requestAnimationFrame(() => {
+      const scrollNode = findNodeHandle(scrollRef.current);
+      if (scrollNode === null) return;
+
+      // Mesurée relativement au défilement lui-même plutôt qu'à l'écran : la
+      // carte peut être imbriquée sous n'importe quel nombre de vues
+      // intermédiaires, `measureLayout` s'en affranchit.
+      card.current?.measureLayout(scrollNode, (_x, y) => {
+        scrollRef.current?.scrollTo({ y: Math.max(0, y - HIGHLIGHT_SCROLL_MARGIN), animated: true });
+      });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [highlighted, scrollRef]);
 
   const shopping = list.kind === "shopping";
   const due = dueLabel(list.dueAt);
@@ -117,7 +156,10 @@ function ListCard({
   ];
 
   return (
-    <View className={`rounded-xl border p-3 ${highlighted ? "border-primary" : "border-border"}`}>
+    <View
+      ref={card}
+      className={`rounded-xl border ${desktop ? "p-2" : "p-3"} ${highlighted ? "border-primary" : "border-border"}`}
+    >
       <Collapsible open={open} onOpenChange={setOpen}>
         <View className="flex-row items-center gap-2">
           <Icon
@@ -184,7 +226,7 @@ function ListCard({
           {/* La capture ne demande rien d'autre que du texte : ni date, ni
               dossier au moment où l'on écrit (§13.4.1). Le reste se pose
               ensuite, sur la liste. */}
-          <View className="pt-2">
+          <View className={desktop ? "pt-1.5" : "pt-2"}>
             <TaskListEditor list={list} query={query} onOpenTask={onOpenTask} />
           </View>
         </CollapsibleContent>

@@ -5,7 +5,7 @@ import { ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEvent, TaskList, TaskListWithTasks } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
-import { listsOfDay, unscheduledLists } from "@/shared/lib/tasks";
+import { datedLists, listsOfDay, unscheduledLists } from "@/shared/lib/tasks";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
@@ -80,7 +80,14 @@ export function CalendarScreen() {
   // l'aveugle. Elles restent en lecture seule ici — on les coche dans
   // l'onglet Mes listes, qui est leur écran.
   const { data: lists } = useTaskLists();
+  // Vues Jour/Semaine/Mois : elles affichent déjà le rendez-vous d'une liste
+  // qui en porte un, donc on l'exclut d'ici pour ne pas doubler la même
+  // échéance sur la même journée (A.3).
   const dueLists = useMemo(() => unscheduledLists(lists ?? []), [lists]);
+  // Vue Todo : elle ne montre aucun rendez-vous, seulement les listes — une
+  // liste dont le créneau a été posé n'a donc nulle part ailleurs où
+  // apparaître ici, contrairement aux autres vues.
+  const allDatedLists = useMemo(() => datedLists(lists ?? []), [lists]);
 
   /** Masque par défaut : sur un mois entier, tout afficher noierait les jours qui comptent. */
   const [hideEmptyDays, setHideEmptyDays] = useState(true);
@@ -93,8 +100,8 @@ export function CalendarScreen() {
     [days, anchor],
   );
   const monthListDays = useMemo(
-    () => monthDays.filter((day) => listsOfDay(dueLists, day).length > 0),
-    [monthDays, dueLists],
+    () => monthDays.filter((day) => listsOfDay(allDatedLists, day).length > 0),
+    [monthDays, allDatedLists],
   );
 
   // La sélection suit la période affichée : sans cela, la liste du jour
@@ -224,7 +231,10 @@ export function CalendarScreen() {
           {hideEmptyDays && monthListDays.length === 0 ? (
             <Text className="text-muted-foreground text-sm">Aucune todoliste ce mois-ci.</Text>
           ) : (
-            <DueListsBoard days={hideEmptyDays ? monthListDays : monthDays} lists={dueLists} />
+            <DueListsBoard
+              days={hideEmptyDays ? monthListDays : monthDays}
+              lists={allDatedLists}
+            />
           )}
         </View>
       ) : null}

@@ -1,6 +1,7 @@
-import type { CalendarEvent } from "@jc/domain";
+import type { CalendarEvent, TaskList } from "@jc/domain";
 import { CalendarService } from "./calendar.service.js";
 import type { ICalendarRepository } from "./calendar.repository.interface.js";
+import type { ITaskRepository } from "../task/task.repository.interface.js";
 
 const TOKEN = "access-token";
 const USER = "user-1";
@@ -35,6 +36,47 @@ function makeRepository(overrides: Partial<ICalendarRepository> = {}): ICalendar
   };
 }
 
+function makeTaskList(overrides: Partial<TaskList> = {}): TaskList {
+  return {
+    id: "list-1",
+    title: "Travaux jardin",
+    kind: "todo",
+    dueAt: "2026-09-08T00:00:00.000Z",
+    eventId: "evt-1",
+    conversationId: null,
+    folderId: null,
+    createdByAssistant: true,
+    createdAt: "2026-09-01T08:00:00.000Z",
+    updatedAt: "2026-09-01T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** Aucune liste rattachée par défaut : c'est le cas de l'immense majorité des événements. */
+function makeTaskRepository(overrides: Partial<ITaskRepository> = {}): ITaskRepository {
+  return {
+    findAll: jest.fn(),
+    findById: jest.fn(),
+    findByConversation: jest.fn(),
+    findByEventId: jest.fn().mockResolvedValue(null),
+    createList: jest.fn(),
+    updateList: jest.fn().mockImplementation((id: string) => Promise.resolve(makeTaskList({ id }))),
+    deleteList: jest.fn(),
+    createTask: jest.fn(),
+    updateTask: jest.fn(),
+    deleteTask: jest.fn(),
+    replaceTasks: jest.fn(),
+    ...overrides,
+  };
+}
+
+function makeService(
+  repo: ICalendarRepository = makeRepository(),
+  tasks: ITaskRepository = makeTaskRepository(),
+): CalendarService {
+  return new CalendarService(repo, tasks);
+}
+
 describe("CalendarService", () => {
   describe("list", () => {
     it("rend les événements de la fenêtre demandée", async () => {
@@ -42,14 +84,14 @@ describe("CalendarService", () => {
       const repo = makeRepository({ findInRange: jest.fn().mockResolvedValue(events) });
       const range = { from: "2026-09-01T00:00:00.000Z", to: "2026-10-01T00:00:00.000Z" };
 
-      await expect(new CalendarService(repo).list(range, TOKEN)).resolves.toEqual(events);
+      await expect(makeService(repo).list(range, TOKEN)).resolves.toEqual(events);
       expect(repo.findInRange).toHaveBeenCalledWith(range, TOKEN);
     });
 
     it("rend une liste vide sur un mois sans rendez-vous", async () => {
       const repo = makeRepository();
 
-      const found = await new CalendarService(repo).list(
+      const found = await makeService(repo).list(
         { from: "2026-09-01T00:00:00.000Z", to: "2026-10-01T00:00:00.000Z" },
         TOKEN,
       );
@@ -62,7 +104,7 @@ describe("CalendarService", () => {
     it("accepte un événement sans heure de fin", async () => {
       const repo = makeRepository();
 
-      await new CalendarService(repo).create(
+      await makeService(repo).create(
         USER,
         { title: "Appeler la mutuelle", startsAt: "2026-09-08T16:00:00.000Z", allDay: false },
         TOKEN,
@@ -75,7 +117,7 @@ describe("CalendarService", () => {
       const repo = makeRepository();
 
       await expect(
-        new CalendarService(repo).create(
+        makeService(repo).create(
           USER,
           {
             title: "Kiné",
@@ -93,7 +135,7 @@ describe("CalendarService", () => {
       const repo = makeRepository();
 
       await expect(
-        new CalendarService(repo).create(
+        makeService(repo).create(
           USER,
           {
             title: "Kiné",
@@ -112,7 +154,7 @@ describe("CalendarService", () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeEvent()) });
 
       await expect(
-        new CalendarService(repo).update("evt-1", { endsAt: "2026-09-08T15:00:00.000Z" }, TOKEN),
+        makeService(repo).update("evt-1", { endsAt: "2026-09-08T15:00:00.000Z" }, TOKEN),
       ).rejects.toMatchObject({ status: 400 });
       expect(repo.update).not.toHaveBeenCalled();
     });
@@ -120,16 +162,61 @@ describe("CalendarService", () => {
     it("accepte le retrait de l'heure de fin", async () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeEvent()) });
 
-      await new CalendarService(repo).update("evt-1", { endsAt: null }, TOKEN);
+      await makeService(repo).update("evt-1", { endsAt: null }, TOKEN);
 
       expect(repo.update).toHaveBeenCalledWith("evt-1", { endsAt: null }, TOKEN);
+    });
+
+    it("répercute la nouvelle date sur la todoliste rattachée à l'événement (A.3)", async () => {
+      const nouvelleDate = "2026-09-10T16:00:00.000Z";
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeEvent({ endsAt: null })),
+        update: jest.fn().mockResolvedValue(makeEvent({ startsAt: nouvelleDate, endsAt: null })),
+      });
+      const tasks = makeTaskRepository({
+        findByEventId: jest.fn().mockResolvedValue(makeTaskList()),
+      });
+
+      await makeService(repo, tasks).update("evt-1", { startsAt: nouvelleDate }, TOKEN);
+
+      expect(tasks.findByEventId).toHaveBeenCalledWith("evt-1", TOKEN);
+      expect(tasks.updateList).toHaveBeenCalledWith(
+        "list-1",
+        { dueAt: nouvelleDate },
+        TOKEN,
+      );
+    });
+
+    it("laisse les todolistes tranquilles quand l'événement n'en représente aucune", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeEvent({ endsAt: null })),
+      });
+      const tasks = makeTaskRepository();
+
+      await makeService(repo, tasks).update(
+        "evt-1",
+        { startsAt: "2026-09-10T16:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(tasks.updateList).not.toHaveBeenCalled();
+    });
+
+    it("ne cherche pas de todoliste rattachée quand la date ne change pas", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeEvent()) });
+      const tasks = makeTaskRepository();
+
+      await makeService(repo, tasks).update("evt-1", { title: "Kiné (reporté)" }, TOKEN);
+
+      expect(tasks.findByEventId).not.toHaveBeenCalled();
+      expect(tasks.updateList).not.toHaveBeenCalled();
     });
 
     it("échoue en 404 sur un événement inexistant", async () => {
       const repo = makeRepository();
 
       await expect(
-        new CalendarService(repo).update("evt-absent", { title: "Kiné" }, TOKEN),
+        makeService(repo).update("evt-absent", { title: "Kiné" }, TOKEN),
       ).rejects.toMatchObject({ status: 404 });
     });
   });
@@ -138,7 +225,7 @@ describe("CalendarService", () => {
     it("supprime un événement existant", async () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeEvent()) });
 
-      await new CalendarService(repo).delete("evt-1", TOKEN);
+      await makeService(repo).delete("evt-1", TOKEN);
 
       expect(repo.delete).toHaveBeenCalledWith("evt-1", TOKEN);
     });
@@ -146,7 +233,7 @@ describe("CalendarService", () => {
     it("échoue en 404 sur un événement inexistant", async () => {
       const repo = makeRepository();
 
-      await expect(new CalendarService(repo).delete("evt-absent", TOKEN)).rejects.toMatchObject({
+      await expect(makeService(repo).delete("evt-absent", TOKEN)).rejects.toMatchObject({
         status: 404,
       });
       expect(repo.delete).not.toHaveBeenCalled();

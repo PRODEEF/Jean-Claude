@@ -46,6 +46,8 @@ export const suggestionKindSchema = z.enum([
   "create_project_folders",
   /** « J'ai noté kiné tous les mardis à 18h, je pose le rappel ? » (A.11) */
   "create_recurring_event",
+  /** « Je décale Courses à vendredi ? » (§12.1, A.2) */
+  "update_task_list_due_date",
 ]);
 
 export type SuggestionKind = z.infer<typeof suggestionKindSchema>;
@@ -239,3 +241,18 @@ export const scheduleListsPayloadSchema = z.object({
 });
 
 export type ScheduleListsPayload = z.infer<typeof scheduleListsPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `update_task_list_due_date` (§12.1, A.2).
+ *
+ * `dueAt` seul, sans `null` : contrairement à la création, cet outil ne sert
+ * qu'à déplacer une échéance vers une nouvelle date, jamais à l'effacer — un
+ * geste distinct, que l'utilisateur fait depuis la fiche de la liste, pas
+ * depuis une proposition de l'assistant.
+ */
+export const updateTaskListDueDatePayloadSchema = z.object({
+  listId: uuidSchema,
+  dueAt: isoDateTimeSchema,
+});
+
+export type UpdateTaskListDueDatePayload = z.infer<typeof updateTaskListDueDatePayloadSchema>;

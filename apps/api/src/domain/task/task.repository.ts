@@ -131,6 +131,17 @@ export const taskRepository: ITaskRepository = {
     return (data as unknown as (TaskListRow & { tasks: TaskRow[] })[]).map(toListWithTasks);
   },
 
+  async findByEventId(eventId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("task_lists")
+      .select(LIST_COLUMNS)
+      .eq("event_id", eventId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data ? toList(data as unknown as TaskListRow) : null;
+  },
+
   async createList(userId, input: CreateTaskList & TaskListOrigin, accessToken) {
     const { data, error } = await forUser(accessToken)
       .from("task_lists")
