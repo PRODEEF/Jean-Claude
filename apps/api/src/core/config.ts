@@ -40,7 +40,8 @@ export const config = {
   aiGatewayApiKey: required("AI_GATEWAY_API_KEY"),
 
   // Modèle servi tant que l'utilisateur n'en a pas choisi un dans ses réglages
-  // (§5.1). Il n'a pas à figurer au catalogue de `@jc/domain` : c'est ce qui
-  // permet d'éprouver un moteur avant de le proposer.
-  llmModel: optional("LLM_MODEL", "anthropic/claude-opus-5"),
+  // (§5.1). Pris dans le catalogue de `@jc/domain` : un défaut hors catalogue
+  // ne correspond à aucune option du sélecteur, qui affiche alors une liste
+  // sans rien de coché.
+  llmModel: optional("LLM_MODEL", "mistral/mistral-medium-3.5"),
 } as const;
