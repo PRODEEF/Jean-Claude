@@ -7,6 +7,22 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **8 septembre 2026** — le bandeau du calendrier reprend
+la disposition de Google Agenda sur desktop.
+
+**Le bandeau du calendrier reprend la disposition de Google Agenda, sur
+desktop (§4.2).** Demande explicite, clarifiée point par point avant
+implémentation. Une seule ligne, packée à gauche : bascule de vue, « Aujourd'hui »,
+période affichée, puis les deux flèches — remplace la disposition à trois
+zones (grand titre séparé au-dessus, bascule centrée, navigation à droite) et
+fusionne ce grand titre avec le texte qui vivait jusque-là entre les flèches.
+Un seul texte de période subsiste ; en vue Semaine, il affiche le mois plutôt
+que la plage complète (« Semaine du 7 au 13 septembre »), qui ne tenait plus à
+côté des autres commandes. `weekLabel` et `weekdayLabel` (`shared/lib/dates.ts`)
+sont retirées, devenues inutilisées. Le mode compact (téléphone) garde son
+organisation actuelle en deux lignes, déjà pensée pour cette largeur — seul le
+layout ≥768pt change.
+
 Dernière mise à jour : **8 septembre 2026** — la moitié sombre des pastilles
 de couleur des réglages n'était plus qu'un aplat noir, le modèle IA par
 défaut sort du catalogue de test pour rejoindre celui des réglages, cliquer
