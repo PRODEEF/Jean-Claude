@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_ASSISTANT_NAME, type UpdateUserProfile, type UserProfile } from "@jc/domain";
 import { api } from "@/shared/lib/api";
+import { supabase } from "@/shared/lib/supabase";
 import { useAuth } from "@/shared/providers/auth-provider";
 
 export const PROFILE_KEY = ["profile"] as const;
@@ -40,6 +41,28 @@ export function useCompleteOnboarding() {
   return useMutation({
     mutationFn: () => api.me.completeOnboarding(),
     onSuccess: (profile: UserProfile) => queryClient.setQueryData(PROFILE_KEY, profile),
+  });
+}
+
+/**
+ * Supprime le compte et toutes ses données (§8, §13.4.6). Irréversible.
+ *
+ * Déconnexion locale seulement : le compte n'existe déjà plus côté serveur
+ * une fois la mutation résolue, un `signOut()` de portée globale tenterait en
+ * vain de révoquer auprès de Supabase une session dont l'utilisateur a
+ * disparu. Vider le cache évite qu'un profil ou des conversations déjà
+ * supprimés ne s'affichent brièvement à la prochaine connexion sur cet
+ * appareil.
+ */
+export function useDeleteAccount() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => api.me.deleteAccount(),
+    onSuccess: async () => {
+      queryClient.clear();
+      await supabase.auth.signOut({ scope: "local" });
+    },
   });
 }
 

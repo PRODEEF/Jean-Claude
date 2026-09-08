@@ -332,6 +332,7 @@ function makeUserRepository(
     findById: jest.fn().mockResolvedValue(profile),
     update: jest.fn().mockResolvedValue(profile),
     completeOnboarding: jest.fn().mockResolvedValue(profile),
+    deleteAccount: jest.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -2249,6 +2250,7 @@ describe("ConversationService", () => {
           findById: jest.fn().mockResolvedValue(null),
           update: jest.fn(),
           completeOnboarding: jest.fn(),
+          deleteAccount: jest.fn(),
         }),
         { content: "Il me faut du terreau.", inputMode: "text" },
       );

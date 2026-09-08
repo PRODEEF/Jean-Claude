@@ -37,6 +37,14 @@ export class UserService {
   }
 
   /**
+   * Supprime le compte de l'appelant et toutes les données qui lui
+   * appartiennent (§8, §13.4.6). Irréversible, sans délai de grâce.
+   */
+  async deleteAccount(owner: ProfileOwner): Promise<void> {
+    await this.users.deleteAccount(owner.id);
+  }
+
+  /**
    * Recompose le périmètre avant écriture (A.10).
    *
    * La page bascule un interrupteur à la fois, mais les capacités tiennent

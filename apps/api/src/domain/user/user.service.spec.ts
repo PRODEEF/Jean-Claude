@@ -39,6 +39,7 @@ function makeRepository(overrides: Partial<IUserRepository> = {}): IUserReposito
     findById: jest.fn().mockResolvedValue(makeRecord()),
     update: jest.fn().mockResolvedValue(makeRecord()),
     completeOnboarding: jest.fn().mockResolvedValue(makeRecord()),
+    deleteAccount: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -208,6 +209,24 @@ describe("UserService", () => {
       expect(completeOnboarding).toHaveBeenCalledWith(OWNER.id, null, OWNER.accessToken);
       expect(profile.onboardingCompletedAt).toBe("2026-09-02T09:00:00.000Z");
       expect(profile.email).toBe("clarisse@wesprint.fr");
+    });
+  });
+
+  describe("deleteAccount", () => {
+    it("supprime le compte de l'appelant, jamais un autre", async () => {
+      const deleteAccount = jest.fn().mockResolvedValue(undefined);
+      const service = new UserService(makeRepository({ deleteAccount }));
+
+      await service.deleteAccount(OWNER);
+
+      expect(deleteAccount).toHaveBeenCalledWith(OWNER.id);
+    });
+
+    it("laisse remonter l'échec de la suppression", async () => {
+      const deleteAccount = jest.fn().mockRejectedValue(new Error("panne GoTrue"));
+      const service = new UserService(makeRepository({ deleteAccount }));
+
+      await expect(service.deleteAccount(OWNER)).rejects.toThrow("panne GoTrue");
     });
   });
 });

@@ -43,6 +43,7 @@ function makeUserRepository(timezone = "Europe/Paris"): IUserRepository {
     findById: jest.fn().mockResolvedValue(profile),
     update: jest.fn(),
     completeOnboarding: jest.fn(),
+    deleteAccount: jest.fn(),
   };
 }
 
