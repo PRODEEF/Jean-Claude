@@ -203,40 +203,45 @@ export function Modal({
                   </ScrollView>
                 ) : null}
 
-                <View
-                  className="border-border gap-4 border-t px-6 pt-5"
-                  // Le dialogue centré n'a pas de zone système à éviter, mais
-                  // mérite le même retrait que la feuille mobile pour ne pas
-                  // coller ses boutons au bord. En compact, la feuille touche
-                  // elle le bord bas de l'écran : sans l'ajout de l'inset, le
-                  // bouton principal passerait sous l'indicateur d'accueil.
-                  style={{ paddingBottom: compact ? insets.bottom + spacing.xl : spacing.xl }}
-                >
-                  {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-
-                  {/* En colonne inversée sous le point de rupture : l'action
-                      principale, dernière de la liste, remonte alors en tête —
-                      c'est elle que le pouce atteint. */}
+                {/* Pied absent et non vide : une modale sans action (croix de
+                    fermeture suffisante) n'a pas à porter une barre qui ne
+                    montre plus qu'un filet et du vide. */}
+                {actions.length > 0 || destructiveAction || error ? (
                   <View
-                    className={cn(
-                      "gap-3",
-                      compact ? "flex-col-reverse" : "flex-row items-center justify-end",
-                    )}
+                    className="border-border gap-4 border-t px-6 pt-5"
+                    // Le dialogue centré n'a pas de zone système à éviter, mais
+                    // mérite le même retrait que la feuille mobile pour ne pas
+                    // coller ses boutons au bord. En compact, la feuille touche
+                    // elle le bord bas de l'écran : sans l'ajout de l'inset, le
+                    // bouton principal passerait sous l'indicateur d'accueil.
+                    style={{ paddingBottom: compact ? insets.bottom + spacing.xl : spacing.xl }}
                   >
-                    {destructiveAction ? (
-                      <FooterButton
-                        action={destructiveAction}
-                        compact={compact}
-                        className={compact ? undefined : "mr-auto"}
-                        destructive
-                      />
-                    ) : null}
+                    {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
 
-                    {actions.map((action) => (
-                      <FooterButton key={action.label} action={action} compact={compact} />
-                    ))}
+                    {/* En colonne inversée sous le point de rupture : l'action
+                        principale, dernière de la liste, remonte alors en tête —
+                        c'est elle que le pouce atteint. */}
+                    <View
+                      className={cn(
+                        "gap-3",
+                        compact ? "flex-col-reverse" : "flex-row items-center justify-end",
+                      )}
+                    >
+                      {destructiveAction ? (
+                        <FooterButton
+                          action={destructiveAction}
+                          compact={compact}
+                          className={compact ? undefined : "mr-auto"}
+                          destructive
+                        />
+                      ) : null}
+
+                      {actions.map((action) => (
+                        <FooterButton key={action.label} action={action} compact={compact} />
+                      ))}
+                    </View>
                   </View>
-                </View>
+                ) : null}
               </DialogPrimitive.Content>
             </NativeOnlyAnimatedView>
           </DialogPrimitive.Overlay>

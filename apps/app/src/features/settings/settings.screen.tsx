@@ -244,10 +244,7 @@ export function SettingsScreen() {
                         ]}
                       />
                       <View
-                        style={[
-                          styles.swatchHalf,
-                          { backgroundColor: softenAccent(color, "dark") },
-                        ]}
+                        style={[styles.swatchHalf, { backgroundColor: previewDarkHalf(color) }]}
                       />
                     </View>
                     <View style={[styles.swatchCore, { backgroundColor: color }]} />
@@ -406,6 +403,28 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       {children}
     </View>
   );
+}
+
+/**
+ * Aperçu de la moitié sombre de la pastille — cet écran seulement.
+ *
+ * `softenAccent(color, "dark")` mélange à 72 % de noir : c'est le bon aplat
+ * pour une grande surface (bulles, calendrier), mais sur un disque de 20 px il
+ * écrase la teinte au point de rendre les huit pastilles indiscernables les
+ * unes des autres. Un mélange plus léger, propre à cet aperçu : l'aplat réel
+ * du reste de l'app garde `softenAccent`, inchangé.
+ */
+function previewDarkHalf(hex: string): string {
+  const normalized = hex.replace("#", "");
+  if (normalized.length !== 6) return hex;
+
+  const kept = 0.55;
+  const channel = (offset: number) =>
+    Math.round(parseInt(normalized.slice(offset, offset + 2), 16) * kept);
+
+  return `#${[0, 2, 4]
+    .map((offset) => channel(offset).toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 /**
