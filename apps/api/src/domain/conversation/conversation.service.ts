@@ -6,6 +6,7 @@ import {
   askedQuestionSchema,
   isVisionCapableModel,
   labelSchema,
+  parseSlashCommand,
   userMemorySchema,
   userPreferencesSchema,
 } from "@jc/domain";
@@ -125,6 +126,22 @@ const APPLIED_DIRECTLY = new Set([
   FINISH_ONBOARDING.name,
   ASK_QUESTION.name,
 ]);
+
+/**
+ * Réponse fixe de la commande /help : un texte figé plutôt qu'un tour de
+ * modèle, pour qu'elle ne varie jamais ni n'invente une fonctionnalité
+ * absente — la fiabilité prime ici sur la personnalisation (Cible 2, §0.2).
+ */
+const HELP_MESSAGE = [
+  "Voici comment m'utiliser :",
+  "",
+  "- Dis-moi ce qui est important cette semaine, je te le rappelle et je t'aide à ranger tes conversations en dossiers.",
+  "- Décris une liste dans une conversation, je te propose de la créer — ou tape /todo <titre> [échéance] pour aller plus vite.",
+  "- Je te propose un rangement pour chaque conversation ; corrige-le à tout moment, une même conversation peut appartenir à plusieurs dossiers.",
+  "- Décris-moi un problème technique, je transmets un rapport.",
+  "",
+  "Commandes : /todo, /help.",
+].join("\n");
 
 /**
  * Ce que le tour peut encore faire du fil. `filing` à `null` signifie qu'aucun
@@ -686,6 +703,18 @@ export class ConversationService {
       throw httpError(422, "Il n'y a rien à quoi répondre dans cette conversation.");
     }
 
+    // Commande slash (à la manière des skills) : reconnue sur le dernier
+    // message de l'utilisateur, quel que soit le geste qui l'y a amené —
+    // envoi, correction ou reprise.
+    const lastMessage = dialogue[dialogue.length - 1];
+    const command =
+      lastMessage && lastMessage.role === "user" ? parseSlashCommand(lastMessage.content) : null;
+
+    if (command?.name === "help") {
+      yield* this.answerHelpCommand(conversationId, userId, accessToken);
+      return;
+    }
+
     let text = "";
     let provider: string | null = null;
     let model: string | null = null;
@@ -699,8 +728,18 @@ export class ConversationService {
     // outils qu'on lui expose — et il se lit à partir du profil.
     const todo = await this.pendingHousekeeping(conversation, context, now, accessToken);
 
+    const baseSystem = buildSystemPrompt(conversation.kind, todo, context, now);
+    // Le raccourci /todo n'a de sens que là où `suggest_task_list` est exposé
+    // — jamais dans le canal permanent, borné à ses quatre sujets (A.10) : la
+    // note serait sinon une consigne pour un outil que le modèle ne peut pas
+    // appeler.
+    const system =
+      command?.name === "todo" && todo.tools.includes(SUGGEST_TASK_LIST)
+        ? [baseSystem, "", ...describeTodoCommand(command.args)].join("\n")
+        : baseSystem;
+
     const request: LlmCompletionRequest = {
-      system: buildSystemPrompt(conversation.kind, todo, context, now),
+      system,
       messages: this.toLlmMessages(dialogue),
       tools: todo.tools,
       // Le modèle du profil ne remplace celui du serveur que s'il existe :
@@ -846,6 +885,35 @@ export class ConversationService {
         "Le modèle n'a produit aucune réponse. Réessayez, ou changez de modèle dans Réglages.",
       );
     }
+  }
+
+  /**
+   * Répond à la commande /help sans appeler le modèle : un texte fixe plutôt
+   * qu'un tour de dialogue, pour qu'il ne varie jamais ni n'invente une
+   * fonctionnalité absente.
+   */
+  private async *answerHelpCommand(
+    conversationId: string,
+    userId: string,
+    accessToken: string,
+  ): AsyncGenerator<MessageStreamEvent> {
+    yield { type: "text", text: HELP_MESSAGE };
+
+    const assistantMessage = await this.conversations.appendMessage(
+      conversationId,
+      userId,
+      {
+        content: HELP_MESSAGE,
+        inputMode: "text",
+        role: "assistant",
+        attachmentIds: [],
+        provider: null,
+        model: null,
+      },
+      accessToken,
+    );
+
+    yield { type: "done", message: assistantMessage };
   }
 
   /**
@@ -1662,6 +1730,27 @@ function forgetSwitchedAside(messages: Message[]): Message[] {
  * l'UI : c'est une règle métier, elle doit valoir identiquement pour le web,
  * le mobile et le desktop (§5.3).
  */
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /todo (raccourci
+ * de commande, à la manière des skills) : le texte qui suit sert de titre et
+ * d'échéance possibles, jamais d'articles inventés — la liste ne se propose
+ * qu'une fois son contenu connu.
+ */
+function describeTodoCommand(args: string): string[] {
+  const description = args.length > 0 ? `« ${args} »` : "sans rien après elle";
+
+  return [
+    `Commande /todo : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
+    "C'est une demande explicite de créer une todoliste ou une liste d'achats — pas",
+    "une faute de frappe. Le texte qui suit /todo peut porter un titre et une échéance",
+    "(« samedi », « ce week-end »...), jamais le contenu de la liste : ne l'invente pas.",
+    "S'il ne dit pas encore quoi y mettre, ne l'appelle pas encore : demande-le d'abord,",
+    "en gardant le titre et l'échéance pour le tour où la réponse arrivera. Dès que le",
+    "contenu est connu — dans ce message ou le suivant — appelle `suggest_task_list`",
+    "tout de suite, comme pour toute autre demande explicite.",
+  ];
+}
+
 function buildSystemPrompt(
   kind: Conversation["kind"],
   todo: Housekeeping,
