@@ -54,6 +54,7 @@ import {
   NAME_CONVERSATION,
   OPEN_NEW_CONVERSATION,
   REPORT_BUG,
+  SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
   SUGGEST_RECURRING_EVENT,
@@ -851,15 +852,17 @@ export class ConversationService {
           continue;
         }
         try {
-          const corrected = withCorrectedRecurringEventStartsAt(
-            withCorrectedRescheduleDueDate(
-              withCorrectedDueDates(
-                withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+          const corrected = withCorrectedEventsStartsAt(
+            withCorrectedRecurringEventStartsAt(
+              withCorrectedRescheduleDueDate(
+                withCorrectedDueDates(
+                  withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+                  now,
+                  context.timezone,
+                ),
                 now,
                 context.timezone,
               ),
-              now,
-              context.timezone,
             ),
           );
           await this.suggestions.capture(userId, conversationId, corrected, accessToken);
@@ -1114,7 +1117,9 @@ export class ConversationService {
         ) &&
         // Une série déjà proposée attend un geste : la reproposer empilerait
         // deux cartes pour le même rendez-vous (§12.1).
-        !(tool === SUGGEST_RECURRING_EVENT && isPending(decided, "create_recurring_event")),
+        !(tool === SUGGEST_RECURRING_EVENT && isPending(decided, "create_recurring_event")) &&
+        // Même garde-fou pour des rendez-vous ponctuels déjà proposés.
+        !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")),
     );
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
@@ -1759,6 +1764,36 @@ function withCorrectedRecurringEventStartsAt(toolCall: LlmToolCall): LlmToolCall
 }
 
 /**
+ * Fiabilise `startsAt` de chaque entrée d'un `suggest_events` avant capture (A.3).
+ *
+ * Même filet que pour un rendez-vous récurrent (`withCorrectedRecurringEventStartsAt`) :
+ * un modèle laissé libre omet souvent les secondes ou le fuseau, ce que le
+ * schéma strict de la charge utile rejette. Une entrée dont la date reste
+ * illisible malgré la reformatation n'est pas retirée du tableau : c'est la
+ * validation en aval qui décide, comme pour n'importe quel autre outil.
+ */
+function withCorrectedEventsStartsAt(toolCall: LlmToolCall): LlmToolCall {
+  if (toolCall.name !== SUGGEST_EVENTS.name) return toolCall;
+
+  const events = toolCall.input["events"];
+  if (!Array.isArray(events)) return toolCall;
+
+  const corrected = events.map((entry) => {
+    if (typeof entry !== "object" || entry === null) return entry;
+
+    const startsAt = (entry as Record<string, unknown>)["startsAt"];
+    if (typeof startsAt !== "string") return entry;
+
+    const instant = new Date(startsAt);
+    if (Number.isNaN(instant.getTime())) return entry;
+
+    return { ...entry, startsAt: instant.toISOString() };
+  });
+
+  return { ...toolCall, input: { ...toolCall.input, events: corrected } };
+}
+
+/**
  * Le jour porté par `iso` (dans le fuseau du profil) est-il déjà passé ?
  *
  * Comparaison de jours calendaires, pas d'instants : aujourd'hui reste
@@ -2175,6 +2210,20 @@ function buildSystemPrompt(
       "ne crée rien et viole la règle du §12.1. Ne laisse pas `suggest_folders`",
       "se substituer à cette proposition quand la demande porte clairement sur",
       "un créneau récurrent. Ne présente jamais le rendez-vous comme déjà posé.",
+    );
+  }
+
+  if (todo.tools.includes(SUGGEST_EVENTS)) {
+    lines.push(
+      "",
+      "Quand l'utilisateur mentionne un ou plusieurs rendez-vous ponctuels — sans",
+      "règle de répétition — à noter dans l'agenda, appelle `suggest_events` avec",
+      "une entrée par rendez-vous dans un seul appel, jamais un appel par",
+      "rendez-vous. S'il demande de le noter, de s'en souvenir ou de le retenir,",
+      "appelle l'outil tout de suite : un « C'est noté » ou « Je note » en texte",
+      "ne crée rien et viole la règle du §12.1. Utilise `suggest_recurring_event`",
+      "à la place dès que la demande porte sur une répétition. Ne présente jamais",
+      "les rendez-vous comme déjà posés.",
     );
   }
 

@@ -3746,6 +3746,99 @@ describe("ConversationService", () => {
     });
   });
 
+  describe("création de plusieurs rendez-vous ponctuels (A.3)", () => {
+    it("capture un seul appel portant plusieurs rendez-vous", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_events",
+            input: {
+              message: "Je te pose ces deux rendez-vous dans ton agenda ?",
+              events: [
+                { title: "Dentiste", startsAt: "2026-09-10T15:00:00.000Z" },
+                { title: "Coiffeur", startsAt: "2026-09-11T08:00:00.000Z" },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "J'ai rendez-vous chez le dentiste jeudi à 17h et chez le coiffeur vendredi à 10h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_events",
+          payload: {
+            events: [
+              { title: "Dentiste", startsAt: "2026-09-10T15:00:00.000Z" },
+              { title: "Coiffeur", startsAt: "2026-09-11T08:00:00.000Z" },
+            ],
+          },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("capture la suggestion même quand le modèle omet les secondes et le fuseau", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_events",
+            input: {
+              message: "Je te pose ce rendez-vous dans ton agenda ?",
+              events: [{ title: "Dentiste", startsAt: "2026-09-10T15:00" }],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "J'ai rendez-vous chez le dentiste jeudi à 17h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_events",
+          payload: { events: [{ title: "Dentiste", startsAt: "2026-09-10T15:00:00.000Z" }] },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("retire suggest_events quand la planification proactive est coupée", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({ proactiveScheduling: false }),
+        ),
+        { content: "J'ai rendez-vous chez le dentiste jeudi à 17h.", inputMode: "text", attachmentIds: [] },
+      );
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).not.toContain("suggest_events");
+      expect(lastRequest(llm).system).not.toContain("suggest_events");
+    });
+  });
+
   describe("reprogrammation d'une todoliste existante (§12.1, A.2)", () => {
     const EXISTING_LIST = makeTaskList({
       id: "11111111-1111-4111-8111-111111111111",
