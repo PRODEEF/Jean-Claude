@@ -314,8 +314,8 @@ function makeCalendarRepository(): ICalendarRepository {
         startsAt: input.startsAt,
         endsAt: input.endsAt ?? null,
         allDay: input.allDay,
-        rrule: null,
-        reminderMinutesBefore: null,
+        rrule: input.rrule ?? null,
+        reminderMinutesBefore: input.reminderMinutesBefore ?? null,
         folderId: null,
         conversationId: null,
         createdByAssistant: false,
@@ -1454,6 +1454,102 @@ describe("AssistantService", () => {
       // Sans ce lien, le calendrier montrerait deux fois la même échéance : la
       // liste datée et le créneau posé pour elle.
       expect(travaux?.eventId).toBe(second.events[0]?.id);
+    });
+  });
+
+  describe("acceptation d'un rendez-vous récurrent (A.11)", () => {
+    const KINE = "2026-09-08T16:00:00.000Z"; // mardi 18h à Paris
+
+    function makeKineSuggestion(overrides: Partial<Suggestion> = {}): Suggestion {
+      return makeSuggestion({
+        kind: "create_recurring_event",
+        message: "J'ai noté kiné tous les mardis à 18h, je pose le rappel ?",
+        payload: {
+          title: "Kiné",
+          startsAt: KINE,
+          rrule: "FREQ=WEEKLY;BYDAY=TU",
+        },
+        ...overrides,
+      });
+    }
+
+    it("pose l'événement avec la règle et un rappel de 30 min par défaut", async () => {
+      const events = makeCalendarRepository();
+
+      const resolved = await makeService(
+        makeSuggestionStore(makeKineSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(resolved.events).toHaveLength(1);
+      expect(events.create).toHaveBeenCalledWith(
+        USER,
+        {
+          title: "Kiné",
+          startsAt: KINE,
+          endsAt: "2026-09-08T17:00:00.000Z",
+          allDay: false,
+          rrule: "FREQ=WEEKLY;BYDAY=TU",
+          reminderMinutesBefore: 30,
+        },
+        TOKEN,
+      );
+    });
+
+    it("conserve le rappel fourni par le modèle", async () => {
+      const events = makeCalendarRepository();
+
+      await makeService(
+        makeSuggestionStore(
+          makeKineSuggestion({
+            payload: {
+              title: "Kiné",
+              startsAt: KINE,
+              rrule: "FREQ=WEEKLY;BYDAY=TU",
+              reminderMinutesBefore: 60,
+            },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(events.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ reminderMinutesBefore: 60 }),
+        TOKEN,
+      );
+    });
+
+    it("ne crée rien quand la proposition est ignorée", async () => {
+      const events = makeCalendarRepository();
+
+      await makeService(
+        makeSuggestionStore(makeKineSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+
+      expect(events.create).not.toHaveBeenCalled();
+    });
+
+    it("refuse une charge utile illisible", async () => {
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeKineSuggestion({
+              payload: { title: "Kiné", startsAt: KINE, rrule: "tous les mardis" },
+            }),
+          ),
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
     });
   });
 

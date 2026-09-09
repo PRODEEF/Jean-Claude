@@ -391,26 +391,47 @@ export const NAME_CONVERSATION: LlmTool = {
 };
 
 /**
- * Rendez-vous récurrent (A.11). Défini ici, volontairement absent de
- * `CHAT_TOOLS` : `translate()` n'en fait aucune suggestion, donc l'exposer
- * invitait le modèle à un appel sans carte. À réintégrer le jour où
- * `create_recurring_event` est branché de bout en bout.
+ * Rendez-vous récurrent (A.11). Remis aux conversations classiques quand
+ * `proactiveScheduling` est actif — pas au canal permanent (A.10).
  */
 export const SUGGEST_RECURRING_EVENT: LlmTool = {
   name: "suggest_recurring_event",
   description:
     "À appeler quand l'utilisateur mentionne un rendez-vous récurrent " +
     "(« j'ai kiné tous les mardis à 18h »). Produire une règle RRULE (RFC 5545) " +
-    "plutôt qu'une liste de dates, pour que la série n'ait pas à être ressaisie.",
+    "plutôt qu'une liste de dates, pour que la série n'ait pas à être ressaisie. " +
+    "Ne jamais présenter le rendez-vous comme déjà posé : c'est une proposition.",
   inputSchema: {
     type: "object",
     properties: {
-      title: { type: "string" },
-      startsAt: { type: "string", description: "Première occurrence, ISO 8601" },
-      rrule: { type: "string", description: "Ex. FREQ=WEEKLY;BYDAY=TU" },
-      reminderMinutesBefore: { type: "number" },
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « J'ai noté kiné tous les mardis à 18h, je pose le rappel ? ». " +
+          "Ne jamais présenter le rendez-vous comme déjà créé. 500 caractères maximum.",
+      },
+      title: { type: "string", description: "Titre court du rendez-vous" },
+      startsAt: {
+        type: "string",
+        description:
+          "Première occurrence, ISO 8601 — la prochaine date qui correspond à la " +
+          "récurrence, pas une date passée.",
+      },
+      rrule: {
+        type: "string",
+        description:
+          "Règle RRULE sans le préfixe « RRULE: » — ex. FREQ=WEEKLY;BYDAY=TU. " +
+          "FREQ obligatoire (DAILY, WEEKLY, MONTHLY ou YEARLY).",
+      },
+      reminderMinutesBefore: {
+        type: "number",
+        description:
+          "Rappel avant chaque occurrence, en minutes. Omettre pour laisser le " +
+          "serveur poser 30 minutes par défaut.",
+      },
     },
-    required: ["title", "startsAt", "rrule"],
+    required: ["message", "title", "startsAt", "rrule"],
   },
 };
 
@@ -620,6 +641,7 @@ export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST_ITEMS,
   SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_UPDATE_TASK_ITEMS,
+  SUGGEST_RECURRING_EVENT,
   SUGGEST_FOLDERS,
   ASK_QUESTION,
 ];

@@ -92,8 +92,12 @@ function describeEvent(event: CalendarEvent): string {
   const when = event.allDay
     ? `${day} · journée entière`
     : `${day} · ${formatTime(event.startsAt)}${event.endsAt ? `–${formatTime(event.endsAt)}` : ""}`;
+  // Les séries ne sont pas encore expansées (A.11) : sans ce mot, la fiche
+  // ferait passer un rendez-vous hebdomadaire pour un créneau unique.
+  const recurrence = event.rrule ? " · récurrent" : "";
+  const header = `${when}${recurrence}`;
 
-  return event.notes ? `${when}\n\n${event.notes}` : when;
+  return event.notes ? `${header}\n\n${event.notes}` : header;
 }
 
 /**

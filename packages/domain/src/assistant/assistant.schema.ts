@@ -1,8 +1,12 @@
 import { z } from "zod";
+import { rruleSchema } from "../calendar/calendar.schema";
 import { feedbackPlatformSchema, FEEDBACK_CONTENT_MAX_LENGTH } from "../feedback/feedback.schema";
 import { folderPurposeSchema } from "../folder/folder.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 import { taskListKindSchema } from "../task/task.schema";
+
+/** Fréquences RRULE acceptées — le reste est inventé ou hors périmètre V1. */
+const RRULE_FREQ = /(?:^|;)FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(?:;|$)/i;
 
 /**
  * Périmètre du canal permanent Jean-Claude (A.10).
@@ -257,6 +261,26 @@ export const scheduleListsPayloadSchema = z.object({
 });
 
 export type ScheduleListsPayload = z.infer<typeof scheduleListsPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `create_recurring_event` (A.11).
+ *
+ * Une règle RRULE plutôt qu'une liste de dates : « kiné tous les mardis »
+ * n'a pas à être ressaisi. `startsAt` ancre la première occurrence ;
+ * `reminderMinutesBefore` est optionnel à la capture — l'acceptation pose
+ * 30 min par défaut si le modèle l'omet (A.11).
+ */
+export const createRecurringEventPayloadSchema = z.object({
+  title: labelSchema,
+  startsAt: isoDateTimeSchema,
+  rrule: rruleSchema.refine(
+    (value) => RRULE_FREQ.test(value),
+    "La récurrence doit porter une fréquence FREQ (DAILY, WEEKLY, MONTHLY ou YEARLY).",
+  ),
+  reminderMinutesBefore: z.number().int().min(0).max(10_080).optional(),
+});
+
+export type CreateRecurringEventPayload = z.infer<typeof createRecurringEventPayloadSchema>;
 
 /**
  * Charge utile d'une suggestion `update_task_list_due_date` (§12.1, A.2).

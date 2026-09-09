@@ -6,6 +6,7 @@ import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
+  createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
   reportBugPayloadSchema,
   scheduleListsPayloadSchema,
@@ -492,6 +493,8 @@ function outcomeLabel(suggestion: Suggestion): string {
       return "Liste complétée";
     case "schedule_task":
       return "Créneaux posés";
+    case "create_recurring_event":
+      return "Rendez-vous posé";
     case "update_task_list_due_date":
       return "Échéance déplacée";
     case "update_task_list_items":
@@ -602,6 +605,24 @@ function useSuggestionPreview(suggestion: Suggestion): {
             nested: false,
             hint: dueLabel(list.dueAt),
           }))
+        : [],
+    };
+  }
+
+  if (suggestion.kind === "create_recurring_event") {
+    const proposed = createRecurringEventPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Poser le rendez-vous",
+      lines: proposed.success
+        ? [
+            {
+              key: "event",
+              label: proposed.data.title,
+              nested: false,
+              hint: `${dueLabel(proposed.data.startsAt)} · ${rruleHint(proposed.data.rrule)}`,
+            },
+          ]
         : [],
     };
   }
@@ -722,6 +743,39 @@ function dueLabel(iso: string): string {
   const day = formatFullDay(date);
   return date.getHours() === 0 && date.getMinutes() === 0 ? day : `${day}, ${formatTime(iso)}`;
 }
+
+/**
+ * Récurrence lisible pour la carte — « tous les mardis » plutôt que
+ * `FREQ=WEEKLY;BYDAY=TU`. Un format hors des cas courants retombe sur
+ * « récurrent » : mieux vaut un libellé sobre qu'une chaîne technique.
+ */
+function rruleHint(rrule: string): string {
+  const freq = /FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)/i.exec(rrule)?.[1]?.toUpperCase();
+  const byday = /BYDAY=([A-Z,]+)/i.exec(rrule)?.[1]?.toUpperCase();
+
+  if (freq === "DAILY") return "tous les jours";
+  if (freq === "WEEKLY" && byday) {
+    const days = byday
+      .split(",")
+      .map((code) => WEEKDAY_FR[code])
+      .filter((label): label is string => label !== undefined);
+    if (days.length === 1) return `tous les ${days[0]}s`;
+    if (days.length > 1) return `chaque ${days.join(", ")}`;
+  }
+  if (freq === "MONTHLY") return "tous les mois";
+  if (freq === "YEARLY") return "tous les ans";
+  return "récurrent";
+}
+
+const WEEKDAY_FR: Record<string, string> = {
+  MO: "lundi",
+  TU: "mardi",
+  WE: "mercredi",
+  TH: "jeudi",
+  FR: "vendredi",
+  SA: "samedi",
+  SU: "dimanche",
+};
 
 const styles = StyleSheet.create({
   card: {

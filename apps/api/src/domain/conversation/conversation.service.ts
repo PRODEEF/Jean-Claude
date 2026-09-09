@@ -53,6 +53,7 @@ import {
   OPEN_NEW_CONVERSATION,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
+  SUGGEST_RECURRING_EVENT,
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_TASK_LIST_ITEMS,
@@ -1027,7 +1028,10 @@ export class ConversationService {
           tool === SUGGEST_UPDATE_TASK_ITEMS &&
           (lists.every((list) => list.tasks.length === 0) ||
             isPending(decided, "update_task_list_items"))
-        ),
+        ) &&
+        // Une série déjà proposée attend un geste : la reproposer empilerait
+        // deux cartes pour le même rendez-vous (§12.1).
+        !(tool === SUGGEST_RECURRING_EVENT && isPending(decided, "create_recurring_event")),
     );
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
@@ -1761,7 +1765,8 @@ function buildSystemPrompt(
     lines.push(
       "",
       "Au fil de l'échange, repère si la conversation produit quelque chose",
-      "d'actionnable : une liste de tâches, une liste d'achats, une échéance.",
+      "d'actionnable : une liste de tâches, une liste d'achats, une échéance,",
+      "un rendez-vous récurrent.",
       "Le cas échéant, appelle l'outil correspondant",
       "pour le proposer — sans interrompre le fil de la conversation, et sans",
       "jamais présenter la chose comme déjà faite : c'est une proposition.",
@@ -1828,6 +1833,17 @@ function buildSystemPrompt(
       "ligne, recopiés caractère pour caractère. N'ouvre jamais une seconde liste",
       "pour marquer une ligne faite, et n'ajoute pas une ligne pour en remplacer",
       "une qui existe déjà.",
+    );
+  }
+
+  if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) {
+    lines.push(
+      "",
+      "Quand l'utilisateur mentionne un rendez-vous qui se répète — « kiné tous",
+      "les mardis à 18h », « réunion chaque lundi » — appelle",
+      "`suggest_recurring_event` avec une règle RRULE (FREQ=WEEKLY;BYDAY=…)",
+      "plutôt qu'une liste de dates. Ne présente jamais le rendez-vous comme",
+      "déjà posé : c'est une proposition.",
     );
   }
 

@@ -99,18 +99,70 @@ describe("SuggestionService", () => {
       });
     });
 
-    it("ignore un appel d'outil qui ne correspond à aucune suggestion", async () => {
+    it("capture un rendez-vous récurrent proposé par le modèle (A.11)", async () => {
       const repo = makeRepository();
 
-      // `suggest_recurring_event` n'est plus remis au modèle (A.11 non
-      // branché). S'il arrive malgré tout, il n'a toujours pas de suggestion.
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "J'ai noté kiné tous les mardis à 18h, je pose le rappel ?",
+            title: "Kiné",
+            startsAt: NOW,
+            rrule: "FREQ=WEEKLY;BYDAY=TU",
+            reminderMinutesBefore: 30,
+          },
+          "suggest_recurring_event",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_recurring_event",
+          message: "J'ai noté kiné tous les mardis à 18h, je pose le rappel ?",
+          payload: {
+            title: "Kiné",
+            startsAt: NOW,
+            rrule: "FREQ=WEEKLY;BYDAY=TU",
+            reminderMinutesBefore: 30,
+          },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ignore un rendez-vous récurrent dont la règle est illisible", async () => {
+      const repo = makeRepository();
+
       const suggestion = await new SuggestionService(repo).capture(
         USER,
         CONVERSATION,
         makeToolCall(
-          { title: "Kiné", startsAt: NOW, rrule: "FREQ=WEEKLY;BYDAY=TU" },
+          {
+            message: "Je pose le rappel ?",
+            title: "Kiné",
+            startsAt: NOW,
+            rrule: "tous les mardis",
+          },
           "suggest_recurring_event",
         ),
+        TOKEN,
+      );
+
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("ignore un appel d'outil qui ne correspond à aucune suggestion", async () => {
+      const repo = makeRepository();
+
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall({ title: "Sans nature" }, "outil_inconnu"),
         TOKEN,
       );
 

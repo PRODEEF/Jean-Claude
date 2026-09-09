@@ -2700,10 +2700,28 @@ describe("ConversationService", () => {
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).not.toContain("suggest_task_list");
       // Les autres capacités restent actives : le réglage est par capacité,
-      // pas un interrupteur général. `suggest_recurring_event` n'est plus
-      // dans le jeu (A.11 non branché) : `suggest_folders` en tient lieu.
+      // pas un interrupteur général.
       expect(tools).toContain("suggest_folders");
+      expect(tools).toContain("suggest_recurring_event");
+    });
+
+    it("retire suggest_recurring_event quand la planification proactive est coupée", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({ proactiveScheduling: false }),
+        ),
+        { content: "J'ai kiné tous les mardis à 18h.", inputMode: "text", attachmentIds: [] },
+      );
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).not.toContain("suggest_recurring_event");
+      expect(lastRequest(llm).system).not.toContain("suggest_recurring_event");
     });
 
     it("cesse de réclamer dans la consigne un outil qu'on ne remet plus", async () => {
