@@ -200,6 +200,12 @@ export function useConversationThread(
       // Filet : un tour interrompu avant l'événement `message` laisserait
       // sinon la bulle provisoire à l'écran indéfiniment.
       setPendingUserText(null);
+      // Ce tour vient de répondre dans le fil ouvert : ça compte comme lu.
+      // Sans ce geste, le trigger de `unread_count` remonterait la pastille de
+      // cette même conversation dans la barre latérale alors qu'elle est sous
+      // les yeux — `markRead` n'est sinon rejoué qu'à l'ouverture du fil, pas
+      // après chacun de ses tours suivants.
+      await api.conversations.markRead(conversationId);
       // Le tri de la liste des conversations dépend de `lastMessageAt`, que
       // ce tour vient de déplacer.
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });

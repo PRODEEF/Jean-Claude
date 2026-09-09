@@ -555,6 +555,28 @@ describe("ConversationService", () => {
       expect(message.content).toContain("passer cette étape");
     });
 
+    it("relit le canal après l'accueil pour que la pastille reflète le message qui vient d'être posé (§6.3)", async () => {
+      const refreshed = makeConversation({ id: "conv-1", kind: "assistant", unreadCount: 1 });
+      const repo = makeRepository({
+        listMessages: emptyThread(),
+        findById: jest.fn().mockResolvedValue(refreshed),
+      });
+
+      const channel = await makeService(
+        repo,
+        makeLlm(),
+        makeSuggestionRepository(),
+        makeFolderRepository(),
+        makeUserRepository({}, { onboardingCompletedAt: null }),
+      ).getOrCreateAssistantChannel(USER, TOKEN);
+
+      // `create` renvoie un canal avec un `unreadCount` à 0, capturé avant le
+      // message d'accueil : c'est la version relue par `findById`, celle que
+      // le trigger vient de mettre à jour, qui doit sortir de la méthode.
+      expect(channel).toBe(refreshed);
+      expect(repo.findById).toHaveBeenCalledWith("conv-1", TOKEN);
+    });
+
     it("accueille aussi dans un canal déjà ouvert mais resté vide (§6.3)", async () => {
       const repo = makeRepository({
         listMessages: emptyThread(),

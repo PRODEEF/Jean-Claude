@@ -259,6 +259,11 @@ export class ConversationService {
         { content: welcomeMessage(context.name), inputMode: "text", role: "assistant" },
         accessToken,
       );
+      // `channel` a été capturé avant ce message : il porte encore le
+      // `unreadCount` d'un fil vide. Le relire fait remonter celui que le
+      // trigger vient de poser, sans quoi la pastille resterait éteinte à la
+      // toute première connexion malgré la question qui attend une réponse.
+      return this.getById(channel.id, accessToken);
     }
 
     return channel;
