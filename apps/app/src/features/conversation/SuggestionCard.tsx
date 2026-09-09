@@ -469,7 +469,9 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
       {accepted ? <Check size={14} color={palette.accent} /> : null}
       <Text style={[styles.noteLabel, { color: palette.textMuted }]}>
         {outcomeLabel(suggestion)}
-        {accepted && names.length > 0 ? ` — ${names}` : ""}
+        {/* Un signalement n'a rien à relire dans le fil : le texte technique
+            s'adresse à l'équipe, pas à l'utilisateur qui vient de valider. */}
+        {accepted && suggestion.kind !== "report_bug" && names.length > 0 ? ` — ${names}` : ""}
       </Text>
     </View>
   );
@@ -492,7 +494,7 @@ function outcomeLabel(suggestion: Suggestion): string {
     case "update_task_list_due_date":
       return "Échéance déplacée";
     case "report_bug":
-      return "Bug signalé";
+      return "Bug signalé, merci pour le retour !";
     default:
       return "Dossiers créés";
   }

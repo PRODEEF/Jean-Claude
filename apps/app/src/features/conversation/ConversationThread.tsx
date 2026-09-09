@@ -167,7 +167,8 @@ export function ConversationThread({
     (inputMode: MessageInputMode) => {
       const content = draft.trim();
       const attachmentIds = attachments.readyIds;
-      if ((!content && attachmentIds.length === 0) || send.isPending || attachments.uploading) return;
+      if ((!content && attachmentIds.length === 0) || send.isPending || attachments.uploading)
+        return;
       setDraft("");
       attachments.reset();
       submit(content, inputMode, attachmentIds);
@@ -305,10 +306,7 @@ export function ConversationThread({
                       resolve.mutate({
                         id: suggestion.id,
                         action: "accept",
-                        ...(input?.folderSelection
-                          ? { folderSelection: input.folderSelection }
-                          : {}),
-                        ...(input?.taskListEdits ? { taskListEdits: input.taskListEdits } : {}),
+                        ...input,
                       })
                     }
                     onDismiss={() => resolve.mutate({ id: suggestion.id, action: "dismiss" })}
