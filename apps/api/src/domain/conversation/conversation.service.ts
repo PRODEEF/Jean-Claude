@@ -2128,7 +2128,7 @@ function buildSystemPrompt(
       "",
       "Au fil de l'échange, repère si la conversation produit quelque chose",
       "d'actionnable : une liste de tâches, une liste d'achats, une échéance,",
-      "un rendez-vous récurrent.",
+      "un ou plusieurs rendez-vous ponctuels, un rendez-vous récurrent.",
       "Le cas échéant, appelle l'outil correspondant",
       "pour le proposer — sans interrompre le fil de la conversation, et sans",
       "jamais présenter la chose comme déjà faite : c'est une proposition.",
