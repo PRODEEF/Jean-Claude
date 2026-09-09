@@ -1,8 +1,10 @@
 import {
   assistantScopeSchema,
+  ASSISTANT_MODELS,
   DEFAULT_ASSISTANT_NAME,
   DEFAULT_CONVERSATION_TITLE,
   askedQuestionSchema,
+  isVisionCapableModel,
   labelSchema,
   userMemorySchema,
   userPreferencesSchema,
@@ -20,6 +22,7 @@ import type {
   EditMessage,
   FolderTreeNode,
   Message,
+  MessageAttachment,
   MessageStreamEvent,
   Paginated,
   SendMessage,
@@ -30,6 +33,8 @@ import type {
 import { httpError } from "../../core/http.js";
 import type {
   LlmCompletionRequest,
+  LlmContentPart,
+  LlmMessage,
   LlmProvider,
   LlmTool,
   LlmToolCall,
@@ -37,6 +42,7 @@ import type {
 import { logger } from "../../core/logger.js";
 import { parseRelativeDateFr } from "../../core/relative-date.js";
 import { fromWall, toWall } from "../../core/timezone.js";
+import type { IAttachmentRepository } from "../attachment/attachment.repository.interface.js";
 import {
   ASK_QUESTION,
   ASSISTANT_TOOLS,
@@ -202,6 +208,7 @@ export class ConversationService {
     private readonly users: IUserRepository,
     private readonly calendar: CalendarService,
     private readonly tasks: TaskService,
+    private readonly attachments: IAttachmentRepository,
   ) {}
 
   list(
@@ -256,7 +263,12 @@ export class ConversationService {
       await this.conversations.appendMessage(
         channel.id,
         userId,
-        { content: welcomeMessage(context.name), inputMode: "text", role: "assistant" },
+        {
+          content: welcomeMessage(context.name),
+          inputMode: "text",
+          role: "assistant",
+          attachmentIds: [],
+        },
         accessToken,
       );
       // `channel` a été capturé avant ce message : il porte encore le
@@ -338,6 +350,24 @@ export class ConversationService {
   ): AsyncGenerator<MessageStreamEvent> {
     const conversation = await this.getById(conversationId, accessToken);
 
+    // Résolues avant toute écriture : le refus d'un modèle sans vision doit
+    // précéder la création du message, pas la suivre (§12.1 — le serveur
+    // fait respecter la règle, jamais l'UI seule).
+    let attachments: MessageAttachment[] = [];
+    if (input.attachmentIds.length > 0) {
+      const resolved = await this.attachments.findByIds(input.attachmentIds, accessToken);
+      if (resolved.length !== input.attachmentIds.length) {
+        throw httpError(404, "Une pièce jointe est introuvable.");
+      }
+      if (resolved.some((a) => a.messageId !== null)) {
+        throw httpError(409, "Une pièce jointe a déjà été envoyée dans un autre message.");
+      }
+      attachments = resolved;
+
+      const context = await this.contextFor(userId, accessToken);
+      this.assertVisionCapable(context.model ?? this.llm.model, attachments);
+    }
+
     const userMessage = await this.conversations.appendMessage(
       conversationId,
       userId,
@@ -345,7 +375,26 @@ export class ConversationService {
       accessToken,
     );
 
-    yield { type: "message", message: userMessage };
+    // Les pièces jointes ne sont pas encore liées en base à cet instant — la
+    // liaison ne peut se faire qu'une fois `messageId` connu, juste après.
+    // Sans cette fusion manuelle, la vignette apparaîtrait puis disparaîtrait
+    // jusqu'au rechargement suivant.
+    yield { type: "message", message: { ...userMessage, attachments } };
+
+    if (attachments.length > 0) {
+      // Best-effort et journalisée plutôt que propagée (cf. attachment-storage.ts) :
+      // les RLS protègent déjà chaque ligne, un échec ne laisse rien d'exposé,
+      // seulement une pièce jointe orpheline à revoir plus tard.
+      this.attachments
+        .linkToMessage(
+          attachments.map((a) => a.id),
+          userMessage.id,
+          accessToken,
+        )
+        .catch((error: unknown) => {
+          logger.error(SCOPE, "Échec de la liaison des pièces jointes au message", error);
+        });
+    }
 
     yield* this.generate(conversation, userId, accessToken);
   }
@@ -369,6 +418,13 @@ export class ConversationService {
 
     if (message.role !== "user") {
       throw httpError(422, "Seul un message que vous avez écrit peut être corrigé.");
+    }
+
+    // Couvre le cas où le modèle a changé dans les réglages depuis l'envoi
+    // initial : la pièce jointe reste dans l'historique rejoué par `generate`.
+    if (message.attachments.length > 0) {
+      const context = await this.contextFor(userId, accessToken);
+      this.assertVisionCapable(context.model ?? this.llm.model, message.attachments);
     }
 
     await this.conversations.deleteMessagesAfter(conversationId, message.createdAt, accessToken);
@@ -401,6 +457,13 @@ export class ConversationService {
 
     if (message.role === "system") {
       throw httpError(422, "Ce message ne peut pas être rejoué.");
+    }
+
+    // Un message assistant ne porte jamais de pièce jointe : n'a d'effet que
+    // sur la reprise d'un message utilisateur.
+    if (message.attachments.length > 0) {
+      const context = await this.contextFor(userId, accessToken);
+      this.assertVisionCapable(context.model ?? this.llm.model, message.attachments);
     }
 
     await this.conversations.deleteMessagesAfter(conversationId, message.createdAt, accessToken);
@@ -447,7 +510,7 @@ export class ConversationService {
     const now = new Date();
     const request: LlmCompletionRequest = {
       system: buildExtractionPrompt(context, now),
-      messages: dialogue.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      messages: this.toLlmMessages(dialogue),
       tools: [SUGGEST_TASK_LIST],
       ...(context.model ? { model: context.model } : {}),
     };
@@ -510,6 +573,60 @@ export class ConversationService {
     await this.conversations.acceptRedirect(messageId, accessToken);
 
     return conversation;
+  }
+
+  /**
+   * Traduit le fil vers le format du port LLM.
+   *
+   * Un message sans pièce jointe garde la simple chaîne d'avant — inutile
+   * d'imposer un tableau à un tour de dialogue qui n'en a jamais eu besoin.
+   *
+   * Un PDF ou un fichier texte ne devient jamais une partie `image` (§13.4.1) :
+   * son texte, déjà extrait à l'upload, rejoint le texte du message dans la
+   * même partie `text` — avant les images, pour que le modèle lise le
+   * contexte écrit avant de regarder ce qui l'illustre.
+   */
+  private toLlmMessages(dialogue: Message[]): LlmMessage[] {
+    return dialogue.map((m) => {
+      if (m.attachments.length === 0) {
+        return { role: m.role as "user" | "assistant", content: m.content };
+      }
+
+      const parts: LlmContentPart[] = [];
+      const textSections = [
+        ...(m.content.length > 0 ? [m.content] : []),
+        ...m.attachments
+          .filter((a) => a.extractedText !== null)
+          .map((a) => `--- ${a.fileName} ---\n${a.extractedText}`),
+      ];
+      if (textSections.length > 0) {
+        parts.push({ type: "text", text: textSections.join("\n\n") });
+      }
+      parts.push(
+        ...m.attachments
+          .filter((a) => a.mimeType.startsWith("image/"))
+          .map((a) => ({ type: "image" as const, url: a.url, mediaType: a.mimeType })),
+      );
+
+      return { role: m.role as "user" | "assistant", content: parts };
+    });
+  }
+
+  /**
+   * Refuse une image que le modèle actif ne peut pas lire (§12.1 — le
+   * serveur fait respecter la règle). Un PDF ou un fichier texte n'entre pas
+   * dans ce compte : son texte extrait se lit avec n'importe quel modèle,
+   * aucun besoin de vision.
+   */
+  private assertVisionCapable(model: string, attachments: MessageAttachment[]): void {
+    const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
+    if (images.length === 0 || isVisionCapableModel(model)) return;
+
+    const label = ASSISTANT_MODELS.find((m) => m.id === model)?.label ?? model;
+    throw httpError(
+      422,
+      `${label} ne peut pas lire les images. Changez de modèle dans les réglages ou retirez les pièces jointes.`,
+    );
   }
 
   private async requireMessage(
@@ -577,10 +694,7 @@ export class ConversationService {
 
     const request: LlmCompletionRequest = {
       system: buildSystemPrompt(conversation.kind, todo, context, now),
-      messages: dialogue.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
+      messages: this.toLlmMessages(dialogue),
       tools: todo.tools,
       // Le modèle du profil ne remplace celui du serveur que s'il existe :
       // `null` veut dire « celui que le serveur a retenu », et non « aucun ».
@@ -635,6 +749,7 @@ export class ConversationService {
                 content,
                 inputMode: "text",
                 role: "assistant",
+                attachmentIds: [],
                 provider,
                 model,
                 ...(asked && !redirectTitle ? { choices: asked.choices } : {}),

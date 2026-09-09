@@ -7,6 +7,55 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **9 septembre 2026** — l'assistant lit désormais les
+images, les PDF et les fichiers texte joints à un message, nouveau domaine
+API `attachment` et port LLM étendu au contenu multimodal.
+
+**L'assistant lit les images jointes à un message.** Nouveau geste de capture
+(§13.2.1, §13.4.1 : « quel que soit son format — texte, voix, image, lien »),
+absent jusqu'ici et sans point d'Annexe A dédié (contrairement au vocal, A.12).
+Un trombone dans le Composer permet de joindre jusqu'à 4 images par message,
+10 Mo chacune, JPEG/PNG/WebP : sélecteur de fichier, glisser-déposer et collage
+d'une capture d'écran côté web, galerie ou appareil photo côté natif.
+L'upload part dès la sélection, avant l'envoi du message — ce qui laisse le
+trombone utilisable depuis l'écran d'accueil, sans conversation encore ouverte
+— vers un nouveau domaine `attachment` (`POST /api/attachments`, bucket
+Storage privé, URLs signées à la lecture, jamais publiques). Le port
+`LlmProvider` (`core/llm/llm.port.ts`) accepte désormais un contenu
+multi-parties (texte + images) en plus de la simple chaîne d'avant ; les cinq
+modèles du catalogue (`preferences.schema.ts`) lisent tous les images d'après
+leur documentation — un modèle qui ne le ferait pas verrait le serveur refuser
+l'envoi (422) plutôt que de l'expédier dans le vide (§12.1, le serveur fait
+respecter la règle). Pièces jointes affichées dans le fil, aperçu plein écran
+à l'appui.
+
+**L'assistant lit aussi les PDF joints.** Même trombone, même limite de 10 Mo,
+mais un mécanisme différent : un PDF ne devient jamais un contenu image envoyé
+au modèle — son texte est extrait côté serveur à l'upload (`core/pdf-text.ts`,
+bibliothèque `unpdf`) et stocké une fois pour toutes sur la pièce jointe
+(`extractedText`), plutôt que reparsé à chaque tour du fil. Décision prise
+après vérification que la lecture native de PDF par le Vercel AI Gateway est
+documentée comme instable (issue vercel/ai sur les « file content parts »),
+contournée ainsi sur les cinq modèles à l'identique. Un PDF scanné, sans
+couche de texte, est refusé à l'upload (422, message explicite) — pas d'OCR,
+hors périmètre. Le texte extrait rejoint le texte du message dans le contexte
+donné au modèle, avant les images ; `assertVisionCapable` ne compte que les
+images, un PDF seul passe donc avec n'importe quel modèle. Sélecteur de
+document natif (`expo-document-picker`) en plus de la photothèque et de
+l'appareil photo côté mobile ; web reste au sélecteur de fichier, sans
+glisser-déposer ni collage pour ce type.
+
+**L'assistant lit aussi les fichiers texte joints (.txt, .md, .csv).** Même
+mécanisme que le PDF, plus direct : le contenu est déjà du texte, il est lu
+tel quel (`file.text()`) sans bibliothèque d'extraction, puis rejoint le
+contexte donné au modèle exactement comme un PDF — jamais une image, jamais
+besoin d'un modèle qui lit la vision. Un fichier vide une fois les espaces
+retirés est refusé à l'upload (422), même logique que le PDF sans texte
+exploitable. Le sélecteur de document natif accepte désormais ces trois types
+en plus du PDF ; côté carte et aperçu, le critère de bascule entre vignette
+image et carte de fichier est devenu « est-ce une image ? » plutôt que « est-ce
+un PDF ? », pour ne pas avoir à réénumérer chaque nouveau type non-image.
+
 Dernière mise à jour : **9 septembre 2026** — une échéance de todoliste qui
 porte une heure explicite (« à 10h ») n'est plus systématiquement ramenée à
 minuit, et le créneau posé dans l'agenda pour une échéance ainsi précisée
@@ -1203,6 +1252,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | État visuel de la notation par message  | Le pouce sélectionné n'est pas restauré après un rechargement : la notation n'est pas renvoyée avec les messages aujourd'hui. La donnée est bien persistée (`message_ratings`), seul l'indicateur visuel est local à la session |
 | Pagination des dossiers absente, décision assumée | `GET /api/folders` rend toujours l'arborescence complète, contrairement aux tâches et aux conversations. `FolderService.getTree()` doit de toute façon recharger tous les dossiers en mémoire pour vérifier profondeur et acyclicité, y compris à l'écriture (`create`/`update`) : paginer la réponse réduirait la taille du JSON renvoyé, pas la charge réelle du serveur, pour un coût de développement réel (reprendre l'agrégation des compteurs par dossier). Aucun compte n'approche aujourd'hui un volume de dossiers qui le justifie — à revisiter si un vrai volume apparaît |
 | Compteur de non-lu sur-compte après édition ou reprise | `unread_count` est incrémenté par trigger à l'insertion d'un message assistant, jamais décrémenté à la suppression. Une correction de message ou une reprise de tour supprime des messages déjà comptés puis en insère de nouveaux : le compteur peut monter sans qu'aucun message ne reste réellement non lu. Sans conséquence observée — ces deux gestes supposent la conversation déjà ouverte, et `markRead` la remet à zéro dans le même geste |
+| `--experimental-vm-modules` requis pour `npm test` (API) | `unpdf` charge son moteur PDF.js par un `import()` dynamique interne, y compris depuis son propre build CommonJS — sans ce flag Node, Jest échoue avec `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG` dès qu'un test touche réellement `core/pdf-text.ts`. Ajouté au script `test` de `apps/api/package.json`, pas seulement en local : sans lui la CI casserait aussi |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo
 (`app.config.js` / `metro.config.js`).

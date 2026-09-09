@@ -14,9 +14,20 @@
 
 export type LlmRole = "user" | "assistant";
 
+/**
+ * Partie d'un message à contenu multiple (texte + images).
+ *
+ * Vocabulaire volontairement différent de celui du SDK Vercel AI : c'est à
+ * l'adaptateur, et lui seul, de parler la langue du SDK (`providers/gateway.provider.ts`).
+ * `url` plutôt que des octets — l'appelant sait déjà où vit l'image (Storage),
+ * inutile de la faire transiter par ce port pour la lui repasser telle quelle.
+ */
+export type LlmContentPart = { type: "text"; text: string } | { type: "image"; url: string; mediaType: string };
+
 export type LlmMessage = {
   role: LlmRole;
-  content: string;
+  /** Un tableau de parties seulement quand le message porte des images (§13.4.1) — sinon la simple chaîne d'avant. */
+  content: string | LlmContentPart[];
 };
 
 /**

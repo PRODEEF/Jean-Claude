@@ -8,6 +8,7 @@ import { toHttpException } from "../llm-error.js";
 const SCOPE = "gateway.provider";
 import type {
   LlmCompletionRequest,
+  LlmContentPart,
   LlmProvider,
   LlmStreamChunk,
   LlmTool,
@@ -105,7 +106,10 @@ class GatewayProvider implements LlmProvider {
         },
         ...(request.system ? { system: request.system } : {}),
         ...(request.tools?.length ? { tools: toToolSet(request.tools) } : {}),
-        messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+        messages: request.messages.map((m) => ({
+          role: m.role,
+          content: typeof m.content === "string" ? m.content : m.content.map(toSdkPart),
+        })),
       });
 
       let text = "";
@@ -165,6 +169,20 @@ function toToolSet(tools: LlmTool[]): ToolSet {
       }),
     ]),
   );
+}
+
+/**
+ * Traduit une partie de contenu du port vers la forme attendue par l'AI SDK.
+ *
+ * `FilePart` plutôt que `ImagePart` — dépréciée dans le SDK installé (`ai@7`,
+ * `@ai-sdk/provider-utils`) au profit de `FilePart`, `mediaType` compris,
+ * même pour une image. `data` reçoit l'URL signée telle quelle : c'est au
+ * fournisseur derrière le Gateway d'aller la chercher.
+ */
+function toSdkPart(part: LlmContentPart) {
+  return part.type === "text"
+    ? { type: "text" as const, text: part.text }
+    : { type: "file" as const, data: new URL(part.url), mediaType: part.mediaType };
 }
 
 function toToolCall(call: { toolCallId: string; toolName: string; input: unknown }): LlmToolCall {

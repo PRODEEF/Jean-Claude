@@ -29,6 +29,33 @@ export function isSovereignModel(model: string): boolean {
 }
 
 /**
+ * Modèles dont le support de la vision (lecture d'image) est confirmé.
+ *
+ * ⚠️ Liste tenue à la main — le Gateway ne l'expose pas par API. Les cinq
+ * éditeurs confirment la lecture d'image en entrée dans leur documentation :
+ * Mistral Medium 3.5 (encodeur façon Pixtral), GPT-5.4 mini, Gemini 2.5
+ * Flash-Lite, Grok 4.6, et Sonar Reasoning Pro — ce dernier avec une réserve :
+ * une image ne peut pas s'accompagner d'une sortie structurée sur ce modèle,
+ * sans effet ici puisque l'assistant ne lui fait jamais produire de JSON.
+ * Un nouveau modèle du catalogue reste par prudence à `false` tant que son
+ * support vision n'a pas été vérifié individuellement — mieux vaut refuser
+ * une pièce jointe à tort que l'envoyer à un modèle qui ne la lira pas.
+ */
+const VISION_CAPABLE_MODELS: Record<AssistantModel, boolean> = {
+  "mistral/mistral-medium-3.5": true,
+  "openai/gpt-5.4-mini": true,
+  "google/gemini-2.5-flash-lite": true,
+  "perplexity/sonar-reasoning-pro": true,
+  "spacexai/grok-4.6": true,
+};
+
+/** Vrai si le modèle lit les images jointes à un message. */
+export function isVisionCapableModel(model: string): boolean {
+  const known = toAssistantModel(model);
+  return known !== null && VISION_CAPABLE_MODELS[known];
+}
+
+/**
  * Modèles proposés à l'utilisateur dans ses réglages (§5.1).
  *
  * Liste fermée, et non un champ libre : l'identifiant `éditeur/modèle` du

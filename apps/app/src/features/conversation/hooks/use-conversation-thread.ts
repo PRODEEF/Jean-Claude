@@ -27,7 +27,7 @@ export const THREAD_PAGE_SIZE = 50;
  * seule mutation les porte donc toutes.
  */
 type Turn =
-  | { kind: "send"; content: string; inputMode: MessageInputMode }
+  | { kind: "send"; content: string; inputMode: MessageInputMode; attachmentIds: string[] }
   | { kind: "edit"; messageId: string; content: string }
   | { kind: "retry"; messageId: string };
 
@@ -244,8 +244,8 @@ export function useConversationThread(
   });
 
   const submit = useCallback(
-    (content: string, inputMode: MessageInputMode = "text") =>
-      send.mutate({ kind: "send", content, inputMode }),
+    (content: string, inputMode: MessageInputMode = "text", attachmentIds: string[] = []) =>
+      send.mutate({ kind: "send", content, inputMode, attachmentIds }),
     [send.mutate],
   );
 
@@ -317,7 +317,7 @@ function turnEvents(
   }
   return api.conversations.send(
     conversationId,
-    { content: turn.content, inputMode: turn.inputMode },
+    { content: turn.content, inputMode: turn.inputMode, attachmentIds: turn.attachmentIds },
     signal,
   );
 }

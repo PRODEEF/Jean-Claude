@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import {
   Check,
@@ -11,13 +11,16 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react-native";
-import type { Message, MessageRatingValue } from "@jc/domain";
+import type { Message, MessageAttachment, MessageRatingValue } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useFeedbackContext, useRateMessage } from "@/features/feedback/hooks/use-feedback";
 import { Markdown } from "@/shared/ui/Markdown";
+import { Modal } from "@/shared/ui/modal";
 import { formatRelativeTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { AttachmentFileCard } from "./AttachmentFileCard";
+import { AttachmentThumbnail } from "./AttachmentThumbnail";
 
 /** Retour visuel après une copie réussie, avant de revenir à l'icône normale. */
 const COPIED_FEEDBACK_MS = 1500;
@@ -89,6 +92,7 @@ export const MessageRow = memo(function MessageRow({
   const [revealed, setRevealed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
+  const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isUser = message.role === "user";
@@ -141,151 +145,204 @@ export const MessageRow = memo(function MessageRow({
   }
 
   return (
-    <Pressable
-      onHoverIn={reveal}
-      onHoverOut={scheduleHide}
-      onLongPress={() => setRevealed((current) => !current)}
-      style={isUser ? styles.rowEnd : styles.rowStart}
-    >
-      <View
-        style={[
-          styles.bubble,
-          isUser
-            ? { alignSelf: "flex-end", backgroundColor: palette.accentSoft }
-            : // La réponse de l'assistant n'a ni fond ni cadre : c'est le corps
-              // du texte, pas une pièce rapportée. Seule la parole de
-              // l'utilisateur est encadrée, ce que font ChatGPT et Claude.
-              styles.plain,
-        ]}
+    <>
+      <Pressable
+        onHoverIn={reveal}
+        onHoverOut={scheduleHide}
+        onLongPress={() => setRevealed((current) => !current)}
+        style={isUser ? styles.rowEnd : styles.rowStart}
       >
-        {/* Le message de l'utilisateur reste du texte brut : c'est ce qu'il a
-            tapé, l'interpréter ferait disparaître ses astérisques. Celui du
-            modèle est du Markdown, et se lit criblé de signes sans rendu. */}
-        {isUser ? (
-          <>
-            {answeredQuestion ? (
-              <Text style={[styles.question, { color: palette.textMuted }]}>
-                Q&nbsp;: {answeredQuestion}
+        <View
+          style={[
+            styles.bubble,
+            isUser
+              ? { alignSelf: "flex-end", backgroundColor: palette.accentSoft }
+              : // La réponse de l'assistant n'a ni fond ni cadre : c'est le corps
+                // du texte, pas une pièce rapportée. Seule la parole de
+                // l'utilisateur est encadrée, ce que font ChatGPT et Claude.
+                styles.plain,
+          ]}
+        >
+          {/* Le message de l'utilisateur reste du texte brut : c'est ce qu'il a
+              tapé, l'interpréter ferait disparaître ses astérisques. Celui du
+              modèle est du Markdown, et se lit criblé de signes sans rendu. */}
+          {isUser ? (
+            <>
+              {message.attachments.length > 0 ? (
+                <View style={styles.attachmentsRow}>
+                  {message.attachments.map((attachment) =>
+                    !attachment.mimeType.startsWith("image/") ? (
+                      <AttachmentFileCard
+                        key={attachment.id}
+                        fileName={attachment.fileName}
+                        byteSize={attachment.byteSize}
+                        status="done"
+                        onPress={() => setPreviewAttachment(attachment)}
+                      />
+                    ) : (
+                      <AttachmentThumbnail
+                        key={attachment.id}
+                        uri={attachment.url}
+                        status="done"
+                        onPress={() => setPreviewAttachment(attachment)}
+                      />
+                    ),
+                  )}
+                </View>
+              ) : null}
+              {answeredQuestion ? (
+                <Text style={[styles.question, { color: palette.textMuted }]}>
+                  Q&nbsp;: {answeredQuestion}
+                </Text>
+              ) : null}
+              {message.content.length > 0 ? (
+                <Text style={[styles.bubbleText, { color: palette.accentSoftText }]}>
+                  {answeredQuestion ? `R : ${message.content}` : message.content}
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Markdown>{message.content}</Markdown>
+          )}
+        </View>
+
+        {/* Emplacement toujours présent : rendu conditionnellement, il ferait
+            sauter le fil d'une trentaine de points à chaque survol. */}
+        <View style={[styles.actions, isUser ? styles.actionsEnd : styles.actionsStart]}>
+          {revealed ? (
+            <>
+              <Text style={[styles.elapsed, { color: palette.textMuted }]}>
+                {formatRelativeTime(message.createdAt)}
               </Text>
-            ) : null}
-            <Text style={[styles.bubbleText, { color: palette.accentSoftText }]}>
-              {answeredQuestion ? `R : ${message.content}` : message.content}
-            </Text>
-          </>
-        ) : (
-          <Markdown>{message.content}</Markdown>
-        )}
-      </View>
 
-      {/* Emplacement toujours présent : rendu conditionnellement, il ferait
-          sauter le fil d'une trentaine de points à chaque survol. */}
-      <View style={[styles.actions, isUser ? styles.actionsEnd : styles.actionsStart]}>
-        {revealed ? (
-          <>
-            <Text style={[styles.elapsed, { color: palette.textMuted }]}>
-              {formatRelativeTime(message.createdAt)}
-            </Text>
-
-            <IconAction
-              icon={RotateCcw}
-              label="Réessayer"
-              onPress={() => onRetry(message.id)}
-              disabled={busy}
-              onHoverIn={reveal}
-              onHoverOut={scheduleHide}
-            />
-
-            {/* Corriger n'a de sens que sur sa propre parole : le fil est la
-                trace de ce que l'assistant a répondu, pas un brouillon. */}
-            {isUser ? (
               <IconAction
-                icon={Pencil}
-                label="Modifier"
-                onPress={() => {
-                  setDraft(message.content);
-                  setEditing(true);
-                }}
+                icon={RotateCcw}
+                label="Réessayer"
+                onPress={() => onRetry(message.id)}
                 disabled={busy}
                 onHoverIn={reveal}
                 onHoverOut={scheduleHide}
               />
-            ) : null}
 
-            <CopyAction content={message.content} onHoverIn={reveal} onHoverOut={scheduleHide} />
+              {/* Corriger n'a de sens que sur sa propre parole : le fil est la
+                  trace de ce que l'assistant a répondu, pas un brouillon. */}
+              {isUser ? (
+                <IconAction
+                  icon={Pencil}
+                  label="Modifier"
+                  onPress={() => {
+                    setDraft(message.content);
+                    setEditing(true);
+                  }}
+                  disabled={busy}
+                  onHoverIn={reveal}
+                  onHoverOut={scheduleHide}
+                />
+              ) : null}
 
-            {/* Seules les réponses de l'assistant se lisent ou se notent : le
-                fil est sa parole à lui, pas celle de l'utilisateur. */}
-            {message.role === "assistant" ? (
-              <>
-                <IconAction
-                  icon={speaking ? VolumeX : Volume2}
-                  label={speaking ? "Arrêter la lecture" : "Écouter"}
-                  active={speaking}
-                  disabled={false}
-                  onHoverIn={reveal}
-                  onHoverOut={scheduleHide}
-                  onPress={() => onToggleSpeech(message.id, message.content)}
-                />
-                <IconAction
-                  icon={ThumbsUp}
-                  label="Utile"
-                  active={rating === "up"}
-                  disabled={false}
-                  onHoverIn={reveal}
-                  onHoverOut={scheduleHide}
-                  onPress={() => {
-                    reveal();
-                    setRating("up");
-                    setCommentDraft(null);
-                    rateMessage.mutate({ messageId: message.id, rating: "up", ...feedbackContext });
-                  }}
-                />
-                <IconAction
-                  icon={ThumbsDown}
-                  label="Pas utile"
-                  active={rating === "down"}
-                  disabled={false}
-                  onHoverIn={reveal}
-                  onHoverOut={scheduleHide}
-                  onPress={() => {
-                    reveal();
-                    setRating("down");
-                    // Révèle un champ de commentaire facultatif — jamais côté
-                    // pouce haut, ça n'a de sens que pour dire ce qui a manqué.
-                    setCommentDraft("");
-                    rateMessage.mutate({
-                      messageId: message.id,
-                      rating: "down",
-                      ...feedbackContext,
-                    });
-                  }}
-                />
-              </>
-            ) : null}
-          </>
+              <CopyAction content={message.content} onHoverIn={reveal} onHoverOut={scheduleHide} />
+
+              {/* Seules les réponses de l'assistant se lisent ou se notent :
+                  le fil est sa parole à lui, pas celle de l'utilisateur. */}
+              {message.role === "assistant" ? (
+                <>
+                  <IconAction
+                    icon={speaking ? VolumeX : Volume2}
+                    label={speaking ? "Arrêter la lecture" : "Écouter"}
+                    active={speaking}
+                    disabled={false}
+                    onHoverIn={reveal}
+                    onHoverOut={scheduleHide}
+                    onPress={() => onToggleSpeech(message.id, message.content)}
+                  />
+                  <IconAction
+                    icon={ThumbsUp}
+                    label="Utile"
+                    active={rating === "up"}
+                    disabled={false}
+                    onHoverIn={reveal}
+                    onHoverOut={scheduleHide}
+                    onPress={() => {
+                      reveal();
+                      setRating("up");
+                      setCommentDraft(null);
+                      rateMessage.mutate({ messageId: message.id, rating: "up", ...feedbackContext });
+                    }}
+                  />
+                  <IconAction
+                    icon={ThumbsDown}
+                    label="Pas utile"
+                    active={rating === "down"}
+                    disabled={false}
+                    onHoverIn={reveal}
+                    onHoverOut={scheduleHide}
+                    onPress={() => {
+                      reveal();
+                      setRating("down");
+                      // Révèle un champ de commentaire facultatif — jamais côté
+                      // pouce haut, ça n'a de sens que pour dire ce qui a manqué.
+                      setCommentDraft("");
+                      rateMessage.mutate({
+                        messageId: message.id,
+                        rating: "down",
+                        ...feedbackContext,
+                      });
+                    }}
+                  />
+                </>
+              ) : null}
+            </>
+          ) : null}
+        </View>
+
+        {/* Rendu hors du bloc `revealed` : une fois ouvert, le champ reste
+            jusqu'à l'envoi ou l'abandon, même si le survol quitte la rangée. */}
+        {commentDraft !== null ? (
+          <RatingCommentBox
+            value={commentDraft}
+            onChangeText={setCommentDraft}
+            onCancel={() => setCommentDraft(null)}
+            onSubmit={() => {
+              const comment = commentDraft.trim();
+              rateMessage.mutate({
+                messageId: message.id,
+                rating: "down",
+                comment: comment.length > 0 ? comment : null,
+                ...feedbackContext,
+              });
+              setCommentDraft(null);
+            }}
+          />
         ) : null}
-      </View>
+      </Pressable>
 
-      {/* Rendu hors du bloc `revealed` : une fois ouvert, le champ reste
-          jusqu'à l'envoi ou l'abandon, même si le survol quitte la rangée. */}
-      {commentDraft !== null ? (
-        <RatingCommentBox
-          value={commentDraft}
-          onChangeText={setCommentDraft}
-          onCancel={() => setCommentDraft(null)}
-          onSubmit={() => {
-            const comment = commentDraft.trim();
-            rateMessage.mutate({
-              messageId: message.id,
-              rating: "down",
-              comment: comment.length > 0 ? comment : null,
-              ...feedbackContext,
-            });
-            setCommentDraft(null);
-          }}
-        />
+      {/* Hors de la bulle : l'aperçu plein écran n'est pas un élément du fil,
+          c'est une fenêtre par-dessus — même point d'entrée modal que le
+          reste de l'application (`shared/ui/modal.tsx`). Un PDF ou un fichier
+          texte n'y montre jamais le fichier lui-même, seulement le texte
+          qu'on en a extrait — c'est la même donnée que celle relue par le
+          modèle. */}
+      {message.attachments.length > 0 ? (
+        <Modal
+          open={previewAttachment !== null}
+          onClose={() => setPreviewAttachment(null)}
+          title={
+            previewAttachment && !previewAttachment.mimeType.startsWith("image/")
+              ? previewAttachment.fileName
+              : "Image jointe"
+          }
+          actions={[{ label: "Fermer", onPress: () => setPreviewAttachment(null) }]}
+        >
+          {previewAttachment && !previewAttachment.mimeType.startsWith("image/") ? (
+            <Text style={[styles.previewText, { color: palette.text }]}>
+              {previewAttachment.extractedText}
+            </Text>
+          ) : previewAttachment ? (
+            <Image source={{ uri: previewAttachment.url }} style={styles.previewImage} resizeMode="contain" />
+          ) : null}
+        </Modal>
       ) : null}
-    </Pressable>
+    </>
   );
 });
 
@@ -491,6 +548,14 @@ function RatingCommentBox({
 const styles = StyleSheet.create({
   rowStart: { alignItems: "flex-start" },
   rowEnd: { alignItems: "flex-end" },
+  attachmentsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  previewImage: { width: "100%", aspectRatio: 1 },
+  previewText: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, lineHeight: 20 },
   bubble: {
     maxWidth: "85%",
     paddingVertical: spacing.md,
