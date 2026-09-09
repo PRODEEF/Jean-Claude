@@ -1687,8 +1687,12 @@ function buildSystemPrompt(
       todo.filing.folders.length > 0
         ? "Dossiers existants. Pour en réutiliser un, recopie son identifiant ET son nom" +
           " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas." +
-          " Un nouveau dossier peut aussi naître comme sous-dossier de l'un d'eux : reprends-le" +
-          " alors en `parent`, de la même façon."
+          " Un nouveau dossier peut aussi naître comme sous-dossier de l'un d'eux — reprends-le" +
+          " alors en `parent`, de la même façon —, mais seulement s'il en est un vrai thème" +
+          " parent. Ce lien s'apprécie au sujet, jamais au nombre de dossiers disponibles :" +
+          " si le seul dossier existant est « Courses » et que tu ranges un CV, il ne devient" +
+          " pas pour autant le parent du nouveau dossier « Candidatures » — celui-ci naît à la" +
+          " racine, sans `parent`, et « Courses » ne figure dans aucune des deux listes."
         : "L'utilisateur n'a encore aucun dossier : propose-en un nouveau, sobrement nommé.",
       ...describeFolders(todo.filing.folders),
     );

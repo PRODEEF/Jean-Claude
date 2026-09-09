@@ -7,6 +7,29 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **9 septembre 2026** — `suggest_folders` pouvait
+rattacher une conversation sans rapport à l'unique dossier existant de
+l'utilisateur.
+
+**`suggest_folders` pouvait rattacher une conversation à un dossier
+existant sans le moindre rapport, quand c'était le seul disponible (branche
+`fix/attachments`).** Signalé en usage réel, reproductible : un CV envoyé
+en pièce jointe à un compte dont l'unique dossier est « Courses » se voyait
+proposer aussi bien « Courses » lui-même que le parent du nouveau sous-dossier
+« CV / Candidatures ». Le garde-fou déjà en place (`withVerifiedFolders`)
+fonctionnait comme prévu — identifiant et nom recopiés depuis une même ligne
+réelle, aucun dossier halluciné — ce n'était donc pas un identifiant mal
+recopié mais un vrai choix du modèle, qui rattachait apparemment un nouveau
+dossier au premier existant venu plutôt qu'à la racine dès qu'aucun dossier
+pertinent n'existait. Le CV lui-même ne contient rien évoquant des courses :
+le contenu n'explique pas le choix. La consigne (description de l'outil et
+`buildSystemPrompt`) précise désormais explicitement, avec ce cas concret en
+exemple négatif, que le rattachement à un dossier existant s'apprécie au
+sujet et jamais au nombre de dossiers disponibles — sans dossier pertinent,
+le nouveau dossier naît à la racine, sans `parent`. Correctif de prompt, non
+déterministe par nature : à revérifier à l'usage plutôt que tenu pour
+définitivement réglé.
+
 Dernière mise à jour : **9 septembre 2026** — le tiroir de navigation mobile
 ne se refermait toujours pas au second appui sur le bouton, cette fois
 seulement sur le web.

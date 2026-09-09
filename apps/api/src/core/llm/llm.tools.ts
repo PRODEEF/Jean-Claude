@@ -227,8 +227,13 @@ export const SUGGEST_FOLDERS: LlmTool = {
     "mémoire range la conversation dans un dossier qui n'a rien à voir. " +
     "N'en proposer un nouveau que si aucun ne convient, et remplir au moins l'une des deux " +
     "listes : une proposition sans aucun dossier n'a rien à ranger. Un nouveau dossier peut " +
-    "lui-même naître comme sous-dossier d'un dossier existant plutôt qu'à la racine — " +
-    "reprendre alors ce dossier existant en `parent`, identifiant et nom, de la même façon. " +
+    "lui-même naître comme sous-dossier d'un dossier existant plutôt qu'à la racine, mais " +
+    "seulement si celui-ci est un vrai thème parent du sujet — comme « Assurances » sous " +
+    "« Administratif ». Ce lien s'apprécie uniquement au sujet, jamais au nombre de dossiers " +
+    "disponibles : si l'utilisateur n'a qu'un seul dossier « Courses » et qu'on lui range un " +
+    "CV, ce dossier n'en devient pas pour autant le thème parent — le nouveau dossier " +
+    "(« Candidatures », par exemple) naît alors à la racine, sans `parent`, et « Courses » " +
+    "ne figure dans aucune des deux listes. " +
     "S'aligner sur la façon dont l'utilisateur nomme déjà ses dossiers plutôt que d'imposer " +
     "une nomenclature standard.",
   inputSchema: {
