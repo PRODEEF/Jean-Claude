@@ -209,8 +209,12 @@ export function Modal({
                 </View>
 
                 {variant === "form" ? (
+                  // `min-h-0` : sans lui, un enfant flex garde pour minimum la
+                  // hauteur de son contenu (`min-height: auto`) et refuse de se
+                  // réduire sous ce point — un formulaire long repousse alors le
+                  // pied hors de `max-h-[85vh]` au lieu de faire défiler ce corps.
                   <ScrollView
-                    className="shrink"
+                    className="min-h-0 shrink"
                     contentContainerClassName="gap-5 px-6 py-5"
                     keyboardShouldPersistTaps="handled"
                   >
