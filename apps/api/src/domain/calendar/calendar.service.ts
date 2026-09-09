@@ -10,11 +10,12 @@ import type { ICalendarRepository } from "./calendar.repository.interface.js";
 
 export class CalendarService {
   /**
-   * `taskLists` est le seul endroit du projet où un service `domain/` en
-   * consulte un autre directement (au lieu de passer par `feature/`) : le
-   * lien qu'il sert à maintenir — `task_lists.event_id` — appartient à la
-   * todoliste, pas au rendez-vous, mais c'est bien depuis la fiche du
-   * rendez-vous que l'utilisateur déplace la date des deux à la fois (A.3).
+   * `taskLists` : un service `domain/` qui en consulte un autre directement
+   * (au lieu de passer par `feature/`), comme `TaskService` le fait dans
+   * l'autre sens avec `ICalendarRepository`. Le lien qu'il sert à
+   * maintenir — `task_lists.event_id` — appartient à la todoliste, pas au
+   * rendez-vous, mais c'est bien depuis la fiche du rendez-vous que
+   * l'utilisateur peut aussi déplacer la date des deux à la fois (A.3).
    */
   constructor(
     private readonly events: ICalendarRepository,

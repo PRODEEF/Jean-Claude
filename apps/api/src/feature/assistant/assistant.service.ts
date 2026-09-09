@@ -143,7 +143,7 @@ export class AssistantService {
       return { ...nothingApplied(), events };
     }
     if (suggestion.kind === "update_task_list_due_date") {
-      const taskLists = await this.rescheduleTaskList(suggestion, accessToken);
+      const taskLists = await this.rescheduleTaskList(userId, suggestion, accessToken);
       return { ...nothingApplied(), taskLists };
     }
 
@@ -266,6 +266,7 @@ export class AssistantService {
    * plutôt que d'écrire dans le vide.
    */
   private async rescheduleTaskList(
+    userId: string,
     suggestion: Suggestion,
     accessToken: string,
   ): Promise<TaskList[]> {
@@ -277,6 +278,7 @@ export class AssistantService {
     }
 
     const updated = await this.tasks.updateList(
+      userId,
       payload.data.listId,
       { dueAt: payload.data.dueAt },
       accessToken,
