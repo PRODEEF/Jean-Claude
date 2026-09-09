@@ -843,14 +843,16 @@ export class ConversationService {
           continue;
         }
         try {
-          const corrected = withCorrectedRescheduleDueDate(
-            withCorrectedDueDates(
-              withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+          const corrected = withCorrectedRecurringEventStartsAt(
+            withCorrectedRescheduleDueDate(
+              withCorrectedDueDates(
+                withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+                now,
+                context.timezone,
+              ),
               now,
               context.timezone,
             ),
-            now,
-            context.timezone,
           );
           await this.suggestions.capture(userId, conversationId, corrected, accessToken);
           suggestionCaptured = true;
@@ -1595,6 +1597,30 @@ function withCorrectedRescheduleDueDate(
   }
 
   return { ...toolCall, input };
+}
+
+/**
+ * Fiabilise `startsAt` d'un `suggest_recurring_event` avant capture (A.11).
+ *
+ * Le modèle calcule cette date lui-même, sans jamais passer par le
+ * validateur du serveur : une heure sans les secondes ou sans fuseau
+ * (`2026-09-16T18:00`) est un ISO 8601 que `Date` lit très bien, mais que le
+ * schéma strict de la charge utile rejette — la série entière disparaissait
+ * alors silencieusement (`suggestion.service` la journalise comme
+ * inexploitable). La reformater vers l'ISO canonique évite de perdre le
+ * rendez-vous pour un simple défaut de forme ; une valeur réellement
+ * illisible reste telle quelle et la validation en aval l'écarte normalement.
+ */
+function withCorrectedRecurringEventStartsAt(toolCall: LlmToolCall): LlmToolCall {
+  if (toolCall.name !== SUGGEST_RECURRING_EVENT.name) return toolCall;
+
+  const startsAt = toolCall.input["startsAt"];
+  if (typeof startsAt !== "string") return toolCall;
+
+  const instant = new Date(startsAt);
+  if (Number.isNaN(instant.getTime())) return toolCall;
+
+  return { ...toolCall, input: { ...toolCall.input, startsAt: instant.toISOString() } };
 }
 
 /**
