@@ -7,6 +7,23 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **9 septembre 2026** — corrigé une course qui pouvait
+empêcher le contenu d'une pièce jointe d'atteindre le modèle dès le premier
+message, sans la moindre erreur visible.
+
+**Le contenu d'une pièce jointe pouvait ne pas atteindre le modèle au
+premier tour, sans erreur visible (branche `fix/attachments`).** Signalé en
+usage réel : un PDF joint à « tu penses quoi de mon CV ? » a produit une
+réponse qui ne voyait aucun fichier, alors que son texte avait bien été
+extrait à l'upload et restait consultable depuis la pièce jointe elle-même.
+En cause, une course dans `streamMessage` (`conversation.service.ts`) : la
+liaison de la pièce jointe au message (`linkToMessage`) partait en tâche de
+fond, sans être attendue, juste avant que `generate` relise le fil depuis la
+base pour construire la requête au modèle — `message_attachments` ne
+rejoint son message que par `message_id`, donc une relecture trop rapide
+renvoyait un message sans pièce jointe. Le `await` manquant a été ajouté ;
+l'échec de la liaison reste best-effort et journalisé, comme avant.
+
 Dernière mise à jour : **9 septembre 2026** — l'assistant lit désormais les
 images, les PDF et les fichiers texte joints à un message, nouveau domaine
 API `attachment` et port LLM étendu au contenu multimodal.
