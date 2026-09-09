@@ -382,10 +382,15 @@ export class ConversationService {
     yield { type: "message", message: { ...userMessage, attachments } };
 
     if (attachments.length > 0) {
-      // Best-effort et journalisée plutôt que propagée (cf. attachment-storage.ts) :
-      // les RLS protègent déjà chaque ligne, un échec ne laisse rien d'exposé,
-      // seulement une pièce jointe orpheline à revoir plus tard.
-      this.attachments
+      // Attendue avant `generate` : celui-ci relit le fil depuis la base, et
+      // `message_attachments` ne rejoint son message que par `message_id` —
+      // sans ce await, la génération pouvait partir avant l'UPDATE, et le
+      // modèle répondait sans jamais voir la pièce jointe. L'échec, lui,
+      // reste best-effort et journalisé plutôt que propagé
+      // (cf. attachment-storage.ts) : les RLS protègent déjà chaque ligne, il
+      // ne laisse rien d'exposé, seulement une pièce jointe orpheline à
+      // revoir plus tard.
+      await this.attachments
         .linkToMessage(
           attachments.map((a) => a.id),
           userMessage.id,

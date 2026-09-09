@@ -1629,6 +1629,42 @@ describe("ConversationService", () => {
         expect(attachments.linkToMessage).toHaveBeenCalledWith(["att-1"], "msg-user", TOKEN);
       });
 
+      it("attend la liaison des pièces jointes avant de relire le fil pour générer la réponse", async () => {
+        // `message_attachments` ne rejoint son message que par `message_id` :
+        // relire le fil avant que l'UPDATE soit posé renverrait un message
+        // sans pièce jointe, et le modèle répondrait sans l'avoir vue.
+        const order: string[] = [];
+        const repo = makeRepository({
+          listMessages: jest.fn().mockImplementation(() => {
+            order.push("listMessages");
+            return Promise.resolve({
+              items: [makeMessage({ id: "msg-user", role: "user", content: "Bonjour" })],
+              nextCursor: null,
+            });
+          }),
+        });
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([makeAttachment()]),
+          linkToMessage: jest.fn().mockImplementation(async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+            order.push("linkToMessage");
+          }),
+        });
+        const users = makeUserRepository(
+          {},
+          { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+        );
+
+        await drain(withAttachments(attachments, repo, users), {
+          content: "",
+          inputMode: "text",
+          attachmentIds: ["att-1"],
+        });
+
+        expect(order).toEqual(["linkToMessage", "listMessages"]);
+      });
+
       it("n'interrompt pas le tour si la liaison des pièces jointes échoue", async () => {
         const repo = makeRepository();
         const attachments = makeAttachmentRepository({

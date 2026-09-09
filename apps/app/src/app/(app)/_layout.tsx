@@ -53,14 +53,22 @@ export default function AppLayout() {
       {!expanded && visible ? (
         <View
           className="absolute inset-0 flex-row"
-          style={{ paddingTop: insets.top + 56, pointerEvents: "box-none" }}
+          style={{ paddingTop: insets.top + 56 }}
+          // `box-none` en prop et non mêlé à `style` : sa zone de padding,
+          // au-dessus de la barre latérale, n'a aucun enfant mais couvrait
+          // déjà la bannière — sans lui, le second appui sur le bouton
+          // hamburger (fermeture) y était capté au lieu d'atteindre le
+          // bouton, qui ne pouvait donc qu'ouvrir le tiroir, jamais le
+          // refermer. Posé ici plutôt que dans `style` (react-native-web ne
+          // sait traduire `pointerEvents` en CSS que si tout l'objet `style`
+          // est statique — `paddingTop` étant calculé à l'exécution, il
+          // basculait l'ensemble en style inline brut, où « box-none » finit
+          // écrit tel quel dans l'attribut HTML, une valeur invalide que le
+          // navigateur ignore) : sur mobile web, seul un vrai appareil ou
+          // React Native natif l'aurait honoré, jamais un navigateur.
+          pointerEvents="box-none"
         >
           <AppSidebar onNavigate={() => setPreference(false)} />
-          {/* `box-none` sur le conteneur : sa zone de padding, au-dessus de la
-              barre latérale, n'a aucun enfant mais couvrait déjà la bannière —
-              sans lui, le second appui sur le bouton hamburger (fermeture) y
-              était capté au lieu d'atteindre le bouton, qui ne pouvait donc
-              qu'ouvrir le tiroir, jamais le refermer. */}
           {/* Noir littéral et non un jeton de la palette : le modificateur
               d'opacité de Tailwind ne sait pas calculer d'alpha sur une
               variable CSS, et un voile clair en thème sombre n'assombrirait
