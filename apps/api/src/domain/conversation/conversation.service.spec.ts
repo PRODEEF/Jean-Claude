@@ -801,11 +801,14 @@ describe("ConversationService", () => {
       );
     });
 
-    it("n'écrit aucune réponse d'assistant quand le modèle n'a rien produit", async () => {
+    it("signale l'échec quand le modèle n'a rien produit, sans perdre le message de l'utilisateur", async () => {
+      // Sonar (§5.1) peut répondre sans erreur technique et sans le moindre
+      // appel d'outil : ce silence doit remonter, pas disparaître.
       const repo = makeRepository();
 
-      await drain(makeService(repo, makeLlm([])));
+      await expect(drain(makeService(repo, makeLlm([])))).rejects.toMatchObject({ status: 502 });
 
+      // Le message de l'utilisateur reste acquis : seule la réponse manque.
       expect(repo.appendMessage).toHaveBeenCalledTimes(1);
     });
 

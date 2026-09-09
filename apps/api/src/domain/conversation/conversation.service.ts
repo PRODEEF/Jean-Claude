@@ -566,6 +566,10 @@ export class ConversationService {
     let provider: string | null = null;
     let model: string | null = null;
     const toolCalls: LlmToolCall[] = [];
+    let assistantMessage: Message | null = null;
+    // Une suggestion capturée est déjà une carte à l'écran : ça compte comme
+    // une réponse du tour, même sans le moindre mot de texte.
+    let suggestionCaptured = false;
 
     // Entretien du fil : résolu avant l'appel au modèle, parce qu'il décide des
     // outils qu'on lui expose — et il se lit à partir du profil.
@@ -622,7 +626,7 @@ export class ConversationService {
           ? text
           : (asked?.question ?? "");
 
-      const assistantMessage =
+      assistantMessage =
         content.length > 0
           ? await this.conversations.appendMessage(
               conversationId,
@@ -665,6 +669,7 @@ export class ConversationService {
             context.timezone,
           );
           await this.suggestions.capture(userId, conversationId, corrected, accessToken);
+          suggestionCaptured = true;
         } catch (error) {
           // Une capture ne doit jamais faire perdre les suivantes : sans cet
           // isolement, l'échec d'un seul appel d'outil (ex. une nature de
@@ -684,6 +689,17 @@ export class ConversationService {
       await this.applyOnboardingMemory(userId, toolCalls, accessToken);
 
       if (assistantMessage) yield { type: "done", message: assistantMessage };
+    }
+
+    // Le modèle a pu répondre sans lever d'erreur technique et pourtant ne
+    // rien produire d'exploitable (ex. un moteur qui ne rend aucun appel
+    // d'outil, cf. Sonar) : sans ce garde-fou, le tour se clôt sans un mot ni
+    // une carte, et l'utilisateur ne sait même pas que sa demande a été reçue.
+    if (!assistantMessage && !suggestionCaptured) {
+      throw httpError(
+        502,
+        "Le modèle n'a produit aucune réponse. Réessayez, ou changez de modèle dans Réglages.",
+      );
     }
   }
 
