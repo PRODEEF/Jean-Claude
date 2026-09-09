@@ -1,11 +1,4 @@
-import type {
-  CalendarEvent,
-  CreateCalendarEvent,
-  Task,
-  TaskList,
-  TaskListWithTasks,
-  UpdateCalendarEvent,
-} from "@jc/domain";
+import type { CalendarEvent, Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import type { ICalendarRepository } from "../calendar/calendar.repository.interface.js";
 import type { IUserRepository, ProfileRecord } from "../user/user.repository.interface.js";
 import type { ITaskRepository, TaskRowInput } from "./task.repository.interface.js";
@@ -99,16 +92,8 @@ function makeCalendarRepository(overrides: Partial<ICalendarRepository> = {}): I
   return {
     findInRange: jest.fn().mockResolvedValue([]),
     findById: jest.fn().mockResolvedValue(null),
-    create: jest
-      .fn()
-      .mockImplementation((_userId: string, input: CreateCalendarEvent) =>
-        Promise.resolve(makeEvent(input)),
-      ),
-    update: jest
-      .fn()
-      .mockImplementation((id: string, patch: UpdateCalendarEvent) =>
-        Promise.resolve(makeEvent({ id, ...patch })),
-      ),
+    create: jest.fn().mockResolvedValue(makeEvent()),
+    update: jest.fn().mockResolvedValue(makeEvent()),
     delete: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -146,6 +131,7 @@ function makeUserRepository(overrides: Partial<IUserRepository> = {}): IUserRepo
     findById: jest.fn().mockResolvedValue(makeProfile()),
     update: jest.fn().mockResolvedValue(makeProfile()),
     completeOnboarding: jest.fn().mockResolvedValue(makeProfile()),
+    deleteAccount: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
