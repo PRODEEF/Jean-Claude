@@ -15,7 +15,7 @@ import type {
 import { userPreferencesSchema } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { logger } from "../../core/logger.js";
-import { hasWallTime } from "../../core/timezone.js";
+import { hasWallTime, isPastCalendarDay, isSameCalendarDay } from "../../core/timezone.js";
 import type { ICalendarRepository } from "../calendar/calendar.repository.interface.js";
 import type { IUserRepository } from "../user/user.repository.interface.js";
 import type {
@@ -71,7 +71,9 @@ export class TaskService {
     input: CreateTaskList & TaskListOrigin,
     accessToken: string,
   ): Promise<TaskList> {
-    return this.lists.createList(userId, input, accessToken);
+    return this.assertDueNotPast(userId, input.dueAt, accessToken).then(() =>
+      this.lists.createList(userId, input, accessToken),
+    );
   }
 
   /**
@@ -89,6 +91,7 @@ export class TaskService {
     accessToken: string,
   ): Promise<TaskList> {
     const existing = await this.requireList(id, accessToken);
+    await this.assertDueNotPast(userId, patch.dueAt, accessToken, existing.dueAt);
     const updated = await this.lists.updateList(id, patch, accessToken);
 
     if (patch.dueAt !== undefined && patch.dueAt !== null && existing.eventId !== null) {
@@ -241,5 +244,29 @@ export class TaskService {
     const task = list.tasks.find((candidate) => candidate.id === taskId);
     if (!task) throw httpError(404, "Tâche introuvable.");
     return task;
+  }
+
+  /**
+   * Une échéance ne vise jamais un jour déjà révolu, dans le fuseau du profil.
+   *
+   * Aujourd'hui reste permis, même à une heure déjà passée : c'est encore
+   * « ce qu'il reste à faire aujourd'hui », pas un rendez-vous manqué.
+   * Une liste déjà en retard peut garder son jour — on en change le titre,
+   * pas la date — mais on ne lui en assigne pas un autre déjà révolu.
+   */
+  private async assertDueNotPast(
+    userId: string,
+    dueAt: string | null | undefined,
+    accessToken: string,
+    currentDueAt?: string | null,
+  ): Promise<void> {
+    if (dueAt === null || dueAt === undefined) return;
+
+    const profile = await this.users.findById(userId, accessToken);
+    const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
+    if (!isPastCalendarDay(dueAt, timezone)) return;
+    if (currentDueAt && isSameCalendarDay(dueAt, currentDueAt, timezone)) return;
+
+    throw httpError(400, "Une échéance ne peut pas être dans le passé.");
   }
 }

@@ -5,16 +5,22 @@ import { Check, X } from "lucide-react-native";
 import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
+  createEventsPayloadSchema,
   createProjectFoldersPayloadSchema,
+  createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
+  reportBugPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
+  updateTaskListItemsPayloadSchema,
   type AssignFoldersPayload,
   type CreateTaskListsPayload,
+  type FeedbackPlatform,
   type Suggestion,
   type TaskListKind,
 } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { useFeedbackContext } from "@/features/feedback/hooks/use-feedback";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
@@ -34,6 +40,11 @@ export type SuggestionAcceptInput = {
    * a ici aucune donnée externe (arborescence) que la carte ignorerait encore.
    */
   taskListEdits?: CreateTaskListsPayload;
+  /**
+   * Contexte technique d'un signalement de bug (A.10), inconnu du modèle —
+   * même contexte que celui joint automatiquement à la fenêtre d'avis général.
+   */
+  bugReportContext?: { platform: FeedbackPlatform; screen: string };
 };
 
 export type SuggestionCardProps = {
@@ -60,7 +71,11 @@ export function SuggestionCard({
   const { palette } = useTheme();
   const preview = useSuggestionPreview(suggestion);
   const editableTaskLists = suggestion.kind === "create_task_list";
+  const isBugReport = suggestion.kind === "report_bug";
   const editable = useEditableTaskLists(suggestion);
+  // Même contexte que celui joint automatiquement à la fenêtre d'avis général :
+  // le modèle ne peut pas le connaître, il n'arrive qu'ici, à l'acceptation.
+  const bugReportContext = useFeedbackContext();
 
   // Les dossiers écartés, et non ceux retenus : un rangement propose de
   // ranger, pas de choisir à partir de rien. Décochés plutôt que cochés aussi
@@ -78,6 +93,10 @@ export function SuggestionCard({
   const accept = () => {
     if (editableTaskLists) {
       onAccept({ taskListEdits: editedPayload });
+      return;
+    }
+    if (isBugReport) {
+      onAccept({ bugReportContext });
       return;
     }
     // Rien n'est envoyé tant que rien n'a été décoché : le serveur applique
@@ -453,7 +472,9 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
       {accepted ? <Check size={14} color={palette.accent} /> : null}
       <Text style={[styles.noteLabel, { color: palette.textMuted }]}>
         {outcomeLabel(suggestion)}
-        {accepted && names.length > 0 ? ` — ${names}` : ""}
+        {/* Un signalement n'a rien à relire dans le fil : le texte technique
+            s'adresse à l'équipe, pas à l'utilisateur qui vient de valider. */}
+        {accepted && suggestion.kind !== "report_bug" && names.length > 0 ? ` — ${names}` : ""}
       </Text>
     </View>
   );
@@ -473,8 +494,16 @@ function outcomeLabel(suggestion: Suggestion): string {
       return "Liste complétée";
     case "schedule_task":
       return "Créneaux posés";
+    case "create_recurring_event":
+      return "Rendez-vous posé";
+    case "create_events":
+      return "Rendez-vous posés";
     case "update_task_list_due_date":
       return "Échéance déplacée";
+    case "update_task_list_items":
+      return "Liste mise à jour";
+    case "report_bug":
+      return "Bug signalé, merci pour le retour !";
     default:
       return "Dossiers créés";
   }
@@ -583,6 +612,59 @@ function useSuggestionPreview(suggestion: Suggestion): {
     };
   }
 
+  if (suggestion.kind === "create_recurring_event") {
+    const proposed = createRecurringEventPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Poser le rendez-vous",
+      lines: proposed.success
+        ? [
+            {
+              key: "event",
+              label: proposed.data.title,
+              nested: false,
+              hint: `${dueLabel(proposed.data.startsAt)} · ${rruleHint(proposed.data.rrule)}`,
+            },
+          ]
+        : [],
+    };
+  }
+
+  // Plusieurs rendez-vous ponctuels, chacun avec sa propre date — distinct
+  // d'un rendez-vous récurrent, qui n'affiche qu'une seule ligne.
+  if (suggestion.kind === "create_events") {
+    const proposed = createEventsPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Poser les rendez-vous",
+      lines: proposed.success
+        ? proposed.data.events.map((event, index) => ({
+            key: `event-${index}`,
+            label: event.title,
+            nested: false,
+            hint: dueLabel(event.startsAt),
+          }))
+        : [],
+    };
+  }
+
+  // Cocher ou renommer : la liste est déjà nommée dans la phrase, l'aperçu
+  // ne montre que ce qui change sur chaque ligne.
+  if (suggestion.kind === "update_task_list_items") {
+    const proposed = updateTaskListItemsPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Mettre à jour la liste",
+      lines: proposed.success
+        ? proposed.data.items.map((item) => ({
+            key: item.taskId,
+            label: updateItemLabel(item),
+            nested: false,
+          }))
+        : [],
+    };
+  }
+
   // La liste visée est déjà nommée dans la phrase de l'assistant (« Je décale
   // Courses à vendredi ? ») : l'aperçu se limite à la nouvelle date.
   if (suggestion.kind === "update_task_list_due_date") {
@@ -592,6 +674,19 @@ function useSuggestionPreview(suggestion: Suggestion): {
       acceptLabel: "Décaler la liste",
       lines: proposed.success
         ? [{ key: proposed.data.listId, label: dueLabel(proposed.data.dueAt), nested: false }]
+        : [],
+    };
+  }
+
+  // Le texte rédigé par le modèle, pour relecture avant de le transmettre :
+  // c'est ce que `content` deviendra dans `feedback`, tel quel.
+  if (suggestion.kind === "report_bug") {
+    const proposed = reportBugPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Signaler le bug",
+      lines: proposed.success
+        ? [{ key: "content", label: proposed.data.content, nested: false }]
         : [],
     };
   }
@@ -629,6 +724,21 @@ function useSuggestionPreview(suggestion: Suggestion): {
 }
 
 /**
+ * Ce que la carte dit d'une ligne à modifier : le nouveau titre s'il y en a
+ * un, sinon le seul changement d'état — on n'a pas l'ancien titre sous la
+ * main, la phrase de l'assistant le porte déjà.
+ */
+function updateItemLabel(item: { title?: string; done?: boolean }): string {
+  const state =
+    item.done === true ? "faite" : item.done === false ? "à faire" : null;
+  if (item.title !== undefined && state !== null) return `${item.title} (${state})`;
+  if (item.title !== undefined) return item.title;
+  if (state === "faite") return "Marquer comme faite";
+  if (state === "à faire") return "Remettre à faire";
+  return "Modifier";
+}
+
+/**
  * Ce que la carte dit d'une liste proposée : sa nature, puis son échéance.
  *
  * L'échéance est celle de la liste entière — c'est ce que la conversation a
@@ -654,6 +764,39 @@ function dueLabel(iso: string): string {
   const day = formatFullDay(date);
   return date.getHours() === 0 && date.getMinutes() === 0 ? day : `${day}, ${formatTime(iso)}`;
 }
+
+/**
+ * Récurrence lisible pour la carte — « tous les mardis » plutôt que
+ * `FREQ=WEEKLY;BYDAY=TU`. Un format hors des cas courants retombe sur
+ * « récurrent » : mieux vaut un libellé sobre qu'une chaîne technique.
+ */
+function rruleHint(rrule: string): string {
+  const freq = /FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)/i.exec(rrule)?.[1]?.toUpperCase();
+  const byday = /BYDAY=([A-Z,]+)/i.exec(rrule)?.[1]?.toUpperCase();
+
+  if (freq === "DAILY") return "tous les jours";
+  if (freq === "WEEKLY" && byday) {
+    const days = byday
+      .split(",")
+      .map((code) => WEEKDAY_FR[code])
+      .filter((label): label is string => label !== undefined);
+    if (days.length === 1) return `tous les ${days[0]}s`;
+    if (days.length > 1) return `chaque ${days.join(", ")}`;
+  }
+  if (freq === "MONTHLY") return "tous les mois";
+  if (freq === "YEARLY") return "tous les ans";
+  return "récurrent";
+}
+
+const WEEKDAY_FR: Record<string, string> = {
+  MO: "lundi",
+  TU: "mardi",
+  WE: "mercredi",
+  TH: "jeudi",
+  FR: "vendredi",
+  SA: "samedi",
+  SU: "dimanche",
+};
 
 const styles = StyleSheet.create({
   card: {

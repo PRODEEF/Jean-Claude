@@ -4,6 +4,7 @@ import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
+import { TaskRow } from "@/features/todo/TaskRow";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
 import { eventsOfDay } from "./lib/calendar-dates";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
@@ -76,11 +77,9 @@ export function DayAgenda({ day, events, lists, onOpenEvent, onOpenList }: DayAg
         ))
       )}
 
-      {/* Les listes se cochent dans l'onglet Mes listes, pas ici : le calendrier
-          dit ce que porte la journée, il n'est pas un second endroit où gérer
-          les mêmes listes. L'appui y conduit, sur la liste concernée.
-          Regroupées par dossier, parce qu'une journée mélange le jardin et les
-          impôts : l'intitulé dit de quoi relève ce qui suit. */}
+      {/* Cochable ici : le calendrier dit ce que porte la journée, et rayer
+          ce qui est fait ne doit pas obliger à changer d'onglet. L'appui sur
+          le titre ouvre le détail complet, comme Google Calendar (§4.2). */}
       {groups.map((group) => (
         <View key={group.folderId ?? "unfiled"} className="gap-2">
           {showFolders ? (
@@ -90,24 +89,31 @@ export function DayAgenda({ day, events, lists, onOpenEvent, onOpenList }: DayAg
           ) : null}
 
           {group.lists.map((list) => (
-            <Pressable
+            <View
               key={list.id}
-              onPress={() => onOpenList(list)}
-              accessibilityRole="button"
-              accessibilityLabel={`Ouvrir la liste ${list.title}`}
-              style={{ minHeight: MIN_TOUCH_TARGET }}
-              className="border-border flex-row items-center gap-3 rounded-lg border border-dashed px-3 py-2"
+              className="border-border gap-0.5 rounded-lg border border-dashed px-3 py-2"
             >
-              <Icon as={ListChecks} size={14} className="text-muted-foreground w-14" />
-              <View className="flex-1">
-                <Text numberOfLines={1} className="text-sm font-medium">
-                  {list.title}
-                </Text>
-                <Text numberOfLines={1} className="text-muted-foreground text-xs">
-                  {remainingLabel(openTaskCount(list))}
-                </Text>
-              </View>
-            </Pressable>
+              <Pressable
+                onPress={() => onOpenList(list)}
+                accessibilityRole="button"
+                accessibilityLabel={`Ouvrir la liste ${list.title}`}
+                style={{ minHeight: MIN_TOUCH_TARGET }}
+                className="flex-row items-center gap-3"
+              >
+                <Icon as={ListChecks} size={14} className="text-muted-foreground w-14" />
+                <View className="flex-1">
+                  <Text numberOfLines={1} className="text-sm font-medium">
+                    {list.title}
+                  </Text>
+                  <Text numberOfLines={1} className="text-muted-foreground text-xs">
+                    {remainingLabel(openTaskCount(list))}
+                  </Text>
+                </View>
+              </Pressable>
+              {list.tasks.map((task) => (
+                <TaskRow key={task.id} task={task} />
+              ))}
+            </View>
           ))}
         </View>
       ))}

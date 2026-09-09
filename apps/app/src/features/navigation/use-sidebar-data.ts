@@ -4,6 +4,26 @@ import type { Conversation, FolderTreeNode, TaskList } from "@jc/domain";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { api } from "@/shared/lib/api";
 
+/**
+ * Canal permanent Jean-Claude (A.10).
+ *
+ * Une seule clé, partagée par la barre, l'écran `/assistant` et le préchargement
+ * au boot : deux clés distinctes laissaient la pastille de non-lu d'un côté
+ * alors que l'autre venait de créer le canal (ou de le marquer lu).
+ *
+ * Préfixe `conversations` : `invalidateQueries(["conversations"])` — déjà
+ * appelé par `markRead` — rafraîchit aussi ce cache.
+ */
+export const ASSISTANT_CHANNEL_KEY = ["conversations", "assistant"] as const;
+
+/** Crée le canal à la volée s'il n'existe pas, et en porte le non-lu. */
+export function useAssistantChannel() {
+  return useQuery({
+    queryKey: ASSISTANT_CHANNEL_KEY,
+    queryFn: () => api.conversations.assistantChannel(),
+  });
+}
+
 export type SidebarGroup = {
   folder: FolderTreeNode;
   /** Rattachées à ce dossier précisément, pas à l'un de ses descendants. */
@@ -56,10 +76,7 @@ export function useSidebarData(): SidebarData {
   // (A.10) : un rappel proactif du canal mérite le même signal que les autres.
   // Hors de `isLoading`/`error` du reste de la barre, comme les todolistes —
   // une panne ici ne doit pas effacer l'arborescence des dossiers.
-  const channel = useQuery({
-    queryKey: ["conversations", "assistant"],
-    queryFn: () => api.conversations.assistantChannel(),
-  });
+  const channel = useAssistantChannel();
 
   return useMemo(() => {
     // Le canal permanent a son entrée dédiée en haut de la barre (A.10) : le

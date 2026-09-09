@@ -12,6 +12,10 @@ import type {
   UserPreferences,
 } from "@jc/domain";
 import type { LlmCompletionRequest, LlmProvider, LlmToolCall } from "../../core/llm/llm.port.js";
+import type {
+  AttachmentRecord,
+  IAttachmentRepository,
+} from "../attachment/attachment.repository.interface.js";
 import type { ICalendarRepository } from "../calendar/calendar.repository.interface.js";
 import { CalendarService } from "../calendar/calendar.service.js";
 import type { IFolderRepository } from "../folder/folder.repository.interface.js";
@@ -49,6 +53,7 @@ function makeMessage(
   return {
     conversationId: "conv-1",
     inputMode: "text",
+    attachments: [],
     provider: null,
     model: null,
     choices: null,
@@ -358,6 +363,33 @@ function makeTaskRepository(lists: TaskListWithTasks[] = []): ITaskRepository {
   };
 }
 
+function makeAttachment(overrides: Partial<AttachmentRecord> = {}): AttachmentRecord {
+  return {
+    id: "att-1",
+    messageId: null,
+    url: "https://storage.example/att-1.png",
+    fileName: "photo.png",
+    mimeType: "image/png",
+    byteSize: 1024,
+    extractedText: null,
+    createdAt: "2026-09-09T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeAttachmentRepository(
+  overrides: Partial<IAttachmentRepository> = {},
+): IAttachmentRepository {
+  return {
+    create: jest.fn(),
+    findById: jest.fn().mockResolvedValue(null),
+    findByIds: jest.fn().mockResolvedValue([]),
+    linkToMessage: jest.fn().mockResolvedValue(undefined),
+    delete: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
 function makeTaskListItem(overrides: Partial<Task> = {}): Task {
   return {
     id: "task-1",
@@ -399,6 +431,7 @@ function makeService(
   users: IUserRepository = makeUserRepository(),
   calendar: ICalendarRepository = makeCalendarRepository(),
   tasks: ITaskRepository = makeTaskRepository(),
+  attachments: IAttachmentRepository = makeAttachmentRepository(),
 ): ConversationService {
   return new ConversationService(
     repo,
@@ -408,6 +441,7 @@ function makeService(
     users,
     new CalendarService(calendar, tasks),
     new TaskService(tasks, calendar, users),
+    attachments,
   );
 }
 
@@ -431,7 +465,7 @@ function callCount(llm: LlmProvider): number {
 /** Déroule le tour de dialogue en entier, comme le fait le controller. */
 async function drain(
   service: ConversationService,
-  input = { content: "Bonjour", inputMode: "text" as const },
+  input = { content: "Bonjour", inputMode: "text" as const, attachmentIds: [] as string[] },
 ): Promise<MessageStreamEvent[]> {
   const events: MessageStreamEvent[] = [];
   for await (const event of service.streamMessage("conv-1", USER, input, TOKEN)) {
@@ -641,13 +675,19 @@ describe("ConversationService", () => {
       const events = await drain(makeService(repo, makeLlm()), {
         content: "Que planter en septembre ?",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(repo.appendMessage).toHaveBeenNthCalledWith(
         1,
         "conv-1",
         USER,
-        { content: "Que planter en septembre ?", inputMode: "text", role: "user" },
+        {
+          content: "Que planter en septembre ?",
+          inputMode: "text",
+          attachmentIds: [],
+          role: "user",
+        },
         TOKEN,
       );
 
@@ -661,6 +701,7 @@ describe("ConversationService", () => {
           content: "Voici ce que je propose.",
           inputMode: "text",
           role: "assistant",
+          attachmentIds: [],
           provider: "anthropic",
           model: "claude-opus-5",
         },
@@ -784,7 +825,7 @@ describe("ConversationService", () => {
       const stream = service.streamMessage(
         "conv-1",
         USER,
-        { content: "Raconte", inputMode: "text" },
+        { content: "Raconte", inputMode: "text", attachmentIds: [] },
         TOKEN,
       );
 
@@ -833,7 +874,7 @@ describe("ConversationService", () => {
       ]);
     });
 
-    it("borne le canal permanent aux trois sujets prévus (A.10)", async () => {
+    it("borne le canal permanent aux quatre sujets prévus (A.10)", async () => {
       const llm = makeLlm();
       const repo = makeRepository({
         findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
@@ -842,10 +883,11 @@ describe("ConversationService", () => {
       await drain(makeService(repo, llm), {
         content: "Qu'est-ce qui est important aujourd'hui ?",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       const system = lastRequest(llm).system ?? "";
-      expect(system).toContain("réservé à trois sujets");
+      expect(system).toContain("réservé à quatre sujets");
       expect(system).toContain("conversation dédiée");
     });
 
@@ -862,14 +904,14 @@ describe("ConversationService", () => {
           makeFolderRepository(),
           makeUserRepository({}, { onboardingCompletedAt: null }),
         ),
-        { content: "Je monte une boîte de menuiserie.", inputMode: "text" },
+        { content: "Je monte une boîte de menuiserie.", inputMode: "text", attachmentIds: [] },
       );
 
       const system = lastRequest(llm).system ?? "";
       expect(system).toContain("vient de créer son compte");
       // Le bornage du canal ferait ouvrir une conversation dédiée au premier
       // projet évoqué, alors que l'accueil cherche justement à en entendre parler.
-      expect(system).not.toContain("réservé à trois sujets");
+      expect(system).not.toContain("réservé à quatre sujets");
       expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("finish_onboarding");
     });
 
@@ -886,7 +928,11 @@ describe("ConversationService", () => {
           makeFolderRepository(),
           makeUserRepository({}, { onboardingCompletedAt: null }),
         ),
-        { content: "Je refais tout mon jardin ce printemps.", inputMode: "text" },
+        {
+          content: "Je refais tout mon jardin ce printemps.",
+          inputMode: "text",
+          attachmentIds: [],
+        },
       );
 
       expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_project_folders");
@@ -962,7 +1008,11 @@ describe("ConversationService", () => {
           }),
           llm,
         ),
-        { content: "Qu'est-ce qui est important aujourd'hui ?", inputMode: "text" },
+        {
+          content: "Qu'est-ce qui est important aujourd'hui ?",
+          inputMode: "text",
+          attachmentIds: [],
+        },
       );
 
       expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("finish_onboarding");
@@ -1081,9 +1131,10 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm), {
         content: "Une recette de tarte ?",
         inputMode: "text",
+        attachmentIds: [],
       });
 
-      expect(lastRequest(llm).system ?? "").not.toContain("réservé à trois sujets");
+      expect(lastRequest(llm).system ?? "").not.toContain("réservé à quatre sujets");
     });
 
     it("expose les outils de suggestion au modèle sans jamais les exécuter (§12.1)", async () => {
@@ -1093,6 +1144,7 @@ describe("ConversationService", () => {
       await drain(makeService(repo, llm), {
         content: "Il me faut du terreau et des bulbes.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_task_list");
@@ -1107,6 +1159,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm), {
         content: "Il me faut du terreau et des bulbes.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // Le trou identifié dans #20 : le modèle ne fait alors que repérer du
@@ -1123,6 +1176,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm), {
         content: "Il me faut des courses pour samedi.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // Sans liste à compléter, l'outil n'aurait aucun identifiant à recevoir
@@ -1130,6 +1184,7 @@ describe("ConversationService", () => {
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).toContain("suggest_task_list");
       expect(tools).not.toContain("suggest_task_list_items");
+      expect(tools).not.toContain("suggest_update_task_items");
     });
 
     it("donne au modèle de quoi compléter une liste déjà née du fil", async () => {
@@ -1151,38 +1206,38 @@ describe("ConversationService", () => {
           makeCalendarRepository(),
           makeTaskRepository([list]),
         ),
-        { content: "Complète la liste.", inputMode: "text" },
+        { content: "Complète la liste.", inputMode: "text", attachmentIds: [] },
       );
 
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).toContain("suggest_task_list_items");
+      expect(tools).toContain("suggest_update_task_items");
 
       // Sans le contenu ni l'identifiant, « complète la liste » n'a rien à
       // désigner : le modèle rappelle l'outil de création et propose une
       // seconde liste homonyme.
       const system = lastRequest(llm).system ?? "";
       expect(system).toContain(list.id);
-      expect(system).toContain("Pain");
-      expect(system).toContain("> Lait");
+      expect(system).toContain("identifiant task-1 : Pain");
+      expect(system).toContain("> identifiant task-2 : Lait");
     });
 
     it("rappelle au modèle de ne pas reproposer ce qui a déjà été accepté", async () => {
       const llm = makeLlm();
       const suggestions = makeSuggestionRepository({
-        listForConversation: jest
-          .fn()
-          .mockResolvedValue([
-            makeSuggestion({
-              kind: "create_task_list",
-              status: "accepted",
-              message: "Je te l'organise ?",
-            }),
-          ]),
+        listForConversation: jest.fn().mockResolvedValue([
+          makeSuggestion({
+            kind: "create_task_list",
+            status: "accepted",
+            message: "Je te l'organise ?",
+          }),
+        ]),
       });
 
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Complète la liste.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       const system = lastRequest(llm).system ?? "";
@@ -1198,6 +1253,7 @@ describe("ConversationService", () => {
       await drain(makeService(repo, llm), {
         content: "Aide-moi à ranger mon espace.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
@@ -1228,6 +1284,7 @@ describe("ConversationService", () => {
       await drain(makeService(repo, llm, suggestions), {
         content: "Je me lance dans le jardin.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).toHaveBeenCalledWith(
@@ -1275,6 +1332,7 @@ describe("ConversationService", () => {
       const events = await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Je me lance dans le jardin.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // Sans isolement, l'échec de la première capture aurait interrompu la
@@ -1310,6 +1368,7 @@ describe("ConversationService", () => {
       await drain(makeService(repo, llm), {
         content: "Propose-moi un itinéraire de 5 jours en Bretagne.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // Rien n'est ouvert tant que l'utilisateur n'a pas validé : la
@@ -1344,6 +1403,7 @@ describe("ConversationService", () => {
       await drain(makeService(repo, llm), {
         content: "Propose-moi un itinéraire de 5 jours en Bretagne.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // C'est ce message qui porte la validation : il doit être le même à
@@ -1371,6 +1431,7 @@ describe("ConversationService", () => {
       await drain(makeService(repo, llm, suggestions), {
         content: "Une recette de tarte aux pommes ?",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).not.toHaveBeenCalled();
@@ -1386,7 +1447,7 @@ describe("ConversationService", () => {
         [{ id: "call-1", name: "open_new_conversation", input: { title: "   " } }],
       );
 
-      await drain(makeService(repo, llm), { content: "?", inputMode: "text" });
+      await drain(makeService(repo, llm), { content: "?", inputMode: "text", attachmentIds: [] });
 
       // Proposer un fil sans titre serait plus déroutant que de ne pas basculer.
       expect(repo.appendMessage).toHaveBeenLastCalledWith(
@@ -1478,6 +1539,7 @@ describe("ConversationService", () => {
       await drain(makeService(repo, llm), {
         content: "Qu'est-ce que j'ai cette semaine ?",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // La réponse se donne dans l'autre fil : la relire ici ferait revenir le
@@ -1485,6 +1547,549 @@ describe("ConversationService", () => {
       expect(lastRequest(llm).messages).toEqual([
         { role: "user", content: "Qu'est-ce que j'ai cette semaine ?" },
       ]);
+    });
+
+    /**
+     * `generate()` relit le fil depuis `listMessages` plutôt que depuis le
+     * texte transmis à `streamMessage` : c'est ce que le double doit rendre
+     * pour que la commande soit reconnue, exactement comme un aller-retour
+     * réel en base l'aurait fait.
+     */
+    function withLastUserMessage(content: string): IConversationRepository {
+      return makeRepository({
+        listMessages: jest.fn().mockResolvedValue({
+          items: [makeMessage({ id: "m1", role: "user", content })],
+          nextCursor: null,
+        }),
+      });
+    }
+
+    describe("commande /aide", () => {
+      it("répond par un texte fixe sans appeler le modèle", async () => {
+        const repo = withLastUserMessage("/aide");
+        const llm = makeLlm();
+
+        const events = await drain(makeService(repo, llm), {
+          content: "/aide",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(llm.stream).not.toHaveBeenCalled();
+        expect(events.map((e) => e.type)).toEqual(["message", "text", "done"]);
+        expect(repo.appendMessage).toHaveBeenNthCalledWith(
+          2,
+          "conv-1",
+          USER,
+          expect.objectContaining({ role: "assistant", provider: null, model: null }),
+          TOKEN,
+        );
+      });
+
+      it("répond de la même façon, quel que soit le texte tapé après la commande", async () => {
+        const repo = withLastUserMessage("/aide comment ça marche");
+
+        await drain(makeService(repo, makeLlm()), {
+          content: "/aide comment ça marche",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const call = (repo.appendMessage as jest.Mock).mock.calls[1] as [
+          string,
+          string,
+          { content: string },
+          string,
+        ];
+        expect(call[2].content).toContain("Commandes : /todo, /ranger, /planifier, /bug, /aide.");
+      });
+    });
+
+    describe("commande /todo", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande, sans en inventer le contenu", async () => {
+        const llm = makeLlm();
+
+        await drain(makeService(withLastUserMessage("/todo liste de courses samedi"), llm), {
+          content: "/todo liste de courses samedi",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /todo");
+        expect(system).toContain("« liste de courses samedi »");
+      });
+
+      it("ne l'ajoute pas dans le canal permanent, où les todolistes sont hors périmètre (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [makeMessage({ id: "m1", role: "user", content: "/todo liste de courses samedi" })],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/todo liste de courses samedi",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /todo");
+      });
+
+      it("ne l'ajoute pas quand la détection proactive de todolistes est désactivée (A.10)", async () => {
+        const llm = makeLlm();
+
+        await drain(
+          makeService(
+            withLastUserMessage("/todo liste de courses samedi"),
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            makeUserRepository({ proactiveTaskDetection: false }),
+          ),
+          { content: "/todo liste de courses samedi", inputMode: "text", attachmentIds: [] },
+        );
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /todo");
+      });
+    });
+
+    describe("commande /ranger", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande", async () => {
+        const llm = makeLlm();
+
+        await drain(makeService(withLastUserMessage("/ranger Jardin"), llm), {
+          content: "/ranger Jardin",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /ranger");
+        expect(system).toContain("« Jardin »");
+      });
+
+      it("ne l'ajoute pas dans le canal permanent, où le rangement ne s'applique pas (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [makeMessage({ id: "m1", role: "user", content: "/ranger Jardin" })],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/ranger Jardin",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /ranger");
+      });
+    });
+
+    describe("commande /planifier", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande, sans en inventer la récurrence", async () => {
+        const llm = makeLlm();
+
+        await drain(makeService(withLastUserMessage("/planifier kiné tous les mardis à 18h"), llm), {
+          content: "/planifier kiné tous les mardis à 18h",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /planifier");
+        expect(system).toContain("« kiné tous les mardis à 18h »");
+      });
+
+      it("ne l'ajoute pas dans le canal permanent, où les rendez-vous récurrents sont hors périmètre (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({ id: "m1", role: "user", content: "/planifier kiné tous les mardis à 18h" }),
+            ],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/planifier kiné tous les mardis à 18h",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /planifier");
+      });
+    });
+
+    describe("commande /bug", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande, dans le canal permanent (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({ id: "m1", role: "user", content: "/bug le bouton d'envoi ne répond plus" }),
+            ],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/bug le bouton d'envoi ne répond plus",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /bug");
+        expect(system).toContain("« le bouton d'envoi ne répond plus »");
+      });
+
+      it("ne l'ajoute pas dans une conversation classique, où le signalement de bug est hors périmètre", async () => {
+        const llm = makeLlm();
+
+        await drain(
+          makeService(withLastUserMessage("/bug le bouton d'envoi ne répond plus"), llm),
+          { content: "/bug le bouton d'envoi ne répond plus", inputMode: "text", attachmentIds: [] },
+        );
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /bug");
+      });
+    });
+
+    it("laisse une commande inconnue suivre le tour de dialogue ordinaire", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(withLastUserMessage("/inexistante quelque chose"), llm), {
+        content: "/inexistante quelque chose",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(llm.stream).toHaveBeenCalledTimes(1);
+      expect(lastRequest(llm).system ?? "").not.toContain("Commande /todo");
+    });
+
+    describe("pièces jointes", () => {
+      function withAttachments(
+        attachments: IAttachmentRepository,
+        repo: IConversationRepository = makeRepository(),
+        users: IUserRepository = makeUserRepository(),
+      ): ConversationService {
+        return makeService(
+          repo,
+          makeLlm(),
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          users,
+          makeCalendarRepository(),
+          makeTaskRepository(),
+          attachments,
+        );
+      }
+
+      it("refuse une pièce jointe si le modèle actif ne lit pas les images, avant toute écriture", async () => {
+        const repo = makeRepository();
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([makeAttachment()]),
+        });
+
+        await expect(
+          drain(withAttachments(attachments, repo), {
+            content: "",
+            inputMode: "text",
+            attachmentIds: ["att-1"],
+          }),
+        ).rejects.toMatchObject({ status: 422 });
+        expect(repo.appendMessage).not.toHaveBeenCalled();
+      });
+
+      it("refuse une pièce jointe introuvable", async () => {
+        const repo = makeRepository();
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([]),
+        });
+
+        await expect(
+          drain(withAttachments(attachments, repo), {
+            content: "",
+            inputMode: "text",
+            attachmentIds: ["att-inconnu"],
+          }),
+        ).rejects.toMatchObject({ status: 404 });
+        expect(repo.appendMessage).not.toHaveBeenCalled();
+      });
+
+      it("refuse une pièce jointe déjà envoyée dans un autre message", async () => {
+        const repo = makeRepository();
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([makeAttachment({ messageId: "msg-autre" })]),
+        });
+
+        await expect(
+          drain(withAttachments(attachments, repo), {
+            content: "",
+            inputMode: "text",
+            attachmentIds: ["att-1"],
+          }),
+        ).rejects.toMatchObject({ status: 409 });
+        expect(repo.appendMessage).not.toHaveBeenCalled();
+      });
+
+      it("accepte une image seule, sans texte, avec un modèle qui lit les images", async () => {
+        const repo = makeRepository();
+        const attachment = makeAttachment();
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([attachment]),
+        });
+        const users = makeUserRepository(
+          {},
+          { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+        );
+
+        const events = await drain(withAttachments(attachments, repo, users), {
+          content: "",
+          inputMode: "text",
+          attachmentIds: ["att-1"],
+        });
+
+        // Fusionnées manuellement : pas encore liées en base à cet instant —
+        // sans cela, la vignette apparaîtrait puis disparaîtrait jusqu'au
+        // rechargement suivant.
+        expect(events[0]).toEqual({
+          type: "message",
+          message: expect.objectContaining({ attachments: [attachment] }),
+        });
+        expect(attachments.linkToMessage).toHaveBeenCalledWith(["att-1"], "msg-user", TOKEN);
+      });
+
+      it("attend la liaison des pièces jointes avant de relire le fil pour générer la réponse", async () => {
+        // `message_attachments` ne rejoint son message que par `message_id` :
+        // relire le fil avant que l'UPDATE soit posé renverrait un message
+        // sans pièce jointe, et le modèle répondrait sans l'avoir vue.
+        const order: string[] = [];
+        const repo = makeRepository({
+          listMessages: jest.fn().mockImplementation(() => {
+            order.push("listMessages");
+            return Promise.resolve({
+              items: [makeMessage({ id: "msg-user", role: "user", content: "Bonjour" })],
+              nextCursor: null,
+            });
+          }),
+        });
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([makeAttachment()]),
+          linkToMessage: jest.fn().mockImplementation(async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+            order.push("linkToMessage");
+          }),
+        });
+        const users = makeUserRepository(
+          {},
+          { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+        );
+
+        await drain(withAttachments(attachments, repo, users), {
+          content: "",
+          inputMode: "text",
+          attachmentIds: ["att-1"],
+        });
+
+        expect(order).toEqual(["linkToMessage", "listMessages"]);
+      });
+
+      it("n'interrompt pas le tour si la liaison des pièces jointes échoue", async () => {
+        const repo = makeRepository();
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([makeAttachment()]),
+          linkToMessage: jest.fn().mockRejectedValue(new Error("indisponible")),
+        });
+        const users = makeUserRepository(
+          {},
+          { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+        );
+
+        const events = await drain(withAttachments(attachments, repo, users), {
+          content: "",
+          inputMode: "text",
+          attachmentIds: ["att-1"],
+        });
+
+        expect(events.at(-1)?.type).toBe("done");
+      });
+
+      it("accepte un PDF seul, même avec un modèle qui ne lit pas les images", async () => {
+        const repo = makeRepository();
+        const attachment = makeAttachment({
+          mimeType: "application/pdf",
+          fileName: "contrat.pdf",
+          extractedText: "Préavis de deux mois.",
+        });
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([attachment]),
+        });
+
+        const events = await drain(withAttachments(attachments, repo), {
+          content: "",
+          inputMode: "text",
+          attachmentIds: ["att-1"],
+        });
+
+        expect(events[0]).toEqual({
+          type: "message",
+          message: expect.objectContaining({ attachments: [attachment] }),
+        });
+      });
+
+      it("place le texte extrait d'un PDF avant le texte du message, dans une seule partie texte", async () => {
+        const repo = makeRepository({
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({
+                id: "msg-user",
+                role: "user",
+                content: "Voici mon bail.",
+                attachments: [
+                  makeAttachment({
+                    mimeType: "application/pdf",
+                    fileName: "contrat.pdf",
+                    extractedText: "Préavis de deux mois.",
+                  }),
+                ],
+              }),
+            ],
+            nextCursor: null,
+          }),
+        });
+        const llm = makeLlm();
+
+        await drain(makeService(repo, llm), { content: "?", inputMode: "text", attachmentIds: [] });
+
+        expect(lastRequest(llm).messages).toEqual([
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Voici mon bail.\n\n--- contrat.pdf ---\nPréavis de deux mois.",
+              },
+            ],
+          },
+        ]);
+      });
+
+      it("combine le texte extrait d'un PDF et une image dans le même message", async () => {
+        const repo = makeRepository({
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({
+                id: "msg-user",
+                role: "user",
+                content: "Voici mon bail et une photo du logement.",
+                attachments: [
+                  makeAttachment({
+                    id: "att-pdf",
+                    mimeType: "application/pdf",
+                    fileName: "contrat.pdf",
+                    extractedText: "Préavis de deux mois.",
+                  }),
+                  makeAttachment({
+                    id: "att-img",
+                    url: "https://storage.example/att-img.png",
+                    mimeType: "image/png",
+                  }),
+                ],
+              }),
+            ],
+            nextCursor: null,
+          }),
+        });
+        const llm = makeLlm();
+
+        await drain(makeService(repo, llm), { content: "?", inputMode: "text", attachmentIds: [] });
+
+        expect(lastRequest(llm).messages).toEqual([
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Voici mon bail et une photo du logement.\n\n--- contrat.pdf ---\nPréavis de deux mois.",
+              },
+              { type: "image", url: "https://storage.example/att-img.png", mediaType: "image/png" },
+            ],
+          },
+        ]);
+      });
+
+      it("accepte un fichier texte seul, même avec un modèle qui ne lit pas les images", async () => {
+        const repo = makeRepository();
+        const attachment = makeAttachment({
+          mimeType: "text/plain",
+          fileName: "notes.txt",
+          extractedText: "Liste de courses : pain, lait.",
+        });
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([attachment]),
+        });
+
+        const events = await drain(withAttachments(attachments, repo), {
+          content: "",
+          inputMode: "text",
+          attachmentIds: ["att-1"],
+        });
+
+        expect(events[0]).toEqual({
+          type: "message",
+          message: expect.objectContaining({ attachments: [attachment] }),
+        });
+      });
+
+      it("place le texte d'un fichier texte brut dans le contexte, jamais comme une partie image", async () => {
+        const repo = makeRepository({
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({
+                id: "msg-user",
+                role: "user",
+                content: "Voici mes notes.",
+                attachments: [
+                  makeAttachment({
+                    mimeType: "text/plain",
+                    fileName: "notes.txt",
+                    extractedText: "Liste de courses : pain, lait.",
+                  }),
+                ],
+              }),
+            ],
+            nextCursor: null,
+          }),
+        });
+        const llm = makeLlm();
+
+        await drain(makeService(repo, llm), { content: "?", inputMode: "text", attachmentIds: [] });
+
+        expect(lastRequest(llm).messages).toEqual([
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Voici mes notes.\n\n--- notes.txt ---\nListe de courses : pain, lait.",
+              },
+            ],
+          },
+        ]);
+      });
     });
   });
 
@@ -1510,6 +2115,7 @@ describe("ConversationService", () => {
       await drain(makeService(repo, llm), {
         content: "Que faut-il pour rempoter ?",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // Sans ce second tour, la carte s'affichait seule et la question restait
@@ -1749,6 +2355,60 @@ describe("ConversationService", () => {
         collect(makeService(repo).retryMessage("conv-1", USER, "msg-1", TOKEN)),
       ).rejects.toThrow();
     });
+
+    it("refuse de corriger un message dont le modèle actif ne lit plus les images", async () => {
+      const question = makeMessage({
+        id: "msg-1",
+        role: "user",
+        content: "Regarde cette photo.",
+        createdAt: "2026-09-02T08:00:00.000Z",
+        attachments: [makeAttachment()],
+      });
+      const repo = makeRepository({ findMessage: jest.fn().mockResolvedValue(question) });
+
+      await expect(
+        collect(
+          makeService(
+            repo,
+            makeLlm(),
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            makeUserRepository(),
+            makeCalendarRepository(),
+            makeTaskRepository(),
+            makeAttachmentRepository(),
+          ).editMessage("conv-1", USER, "msg-1", { content: "Et celle-là ?" }, TOKEN),
+        ),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(repo.updateMessageContent).not.toHaveBeenCalled();
+    });
+
+    it("refuse de rejouer un message dont le modèle actif ne lit plus les images", async () => {
+      const question = makeMessage({
+        id: "msg-1",
+        role: "user",
+        content: "Regarde cette photo.",
+        createdAt: "2026-09-02T08:00:00.000Z",
+        attachments: [makeAttachment()],
+      });
+      const repo = makeRepository({ findMessage: jest.fn().mockResolvedValue(question) });
+
+      await expect(
+        collect(
+          makeService(
+            repo,
+            makeLlm(),
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            makeUserRepository(),
+            makeCalendarRepository(),
+            makeTaskRepository(),
+            makeAttachmentRepository(),
+          ).retryMessage("conv-1", USER, "msg-1", TOKEN),
+        ),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(repo.deleteMessagesAfter).not.toHaveBeenCalled();
+    });
   });
 
   describe("entretien du fil", () => {
@@ -1789,6 +2449,107 @@ describe("ConversationService", () => {
       // Le titre est le libellé du fil, pas une donnée créée pour l'utilisateur :
       // il ne relève pas du §12.1.
       expect(suggestions.create).not.toHaveBeenCalled();
+    });
+
+    it("retire un JSON de titre collé en tête de la réponse (fuite de certains modèles)", async () => {
+      const repo = untitled();
+      const llm = makeLlm([
+        '{"title":"Avis sur le CV de Clarisse"}',
+        "Franchement, il est déjà solide.",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: "Franchement, il est déjà solide." },
+      ]);
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          role: "assistant",
+          content: "Franchement, il est déjà solide.",
+        }),
+        TOKEN,
+      );
+      expect(repo.update).toHaveBeenCalledWith(
+        "conv-1",
+        { title: "Avis sur le CV de Clarisse" },
+        TOKEN,
+      );
+    });
+
+    it("attend que l'objet JSON soit complet avant d'émettre, même à cheval sur deux fragments", async () => {
+      const repo = untitled();
+      const llm = makeLlm([
+        '{"title":"Avis sur le CV',
+        ' de Clarisse"}Franchement, il est déjà solide.',
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: "Franchement, il est déjà solide." },
+      ]);
+      expect(repo.update).toHaveBeenCalledWith(
+        "conv-1",
+        { title: "Avis sur le CV de Clarisse" },
+        TOKEN,
+      );
+    });
+
+    it("laisse passer un JSON qui n'est pas un titre de conversation", async () => {
+      const repo = untitled();
+      const llm = makeLlm(['{"ok":true} voici la suite']);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: '{"ok":true} voici la suite' },
+      ]);
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it("retire les pseudo-appels d'outils collés en tête et récupère le titre (A.11)", async () => {
+      const repo = untitled();
+      const llm = makeLlm([
+        'nameconversation("Zumba")\n',
+        'suggestfolders(["Courses (4e561b0b-3ada-4613-892d-963a7d6222b2)"])\n',
+        "C'est noté !",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: "C'est noté !" },
+      ]);
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          role: "assistant",
+          content: "C'est noté !",
+        }),
+        TOKEN,
+      );
+      expect(repo.update).toHaveBeenCalledWith("conv-1", { title: "Zumba" }, TOKEN);
+    });
+
+    it("attend qu'un pseudo-appel soit clos avant d'émettre, même à cheval sur deux fragments", async () => {
+      const repo = untitled();
+      const llm = makeLlm([
+        "nameconversation(\"Zum",
+        'ba")\nsuggestfolders(["Courses"])\nJe te propose de le poser.',
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: "Je te propose de le poser." },
+      ]);
+      expect(repo.update).toHaveBeenCalledWith("conv-1", { title: "Zumba" }, TOKEN);
     });
 
     it("donne au modèle les dossiers existants quand le fil n'est rangé nulle part", async () => {
@@ -1915,6 +2676,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions, folders), {
         content: "C'est quand la date de déclaration ?",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // Un identifiant recopié de travers tombe sur un autre dossier réel : la
@@ -2039,7 +2801,7 @@ describe("ConversationService", () => {
         ),
       );
 
-      // Le canal annonce les rappels comme premier de ses trois sujets : sans
+      // Le canal annonce les rappels comme premier de ses quatre sujets : sans
       // cette lecture, « qu'est-ce que j'ai cette semaine ? » ne pouvait
       // produire qu'une invention.
       const system = lastRequest(llm).system ?? "";
@@ -2202,14 +2964,53 @@ describe("ConversationService", () => {
           makeFolderRepository(),
           makeUserRepository({ proactiveTaskDetection: false }),
         ),
-        { content: "Il me faut du terreau et des bulbes.", inputMode: "text" },
+        { content: "Il me faut du terreau et des bulbes.", inputMode: "text", attachmentIds: [] },
       );
 
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).not.toContain("suggest_task_list");
       // Les autres capacités restent actives : le réglage est par capacité,
       // pas un interrupteur général.
+      expect(tools).toContain("suggest_folders");
       expect(tools).toContain("suggest_recurring_event");
+    });
+
+    it("retire suggest_recurring_event quand la planification proactive est coupée", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({ proactiveScheduling: false }),
+        ),
+        { content: "J'ai kiné tous les mardis à 18h.", inputMode: "text", attachmentIds: [] },
+      );
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).not.toContain("suggest_recurring_event");
+      expect(lastRequest(llm).system).not.toContain("suggest_recurring_event");
+    });
+
+    it("réclame suggest_recurring_event dès qu'on demande de noter une récurrence", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(makeRepository(), llm),
+        {
+          content: "Je vais faire de la zumba tous les mercredi à 18h30, note le.",
+          inputMode: "text",
+          attachmentIds: [],
+        },
+      );
+
+      const system = lastRequest(llm).system ?? "";
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_recurring_event");
+      expect(system).toContain("suggest_recurring_event");
+      expect(system).toMatch(/noter|rappeler|retenir/i);
+      expect(system).toMatch(/C'est noté|Je note/);
     });
 
     it("cesse de réclamer dans la consigne un outil qu'on ne remet plus", async () => {
@@ -2225,7 +3026,7 @@ describe("ConversationService", () => {
           makeFolderRepository(),
           makeUserRepository({ structureSuggestions: false }),
         ),
-        { content: "Aide-moi à ranger mon espace.", inputMode: "text" },
+        { content: "Aide-moi à ranger mon espace.", inputMode: "text", attachmentIds: [] },
       );
 
       expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_project_folders");
@@ -2269,14 +3070,15 @@ describe("ConversationService", () => {
             morningReminders: false,
           }),
         ),
-        { content: "Donne-moi une recette de tarte.", inputMode: "text" },
+        { content: "Donne-moi une recette de tarte.", inputMode: "text", attachmentIds: [] },
       );
 
       // Sans elle, le canal répondrait lui-même hors de son périmètre : A.10
-      // ne tiendrait plus. `ask_question` reste lui aussi : il ne fait que
-      // donner une forme à une question, il n'ouvre aucune capacité.
+      // ne tiendrait plus. `report_bug` et `ask_question` restent eux aussi :
+      // ni l'un ni l'autre n'ouvre de capacité désactivable.
       expect(lastRequest(llm).tools?.map((t) => t.name)).toEqual([
         "open_new_conversation",
+        "report_bug",
         "ask_question",
       ]);
     });
@@ -2324,7 +3126,7 @@ describe("ConversationService", () => {
           completeOnboarding: jest.fn(),
           deleteAccount: jest.fn(),
         }),
-        { content: "Il me faut du terreau.", inputMode: "text" },
+        { content: "Il me faut du terreau.", inputMode: "text", attachmentIds: [] },
       );
 
       // Un profil manquant ne doit pas priver l'utilisateur de son tour de
@@ -2386,17 +3188,22 @@ describe("ConversationService", () => {
         kind: "create_task_list",
         payload: { lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }] },
       });
-      const suggestions = makeSuggestionRepository({ create: jest.fn().mockResolvedValue(created) });
-      const llm = makeLlm([], [
-        {
-          id: "call-1",
-          name: "suggest_task_list",
-          input: {
-            message: "Je t'organise ça ?",
-            lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }],
+      const suggestions = makeSuggestionRepository({
+        create: jest.fn().mockResolvedValue(created),
+      });
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }],
+            },
           },
-        },
-      ]);
+        ],
+      );
 
       const suggestion = await makeService(repo, llm, suggestions).extractTaskList(
         "conv-1",
@@ -2418,26 +3225,29 @@ describe("ConversationService", () => {
     it("ramène aussi l'échéance à minuit local ici (A.3, #18)", async () => {
       const repo = makeRepository();
       const suggestions = makeSuggestionRepository();
-      const llm = makeLlm([], [
-        {
-          id: "call-1",
-          name: "suggest_task_list",
-          input: {
-            message: "Je t'organise ça ?",
-            lists: [
-              {
-                title: "Courses",
-                kind: "shopping",
-                // Convention de « fin de journée » qu'un LLM produit souvent :
-                // sans ce même filet qu'au fil du dialogue ordinaire, cette
-                // échéance extraite ici y échapperait.
-                dueAt: "2026-09-10T23:59:00.000+02:00",
-                items: [{ title: "Terreau" }],
-              },
-            ],
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  // Convention de « fin de journée » qu'un LLM produit souvent :
+                  // sans ce même filet qu'au fil du dialogue ordinaire, cette
+                  // échéance extraite ici y échapperait.
+                  dueAt: "2026-09-10T23:59:00.000+02:00",
+                  items: [{ title: "Terreau" }],
+                },
+              ],
+            },
           },
-        },
-      ]);
+        ],
+      );
 
       await makeService(repo, llm, suggestions).extractTaskList("conv-1", USER, TOKEN);
 
@@ -2513,9 +3323,9 @@ describe("ConversationService", () => {
         findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
       });
 
-      await expect(
-        makeService(repo).extractTaskList("conv-1", USER, TOKEN),
-      ).rejects.toMatchObject({ status: 422 });
+      await expect(makeService(repo).extractTaskList("conv-1", USER, TOKEN)).rejects.toMatchObject({
+        status: 422,
+      });
     });
 
     it("refuse quand la détection de todolistes est désactivée dans les réglages (A.10)", async () => {
@@ -2535,9 +3345,9 @@ describe("ConversationService", () => {
     it("refuse une conversation sans historique exploitable", async () => {
       const repo = makeRepository({ listMessages: emptyThread() });
 
-      await expect(
-        makeService(repo).extractTaskList("conv-1", USER, TOKEN),
-      ).rejects.toMatchObject({ status: 422 });
+      await expect(makeService(repo).extractTaskList("conv-1", USER, TOKEN)).rejects.toMatchObject({
+        status: 422,
+      });
     });
   });
 
@@ -2572,13 +3382,16 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Il me faut du pain pour vendredi.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).toHaveBeenCalledWith(
         USER,
         expect.objectContaining({
           payload: expect.objectContaining({
-            lists: [expect.objectContaining({ title: "Courses", dueAt: "2026-09-03T22:00:00.000Z" })],
+            lists: [
+              expect.objectContaining({ title: "Courses", dueAt: "2026-09-03T22:00:00.000Z" }),
+            ],
           }),
         }),
         TOKEN,
@@ -2613,6 +3426,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Crée une liste de courses pour samedi à 10h.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // Le jour vient du filet (le prochain samedi, 5 septembre), mais
@@ -2622,7 +3436,9 @@ describe("ConversationService", () => {
         USER,
         expect.objectContaining({
           payload: expect.objectContaining({
-            lists: [expect.objectContaining({ title: "Courses", dueAt: "2026-09-05T08:00:00.000Z" })],
+            lists: [
+              expect.objectContaining({ title: "Courses", dueAt: "2026-09-05T08:00:00.000Z" }),
+            ],
           }),
         }),
         TOKEN,
@@ -2661,6 +3477,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Crée une liste de courses pour samedi.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).toHaveBeenCalledWith(
@@ -2703,6 +3520,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Crée une liste de courses pour samedi.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).toHaveBeenCalledWith(
@@ -2747,6 +3565,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Il me faut du pain pour le 15.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // Minuit à Paris le 15 septembre, encore à l'heure d'été (UTC+2).
@@ -2787,6 +3606,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Il me faut du pain.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).toHaveBeenCalledWith(
@@ -2830,6 +3650,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Il me faut du pain pour vendredi soir.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).toHaveBeenCalledWith(
@@ -2871,6 +3692,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Il me fallait du pain hier.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).toHaveBeenCalledWith(
@@ -2882,6 +3704,138 @@ describe("ConversationService", () => {
         }),
         TOKEN,
       );
+    });
+  });
+
+  describe("création d'un rendez-vous récurrent (A.11)", () => {
+    it("capture la suggestion même quand le modèle omet les secondes et le fuseau de `startsAt`", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_recurring_event",
+            input: {
+              message: "J'ai noté kiné tous les mardis à 18h, je pose le rappel ?",
+              title: "Kiné",
+              // Un LLM laissé libre omet souvent les secondes et le fuseau,
+              // ce que `isoDateTimeSchema` rejette sans cette correction —
+              // la proposition disparaissait alors silencieusement.
+              startsAt: "2026-09-08T18:00",
+              rrule: "FREQ=WEEKLY;BYDAY=TU",
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "J'ai kiné tous les mardis à 18h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_recurring_event",
+          payload: expect.objectContaining({ startsAt: "2026-09-08T18:00:00.000Z" }),
+        }),
+        TOKEN,
+      );
+    });
+  });
+
+  describe("création de plusieurs rendez-vous ponctuels (A.3)", () => {
+    it("capture un seul appel portant plusieurs rendez-vous", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_events",
+            input: {
+              message: "Je te pose ces deux rendez-vous dans ton agenda ?",
+              events: [
+                { title: "Dentiste", startsAt: "2026-09-10T15:00:00.000Z" },
+                { title: "Coiffeur", startsAt: "2026-09-11T08:00:00.000Z" },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "J'ai rendez-vous chez le dentiste jeudi à 17h et chez le coiffeur vendredi à 10h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_events",
+          payload: {
+            events: [
+              { title: "Dentiste", startsAt: "2026-09-10T15:00:00.000Z" },
+              { title: "Coiffeur", startsAt: "2026-09-11T08:00:00.000Z" },
+            ],
+          },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("capture la suggestion même quand le modèle omet les secondes et le fuseau", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_events",
+            input: {
+              message: "Je te pose ce rendez-vous dans ton agenda ?",
+              events: [{ title: "Dentiste", startsAt: "2026-09-10T15:00" }],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "J'ai rendez-vous chez le dentiste jeudi à 17h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_events",
+          payload: { events: [{ title: "Dentiste", startsAt: "2026-09-10T15:00:00.000Z" }] },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("retire suggest_events quand la planification proactive est coupée", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({ proactiveScheduling: false }),
+        ),
+        { content: "J'ai rendez-vous chez le dentiste jeudi à 17h.", inputMode: "text", attachmentIds: [] },
+      );
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).not.toContain("suggest_events");
+      expect(lastRequest(llm).system).not.toContain("suggest_events");
     });
   });
 
@@ -2955,7 +3909,11 @@ describe("ConversationService", () => {
           makeCalendarRepository(),
           tasks,
         ),
-        { content: "Décale les travaux du jardin à vendredi.", inputMode: "text" },
+        {
+          content: "Décale les travaux du jardin à vendredi.",
+          inputMode: "text",
+          attachmentIds: [],
+        },
       );
 
       // Vendredi 4 septembre, minuit à Paris.
@@ -2999,7 +3957,11 @@ describe("ConversationService", () => {
           makeCalendarRepository(),
           tasks,
         ),
-        { content: "Décale les travaux du jardin à vendredi 14h.", inputMode: "text" },
+        {
+          content: "Décale les travaux du jardin à vendredi 14h.",
+          inputMode: "text",
+          attachmentIds: [],
+        },
       );
 
       // Vendredi 4 septembre, 14h à Paris (UTC+2).
@@ -3041,10 +4003,66 @@ describe("ConversationService", () => {
           makeCalendarRepository(),
           tasks,
         ),
-        { content: "Décale les travaux du jardin au 1er.", inputMode: "text" },
+        { content: "Décale les travaux du jardin au 1er.", inputMode: "text", attachmentIds: [] },
       );
 
       expect(suggestions.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("modification des lignes d'une todoliste existante (§12.1, A.2)", () => {
+    const EXISTING_LIST = makeTaskList({
+      id: "11111111-1111-4111-8111-111111111111",
+      title: "Courses",
+      kind: "shopping",
+      conversationId: "conv-1",
+      tasks: [makeTaskListItem({ id: "22222222-2222-4222-8222-222222222222", title: "Pain" })],
+    });
+
+    it("expose l'outil dès qu'une liste du fil porte des lignes", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([EXISTING_LIST]),
+        ),
+      );
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_update_task_items");
+      expect(lastRequest(llm).system ?? "").toContain("suggest_update_task_items");
+    });
+
+    it("ne propose pas de modifier des lignes quand les listes du fil sont vides", async () => {
+      const llm = makeLlm();
+      const empty = makeTaskList({
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Courses",
+        kind: "shopping",
+        conversationId: "conv-1",
+        tasks: [],
+      });
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([empty]),
+        ),
+      );
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).not.toContain("suggest_update_task_items");
+      expect(tools).toContain("suggest_task_list_items");
     });
   });
 });

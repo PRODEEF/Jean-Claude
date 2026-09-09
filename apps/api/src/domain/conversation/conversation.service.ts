@@ -1,9 +1,12 @@
 import {
   assistantScopeSchema,
+  ASSISTANT_MODELS,
   DEFAULT_ASSISTANT_NAME,
   DEFAULT_CONVERSATION_TITLE,
   askedQuestionSchema,
+  isVisionCapableModel,
   labelSchema,
+  parseSlashCommand,
   userMemorySchema,
   userPreferencesSchema,
 } from "@jc/domain";
@@ -20,9 +23,11 @@ import type {
   EditMessage,
   FolderTreeNode,
   Message,
+  MessageAttachment,
   MessageStreamEvent,
   Paginated,
   SendMessage,
+  SlashCommandName,
   Suggestion,
   TaskListWithTasks,
   UpdateConversation,
@@ -30,6 +35,8 @@ import type {
 import { httpError } from "../../core/http.js";
 import type {
   LlmCompletionRequest,
+  LlmContentPart,
+  LlmMessage,
   LlmProvider,
   LlmTool,
   LlmToolCall,
@@ -37,6 +44,7 @@ import type {
 import { logger } from "../../core/logger.js";
 import { parseRelativeDateFr } from "../../core/relative-date.js";
 import { fromWall, toWall } from "../../core/timezone.js";
+import type { IAttachmentRepository } from "../attachment/attachment.repository.interface.js";
 import {
   ASK_QUESTION,
   ASSISTANT_TOOLS,
@@ -45,11 +53,15 @@ import {
   isAllowedByScope,
   NAME_CONVERSATION,
   OPEN_NEW_CONVERSATION,
+  REPORT_BUG,
+  SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
+  SUGGEST_RECURRING_EVENT,
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_TASK_LIST_ITEMS,
+  SUGGEST_UPDATE_TASK_ITEMS,
 } from "../../core/llm/llm.tools.js";
 import type { CalendarService } from "../calendar/calendar.service.js";
 import type { FolderService } from "../folder/folder.service.js";
@@ -117,6 +129,22 @@ const APPLIED_DIRECTLY = new Set([
   FINISH_ONBOARDING.name,
   ASK_QUESTION.name,
 ]);
+
+/**
+ * Réponse fixe de la commande /aide : un texte figé plutôt qu'un tour de
+ * modèle, pour qu'elle ne varie jamais ni n'invente une fonctionnalité
+ * absente — la fiabilité prime ici sur la personnalisation (Cible 2, §0.2).
+ */
+const AIDE_MESSAGE = [
+  "Voici comment m'utiliser :",
+  "",
+  "- Dis-moi ce qui est important cette semaine, je te le rappelle et je t'aide à ranger tes conversations en dossiers.",
+  "- Décris une liste dans une conversation, je te propose de la créer — ou tape /todo <titre> [échéance] pour aller plus vite.",
+  "- Je te propose un rangement pour chaque conversation ; corrige-le à tout moment avec /ranger, une même conversation peut appartenir à plusieurs dossiers.",
+  "- Décris-moi un problème technique depuis ce canal, je transmets un rapport — ou tape /bug <description> pour aller plus vite.",
+  "",
+  "Commandes : /todo, /ranger, /planifier, /bug, /aide.",
+].join("\n");
 
 /**
  * Ce que le tour peut encore faire du fil. `filing` à `null` signifie qu'aucun
@@ -202,6 +230,7 @@ export class ConversationService {
     private readonly users: IUserRepository,
     private readonly calendar: CalendarService,
     private readonly tasks: TaskService,
+    private readonly attachments: IAttachmentRepository,
   ) {}
 
   list(
@@ -256,7 +285,12 @@ export class ConversationService {
       await this.conversations.appendMessage(
         channel.id,
         userId,
-        { content: welcomeMessage(context.name), inputMode: "text", role: "assistant" },
+        {
+          content: welcomeMessage(context.name),
+          inputMode: "text",
+          role: "assistant",
+          attachmentIds: [],
+        },
         accessToken,
       );
       // `channel` a été capturé avant ce message : il porte encore le
@@ -338,6 +372,24 @@ export class ConversationService {
   ): AsyncGenerator<MessageStreamEvent> {
     const conversation = await this.getById(conversationId, accessToken);
 
+    // Résolues avant toute écriture : le refus d'un modèle sans vision doit
+    // précéder la création du message, pas la suivre (§12.1 — le serveur
+    // fait respecter la règle, jamais l'UI seule).
+    let attachments: MessageAttachment[] = [];
+    if (input.attachmentIds.length > 0) {
+      const resolved = await this.attachments.findByIds(input.attachmentIds, accessToken);
+      if (resolved.length !== input.attachmentIds.length) {
+        throw httpError(404, "Une pièce jointe est introuvable.");
+      }
+      if (resolved.some((a) => a.messageId !== null)) {
+        throw httpError(409, "Une pièce jointe a déjà été envoyée dans un autre message.");
+      }
+      attachments = resolved;
+
+      const context = await this.contextFor(userId, accessToken);
+      this.assertVisionCapable(context.model ?? this.llm.model, attachments);
+    }
+
     const userMessage = await this.conversations.appendMessage(
       conversationId,
       userId,
@@ -345,7 +397,31 @@ export class ConversationService {
       accessToken,
     );
 
-    yield { type: "message", message: userMessage };
+    // Les pièces jointes ne sont pas encore liées en base à cet instant — la
+    // liaison ne peut se faire qu'une fois `messageId` connu, juste après.
+    // Sans cette fusion manuelle, la vignette apparaîtrait puis disparaîtrait
+    // jusqu'au rechargement suivant.
+    yield { type: "message", message: { ...userMessage, attachments } };
+
+    if (attachments.length > 0) {
+      // Attendue avant `generate` : celui-ci relit le fil depuis la base, et
+      // `message_attachments` ne rejoint son message que par `message_id` —
+      // sans ce await, la génération pouvait partir avant l'UPDATE, et le
+      // modèle répondait sans jamais voir la pièce jointe. L'échec, lui,
+      // reste best-effort et journalisé plutôt que propagé
+      // (cf. attachment-storage.ts) : les RLS protègent déjà chaque ligne, il
+      // ne laisse rien d'exposé, seulement une pièce jointe orpheline à
+      // revoir plus tard.
+      await this.attachments
+        .linkToMessage(
+          attachments.map((a) => a.id),
+          userMessage.id,
+          accessToken,
+        )
+        .catch((error: unknown) => {
+          logger.error(SCOPE, "Échec de la liaison des pièces jointes au message", error);
+        });
+    }
 
     yield* this.generate(conversation, userId, accessToken);
   }
@@ -369,6 +445,13 @@ export class ConversationService {
 
     if (message.role !== "user") {
       throw httpError(422, "Seul un message que vous avez écrit peut être corrigé.");
+    }
+
+    // Couvre le cas où le modèle a changé dans les réglages depuis l'envoi
+    // initial : la pièce jointe reste dans l'historique rejoué par `generate`.
+    if (message.attachments.length > 0) {
+      const context = await this.contextFor(userId, accessToken);
+      this.assertVisionCapable(context.model ?? this.llm.model, message.attachments);
     }
 
     await this.conversations.deleteMessagesAfter(conversationId, message.createdAt, accessToken);
@@ -401,6 +484,13 @@ export class ConversationService {
 
     if (message.role === "system") {
       throw httpError(422, "Ce message ne peut pas être rejoué.");
+    }
+
+    // Un message assistant ne porte jamais de pièce jointe : n'a d'effet que
+    // sur la reprise d'un message utilisateur.
+    if (message.attachments.length > 0) {
+      const context = await this.contextFor(userId, accessToken);
+      this.assertVisionCapable(context.model ?? this.llm.model, message.attachments);
     }
 
     await this.conversations.deleteMessagesAfter(conversationId, message.createdAt, accessToken);
@@ -447,7 +537,7 @@ export class ConversationService {
     const now = new Date();
     const request: LlmCompletionRequest = {
       system: buildExtractionPrompt(context, now),
-      messages: dialogue.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      messages: this.toLlmMessages(dialogue),
       tools: [SUGGEST_TASK_LIST],
       ...(context.model ? { model: context.model } : {}),
     };
@@ -512,6 +602,60 @@ export class ConversationService {
     return conversation;
   }
 
+  /**
+   * Traduit le fil vers le format du port LLM.
+   *
+   * Un message sans pièce jointe garde la simple chaîne d'avant — inutile
+   * d'imposer un tableau à un tour de dialogue qui n'en a jamais eu besoin.
+   *
+   * Un PDF ou un fichier texte ne devient jamais une partie `image` (§13.4.1) :
+   * son texte, déjà extrait à l'upload, rejoint le texte du message dans la
+   * même partie `text` — avant les images, pour que le modèle lise le
+   * contexte écrit avant de regarder ce qui l'illustre.
+   */
+  private toLlmMessages(dialogue: Message[]): LlmMessage[] {
+    return dialogue.map((m) => {
+      if (m.attachments.length === 0) {
+        return { role: m.role as "user" | "assistant", content: m.content };
+      }
+
+      const parts: LlmContentPart[] = [];
+      const textSections = [
+        ...(m.content.length > 0 ? [m.content] : []),
+        ...m.attachments
+          .filter((a) => a.extractedText !== null)
+          .map((a) => `--- ${a.fileName} ---\n${a.extractedText}`),
+      ];
+      if (textSections.length > 0) {
+        parts.push({ type: "text", text: textSections.join("\n\n") });
+      }
+      parts.push(
+        ...m.attachments
+          .filter((a) => a.mimeType.startsWith("image/"))
+          .map((a) => ({ type: "image" as const, url: a.url, mediaType: a.mimeType })),
+      );
+
+      return { role: m.role as "user" | "assistant", content: parts };
+    });
+  }
+
+  /**
+   * Refuse une image que le modèle actif ne peut pas lire (§12.1 — le
+   * serveur fait respecter la règle). Un PDF ou un fichier texte n'entre pas
+   * dans ce compte : son texte extrait se lit avec n'importe quel modèle,
+   * aucun besoin de vision.
+   */
+  private assertVisionCapable(model: string, attachments: MessageAttachment[]): void {
+    const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
+    if (images.length === 0 || isVisionCapableModel(model)) return;
+
+    const label = ASSISTANT_MODELS.find((m) => m.id === model)?.label ?? model;
+    throw httpError(
+      422,
+      `${label} ne peut pas lire les images. Changez de modèle dans les réglages ou retirez les pièces jointes.`,
+    );
+  }
+
   private async requireMessage(
     conversationId: string,
     messageId: string,
@@ -562,6 +706,18 @@ export class ConversationService {
       throw httpError(422, "Il n'y a rien à quoi répondre dans cette conversation.");
     }
 
+    // Commande slash (à la manière des skills) : reconnue sur le dernier
+    // message de l'utilisateur, quel que soit le geste qui l'y a amené —
+    // envoi, correction ou reprise.
+    const lastMessage = dialogue[dialogue.length - 1];
+    const command =
+      lastMessage && lastMessage.role === "user" ? parseSlashCommand(lastMessage.content) : null;
+
+    if (command?.name === "aide") {
+      yield* this.answerAideCommand(conversationId, userId, accessToken);
+      return;
+    }
+
     let text = "";
     let provider: string | null = null;
     let model: string | null = null;
@@ -575,28 +731,63 @@ export class ConversationService {
     // outils qu'on lui expose — et il se lit à partir du profil.
     const todo = await this.pendingHousekeeping(conversation, context, now, accessToken);
 
+    const baseSystem = buildSystemPrompt(conversation.kind, todo, context, now);
+    // Chaque commande n'a de sens que là où son outil est exposé — jamais
+    // dans le canal permanent pour /ranger et /planifier, jamais dans une
+    // conversation classique pour /bug (A.10) : la note serait sinon une
+    // consigne pour un outil que le modèle ne peut pas appeler.
+    // `command.name` exclut déjà "aide" ici : le premier `if` de la méthode
+    // court-circuite ce cas avant d'atteindre ce point.
+    const activeCommand = command ? { note: COMMAND_NOTES[command.name], args: command.args } : null;
+    const system =
+      activeCommand && todo.tools.includes(activeCommand.note.tool)
+        ? [baseSystem, "", ...activeCommand.note.describe(activeCommand.args)].join("\n")
+        : baseSystem;
+
     const request: LlmCompletionRequest = {
-      system: buildSystemPrompt(conversation.kind, todo, context, now),
-      messages: dialogue.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
+      system,
+      messages: this.toLlmMessages(dialogue),
       tools: todo.tools,
       // Le modèle du profil ne remplace celui du serveur que s'il existe :
       // `null` veut dire « celui que le serveur a retenu », et non « aucun ».
       ...(context.model ? { model: context.model } : {}),
     };
 
+    // Certains modèles recopient les outils en texte — JSON `{"title":...}`
+    // ou pseudo-appels `nameconversation("…")` / `suggestfolders([...])` —
+    // au lieu d'émettre de vrais `tool_call`. On filtre tant qu'il y a des
+    // outils dans le tour ; le JSON de titre seulement si `name_conversation`
+    // est réellement proposé (une fois le fil nommé, `{"title":...}` peut
+    // être une réponse légitime).
+    const textLeak =
+      todo.tools.length > 0
+        ? createTextLeakFilter({
+            toolNames: todo.tools.map((tool) => tool.name),
+            stripTitleJson: todo.tools.includes(NAME_CONVERSATION),
+          })
+        : null;
+
     try {
       for await (const chunk of this.llm.stream(request)) {
         if (chunk.type === "text") {
-          text += chunk.text;
-          yield { type: "text", text: chunk.text };
+          const visible = textLeak ? textLeak.push(chunk.text) : chunk.text;
+          if (visible.length > 0) {
+            text += visible;
+            yield { type: "text", text: visible };
+          }
         } else if (chunk.type === "tool_call") {
           toolCalls.push(chunk.toolCall);
         } else if (chunk.type === "done") {
           provider = chunk.response.provider;
           model = chunk.response.model;
+        }
+      }
+
+      if (textLeak) {
+        const tail = textLeak.flush();
+        if (tail.length > 0) {
+          text += tail;
+          yield { type: "text", text: tail };
         }
       }
 
@@ -614,6 +805,7 @@ export class ConversationService {
       // pleine génération, le texte déjà produit est déjà facturé. Le perdre
       // priverait l'utilisateur d'une réponse qu'il retrouverait de toute façon
       // au rechargement.
+      if (textLeak) text += textLeak.flush();
       // Résolu avant l'écriture : les réponses proposées voyagent sur le
       // message qui porte la question, pas dans une seconde requête.
       const asked = readQuestion(toolCalls);
@@ -635,6 +827,7 @@ export class ConversationService {
                 content,
                 inputMode: "text",
                 role: "assistant",
+                attachmentIds: [],
                 provider,
                 model,
                 ...(asked && !redirectTitle ? { choices: asked.choices } : {}),
@@ -659,14 +852,18 @@ export class ConversationService {
           continue;
         }
         try {
-          const corrected = withCorrectedRescheduleDueDate(
-            withCorrectedDueDates(
-              withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
-              now,
-              context.timezone,
+          const corrected = withCorrectedEventsStartsAt(
+            withCorrectedRecurringEventStartsAt(
+              withCorrectedRescheduleDueDate(
+                withCorrectedDueDates(
+                  withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+                  now,
+                  context.timezone,
+                ),
+                now,
+                context.timezone,
+              ),
             ),
-            now,
-            context.timezone,
           );
           await this.suggestions.capture(userId, conversationId, corrected, accessToken);
           suggestionCaptured = true;
@@ -684,7 +881,12 @@ export class ConversationService {
         }
       }
 
-      await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
+      await this.applyRequestedTitle(
+        conversationId,
+        toolCalls,
+        accessToken,
+        textLeak?.leakedTitle() ?? null,
+      );
 
       await this.applyOnboardingMemory(userId, toolCalls, accessToken);
 
@@ -701,6 +903,35 @@ export class ConversationService {
         "Le modèle n'a produit aucune réponse. Réessayez, ou changez de modèle dans Réglages.",
       );
     }
+  }
+
+  /**
+   * Répond à la commande /aide sans appeler le modèle : un texte fixe plutôt
+   * qu'un tour de dialogue, pour qu'il ne varie jamais ni n'invente une
+   * fonctionnalité absente.
+   */
+  private async *answerAideCommand(
+    conversationId: string,
+    userId: string,
+    accessToken: string,
+  ): AsyncGenerator<MessageStreamEvent> {
+    yield { type: "text", text: AIDE_MESSAGE };
+
+    const assistantMessage = await this.conversations.appendMessage(
+      conversationId,
+      userId,
+      {
+        content: AIDE_MESSAGE,
+        inputMode: "text",
+        role: "assistant",
+        attachmentIds: [],
+        provider: null,
+        model: null,
+      },
+      accessToken,
+    );
+
+    yield { type: "done", message: assistantMessage };
   }
 
   /**
@@ -754,7 +985,10 @@ export class ConversationService {
     const profile = await this.users.findById(userId, accessToken);
 
     if (!profile) {
-      logger.warn(SCOPE, "Profil introuvable au moment de borner l'assistant : réglages par défaut.");
+      logger.warn(
+        SCOPE,
+        "Profil introuvable au moment de borner l'assistant : réglages par défaut.",
+      );
       return {
         name: DEFAULT_ASSISTANT_NAME,
         displayName: null,
@@ -871,7 +1105,21 @@ export class ConversationService {
         !(
           tool === SUGGEST_TASK_LIST_DUE_DATE &&
           (lists.length === 0 || isPending(decided, "update_task_list_due_date"))
-        ),
+        ) &&
+        // Cocher ou renommer suppose des lignes à désigner : une liste
+        // vide n'a pas d'identifiant de tâche, et le modèle en inventerait
+        // un. Une modification déjà proposée attend un geste avant d'en
+        // empiler une seconde.
+        !(
+          tool === SUGGEST_UPDATE_TASK_ITEMS &&
+          (lists.every((list) => list.tasks.length === 0) ||
+            isPending(decided, "update_task_list_items"))
+        ) &&
+        // Une série déjà proposée attend un geste : la reproposer empilerait
+        // deux cartes pour le même rendez-vous (§12.1).
+        !(tool === SUGGEST_RECURRING_EVENT && isPending(decided, "create_recurring_event")) &&
+        // Même garde-fou pour des rendez-vous ponctuels déjà proposés.
+        !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")),
     );
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
@@ -903,17 +1151,20 @@ export class ConversationService {
     conversationId: string,
     toolCalls: LlmToolCall[],
     accessToken: string,
+    leakedTitle: string | null,
   ): Promise<void> {
     const call = toolCalls.find((toolCall) => toolCall.name === NAME_CONVERSATION.name);
-    if (!call) return;
+    const fromTool = call ? labelSchema.safeParse(call.input["title"]) : null;
+    const title = fromTool?.success ? fromTool.data : leakedTitle;
 
-    const title = labelSchema.safeParse(call.input["title"]);
-    if (!title.success) {
-      logger.warn(SCOPE, "Appel `name_conversation` sans titre exploitable : renommage ignoré.");
+    if (!title) {
+      if (call) {
+        logger.warn(SCOPE, "Appel `name_conversation` sans titre exploitable : renommage ignoré.");
+      }
       return;
     }
 
-    await this.conversations.update(conversationId, { title: title.data }, accessToken);
+    await this.conversations.update(conversationId, { title }, accessToken);
   }
 
   /**
@@ -962,6 +1213,263 @@ export class ConversationService {
  * Sans titre exploitable, on reste dans le canal : proposer d'ouvrir un fil
  * « Nouvelle conversation » vide serait plus déroutant que de ne rien faire.
  */
+/**
+ * Certains modèles recopient les outils en texte au lieu d'émettre de vrais
+ * `tool_call` : JSON `{"title":…}` (OpenAI surtout) ou pseudo-appels
+ * `nameconversation("…")` / `suggestfolders([...])`. On retient le début du
+ * flux jusqu'à savoir si c'est une fuite — assez court pour ne pas retarder
+ * une vraie réponse, assez long pour un titre ou un argument d'outil.
+ */
+const MAX_TEXT_LEAK_PREFIX = 800;
+
+type TextLeakFilter = {
+  push: (chunk: string) => string;
+  flush: () => string;
+  leakedTitle: () => string | null;
+};
+
+function createTextLeakFilter(options: {
+  toolNames: string[];
+  stripTitleJson: boolean;
+}): TextLeakFilter {
+  let buffer = "";
+  let released = false;
+  let title: string | null = null;
+  const toolPattern = buildToolNamePattern(options.toolNames);
+
+  const consume = (atEnd: boolean): string => {
+    if (released) {
+      const out = buffer;
+      buffer = "";
+      return out;
+    }
+
+    const verdict = inspectTextLeak(buffer, atEnd, {
+      toolPattern,
+      stripTitleJson: options.stripTitleJson,
+    });
+    if (verdict.kind === "hold") return "";
+
+    if (verdict.kind === "stripped") {
+      if (verdict.title !== null) title = verdict.title;
+      // D'autres fuites peuvent suivre (JSON puis pseudo-appels, ou plusieurs
+      // lignes d'outils) : on ne libère le flux qu'une fois le préambule nettoyé.
+      buffer = verdict.rest;
+      return consume(atEnd);
+    }
+
+    released = true;
+    buffer = "";
+    return verdict.text;
+  };
+
+  return {
+    push(chunk) {
+      if (released) return chunk;
+      buffer += chunk;
+      return consume(false);
+    },
+    flush: () => consume(true),
+    leakedTitle: () => title,
+  };
+}
+
+type TextLeakVerdict =
+  | { kind: "hold" }
+  | { kind: "passthrough"; text: string }
+  | { kind: "stripped"; title: string | null; rest: string };
+
+function inspectTextLeak(
+  buffer: string,
+  atEnd: boolean,
+  options: { toolPattern: RegExp | null; stripTitleJson: boolean },
+): TextLeakVerdict {
+  const start = buffer.search(/\S/);
+  if (start === -1) return atEnd ? { kind: "passthrough", text: buffer } : { kind: "hold" };
+
+  if (options.stripTitleJson && buffer[start] === "{") {
+    const json = inspectTitleJsonLeak(buffer, start, atEnd);
+    if (json !== null) return json;
+  }
+
+  if (options.toolPattern) {
+    const pseudo = inspectPseudoToolLeak(buffer, start, atEnd, options.toolPattern);
+    if (pseudo !== null) return pseudo;
+  }
+
+  return { kind: "passthrough", text: buffer };
+}
+
+function inspectTitleJsonLeak(
+  buffer: string,
+  start: number,
+  atEnd: boolean,
+): TextLeakVerdict | null {
+  const taken = takeJsonObject(buffer, start);
+  if (taken === "incomplete") {
+    if (atEnd) {
+      // Un JSON de titre coupé n'a jamais été montré : le laisser tomber
+      // plutôt que de persister `{"title":"Avi` au rechargement.
+      return /^\s*\{\s*"title"/.test(buffer)
+        ? { kind: "stripped", title: null, rest: "" }
+        : { kind: "passthrough", text: buffer };
+    }
+    if (buffer.length > MAX_TEXT_LEAK_PREFIX) return { kind: "passthrough", text: buffer };
+    return { kind: "hold" };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(buffer.slice(start, taken));
+  } catch {
+    return null;
+  }
+
+  const leaked = readSoleTitle(parsed);
+  if (leaked === null) return null;
+
+  const title = labelSchema.safeParse(leaked);
+  return {
+    kind: "stripped",
+    title: title.success ? title.data : null,
+    rest: buffer.slice(taken).replace(/^\s+/, ""),
+  };
+}
+
+/**
+ * Ligne du type `nameconversation("Zumba")` ou `suggestfolders([...])` —
+ * y compris sans les underscores du vrai nom d'outil.
+ */
+function inspectPseudoToolLeak(
+  buffer: string,
+  start: number,
+  atEnd: boolean,
+  toolPattern: RegExp,
+): TextLeakVerdict | null {
+  const slice = buffer.slice(start);
+  toolPattern.lastIndex = 0;
+  if (!toolPattern.test(slice)) return null;
+
+  const closed = takeBalancedCall(slice);
+  if (closed === "incomplete") {
+    if (atEnd) return { kind: "stripped", title: null, rest: "" };
+    if (buffer.length > MAX_TEXT_LEAK_PREFIX) return { kind: "passthrough", text: buffer };
+    return { kind: "hold" };
+  }
+
+  const callText = slice.slice(0, closed).trim();
+  const title = readLeakedNameConversationTitle(callText);
+  const rest = slice.slice(closed).replace(/^\s+/, "");
+  return { kind: "stripped", title, rest };
+}
+
+/** `name_conversation` → `name_?conversation`, pour matcher aussi `nameconversation`. */
+function buildToolNamePattern(toolNames: string[]): RegExp | null {
+  if (toolNames.length === 0) return null;
+  const alts = toolNames.map((name) =>
+    name
+      .split("_")
+      .map(escapeRegExp)
+      .join("_?"),
+  );
+  return new RegExp(`^(?:${alts.join("|")})\\s*\\(`, "i");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Fin d'un appel `outil(...)` en tête de chaîne, parenthèses équilibrées
+ * (chaînes entre guillemets comprises), ou incomplete si l'appel n'est pas clos.
+ */
+function takeBalancedCall(text: string): number | "incomplete" {
+  const open = text.indexOf("(");
+  if (open === -1) return "incomplete";
+
+  let depth = 0;
+  let inString: '"' | "'" | null = null;
+  let escaped = false;
+  for (let i = open; i < text.length; i++) {
+    const c = text[i];
+    if (c === undefined) break;
+    if (inString !== null) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (c === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (c === inString) inString = null;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inString = c;
+      continue;
+    }
+    if (c === "(") depth += 1;
+    else if (c === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        let end = i + 1;
+        while (end < text.length && /[ \t\r]/.test(text[end] ?? "")) end += 1;
+        if (text[end] === "\n") end += 1;
+        return end;
+      }
+    }
+  }
+  return "incomplete";
+}
+
+function readLeakedNameConversationTitle(callText: string): string | null {
+  const match = callText.match(/^name_?conversation\s*\(\s*["']([^"']+)["']\s*\)\s*$/i);
+  if (!match?.[1]) return null;
+  const title = labelSchema.safeParse(match[1]);
+  return title.success ? title.data : null;
+}
+
+function readSoleTitle(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (!("title" in value)) return null;
+  if (Object.keys(value).length !== 1) return null;
+  const title = value.title;
+  return typeof title === "string" ? title : null;
+}
+
+function takeJsonObject(text: string, start: number): number | "incomplete" {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (c === undefined) break;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (c === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === "{") depth += 1;
+    else if (c === "}") {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return "incomplete";
+}
+
 function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[]): string | null {
   if (kind !== "assistant") return null;
 
@@ -1232,6 +1740,60 @@ function withCorrectedRescheduleDueDate(
 }
 
 /**
+ * Fiabilise `startsAt` d'un `suggest_recurring_event` avant capture (A.11).
+ *
+ * Le modèle calcule cette date lui-même, sans jamais passer par le
+ * validateur du serveur : une heure sans les secondes ou sans fuseau
+ * (`2026-09-16T18:00`) est un ISO 8601 que `Date` lit très bien, mais que le
+ * schéma strict de la charge utile rejette — la série entière disparaissait
+ * alors silencieusement (`suggestion.service` la journalise comme
+ * inexploitable). La reformater vers l'ISO canonique évite de perdre le
+ * rendez-vous pour un simple défaut de forme ; une valeur réellement
+ * illisible reste telle quelle et la validation en aval l'écarte normalement.
+ */
+function withCorrectedRecurringEventStartsAt(toolCall: LlmToolCall): LlmToolCall {
+  if (toolCall.name !== SUGGEST_RECURRING_EVENT.name) return toolCall;
+
+  const startsAt = toolCall.input["startsAt"];
+  if (typeof startsAt !== "string") return toolCall;
+
+  const instant = new Date(startsAt);
+  if (Number.isNaN(instant.getTime())) return toolCall;
+
+  return { ...toolCall, input: { ...toolCall.input, startsAt: instant.toISOString() } };
+}
+
+/**
+ * Fiabilise `startsAt` de chaque entrée d'un `suggest_events` avant capture (A.3).
+ *
+ * Même filet que pour un rendez-vous récurrent (`withCorrectedRecurringEventStartsAt`) :
+ * un modèle laissé libre omet souvent les secondes ou le fuseau, ce que le
+ * schéma strict de la charge utile rejette. Une entrée dont la date reste
+ * illisible malgré la reformatation n'est pas retirée du tableau : c'est la
+ * validation en aval qui décide, comme pour n'importe quel autre outil.
+ */
+function withCorrectedEventsStartsAt(toolCall: LlmToolCall): LlmToolCall {
+  if (toolCall.name !== SUGGEST_EVENTS.name) return toolCall;
+
+  const events = toolCall.input["events"];
+  if (!Array.isArray(events)) return toolCall;
+
+  const corrected = events.map((entry) => {
+    if (typeof entry !== "object" || entry === null) return entry;
+
+    const startsAt = (entry as Record<string, unknown>)["startsAt"];
+    if (typeof startsAt !== "string") return entry;
+
+    const instant = new Date(startsAt);
+    if (Number.isNaN(instant.getTime())) return entry;
+
+    return { ...entry, startsAt: instant.toISOString() };
+  });
+
+  return { ...toolCall, input: { ...toolCall.input, events: corrected } };
+}
+
+/**
  * Le jour porté par `iso` (dans le fuseau du profil) est-il déjà passé ?
  *
  * Comparaison de jours calendaires, pas d'instants : aujourd'hui reste
@@ -1282,10 +1844,7 @@ function flattenWithPath(
 ): { id: string; name: string; path: string }[] {
   return tree.flatMap((folder) => {
     const path = parent ? `${parent} > ${folder.name}` : folder.name;
-    return [
-      { id: folder.id, name: folder.name, path },
-      ...flattenWithPath(folder.children, path),
-    ];
+    return [{ id: folder.id, name: folder.name, path }, ...flattenWithPath(folder.children, path)];
   });
 }
 
@@ -1372,6 +1931,103 @@ function forgetSwitchedAside(messages: Message[]): Message[] {
  * l'UI : c'est une règle métier, elle doit valoir identiquement pour le web,
  * le mobile et le desktop (§5.3).
  */
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /todo (raccourci
+ * de commande, à la manière des skills) : le texte qui suit sert de titre et
+ * d'échéance possibles, jamais d'articles inventés — la liste ne se propose
+ * qu'une fois son contenu connu.
+ */
+function describeTodoCommand(args: string): string[] {
+  const description = args.length > 0 ? `« ${args} »` : "sans rien après elle";
+
+  return [
+    `Commande /todo : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
+    "C'est une demande explicite de créer une todoliste ou une liste d'achats — pas",
+    "une faute de frappe. Le texte qui suit /todo peut porter un titre et une échéance",
+    "(« samedi », « ce week-end »...), jamais le contenu de la liste : ne l'invente pas.",
+    "S'il ne dit pas encore quoi y mettre, ne l'appelle pas encore : demande-le d'abord,",
+    "en gardant le titre et l'échéance pour le tour où la réponse arrivera. Dès que le",
+    "contenu est connu — dans ce message ou le suivant — appelle `suggest_task_list`",
+    "tout de suite, comme pour toute autre demande explicite.",
+  ];
+}
+
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /ranger : une
+ * demande explicite de rangement, immédiate plutôt que d'attendre que le
+ * modèle la déduise seul de la conversation.
+ */
+function describeRangerCommand(args: string): string[] {
+  return args.length > 0
+    ? [
+        `Commande /ranger : l'utilisateur demande explicitement à ranger cette`,
+        `conversation, en visant « ${args} ». Traite-le comme un rangement demandé`,
+        "explicitement (« range-la plutôt dans... ») et appelle `suggest_folders`",
+        "tout de suite avec ce dossier, existant ou à créer selon ce qui est déjà là.",
+      ]
+    : [
+        "Commande /ranger, sans rien après elle : l'utilisateur demande",
+        "explicitement un rangement pour cette conversation, sans indiquer où.",
+        "Appelle `suggest_folders` tout de suite avec ce que son sujet réel indique",
+        "— jamais un dossier qui ne lui correspond que de loin.",
+      ];
+}
+
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /planifier : le
+ * texte qui suit porte le titre et, s'il y en a, la récurrence — jamais une
+ * heure, un jour ou une répétition inventés pour compléter ce qui manque.
+ */
+function describePlanifierCommand(args: string): string[] {
+  const description = args.length > 0 ? `« ${args} »` : "sans rien après elle";
+
+  return [
+    `Commande /planifier : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
+    "C'est une demande explicite de poser un rendez-vous — pas une faute de",
+    "frappe. S'il manque le jour ou l'heure, ne l'appelle pas encore : demande-le",
+    "d'abord. Un mot de répétition explicite (« tous les... », « chaque... »,",
+    "« toutes les semaines ») appelle `suggest_recurring_event` avec sa RRULE ;",
+    "sinon, c'est un rendez-vous ponctuel et `suggest_events` le pose tel quel,",
+    "sans jamais demander à quel rythme le répéter. Dès que la date (et la",
+    "récurrence, si elle est dite) est connue — dans ce message ou le suivant —",
+    "appelle l'outil qui convient tout de suite, comme pour toute autre demande",
+    "explicite.",
+  ];
+}
+
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /bug : le texte
+ * qui suit décrit le problème, jamais un dysfonctionnement inventé pour
+ * combler ce qui manque.
+ */
+function describeBugCommand(args: string): string[] {
+  return args.length > 0
+    ? [
+        `Commande /bug : l'utilisateur signale explicitement un problème, décrit`,
+        `ainsi : « ${args} ». Appelle \`report_bug\` tout de suite avec ce contenu,`,
+        "reformulé clairement pour l'équipe technique.",
+      ]
+    : [
+        "Commande /bug, sans rien après elle : l'utilisateur signale un problème",
+        "sans encore le décrire. Demande ce qui s'est passé plutôt que d'appeler",
+        "`report_bug` avec un contenu inventé.",
+      ];
+}
+
+/**
+ * Un outil et sa note par commande activable (§ raccourcis) — /aide n'y
+ * figure pas, elle court-circuite le modèle avant d'atteindre ce point.
+ */
+const COMMAND_NOTES: Record<
+  Exclude<SlashCommandName, "aide">,
+  { tool: LlmTool; describe: (args: string) => string[] }
+> = {
+  todo: { tool: SUGGEST_TASK_LIST, describe: describeTodoCommand },
+  ranger: { tool: SUGGEST_FOLDERS, describe: describeRangerCommand },
+  planifier: { tool: SUGGEST_RECURRING_EVENT, describe: describePlanifierCommand },
+  bug: { tool: REPORT_BUG, describe: describeBugCommand },
+};
+
 function buildSystemPrompt(
   kind: Conversation["kind"],
   todo: Housekeeping,
@@ -1393,14 +2049,20 @@ function buildSystemPrompt(
       `Tu es ${context.name}, l'assistant d'organisation personnelle de l'utilisateur.`,
       ...preamble,
       "",
-      "Ce canal est réservé à trois sujets : les rappels (ce qui est important",
+      "Ce canal est réservé à quatre sujets : les rappels (ce qui est important",
       "aujourd'hui ou cette semaine), l'organisation interne de l'outil (dossiers,",
-      "rangement, structure), et l'évolution de la structure du projet de l'utilisateur.",
+      "rangement, structure), l'évolution de la structure du projet de l'utilisateur,",
+      "et le signalement d'un problème technique avec l'application.",
       "",
       "Si la demande sort de ce périmètre, ne la traite pas ici : appelle",
       "`open_new_conversation` avec un titre tiré de la demande, et n'écris rien",
       "d'autre. L'application annonce elle-même la conversation dédiée et en",
       "demande la validation ; la réponse sera donnée là-bas.",
+      "",
+      "Quand l'utilisateur décrit un dysfonctionnement de l'application —",
+      "quelque chose qui ne marche pas comme attendu, une erreur, un blocage —",
+      "appelle `report_bug` pour proposer de le transmettre. Ne le présente",
+      "jamais comme déjà signalé : demande.",
       "",
       "Prends les devants : quand un échange laisse deviner une action à faire,",
       "propose-la plutôt que d'attendre qu'on te la demande. Reste suggestif —",
@@ -1408,7 +2070,8 @@ function buildSystemPrompt(
       "",
       "Quand tu poses une question dont quelques réponses couvrent l'essentiel des",
       "cas, pose-la avec `ask_question` : l'utilisateur répond d'un appui plutôt",
-      "que d'écrire. Réserve-la à ces questions-là.",
+      "que d'écrire. Réserve-la à ces questions-là. Propose toujours au moins deux",
+      "réponses distinctes, et transmets-les toutes.",
       ...TOOL_ANSWER_RULE,
       "Seule exception : `open_new_conversation`, après lequel tu n'écris rien.",
       ...FORMAT_RULES,
@@ -1454,6 +2117,8 @@ function buildSystemPrompt(
     "Quand tu poses une question dont quelques réponses couvrent l'essentiel des cas,",
     "pose-la avec `ask_question` : l'utilisateur répond d'un appui plutôt que d'écrire.",
     "Réserve-la à ces questions-là — une question ouverte se pose à l'écrit.",
+    "Propose toujours au moins deux réponses distinctes, et transmets-les toutes :",
+    "n'en garder qu'une fait échouer l'outil.",
     ...TOOL_ANSWER_RULE,
     ...FORMAT_RULES,
     ...describeMemory(context.memory),
@@ -1467,7 +2132,8 @@ function buildSystemPrompt(
       "",
       "Au fil de l'échange, repère si la conversation produit quelque chose",
       "d'actionnable : une liste de tâches, une liste d'achats, une échéance,",
-      "un rendez-vous récurrent. Le cas échéant, appelle l'outil correspondant",
+      "un ou plusieurs rendez-vous ponctuels, un rendez-vous récurrent.",
+      "Le cas échéant, appelle l'outil correspondant",
       "pour le proposer — sans interrompre le fil de la conversation, et sans",
       "jamais présenter la chose comme déjà faite : c'est une proposition.",
       "",
@@ -1495,7 +2161,11 @@ function buildSystemPrompt(
   // Le modèle ne peut agir que sur ce qu'il connaît : sans le contenu ni
   // l'échéance des listes, « complète la liste » ou « décale-la » n'ont rien à
   // désigner, et le modèle inventerait un identifiant ou une seconde liste.
-  if (todo.tools.includes(SUGGEST_TASK_LIST_ITEMS) || todo.tools.includes(SUGGEST_TASK_LIST_DUE_DATE)) {
+  if (
+    todo.tools.includes(SUGGEST_TASK_LIST_ITEMS) ||
+    todo.tools.includes(SUGGEST_TASK_LIST_DUE_DATE) ||
+    todo.tools.includes(SUGGEST_UPDATE_TASK_ITEMS)
+  ) {
     lines.push("", "Todolistes déjà nées de cette conversation.", ...describeTaskLists(todo.lists));
   }
 
@@ -1521,6 +2191,48 @@ function buildSystemPrompt(
     );
   }
 
+  if (todo.tools.includes(SUGGEST_UPDATE_TASK_ITEMS)) {
+    lines.push(
+      "",
+      "Pour cocher, décocher ou renommer une ligne d'une liste ci-dessus, appelle",
+      "`suggest_update_task_items` avec l'identifiant de la liste ET celui de la",
+      "ligne, recopiés caractère pour caractère. N'ouvre jamais une seconde liste",
+      "pour marquer une ligne faite, et n'ajoute pas une ligne pour en remplacer",
+      "une qui existe déjà.",
+    );
+  }
+
+  if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) {
+    lines.push(
+      "",
+      "Quand l'utilisateur mentionne un rendez-vous ou une activité qui se",
+      "répète — « kiné tous les mardis à 18h », « réunion chaque lundi »,",
+      "« zumba tous les mercredis » — appelle `suggest_recurring_event` avec",
+      "une règle RRULE (FREQ=WEEKLY;BYDAY=…) plutôt qu'une liste de dates.",
+      "Si en plus il demande de le noter, de s'en rappeler ou de le retenir,",
+      "appelle l'outil tout de suite : un « C'est noté » ou « Je note » en texte",
+      "ne crée rien et viole la règle du §12.1. Ne laisse pas `suggest_folders`",
+      "se substituer à cette proposition quand la demande porte clairement sur",
+      "un créneau récurrent. Un rendez-vous daté sans mention de répétition",
+      "relève de `suggest_events`, pas de celui-ci. Ne présente jamais le",
+      "rendez-vous comme déjà posé.",
+    );
+  }
+
+  if (todo.tools.includes(SUGGEST_EVENTS)) {
+    lines.push(
+      "",
+      "Quand l'utilisateur mentionne un ou plusieurs rendez-vous ponctuels — sans",
+      "règle de répétition — à noter dans l'agenda, appelle `suggest_events` avec",
+      "une entrée par rendez-vous dans un seul appel, jamais un appel par",
+      "rendez-vous. S'il demande de le noter, de s'en souvenir ou de le retenir,",
+      "appelle l'outil tout de suite : un « C'est noté » ou « Je note » en texte",
+      "ne crée rien et viole la règle du §12.1. Utilise `suggest_recurring_event`",
+      "à la place dès que la demande porte sur une répétition. Ne présente jamais",
+      "les rendez-vous comme déjà posés.",
+    );
+  }
+
   if (todo.tools.includes(NAME_CONVERSATION)) {
     lines.push(
       "",
@@ -1528,7 +2240,9 @@ function buildSystemPrompt(
       "dès ce tour-ci, sur la foi du premier message : un titre approximatif vaut",
       "mieux qu'une liste de « Nouvelle conversation » indiscernables dans la barre",
       "latérale, et l'utilisateur peut le corriger. N'attends pas qu'on te le",
-      "demande et n'en parle pas : le titre s'applique seul.",
+      "demande et n'en parle pas : le titre s'applique seul. N'écris jamais",
+      "le titre dans ta réponse, ni en JSON (`{\"title\":...}`), ni en clair,",
+      "ni sous forme d'appel inventé (`nameconversation(...)`) : utilise l'outil.",
     );
   }
 
@@ -1566,9 +2280,13 @@ function buildSystemPrompt(
       "",
       todo.filing.folders.length > 0
         ? "Dossiers existants. Pour en réutiliser un, recopie son identifiant ET son nom" +
-          " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas." +
-          " Un nouveau dossier peut aussi naître comme sous-dossier de l'un d'eux : reprends-le" +
-          " alors en `parent`, de la même façon."
+            " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas." +
+            " Un nouveau dossier peut aussi naître comme sous-dossier de l'un d'eux — reprends-le" +
+            " alors en `parent`, de la même façon —, mais seulement s'il en est un vrai thème" +
+            " parent. Ce lien s'apprécie au sujet, jamais au nombre de dossiers disponibles :" +
+            " si le seul dossier existant est « Courses » et que tu ranges un CV, il ne devient" +
+            " pas pour autant le parent du nouveau dossier « Candidatures » — celui-ci naît à la" +
+            " racine, sans `parent`, et « Courses » ne figure dans aucune des deux listes."
         : "L'utilisateur n'a encore aucun dossier : propose-en un nouveau, sobrement nommé.",
       ...describeFolders(todo.filing.folders),
     );
@@ -1719,8 +2437,12 @@ function describeTaskLists(lists: TaskListWithTasks[]): string[] {
       list.tasks.length === 0
         ? "vide"
         : list.tasks
-            .map((task) => (task.parentId === null ? task.title : `> ${task.title}`))
-            .join(", ");
+            .map((task) => {
+              const state = task.done ? "faite" : "à faire";
+              const nested = task.parentId === null ? "" : "> ";
+              return `${nested}identifiant ${task.id} : ${task.title} (${state})`;
+            })
+            .join(" ; ");
 
     return `- « ${list.title} » (identifiant ${list.id}, ${nature}, ${due}) : ${content}`;
   });

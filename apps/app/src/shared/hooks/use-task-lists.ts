@@ -51,7 +51,13 @@ async function fetchAllLists(): Promise<TaskListWithTasks[]> {
 
 export function useTaskActions() {
   const queryClient = useQueryClient();
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["taskLists"] });
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["taskLists"] });
+    // Une échéance posée, déplacée ou retirée synchronise l'événement lié
+    // côté serveur (A.3) : sans invalider le calendrier, l'agenda reste sur
+    // l'ancienne date jusqu'au rechargement de la page.
+    queryClient.invalidateQueries({ queryKey: ["calendar"] });
+  };
 
   const createList = useMutation({
     mutationFn: (input: CreateTaskList) => api.tasks.createList(input),

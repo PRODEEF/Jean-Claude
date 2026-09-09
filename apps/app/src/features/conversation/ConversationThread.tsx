@@ -9,6 +9,8 @@ import {
   Text,
   TextInput,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -20,6 +22,8 @@ import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
 import { contentColumn, READING_MAX_WIDTH } from "@/shared/ui/screen-shell";
 import { Composer } from "./Composer";
+import { useAttachmentPicker } from "./hooks/use-attachment-picker";
+import { useComposerAttachments } from "./hooks/use-composer-attachments";
 import { THREAD_PAGE_SIZE, useConversationThread } from "./hooks/use-conversation-thread";
 import { useSpeech } from "./hooks/use-speech";
 import { useSuggestions } from "./hooks/use-suggestions";
@@ -29,6 +33,9 @@ import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
 import { SwitchAsideCard } from "./SwitchAsideCard";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 
+/** Distance au bas du fil en deçà de laquelle on reste collé pendant le stream. */
+const STICK_THRESHOLD = 64;
+
 export type ConversationThreadProps = {
   conversationId: string;
   /**
@@ -36,6 +43,12 @@ export type ConversationThreadProps = {
    * basculé la demande ici (A.10) : l'utilisateur n'a pas à la retaper.
    */
   initialDraft?: string | undefined;
+  /**
+   * Pièces jointes déjà uploadées depuis l'écran d'accueil, à lier au premier
+   * message. Même mécanisme que `initialDraft` : l'upload a eu lieu avant
+   * qu'une conversation n'existe, il ne reste qu'à l'y rattacher.
+   */
+  initialAttachmentIds?: string[] | undefined;
 };
 
 /**
@@ -49,7 +62,11 @@ export type ConversationThreadProps = {
  * `ScrollView`, et une `FlatList` imbriquée dans un `ScrollView` perd la
  * virtualisation.
  */
-export function ConversationThread({ conversationId, initialDraft }: ConversationThreadProps) {
+export function ConversationThread({
+  conversationId,
+  initialDraft,
+  initialAttachmentIds,
+}: ConversationThreadProps) {
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
   // Le fil porte son propre défilement, mais suit la colonne des autres
@@ -59,6 +76,15 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
   const [draft, setDraft] = useState("");
   const listRef = useRef<FlatList<ThreadItem>>(null);
   const inputRef = useRef<TextInput>(null);
+  /**
+   * Collé en bas tant que l'utilisateur n'a pas remonté le fil : un jeton
+   * qui arrive, ou une carte qui s'ouvre, ne doit pas l'arracher à ce qu'il
+   * relit. ChatGPT, Claude et Perplexity font de même (§4.2). Renvoyer un
+   * message recolle — c'est le geste qui dit « je veux voir la suite ».
+   */
+  const stickToBottom = useRef(true);
+  const attachments = useComposerAttachments();
+  const picker = useAttachmentPicker(attachments.add, inputRef);
   // Question écartée d'un « Passer », retenue par identifiant de message : le
   // fil se recharge, la carte ne doit pas revenir pour autant.
   const [skippedQuestion, setSkippedQuestion] = useState<string | null>(null);
@@ -123,10 +149,12 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
   // question une seconde fois, alors que le paramètre de route est toujours là.
   const autoSent = useRef(false);
   useEffect(() => {
-    if (!initialDraft || autoSent.current) return;
+    if ((!initialDraft && !initialAttachmentIds?.length) || autoSent.current) return;
     autoSent.current = true;
-    submit(initialDraft);
-  }, [initialDraft, submit]);
+    // Les pièces jointes viennent de l'écran d'accueil, déjà uploadées : elles
+    // ne transitent pas par l'état local `attachments` de ce fil.
+    submit(initialDraft ?? "", "text", initialAttachmentIds ?? []);
+  }, [initialDraft, initialAttachmentIds, submit]);
 
   // Le rendu Markdown se met en page après le commit qui déclenche cet
   // événement — sur web, react-native-web traduit en DOM réel, dont la mise
@@ -136,7 +164,21 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
   // dernier message reste masquée par la saisie — surtout sensible sur le
   // tout dernier jeton d'une réponse, celui qui referme souvent une liste.
   const scrollToEndSoon = useCallback(() => {
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
+    if (!stickToBottom.current) return;
+    const scroll = () => listRef.current?.scrollToEnd({ animated: false });
+    requestAnimationFrame(() => {
+      scroll();
+      // Web : le Markdown se met en page après la première frame. Sans une
+      // seconde, le défilement atterrit sur la hauteur d'avant et le dernier
+      // jeton reste masqué par la saisie.
+      if (Platform.OS === "web") requestAnimationFrame(scroll);
+    });
+  }, []);
+
+  const onThreadScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    stickToBottom.current =
+      contentSize.height - layoutMeasurement.height - contentOffset.y <= STICK_THRESHOLD;
   }, []);
 
   // Suivre `streamingText` recale la liste à chaque arrivée de texte : le
@@ -150,11 +192,15 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
   const sendDraft = useCallback(
     (inputMode: MessageInputMode) => {
       const content = draft.trim();
-      if (!content || send.isPending) return;
+      const attachmentIds = attachments.readyIds;
+      if ((!content && attachmentIds.length === 0) || send.isPending || attachments.uploading)
+        return;
+      stickToBottom.current = true;
       setDraft("");
-      submit(content, inputMode);
+      attachments.reset();
+      submit(content, inputMode, attachmentIds);
     },
-    [draft, send.isPending, submit],
+    [draft, send.isPending, submit, attachments],
   );
 
   // Ne dépend ni de `items` (voir le calcul de `previous` ci-dessus) ni de
@@ -225,6 +271,8 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           renderItem={renderItem}
           contentContainerStyle={[styles.list, column]}
           onContentSizeChange={scrollToEndSoon}
+          onScroll={onThreadScroll}
+          scrollEventThrottle={16}
           // Par défaut, `FlatList` ne rend que 10 éléments au montage, en
           // partant du début — les plus anciens messages, la liste étant triée
           // par date croissante. Le premier `scrollToEnd` n'atteignait alors
@@ -245,7 +293,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           // malgré tout dans l'espacement de la liste.
           ListFooterComponent={
             streamingText === null && pending.length === 0 && pendingUserText === null ? null : (
-              <View style={styles.footer}>
+              <View style={styles.footer} onLayout={scrollToEndSoon}>
                 {/* Le message tel qu'il vient d'être tapé, en attendant que le
                     serveur renvoie sa version enregistrée. Même apparence que
                     les autres : rien ne doit signaler à l'utilisateur qu'il
@@ -287,10 +335,7 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
                       resolve.mutate({
                         id: suggestion.id,
                         action: "accept",
-                        ...(input?.folderSelection
-                          ? { folderSelection: input.folderSelection }
-                          : {}),
-                        ...(input?.taskListEdits ? { taskListEdits: input.taskListEdits } : {}),
+                        ...input,
                       })
                     }
                     onDismiss={() => resolve.mutate({ id: suggestion.id, action: "dismiss" })}
@@ -357,6 +402,9 @@ export function ConversationThread({ conversationId, initialDraft }: Conversatio
           busy={send.isPending}
           onStop={stop}
           inputRef={inputRef}
+          attachments={attachments.items}
+          onRemoveAttachment={attachments.remove}
+          picker={picker}
         />
 
         {/* Sous le champ et non dans le fil : la mention vaut pour toutes les

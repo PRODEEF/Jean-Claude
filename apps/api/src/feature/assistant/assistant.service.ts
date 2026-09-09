@@ -1,10 +1,14 @@
 import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
+  createEventsPayloadSchema,
+  createFeedbackSchema,
   createProjectFoldersPayloadSchema,
+  createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
+  updateTaskListItemsPayloadSchema,
   userPreferencesSchema,
   type AssignFoldersPayload,
   type CalendarEvent,
@@ -24,6 +28,7 @@ import { logger } from "../../core/logger.js";
 import { hasWallTime } from "../../core/timezone.js";
 import type { CalendarService } from "../../domain/calendar/calendar.service.js";
 import type { ConversationService } from "../../domain/conversation/conversation.service.js";
+import type { FeedbackService } from "../../domain/feedback/feedback.service.js";
 import type { FolderService } from "../../domain/folder/folder.service.js";
 import type { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
 import type { TaskService } from "../../domain/task/task.service.js";
@@ -33,6 +38,9 @@ import type { IUserRepository } from "../../domain/user/user.repository.interfac
 const DEFAULT_TIMEZONE: UserPreferences["timezone"] = userPreferencesSchema.shape.timezone.parse(
   undefined,
 );
+
+/** Rappel par défaut d'une série récurrente, en minutes (A.11). */
+const DEFAULT_RECURRING_REMINDER_MINUTES = 30;
 
 export type ResolvedSuggestion = {
   suggestion: Suggestion;
@@ -79,6 +87,7 @@ export class AssistantService {
     private readonly tasks: TaskService,
     private readonly calendar: CalendarService,
     private readonly users: IUserRepository,
+    private readonly feedback: FeedbackService,
   ) {}
 
   /**
@@ -114,7 +123,8 @@ export class AssistantService {
     // dire ce qui a été fait.
     const retained = retainedFolders(suggestion, input.folderSelection);
     const edited = editedTaskLists(suggestion, input.taskListEdits);
-    const payload = retained ?? edited;
+    const withContext = withBugReportContext(suggestion, input.bugReportContext);
+    const payload = retained ?? edited ?? withContext;
     const applied = await this.apply(
       userId,
       payload ? { ...suggestion, payload } : suggestion,
@@ -156,10 +166,24 @@ export class AssistantService {
       const taskLists = await this.rescheduleTaskList(userId, suggestion, accessToken);
       return { ...nothingApplied(), taskLists };
     }
+    if (suggestion.kind === "update_task_list_items") {
+      const taskLists = await this.updateTaskListItems(userId, suggestion, accessToken);
+      return { ...nothingApplied(), taskLists };
+    }
+    if (suggestion.kind === "report_bug") {
+      await this.reportBug(userId, suggestion, accessToken);
+      return nothingApplied();
+    }
+    if (suggestion.kind === "create_recurring_event") {
+      const events = await this.createRecurringEvent(userId, suggestion, accessToken);
+      return { ...nothingApplied(), events };
+    }
+    if (suggestion.kind === "create_events") {
+      const events = await this.createEvents(userId, suggestion, accessToken);
+      return { ...nothingApplied(), events };
+    }
 
-    // Reste le rendez-vous récurrent (A.11), inscrit au contrat mais sans
-    // module pour l'exécuter.
-    throw httpError(422, "Cette proposition n'est pas encore prise en charge.");
+    throw httpError(422, "Cette proposition n'est plus exploitable.");
   }
 
   /**
@@ -298,6 +322,55 @@ export class AssistantService {
   }
 
   /**
+   * Coche, décoche ou renomme des lignes d'une liste qui existe déjà (§12.1, A.2).
+   *
+   * Une ligne à la fois plutôt qu'en parallèle : `updateTask` relit la liste
+   * à chaque passe, et deux écritures concurrentes se marcheraient dessus.
+   * Une ligne disparue entre la proposition et l'acceptation rend un 404
+   * plutôt que d'écrire dans le vide.
+   */
+  private async updateTaskListItems(
+    _userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<TaskList[]> {
+    const payload = updateTaskListItemsPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de modification de lignes illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    for (const item of payload.data.items) {
+      const patch: { title?: string; done?: boolean } = {};
+      if (item.title !== undefined) patch.title = item.title;
+      if (item.done !== undefined) patch.done = item.done;
+      await this.tasks.updateTask(payload.data.listId, item.taskId, patch, accessToken);
+    }
+
+    return [];
+  }
+
+  /**
+   * Transmet le signalement à `feedback`, catégorie bug (§12.1, A.10).
+   *
+   * `platform` et `screen` n'arrivent qu'à l'acceptation, fusionnés dans la
+   * charge utile par `withBugReportContext` : une acceptation reçue sans eux —
+   * client ancien, appel direct à l'API — rend la charge utile illisible
+   * plutôt que d'insérer un signalement à moitié renseigné.
+   */
+  private async reportBug(userId: string, suggestion: Suggestion, accessToken: string): Promise<void> {
+    const payload = createFeedbackSchema.safeParse({ ...suggestion.payload, category: "bug" });
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de signalement illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    await this.feedback.submitGeneral(userId, payload.data, accessToken);
+  }
+
+  /**
    * Deuxième temps du §12.1 : « puis proposer d'y associer des dates ».
    *
    * Une proposition et non une création : les créneaux n'apparaissent dans
@@ -371,6 +444,94 @@ export class AssistantService {
       }
 
       events.push(event);
+    }
+
+    return events;
+  }
+
+  /**
+   * Pose un rendez-vous récurrent dans l'agenda (A.11).
+   *
+   * Une seule ligne avec `rrule` : les occurrences ne sont pas encore
+   * expansées — l'événement n'apparaît qu'à son premier créneau. Le rappel
+   * tombe à 30 min si le modèle n'en a pas proposé, pour que la série ne
+   * demande pas de ressaisie.
+   */
+  private async createRecurringEvent(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<CalendarEvent[]> {
+    const payload = createRecurringEventPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de rendez-vous récurrent illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    const profile = await this.users.findById(userId, accessToken);
+    const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
+    const timed = hasWallTime(payload.data.startsAt, timezone);
+
+    const event = await this.calendar.create(
+      userId,
+      {
+        title: payload.data.title,
+        startsAt: payload.data.startsAt,
+        endsAt: timed ? oneHourAfter(payload.data.startsAt) : null,
+        allDay: !timed,
+        rrule: payload.data.rrule,
+        reminderMinutesBefore: payload.data.reminderMinutesBefore ?? DEFAULT_RECURRING_REMINDER_MINUTES,
+      },
+      accessToken,
+    );
+
+    return [event];
+  }
+
+  /**
+   * Pose dans l'agenda un rendez-vous par entrée proposée (A.3).
+   *
+   * Distincte de `createRecurringEvent` : chaque entrée est un événement
+   * indépendant, sans `rrule`. Les rendez-vous sont posés l'un après l'autre
+   * plutôt qu'en parallèle pour qu'un événement dont la création échoue ne
+   * fasse pas perdre ceux qui le suivent dans le même lot.
+   *
+   * `allDay` et `endsAt` sont dérivés de l'heure murale de `startsAt`, même
+   * principe que `scheduleTasks` et `createRecurringEvent` : minuit vaut
+   * « dans la journée », une heure précise vaut un rendez-vous à heure fixe.
+   */
+  private async createEvents(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<CalendarEvent[]> {
+    const payload = createEventsPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de rendez-vous illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    const profile = await this.users.findById(userId, accessToken);
+    const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
+
+    const events: CalendarEvent[] = [];
+
+    for (const proposed of payload.data.events) {
+      const timed = hasWallTime(proposed.startsAt, timezone);
+      events.push(
+        await this.calendar.create(
+          userId,
+          {
+            title: proposed.title,
+            startsAt: proposed.startsAt,
+            endsAt: timed ? oneHourAfter(proposed.startsAt) : null,
+            allDay: !timed,
+          },
+          accessToken,
+        ),
+      );
     }
 
     return events;
@@ -576,6 +737,22 @@ function editedTaskLists(
   edits: CreateTaskListsPayload | undefined,
 ): CreateTaskListsPayload | undefined {
   return suggestion.kind === "create_task_list" ? edits : undefined;
+}
+
+/**
+ * Charge utile `report_bug` complétée du contexte transmis à l'acceptation,
+ * ou `undefined` s'il n'y a rien à y ajouter.
+ *
+ * Contrairement à `retainedFolders`, ce n'est pas une restriction de la
+ * proposition d'origine : `platform` et `screen` n'existent nulle part dans
+ * ce que le modèle a produit, ils s'y ajoutent.
+ */
+function withBugReportContext(
+  suggestion: Suggestion,
+  context: ResolveSuggestion["bugReportContext"],
+): Record<string, unknown> | undefined {
+  if (suggestion.kind !== "report_bug" || !context) return undefined;
+  return { ...suggestion.payload, ...context };
 }
 
 /**

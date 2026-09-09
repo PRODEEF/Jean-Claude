@@ -15,6 +15,7 @@ import {
   parseTimeInput,
   withTime,
 } from "@/shared/lib/date-input";
+import { startOfDay } from "@/shared/lib/dates";
 
 /**
  * Création — éventuellement depuis un dossier, qui exprime déjà le rangement —
@@ -102,7 +103,7 @@ function ListForm({
     }
     setError(null);
 
-    const due = parseDue(date, time);
+    const due = parseDue(date, time, editing ? target.list.dueAt : null);
     if (!due.ok) {
       setError(due.message);
       return;
@@ -277,7 +278,7 @@ type DueResult = { ok: true; value: string | null } | { ok: false; message: stri
  * Effacer la date retire l'échéance : la liste retourne parmi celles qui n'en
  * portent pas, sans pour autant disparaître.
  */
-function parseDue(date: string, time: string): DueResult {
+function parseDue(date: string, time: string, originalDueAt: string | null): DueResult {
   if (date.trim().length === 0) {
     if (time.trim().length > 0) return { ok: false, message: "Indiquez une date avant une heure." };
     return { ok: true, value: null };
@@ -286,6 +287,17 @@ function parseDue(date: string, time: string): DueResult {
   const day = parseDateInput(date);
   if (day === "malformed") return { ok: false, message: "Date attendue au format JJ/MM/AAAA." };
   if (day === "impossible") return { ok: false, message: "Ce jour n'existe pas dans ce mois." };
+
+  // Même règle que le serveur : aujourd'hui reste permis, un jour déjà révolu
+  // non — sauf à relire l'échéance déjà portée par la liste qu'on édite.
+  const chosen = startOfDay(day).getTime();
+  if (chosen < startOfDay(new Date()).getTime()) {
+    const original =
+      originalDueAt === null ? null : startOfDay(new Date(originalDueAt)).getTime();
+    if (original !== chosen) {
+      return { ok: false, message: "Une échéance ne peut pas être dans le passé." };
+    }
+  }
 
   if (time.trim().length === 0) return { ok: true, value: day.toISOString() };
 

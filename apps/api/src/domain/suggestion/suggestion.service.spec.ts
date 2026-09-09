@@ -99,18 +99,119 @@ describe("SuggestionService", () => {
       });
     });
 
-    it("ignore un appel d'outil qui ne correspond à aucune suggestion", async () => {
+    it("capture un rendez-vous récurrent proposé par le modèle (A.11)", async () => {
       const repo = makeRepository();
 
-      // `suggest_recurring_event` est exposé au modèle mais n'a pas encore de
-      // suggestion correspondante (A.11).
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "J'ai noté kiné tous les mardis à 18h, je pose le rappel ?",
+            title: "Kiné",
+            startsAt: NOW,
+            rrule: "FREQ=WEEKLY;BYDAY=TU",
+            reminderMinutesBefore: 30,
+          },
+          "suggest_recurring_event",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_recurring_event",
+          message: "J'ai noté kiné tous les mardis à 18h, je pose le rappel ?",
+          payload: {
+            title: "Kiné",
+            startsAt: NOW,
+            rrule: "FREQ=WEEKLY;BYDAY=TU",
+            reminderMinutesBefore: 30,
+          },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("capture plusieurs rendez-vous ponctuels proposés en un seul appel (A.3)", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je te pose ces deux rendez-vous dans ton agenda ?",
+            events: [
+              { title: "Dentiste", startsAt: NOW },
+              { title: "Coiffeur", startsAt: "2026-09-03T08:00:00.000Z" },
+            ],
+          },
+          "suggest_events",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_events",
+          message: "Je te pose ces deux rendez-vous dans ton agenda ?",
+          payload: {
+            events: [
+              { title: "Dentiste", startsAt: NOW },
+              { title: "Coiffeur", startsAt: "2026-09-03T08:00:00.000Z" },
+            ],
+          },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ignore une proposition de rendez-vous ponctuels sans aucun événement", async () => {
+      const repo = makeRepository();
+
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall({ message: "Je te les pose ?", events: [] }, "suggest_events"),
+        TOKEN,
+      );
+
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("ignore un rendez-vous récurrent dont la règle est illisible", async () => {
+      const repo = makeRepository();
+
       const suggestion = await new SuggestionService(repo).capture(
         USER,
         CONVERSATION,
         makeToolCall(
-          { title: "Kiné", startsAt: NOW, rrule: "FREQ=WEEKLY;BYDAY=TU" },
+          {
+            message: "Je pose le rappel ?",
+            title: "Kiné",
+            startsAt: NOW,
+            rrule: "tous les mardis",
+          },
           "suggest_recurring_event",
         ),
+        TOKEN,
+      );
+
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("ignore un appel d'outil qui ne correspond à aucune suggestion", async () => {
+      const repo = makeRepository();
+
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall({ title: "Sans nature" }, "outil_inconnu"),
         TOKEN,
       );
 
@@ -290,6 +391,76 @@ describe("SuggestionService", () => {
         }),
         TOKEN,
       );
+    });
+
+    it("traduit une modification de lignes en proposition update_task_list_items", async () => {
+      const repo = makeRepository();
+      const listId = "11111111-1111-4111-8111-111111111111";
+      const taskId = "22222222-2222-4222-8222-222222222222";
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je coche le pain ?",
+            listId,
+            items: [{ taskId, done: true }],
+          },
+          "suggest_update_task_items",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_task_list_items",
+          payload: { listId, items: [{ taskId, done: true }] },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("traduit un signalement en proposition report_bug", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "On dirait un bug, je le signale ?",
+            content: "Le bouton d'envoi reste grisé après une erreur réseau.",
+          },
+          "report_bug",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "report_bug",
+          message: "On dirait un bug, je le signale ?",
+          payload: { content: "Le bouton d'envoi reste grisé après une erreur réseau." },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ignore un signalement sans description exploitable", async () => {
+      const repo = makeRepository();
+
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall({ message: "On dirait un bug, je le signale ?", content: "   " }, "report_bug"),
+        TOKEN,
+      );
+
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
     });
 
     it("ignore une reprogrammation sans nouvelle échéance exploitable", async () => {

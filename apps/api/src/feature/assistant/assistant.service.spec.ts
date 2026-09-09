@@ -1,18 +1,23 @@
 import type {
   Conversation,
   CreateCalendarEvent,
+  CreateFeedback,
   CreateTask,
   CreateTaskList,
+  Feedback,
   Folder,
   Suggestion,
   Task,
   TaskListWithTasks,
 } from "@jc/domain";
 import type { LlmProvider } from "../../core/llm/llm.port.js";
+import type { IAttachmentRepository } from "../../domain/attachment/attachment.repository.interface.js";
 import type { ICalendarRepository } from "../../domain/calendar/calendar.repository.interface.js";
 import { CalendarService } from "../../domain/calendar/calendar.service.js";
 import type { IConversationRepository } from "../../domain/conversation/conversation.repository.interface.js";
 import { ConversationService } from "../../domain/conversation/conversation.service.js";
+import type { IFeedbackRepository } from "../../domain/feedback/feedback.repository.interface.js";
+import { FeedbackService } from "../../domain/feedback/feedback.service.js";
 import type { IFolderRepository } from "../../domain/folder/folder.repository.interface.js";
 import { FolderService } from "../../domain/folder/folder.service.js";
 import type {
@@ -34,9 +39,9 @@ const TOKEN = "access-token";
 const USER = "user-1";
 const NOW = "2026-09-01T08:00:00.000Z";
 /** 11h à Paris (fuseau par défaut) : une échéance qui porte une heure. */
-const DESHERBAGE = "2026-09-07T09:00:00.000Z";
+const DESHERBAGE = "2026-09-12T09:00:00.000Z";
 /** Minuit pile à Paris le même jour que DESHERBAGE : aucune heure donnée. */
-const MINUIT_PARIS = "2026-09-06T22:00:00.000Z";
+const MINUIT_PARIS = "2026-09-11T22:00:00.000Z";
 
 /**
  * Identifiants fabriqués au format UUID : la charge utile des créneaux les
@@ -198,6 +203,14 @@ const IDLE_USERS: IUserRepository = {
   deleteAccount: jest.fn(),
 };
 
+const IDLE_ATTACHMENTS: IAttachmentRepository = {
+  create: jest.fn(),
+  findById: jest.fn(),
+  findByIds: jest.fn().mockResolvedValue([]),
+  linkToMessage: jest.fn(),
+  delete: jest.fn(),
+};
+
 /**
  * Double avec état : `TaskService` relit la liste avant d'y ajouter une tâche,
  * pour en déduire sa position, et relit la tâche avant de lui rattacher un
@@ -277,6 +290,8 @@ function makeTaskRepository(): ITaskRepository {
       const task = lists.get(listId)?.tasks.find((candidate) => candidate.id === taskId);
       if (!task) return Promise.reject(new Error("Tâche introuvable"));
       if (patch.title !== undefined) task.title = patch.title;
+      if (patch.done !== undefined) task.done = patch.done;
+      if (patch.completedAt !== undefined) task.completedAt = patch.completedAt;
       return Promise.resolve(task);
     }),
     deleteTask: jest.fn(),
@@ -299,8 +314,8 @@ function makeCalendarRepository(): ICalendarRepository {
         startsAt: input.startsAt,
         endsAt: input.endsAt ?? null,
         allDay: input.allDay,
-        rrule: null,
-        reminderMinutesBefore: null,
+        rrule: input.rrule ?? null,
+        reminderMinutesBefore: input.reminderMinutesBefore ?? null,
         folderId: null,
         conversationId: null,
         createdByAssistant: false,
@@ -320,6 +335,7 @@ function makeService(
   tasks: ITaskRepository = makeTaskRepository(),
   events: ICalendarRepository = makeCalendarRepository(),
   users: IUserRepository = IDLE_USERS,
+  feedback: IFeedbackRepository = makeFeedbackRepository(),
 ): AssistantService {
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
@@ -337,10 +353,12 @@ function makeService(
       users,
       calendarService,
       taskService,
+      IDLE_ATTACHMENTS,
     ),
     taskService,
     calendarService,
     users,
+    new FeedbackService(feedback),
   );
 }
 
@@ -419,6 +437,26 @@ function createdLists(repo: ITaskRepository): (CreateTaskList & TaskListOrigin)[
 
 function makeFilingSuggestion(payload: Record<string, unknown>): Suggestion {
   return makeSuggestion({ kind: "assign_folders", message: "Je range ça ?", payload });
+}
+
+function makeReportBugSuggestion(payload: Record<string, unknown>): Suggestion {
+  return makeSuggestion({
+    kind: "report_bug",
+    message: "On dirait un bug, je le signale ?",
+    payload,
+  });
+}
+
+function makeFeedbackRepository(overrides: Partial<IFeedbackRepository> = {}): IFeedbackRepository {
+  return {
+    createGeneral: jest
+      .fn()
+      .mockImplementation((_userId: string, input: CreateFeedback) =>
+        Promise.resolve<Feedback>({ id: "fb-1", createdAt: NOW, ...input }),
+      ),
+    rateMessage: jest.fn(),
+    ...overrides,
+  };
 }
 
 /** Dossiers finalement rattachés à la conversation, dans l'ordre d'appel. */
@@ -740,7 +778,10 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolders: [{ name: "Assurances" }] }),
+            makeFilingSuggestion({
+              existingFolderIds: [SANTE],
+              newFolders: [{ name: "Assurances" }],
+            }),
           ),
       });
       const folders = makeFolderRepository([makeFolder({ id: SANTE, name: "Santé" })]);
@@ -797,9 +838,7 @@ describe("AssistantService", () => {
       const suggestions = makeSuggestionRepository({
         findById: jest
           .fn()
-          .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolders: [] }),
-          ),
+          .mockResolvedValue(makeFilingSuggestion({ existingFolderIds: [SANTE], newFolders: [] })),
       });
       const conversations = makeConversationRepository();
 
@@ -1106,7 +1145,12 @@ describe("AssistantService", () => {
         TOKEN,
         expect.objectContaining({
           lists: [
-            { title: "Courses de printemps", kind: "shopping", dueAt: null, items: [{ title: "Terreau" }] },
+            {
+              title: "Courses de printemps",
+              kind: "shopping",
+              dueAt: null,
+              items: [{ title: "Terreau" }],
+            },
           ],
         }),
       );
@@ -1184,6 +1228,83 @@ describe("AssistantService", () => {
           tasks,
         ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
       ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  describe("acceptation d'une modification de lignes (§12.1, A.2)", () => {
+    it("coche et renomme les lignes désignées, sans créer de liste", async () => {
+      const { tasks, listId } = await withTravauxList();
+      const before = (tasks.createList as jest.Mock).mock.calls.length;
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
+      const desherber = travaux?.tasks.find((task) => task.title === "Désherber");
+      const tondre = travaux?.tasks.find((task) => task.title === "Tondre");
+      if (!desherber || !tondre) throw new Error("Les lignes de travaux devraient exister");
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "update_task_list_items",
+            message: "Je coche Désherber et je renomme Tondre ?",
+            payload: {
+              listId,
+              items: [
+                { taskId: desherber.id, done: true },
+                { taskId: tondre.id, title: "Tondre la pelouse" },
+              ],
+            },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const updated = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
+      expect(updated?.tasks.find((task) => task.id === desherber.id)?.done).toBe(true);
+      expect(updated?.tasks.find((task) => task.id === tondre.id)?.title).toBe("Tondre la pelouse");
+      expect((tasks.createList as jest.Mock).mock.calls.length).toBe(before);
+    });
+
+    it("refuse une modification dont la charge utile est illisible", async () => {
+      const tasks = makeTaskRepository();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_task_list_items",
+              message: "Je coche quelque chose ?",
+              payload: { items: [{ taskId: uuid(1), done: true }] },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+
+    it("refuse une ligne qui n'existe plus", async () => {
+      const { tasks, listId } = await withTravauxList();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_task_list_items",
+              message: "Je coche Désherber ?",
+              payload: { listId, items: [{ taskId: uuid(99), done: true }] },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 404 });
     });
   });
 
@@ -1286,7 +1407,7 @@ describe("AssistantService", () => {
         {
           title: "Travaux jardin",
           startsAt: DESHERBAGE,
-          endsAt: "2026-09-07T10:00:00.000Z",
+          endsAt: "2026-09-12T10:00:00.000Z",
           allDay: false,
         },
         TOKEN,
@@ -1333,6 +1454,251 @@ describe("AssistantService", () => {
       // Sans ce lien, le calendrier montrerait deux fois la même échéance : la
       // liste datée et le créneau posé pour elle.
       expect(travaux?.eventId).toBe(second.events[0]?.id);
+    });
+  });
+
+  describe("acceptation d'un rendez-vous récurrent (A.11)", () => {
+    const KINE = "2026-09-08T16:00:00.000Z"; // mardi 18h à Paris
+
+    function makeKineSuggestion(overrides: Partial<Suggestion> = {}): Suggestion {
+      return makeSuggestion({
+        kind: "create_recurring_event",
+        message: "J'ai noté kiné tous les mardis à 18h, je pose le rappel ?",
+        payload: {
+          title: "Kiné",
+          startsAt: KINE,
+          rrule: "FREQ=WEEKLY;BYDAY=TU",
+        },
+        ...overrides,
+      });
+    }
+
+    it("pose l'événement avec la règle et un rappel de 30 min par défaut", async () => {
+      const events = makeCalendarRepository();
+
+      const resolved = await makeService(
+        makeSuggestionStore(makeKineSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(resolved.events).toHaveLength(1);
+      expect(events.create).toHaveBeenCalledWith(
+        USER,
+        {
+          title: "Kiné",
+          startsAt: KINE,
+          endsAt: "2026-09-08T17:00:00.000Z",
+          allDay: false,
+          rrule: "FREQ=WEEKLY;BYDAY=TU",
+          reminderMinutesBefore: 30,
+        },
+        TOKEN,
+      );
+    });
+
+    it("conserve le rappel fourni par le modèle", async () => {
+      const events = makeCalendarRepository();
+
+      await makeService(
+        makeSuggestionStore(
+          makeKineSuggestion({
+            payload: {
+              title: "Kiné",
+              startsAt: KINE,
+              rrule: "FREQ=WEEKLY;BYDAY=TU",
+              reminderMinutesBefore: 60,
+            },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(events.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ reminderMinutesBefore: 60 }),
+        TOKEN,
+      );
+    });
+
+    it("ne crée rien quand la proposition est ignorée", async () => {
+      const events = makeCalendarRepository();
+
+      await makeService(
+        makeSuggestionStore(makeKineSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+
+      expect(events.create).not.toHaveBeenCalled();
+    });
+
+    it("refuse une charge utile illisible", async () => {
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeKineSuggestion({
+              payload: { title: "Kiné", startsAt: KINE, rrule: "tous les mardis" },
+            }),
+          ),
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  describe("acceptation de plusieurs rendez-vous ponctuels (A.3)", () => {
+    function makeEventsSuggestion(overrides: Partial<Suggestion> = {}): Suggestion {
+      return makeSuggestion({
+        kind: "create_events",
+        message: "Je te pose ces deux rendez-vous dans ton agenda ?",
+        payload: {
+          events: [
+            { title: "Dentiste", startsAt: DESHERBAGE },
+            { title: "Anniversaire", startsAt: MINUIT_PARIS },
+          ],
+        },
+        ...overrides,
+      });
+    }
+
+    it("pose un événement par entrée, à heure fixe ou journée entière selon `startsAt`", async () => {
+      const events = makeCalendarRepository();
+
+      const resolved = await makeService(
+        makeSuggestionStore(makeEventsSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(resolved.events).toHaveLength(2);
+      expect(events.create).toHaveBeenNthCalledWith(
+        1,
+        USER,
+        { title: "Dentiste", startsAt: DESHERBAGE, endsAt: "2026-09-12T10:00:00.000Z", allDay: false },
+        TOKEN,
+      );
+      expect(events.create).toHaveBeenNthCalledWith(
+        2,
+        USER,
+        { title: "Anniversaire", startsAt: MINUIT_PARIS, endsAt: null, allDay: true },
+        TOKEN,
+      );
+    });
+
+    it("ne crée rien quand la proposition est ignorée", async () => {
+      const events = makeCalendarRepository();
+
+      await makeService(
+        makeSuggestionStore(makeEventsSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+
+      expect(events.create).not.toHaveBeenCalled();
+    });
+
+    it("refuse une charge utile illisible", async () => {
+      await expect(
+        makeService(
+          makeSuggestionStore(makeEventsSuggestion({ payload: { events: [] } })),
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  describe("signalement d'un bug (A.10)", () => {
+    it("transmet le signalement à feedback, catégorie bug", async () => {
+      const feedback = makeFeedbackRepository();
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeReportBugSuggestion({ content: "Le bouton reste grisé." })),
+      });
+
+      await makeService(
+        suggestions,
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        makeCalendarRepository(),
+        IDLE_USERS,
+        feedback,
+      ).resolve(
+        USER,
+        "sug-1",
+        { action: "accept", bugReportContext: { platform: "web", screen: "/assistant" } },
+        TOKEN,
+      );
+
+      expect(feedback.createGeneral).toHaveBeenCalledWith(
+        USER,
+        {
+          category: "bug",
+          content: "Le bouton reste grisé.",
+          platform: "web",
+          screen: "/assistant",
+        },
+        TOKEN,
+      );
+    });
+
+    it("refuse un signalement accepté sans le contexte de plateforme", async () => {
+      jest.spyOn(console, "error").mockImplementation(() => undefined);
+      const feedback = makeFeedbackRepository();
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeReportBugSuggestion({ content: "Le bouton reste grisé." })),
+      });
+
+      // `platform` et `screen` n'arrivent qu'avec `bugReportContext` : sans lui,
+      // la charge utile ne porte que le texte du bug, illisible pour `feedback`.
+      await expect(
+        makeService(
+          suggestions,
+          makeFolderRepository(),
+          makeConversationRepository(),
+          makeTaskRepository(),
+          makeCalendarRepository(),
+          IDLE_USERS,
+          feedback,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+
+      expect(feedback.createGeneral).not.toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it("ne transmet rien quand le signalement est ignoré", async () => {
+      const feedback = makeFeedbackRepository();
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeReportBugSuggestion({ content: "Le bouton reste grisé." })),
+      });
+
+      await makeService(
+        suggestions,
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        makeCalendarRepository(),
+        IDLE_USERS,
+        feedback,
+      ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+
+      expect(feedback.createGeneral).not.toHaveBeenCalled();
     });
   });
 

@@ -1,7 +1,12 @@
 import { z } from "zod";
+import { rruleSchema } from "../calendar/calendar.schema";
+import { feedbackPlatformSchema, FEEDBACK_CONTENT_MAX_LENGTH } from "../feedback/feedback.schema";
 import { folderPurposeSchema } from "../folder/folder.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 import { taskListKindSchema } from "../task/task.schema";
+
+/** Fréquences RRULE acceptées — le reste est inventé ou hors périmètre V1. */
+const RRULE_FREQ = /(?:^|;)FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(?:;|$)/i;
 
 /**
  * Périmètre du canal permanent Jean-Claude (A.10).
@@ -46,8 +51,14 @@ export const suggestionKindSchema = z.enum([
   "create_project_folders",
   /** « J'ai noté kiné tous les mardis à 18h, je pose le rappel ? » (A.11) */
   "create_recurring_event",
+  /** « Je te pose ces deux rendez-vous dans ton agenda ? » (A.3) */
+  "create_events",
   /** « Je décale Courses à vendredi ? » (§12.1, A.2) */
   "update_task_list_due_date",
+  /** « Je coche le pain et je renomme les œufs ? » (§12.1, A.2) */
+  "update_task_list_items",
+  /** « On dirait un bug, je le signale ? » (A.10) */
+  "report_bug",
 ]);
 
 export type SuggestionKind = z.infer<typeof suggestionKindSchema>;
@@ -195,11 +206,22 @@ export type CreateTaskListsPayload = z.infer<typeof createTaskListsPayloadSchema
  * en écarter une partie. Le même schéma que la proposition initiale suffit à
  * le border : ce n'est ni plus ni moins que ce qu'accepterait la création
  * d'une todoliste ordinaire.
+ *
+ * `bugReportContext` complète une proposition `report_bug` : `platform` et
+ * `screen` ne sont connus que du client, jamais du modèle, contrairement au
+ * texte du signalement — comme le contexte technique déjà joint
+ * automatiquement à la fenêtre d'avis général (`useFeedbackContext`).
  */
 export const resolveSuggestionSchema = z.object({
   action: z.enum(["accept", "dismiss"]),
   folderSelection: assignFoldersPayloadSchema.optional(),
   taskListEdits: createTaskListsPayloadSchema.optional(),
+  bugReportContext: z
+    .object({
+      platform: feedbackPlatformSchema,
+      screen: z.string().trim().min(1).max(120),
+    })
+    .optional(),
 });
 
 export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
@@ -243,6 +265,52 @@ export const scheduleListsPayloadSchema = z.object({
 export type ScheduleListsPayload = z.infer<typeof scheduleListsPayloadSchema>;
 
 /**
+ * Charge utile d'une suggestion `create_recurring_event` (A.11).
+ *
+ * Une règle RRULE plutôt qu'une liste de dates : « kiné tous les mardis »
+ * n'a pas à être ressaisi. `startsAt` ancre la première occurrence ;
+ * `reminderMinutesBefore` est optionnel à la capture — l'acceptation pose
+ * 30 min par défaut si le modèle l'omet (A.11). Réservée aux séries : un
+ * rendez-vous ponctuel relève de `create_events` (A.3).
+ */
+export const createRecurringEventPayloadSchema = z.object({
+  title: labelSchema,
+  startsAt: isoDateTimeSchema,
+  rrule: rruleSchema.refine(
+    (value) => RRULE_FREQ.test(value),
+    "La récurrence doit porter une fréquence FREQ (DAILY, WEEKLY, MONTHLY ou YEARLY).",
+  ),
+  reminderMinutesBefore: z.number().int().min(0).max(10_080).optional(),
+});
+
+export type CreateRecurringEventPayload = z.infer<typeof createRecurringEventPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `create_events` (A.3).
+ *
+ * Plusieurs rendez-vous ponctuels et non un seul : l'utilisateur en énumère
+ * souvent plusieurs dans le même message (« pose-moi ces trois rendez-vous »),
+ * et les capturer en un seul appel d'outil évite d'empiler une carte par
+ * rendez-vous. Distincte de `create_recurring_event` : chaque entrée est un
+ * événement indépendant, sans règle de répétition — `allDay` et `endsAt` sont
+ * dérivés à l'acceptation de la présence d'une heure dans `startsAt`, comme
+ * pour un rendez-vous récurrent.
+ */
+export const createEventsPayloadSchema = z.object({
+  events: z
+    .array(
+      z.object({
+        title: labelSchema,
+        startsAt: isoDateTimeSchema,
+      }),
+    )
+    .min(1)
+    .max(8),
+});
+
+export type CreateEventsPayload = z.infer<typeof createEventsPayloadSchema>;
+
+/**
  * Charge utile d'une suggestion `update_task_list_due_date` (§12.1, A.2).
  *
  * `dueAt` seul, sans `null` : contrairement à la création, cet outil ne sert
@@ -256,3 +324,50 @@ export const updateTaskListDueDatePayloadSchema = z.object({
 });
 
 export type UpdateTaskListDueDatePayload = z.infer<typeof updateTaskListDueDatePayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `update_task_list_items` (§12.1, A.2).
+ *
+ * Cocher, décocher ou renommer des lignes qui existent déjà — le geste que
+ * `add_task_list_items` ne couvre pas. Sans lui, « coche le pain » n'avait
+ * qu'un outil à sa portée, celui qui crée, et le modèle ouvrait une seconde
+ * liste. Chaque ligne est désignée par son identifiant, repris de la consigne.
+ *
+ * Au moins un des deux champs `title` / `done` : une ligne sans rien à
+ * changer n'a pas de proposition à porter.
+ */
+export const updateTaskListItemsPayloadSchema = z.object({
+  listId: uuidSchema,
+  items: z
+    .array(
+      z
+        .object({
+          taskId: uuidSchema,
+          title: labelSchema.optional(),
+          done: z.boolean().optional(),
+        })
+        .refine(
+          (item) => item.title !== undefined || item.done !== undefined,
+          "Une ligne à modifier doit au moins changer de titre ou d'état.",
+        ),
+    )
+    .min(1)
+    .max(30),
+});
+
+export type UpdateTaskListItemsPayload = z.infer<typeof updateTaskListItemsPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `report_bug` (A.10).
+ *
+ * `content` seul à la capture : c'est tout ce que le modèle peut renseigner,
+ * rédigé à partir de ce que l'utilisateur a décrit. `platform` et `screen`
+ * n'arrivent qu'à l'acceptation, via `bugReportContext` — c'est alors ce
+ * triplet complet qui devient la charge utile stockée, dans la forme
+ * qu'attend `createFeedbackSchema` une fois `category: "bug"` ajoutée.
+ */
+export const reportBugPayloadSchema = z.object({
+  content: z.string().trim().min(1).max(FEEDBACK_CONTENT_MAX_LENGTH),
+});
+
+export type ReportBugPayload = z.infer<typeof reportBugPayloadSchema>;

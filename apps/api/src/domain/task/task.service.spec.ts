@@ -196,11 +196,37 @@ describe("TaskService", () => {
 
       const created = await makeService(repo).createList(
         USER,
-        { title: "Courses", kind: "shopping", dueAt: "2026-09-05T00:00:00.000Z" },
+        { title: "Courses", kind: "shopping", dueAt: "2026-09-12T00:00:00.000Z" },
         TOKEN,
       );
 
-      expect(created.dueAt).toBe("2026-09-05T00:00:00.000Z");
+      expect(created.dueAt).toBe("2026-09-12T00:00:00.000Z");
+    });
+
+    it("refuse une échéance dont le jour civil est déjà révolu", async () => {
+      const repo = makeRepository();
+
+      await expect(
+        makeService(repo).createList(
+          USER,
+          { title: "Courses", kind: "shopping", dueAt: "2020-01-01T00:00:00.000Z" },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.createList).not.toHaveBeenCalled();
+    });
+
+    it("accepte une échéance aujourd'hui, même à une heure déjà passée", async () => {
+      const repo = makeRepository();
+      const today = new Date().toISOString();
+
+      await makeService(repo).createList(
+        USER,
+        { title: "Courses", kind: "shopping", dueAt: today },
+        TOKEN,
+      );
+
+      expect(repo.createList).toHaveBeenCalled();
     });
   });
 
@@ -325,6 +351,27 @@ describe("TaskService", () => {
       );
 
       expect(events.update).not.toHaveBeenCalled();
+    });
+
+    it("refuse de reculer l'échéance dans un jour déjà révolu", async () => {
+      const repo = makeRepository();
+
+      await expect(
+        makeService(repo).updateList(USER, LIST, { dueAt: "2020-01-01T00:00:00.000Z" }, TOKEN),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.updateList).not.toHaveBeenCalled();
+    });
+
+    it("laisse inchangée une échéance déjà passée quand on ne change pas de jour", async () => {
+      const overdue = "2020-01-01T00:00:00.000Z";
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ dueAt: overdue })),
+        updateList: jest.fn().mockResolvedValue(makeList({ dueAt: overdue, title: "Potager" })),
+      });
+
+      await makeService(repo).updateList(USER, LIST, { title: "Potager", dueAt: overdue }, TOKEN);
+
+      expect(repo.updateList).toHaveBeenCalled();
     });
 
     it("répercute la nouvelle échéance sur le rendez-vous déjà lié, à heure précise", async () => {

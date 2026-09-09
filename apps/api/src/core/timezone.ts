@@ -52,3 +52,26 @@ export function hasWallTime(iso: string, timezone: string): boolean {
   const wall = toWall(new Date(iso), timezone);
   return wall.getUTCHours() !== 0 || wall.getUTCMinutes() !== 0;
 }
+
+function calendarDayUtc(iso: string, timezone: string): number {
+  const wall = toWall(new Date(iso), timezone);
+  return Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate());
+}
+
+/**
+ * L'instant tombe-t-il sur un jour civil déjà révolu dans `timezone` ?
+ *
+ * Compare des jours, pas des heures : une échéance « aujourd'hui à 9h »
+ * reste valable à 15h, une échéance « hier » ne l'est plus. C'est la
+ * contrainte d'un agenda qui se remplit vers le futur.
+ */
+export function isPastCalendarDay(iso: string, timezone: string, now = new Date()): boolean {
+  const wallNow = toWall(now, timezone);
+  const today = Date.UTC(wallNow.getUTCFullYear(), wallNow.getUTCMonth(), wallNow.getUTCDate());
+  return calendarDayUtc(iso, timezone) < today;
+}
+
+/** Deux instants tombent-ils le même jour civil dans `timezone` ? */
+export function isSameCalendarDay(a: string, b: string, timezone: string): boolean {
+  return calendarDayUtc(a, timezone) === calendarDayUtc(b, timezone);
+}

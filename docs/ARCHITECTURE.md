@@ -237,13 +237,14 @@ hors UE.
 
 Tous les modules `domain/` du socle sont écrits — `folder`, `conversation`,
 `calendar`, `task`, `user`, `suggestion` — ainsi que `feature/assistant` et
-`feature/search`. Restent, en suivant exactement le même découpage :
+`feature/search`. Les appels `suggest_task_list`, `suggest_task_list_items`,
+`suggest_task_list_due_date` et `suggest_update_task_items` du modèle deviennent
+déjà des propositions, exécutées à l'acceptation. Restent, en suivant exactement
+le même découpage :
 
-- la conversion d'une conversation en todoliste (A.2) : `domain/task` existe,
-  mais un appel `suggest_task_list` du modèle n'a pas encore de traduction en
-  proposition, ni d'exécution à l'acceptation
 - l'expansion des séries récurrentes et la délivrance des rappels (A.11), qui
-  demandent un planificateur dont le projet ne dispose pas encore
+  demandent un planificateur dont le projet ne dispose pas encore — y compris
+  les rappels du matin (`morningReminders`), réglables mais jamais envoyés
 
 Le modèle **lit** aujourd'hui l'agenda par contexte injecté dans la consigne du
 canal permanent, et non par appel d'outil : le port `LlmProvider` ne transporte

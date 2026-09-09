@@ -1,13 +1,12 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { MessageSquarePlus } from "lucide-react-native";
 import { fontSize, MIN_TOUCH_TARGET, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
-import { api } from "@/shared/lib/api";
 import { ConversationThread } from "@/features/conversation/ConversationThread";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
+import { useAssistantChannel } from "@/features/navigation/use-sidebar-data";
 import { ScreenShell } from "@/shared/ui/screen-shell";
 import { useAssistantName, useCompleteOnboarding, useProfile } from "@/shared/hooks/use-profile";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -34,11 +33,10 @@ export default function AssistantScreen() {
   const completeOnboarding = useCompleteOnboarding();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
-  // Le canal est créé à la volée au premier accès, côté serveur.
-  const channel = useQuery({
-    queryKey: ["conversation", "assistant"],
-    queryFn: () => api.conversations.assistantChannel(),
-  });
+  // Le canal est créé à la volée au premier accès, côté serveur. Même clé
+  // que la barre : sans ça, la pastille restait à 0 alors que l'accueil
+  // venait d'être posé (ou l'inverse, une fois le fil ouvert).
+  const channel = useAssistantChannel();
 
   const onboarding = profile?.onboardingCompletedAt === null;
 

@@ -9,8 +9,8 @@
     "start:dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "start:prod": "node --env-file-if-exists=../../.env dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "jest",
-    "test:watch": "jest --watch"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
@@ -19,6 +19,7 @@
     "ai": "^7.0.85",
     "hono": "^4.13.5",
     "rrule": "^2.8.1",
+    "unpdf": "^1.8.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {

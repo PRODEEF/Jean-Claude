@@ -206,6 +206,66 @@ export const SUGGEST_TASK_LIST_DUE_DATE: LlmTool = {
   },
 };
 
+/**
+ * Cocher, décocher ou renommer des lignes d'une liste qui existe déjà (§12.1, A.2).
+ *
+ * Distinct de `suggest_task_list_items` (qui ajoute) et de `suggest_task_list`
+ * (qui ouvre une liste). Sans lui, « coche le pain » n'avait qu'un outil à
+ * sa portée — celui qui crée — et le modèle reproduisait la liste.
+ */
+export const SUGGEST_UPDATE_TASK_ITEMS: LlmTool = {
+  name: "suggest_update_task_items",
+  description:
+    "À appeler pour modifier des lignes d'une todoliste qui existe déjà : cocher " +
+    "ou décocher une tâche, en changer le titre. Les listes et leurs lignes sont " +
+    "données dans la consigne avec leurs identifiants : recopie-les caractère pour " +
+    "caractère. N'ouvre jamais une seconde liste pour marquer une ligne faite, et " +
+    "n'appelle pas `suggest_task_list_items` pour renommer.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question, nommant ce qui change — ex. « Je coche le pain et je renomme " +
+          "les œufs en œufs bio ? ». Ne jamais présenter le changement comme déjà " +
+          "fait. 500 caractères maximum.",
+      },
+      listId: {
+        type: "string",
+        description:
+          "Identifiant de la liste, recopié caractère pour caractère depuis la consigne.",
+      },
+      items: {
+        type: "array",
+        minItems: 1,
+        maxItems: 30,
+        items: {
+          type: "object",
+          properties: {
+            taskId: {
+              type: "string",
+              description:
+                "Identifiant de la ligne, recopié caractère pour caractère depuis la consigne.",
+            },
+            title: {
+              type: "string",
+              description: "Nouveau titre, uniquement si on le change.",
+            },
+            done: {
+              type: "boolean",
+              description: "true pour cocher, false pour décocher. Omettre si l'état ne change pas.",
+            },
+          },
+          required: ["taskId"],
+        },
+      },
+    },
+    required: ["message", "listId", "items"],
+  },
+};
+
 export const SUGGEST_FOLDERS: LlmTool = {
   name: "suggest_folders",
   description:
@@ -227,8 +287,13 @@ export const SUGGEST_FOLDERS: LlmTool = {
     "mémoire range la conversation dans un dossier qui n'a rien à voir. " +
     "N'en proposer un nouveau que si aucun ne convient, et remplir au moins l'une des deux " +
     "listes : une proposition sans aucun dossier n'a rien à ranger. Un nouveau dossier peut " +
-    "lui-même naître comme sous-dossier d'un dossier existant plutôt qu'à la racine — " +
-    "reprendre alors ce dossier existant en `parent`, identifiant et nom, de la même façon. " +
+    "lui-même naître comme sous-dossier d'un dossier existant plutôt qu'à la racine, mais " +
+    "seulement si celui-ci est un vrai thème parent du sujet — comme « Assurances » sous " +
+    "« Administratif ». Ce lien s'apprécie uniquement au sujet, jamais au nombre de dossiers " +
+    "disponibles : si l'utilisateur n'a qu'un seul dossier « Courses » et qu'on lui range un " +
+    "CV, ce dossier n'en devient pas pour autant le thème parent — le nouveau dossier " +
+    "(« Candidatures », par exemple) naît alors à la racine, sans `parent`, et « Courses » " +
+    "ne figure dans aucune des deux listes. " +
     "S'aligner sur la façon dont l'utilisateur nomme déjà ses dossiers plutôt que d'imposer " +
     "une nomenclature standard.",
   inputSchema: {
@@ -309,7 +374,8 @@ export const NAME_CONVERSATION: LlmTool = {
     "À appeler une fois, dès le premier tour de dialogue, pour nommer la conversation. " +
     "Contrairement aux autres outils, celui-ci ne demande rien à l'utilisateur : le titre " +
     "s'applique aussitôt, et l'utilisateur pourra le corriger. " +
-    "Ne pas y répondre en langage naturel, ne pas annoncer le renommage.",
+    "Ne pas y répondre en langage naturel, ne pas annoncer le renommage, et ne jamais " +
+    'écrire le titre dans le texte — ni en JSON (`{"title":...}`) ni en clair.',
   inputSchema: {
     type: "object",
     properties: {
@@ -324,21 +390,105 @@ export const NAME_CONVERSATION: LlmTool = {
   },
 };
 
+/**
+ * Rendez-vous récurrent (A.11). Remis aux conversations classiques quand
+ * `proactiveScheduling` est actif — pas au canal permanent (A.10). Réservé
+ * aux séries : un rendez-vous ponctuel relève de `suggest_events` (A.3).
+ */
 export const SUGGEST_RECURRING_EVENT: LlmTool = {
   name: "suggest_recurring_event",
   description:
-    "À appeler quand l'utilisateur mentionne un rendez-vous récurrent " +
-    "(« j'ai kiné tous les mardis à 18h »). Produire une règle RRULE (RFC 5545) " +
-    "plutôt qu'une liste de dates, pour que la série n'ait pas à être ressaisie.",
+    "À appeler quand l'utilisateur mentionne un rendez-vous ou une activité qui se " +
+    "répète (« j'ai kiné tous les mardis à 18h », « zumba chaque mercredi », " +
+    "« réunion toutes les semaines ») — y compris quand il demande de le noter, " +
+    "de s'en rappeler ou de le retenir : ce n'est pas un simple accusé de réception, " +
+    "c'est une proposition de série à valider. Produire une règle RRULE (RFC 5545) " +
+    "plutôt qu'une liste de dates, pour que la série n'ait pas à être ressaisie. " +
+    "Distinct de `suggest_events`, réservé aux rendez-vous ponctuels sans répétition. " +
+    "Ne jamais écrire « c'est noté » ni présenter le rendez-vous comme déjà posé.",
   inputSchema: {
     type: "object",
     properties: {
-      title: { type: "string" },
-      startsAt: { type: "string", description: "Première occurrence, ISO 8601" },
-      rrule: { type: "string", description: "Ex. FREQ=WEEKLY;BYDAY=TU" },
-      reminderMinutesBefore: { type: "number" },
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « Je te pose zumba tous les mercredis à 18h30 ? ». " +
+          "Ne jamais présenter le rendez-vous comme déjà créé. 500 caractères maximum.",
+      },
+      title: { type: "string", description: "Titre court du rendez-vous" },
+      startsAt: {
+        type: "string",
+        description:
+          "Première occurrence, ISO 8601 — la prochaine date qui correspond à la " +
+          "récurrence, pas une date passée.",
+      },
+      rrule: {
+        type: "string",
+        description:
+          "Règle RRULE sans le préfixe « RRULE: » — ex. FREQ=WEEKLY;BYDAY=TU. " +
+          "FREQ obligatoire (DAILY, WEEKLY, MONTHLY ou YEARLY).",
+      },
+      reminderMinutesBefore: {
+        type: "number",
+        description:
+          "Rappel avant chaque occurrence, en minutes. Omettre pour laisser le " +
+          "serveur poser 30 minutes par défaut.",
+      },
     },
-    required: ["title", "startsAt", "rrule"],
+    required: ["message", "title", "startsAt", "rrule"],
+  },
+};
+
+/**
+ * Rendez-vous ponctuels (A.3). Distinct de `suggest_recurring_event` : chaque
+ * entrée est un événement indépendant, sans règle de répétition. Regrouper
+ * plusieurs rendez-vous dans un seul appel évite d'empiler une carte par
+ * rendez-vous quand l'utilisateur les énumère dans le même message.
+ */
+export const SUGGEST_EVENTS: LlmTool = {
+  name: "suggest_events",
+  description:
+    "À appeler quand l'utilisateur mentionne un ou plusieurs rendez-vous ponctuels à " +
+    "noter dans l'agenda (« j'ai un rendez-vous chez le dentiste jeudi à 15h », " +
+    "« pose-moi ces trois rendez-vous : … ») — y compris quand il demande de les noter, " +
+    "de s'en souvenir ou de les retenir : ce n'est pas un simple accusé de réception, " +
+    "c'est une proposition à valider. " +
+    "Distinct de `suggest_recurring_event`, réservé aux activités qui se répètent selon " +
+    "une règle : ici chaque rendez-vous est indépendant, avec sa propre date. " +
+    "Regrouper tous les rendez-vous du tour en un seul appel avec plusieurs entrées dans " +
+    "`events`, jamais un appel par rendez-vous. " +
+    "Ne jamais écrire « c'est noté » ni présenter les rendez-vous comme déjà posés.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « Je te pose ces deux rendez-vous dans ton agenda ? ». " +
+          "Ne jamais présenter les rendez-vous comme déjà créés. 500 caractères maximum.",
+      },
+      events: {
+        type: "array",
+        description:
+          "Un objet par rendez-vous. Au moins un — une proposition vide n'a rien à poser.",
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Titre court du rendez-vous" },
+            startsAt: {
+              type: "string",
+              description: "Date et heure ISO 8601 du rendez-vous.",
+            },
+          },
+          required: ["title", "startsAt"],
+        },
+      },
+    },
+    required: ["message", "events"],
   },
 };
 
@@ -443,6 +593,36 @@ export const OPEN_NEW_CONVERSATION: LlmTool = {
   },
 };
 
+export const REPORT_BUG: LlmTool = {
+  name: "report_bug",
+  description:
+    "À appeler quand l'utilisateur décrit un dysfonctionnement de l'application — " +
+    "quelque chose qui ne marche pas comme attendu, une erreur, un blocage, un " +
+    "comportement inattendu. Ne pas l'appeler pour une idée d'amélioration ou une " +
+    "question sur le fonctionnement de l'outil : uniquement un problème réellement " +
+    "constaté.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « On dirait un bug, je le signale ? ». Ne jamais présenter " +
+          "le signalement comme déjà transmis. 500 caractères maximum.",
+      },
+      content: {
+        type: "string",
+        description:
+          "Description du problème à l'intention de l'équipe technique, rédigée " +
+          "clairement à partir de ce que l'utilisateur a décrit : ce qui s'est passé, " +
+          "ce qui était attendu à la place. 2000 caractères maximum.",
+      },
+    },
+    required: ["message", "content"],
+  },
+};
+
 export const FINISH_ONBOARDING: LlmTool = {
   name: "finish_onboarding",
   description:
@@ -479,6 +659,9 @@ export const ASK_QUESTION: LlmTool = {
     "Ne pas l'appeler pour une question ouverte, dont la réponse tient dans le récit " +
     "de l'utilisateur (« raconte-moi ce qui t'occupe ») : lui présenter quatre boutons " +
     "reviendrait à lui souffler sa réponse. Une seule question à la fois. " +
+    "Toujours au moins deux réponses distinctes, et les transmettre toutes : n'en " +
+    "garder qu'une fait échouer l'outil, et n'envoyer que le premier choix d'une " +
+    "liste plus longue prive l'utilisateur des autres. " +
     "Comme `name_conversation`, cet outil ne demande rien : les réponses proposées " +
     "s'affichent aussitôt sous la question. Ne pas les énumérer une seconde fois dans " +
     "le texte de la réponse.",
@@ -514,8 +697,10 @@ export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_ITEMS,
   SUGGEST_TASK_LIST_DUE_DATE,
-  SUGGEST_FOLDERS,
+  SUGGEST_UPDATE_TASK_ITEMS,
   SUGGEST_RECURRING_EVENT,
+  SUGGEST_EVENTS,
+  SUGGEST_FOLDERS,
   ASK_QUESTION,
 ];
 
@@ -529,6 +714,7 @@ export const CHAT_TOOLS: LlmTool[] = [
 export const ASSISTANT_TOOLS: LlmTool[] = [
   SUGGEST_PROJECT_FOLDERS,
   OPEN_NEW_CONVERSATION,
+  REPORT_BUG,
   ASK_QUESTION,
 ];
 
@@ -538,15 +724,19 @@ export const ASSISTANT_TOOLS: LlmTool[] = [
  * Les outils absents de cette table ne relèvent d'aucun réglage :
  * `name_conversation` ne fait que poser un libellé, `finish_onboarding` clôt
  * un accueil qui ne se produit qu'une fois, `ask_question` ne fait que donner
- * une forme à une question que le modèle poserait de toute façon, et
+ * une forme à une question que le modèle poserait de toute façon,
  * `open_new_conversation` applique le bornage du canal lui-même — le rendre
- * désactivable reviendrait à supprimer A.10.
+ * désactivable reviendrait à supprimer A.10 — et `report_bug` ne fait que
+ * proposer de transmettre un problème que l'utilisateur vient lui-même de
+ * décrire : le désactiver l'empêcherait de signaler ce qu'il a déjà exprimé.
  */
 const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",
   [SUGGEST_TASK_LIST_ITEMS.name]: "proactiveTaskDetection",
   [SUGGEST_TASK_LIST_DUE_DATE.name]: "proactiveTaskDetection",
+  [SUGGEST_UPDATE_TASK_ITEMS.name]: "proactiveTaskDetection",
   [SUGGEST_RECURRING_EVENT.name]: "proactiveScheduling",
+  [SUGGEST_EVENTS.name]: "proactiveScheduling",
   [SUGGEST_FOLDERS.name]: "folderOrganization",
   [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",
 };

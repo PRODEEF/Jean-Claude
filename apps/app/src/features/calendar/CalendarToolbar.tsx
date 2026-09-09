@@ -35,9 +35,11 @@ const VIEWS: SegmentedOption<CalendarView>[] = [
 /**
  * En-tête du calendrier : choix de la vue, navigation, période affichée.
  *
- * Bascule de vue à gauche, bloc période/navigation à droite — écartés au
- * maximum (`justify-between`). À l'intérieur de ce bloc : la période, les
- * deux flèches, puis « Aujourd'hui » en bout de ligne (§4.2, choix produit).
+ * Bascule de vue à gauche, bloc navigation à droite — écartés au maximum
+ * (`justify-between`). À l'intérieur de ce bloc : « Aujourd'hui », la flèche
+ * précédente, la période, la flèche suivante — Google Agenda et le Calendrier
+ * iOS placent le retour à aujourd'hui à gauche des flèches, et le mois entre
+ * elles (§4.2).
  *
  * Sous le point de rupture, la période passe sur sa propre ligne : la bascule
  * et les commandes de navigation ne tiennent pas à côté d'elle sur la largeur
@@ -61,29 +63,30 @@ export function CalendarToolbar({
     </Button>
   );
 
-  const arrows = (
-    <View className="flex-row items-center gap-1">
-      <Button
-        variant="ghost"
-        size="icon"
-        style={{ minWidth: MIN_TOUCH_TARGET, minHeight: MIN_TOUCH_TARGET }}
-        onPress={onPrevious}
-        accessibilityRole="button"
-        accessibilityLabel="Période précédente"
-      >
-        <Icon as={ChevronLeft} className="size-4" />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        style={{ minWidth: MIN_TOUCH_TARGET, minHeight: MIN_TOUCH_TARGET }}
-        onPress={onNext}
-        accessibilityRole="button"
-        accessibilityLabel="Période suivante"
-      >
-        <Icon as={ChevronRight} className="size-4" />
-      </Button>
-    </View>
+  const prevArrow = (
+    <Button
+      variant="ghost"
+      size="icon"
+      style={{ minWidth: MIN_TOUCH_TARGET, minHeight: MIN_TOUCH_TARGET }}
+      onPress={onPrevious}
+      accessibilityRole="button"
+      accessibilityLabel="Période précédente"
+    >
+      <Icon as={ChevronLeft} className="size-4" />
+    </Button>
+  );
+
+  const nextArrow = (
+    <Button
+      variant="ghost"
+      size="icon"
+      style={{ minWidth: MIN_TOUCH_TARGET, minHeight: MIN_TOUCH_TARGET }}
+      onPress={onNext}
+      accessibilityRole="button"
+      accessibilityLabel="Période suivante"
+    >
+      <Icon as={ChevronRight} className="size-4" />
+    </Button>
   );
 
   if (compact) {
@@ -102,7 +105,8 @@ export function CalendarToolbar({
           </ScrollView>
           <View className="flex-row items-center gap-1">
             {todayButton}
-            {arrows}
+            {prevArrow}
+            {nextArrow}
           </View>
         </View>
       </View>
@@ -116,12 +120,13 @@ export function CalendarToolbar({
           react-native-web (vraie CSS flexbox) refuse de rétrécir sous leur
           largeur intrinsèque, et une période longue (vue Jour) ferait déborder
           le bandeau au lieu de tronquer. */}
-      <View className="min-w-0 flex-row items-center gap-3">
+      <View className="min-w-0 flex-row items-center gap-2">
+        {todayButton}
+        {prevArrow}
         <Text className="min-w-0 flex-shrink text-sm font-semibold" numberOfLines={1}>
           {label}
         </Text>
-        {arrows}
-        {todayButton}
+        {nextArrow}
       </View>
     </View>
   );
