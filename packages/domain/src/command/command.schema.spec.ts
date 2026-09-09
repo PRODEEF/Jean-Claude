@@ -17,8 +17,15 @@ describe("parseSlashCommand", () => {
     });
   });
 
-  it("reconnaît /help sans rien après le nom", () => {
-    expect(parseSlashCommand("/help")).toEqual({ name: "help", args: "" });
+  it("reconnaît /aide sans rien après le nom", () => {
+    expect(parseSlashCommand("/aide")).toEqual({ name: "aide", args: "" });
+  });
+
+  it("reconnaît une commande accentuée comme /événement", () => {
+    expect(parseSlashCommand("/événement kiné tous les mardis à 18h")).toEqual({
+      name: "événement",
+      args: "kiné tous les mardis à 18h",
+    });
   });
 
   it("ignore les espaces superflus autour du nom et des arguments", () => {

@@ -130,20 +130,19 @@ const APPLIED_DIRECTLY = new Set([
 ]);
 
 /**
- * Réponse fixe de la commande /help : un texte figé plutôt qu'un tour de
+ * Réponse fixe de la commande /aide : un texte figé plutôt qu'un tour de
  * modèle, pour qu'elle ne varie jamais ni n'invente une fonctionnalité
  * absente — la fiabilité prime ici sur la personnalisation (Cible 2, §0.2).
  */
-const HELP_MESSAGE = [
+const AIDE_MESSAGE = [
   "Voici comment m'utiliser :",
   "",
   "- Dis-moi ce qui est important cette semaine, je te le rappelle et je t'aide à ranger tes conversations en dossiers.",
   "- Décris une liste dans une conversation, je te propose de la créer — ou tape /todo <titre> [échéance] pour aller plus vite.",
-  "- Je te propose un rangement pour chaque conversation ; corrige-le à tout moment avec /dossier, une même conversation peut appartenir à plusieurs dossiers.",
-  "- /projet <nom> structure un projet en sous-dossiers, depuis ce canal.",
-  "- Décris-moi un problème technique, je transmets un rapport — ou tape /bug <description> pour aller plus vite.",
+  "- Je te propose un rangement pour chaque conversation ; corrige-le à tout moment avec /ranger, une même conversation peut appartenir à plusieurs dossiers.",
+  "- Décris-moi un problème technique depuis ce canal, je transmets un rapport — ou tape /bug <description> pour aller plus vite.",
   "",
-  "Commandes : /todo, /dossier, /projet, /bug, /help.",
+  "Commandes : /todo, /ranger, /événement, /bug, /aide.",
 ].join("\n");
 
 /**
@@ -713,8 +712,8 @@ export class ConversationService {
     const command =
       lastMessage && lastMessage.role === "user" ? parseSlashCommand(lastMessage.content) : null;
 
-    if (command?.name === "help") {
-      yield* this.answerHelpCommand(conversationId, userId, accessToken);
+    if (command?.name === "aide") {
+      yield* this.answerAideCommand(conversationId, userId, accessToken);
       return;
     }
 
@@ -733,10 +732,12 @@ export class ConversationService {
 
     const baseSystem = buildSystemPrompt(conversation.kind, todo, context, now);
     // Chaque commande n'a de sens que là où son outil est exposé — jamais
-    // dans le canal permanent pour /dossier, jamais dans une conversation
-    // classique pour /projet et /bug (A.10) : la note serait sinon une
-    // consigne pour un outil que le modèle ne peut pas appeler.
-    // `command.name` exclut déjà "help" ici : le premier `if` de la méthode
+    // dans le canal permanent pour /ranger et /événement, jamais dans une
+    // conversation classique pour /bug (A.10) : la note serait sinon une
+    // consigne pour un outil que le modèle ne peut pas appeler. /événement
+    // n'a d'ailleurs de note nulle part tant que `suggest_recurring_event`
+    // reste hors de tout jeu d'outils (cf. sa définition dans llm.tools.ts).
+    // `command.name` exclut déjà "aide" ici : le premier `if` de la méthode
     // court-circuite ce cas avant d'atteindre ce point.
     const activeCommand = command ? { note: COMMAND_NOTES[command.name], args: command.args } : null;
     const system =
@@ -894,22 +895,22 @@ export class ConversationService {
   }
 
   /**
-   * Répond à la commande /help sans appeler le modèle : un texte fixe plutôt
+   * Répond à la commande /aide sans appeler le modèle : un texte fixe plutôt
    * qu'un tour de dialogue, pour qu'il ne varie jamais ni n'invente une
    * fonctionnalité absente.
    */
-  private async *answerHelpCommand(
+  private async *answerAideCommand(
     conversationId: string,
     userId: string,
     accessToken: string,
   ): AsyncGenerator<MessageStreamEvent> {
-    yield { type: "text", text: HELP_MESSAGE };
+    yield { type: "text", text: AIDE_MESSAGE };
 
     const assistantMessage = await this.conversations.appendMessage(
       conversationId,
       userId,
       {
-        content: HELP_MESSAGE,
+        content: AIDE_MESSAGE,
         inputMode: "text",
         role: "assistant",
         attachmentIds: [],
@@ -1758,20 +1759,20 @@ function describeTodoCommand(args: string): string[] {
 }
 
 /**
- * Note ajoutée à la consigne quand l'utilisateur déclenche /dossier : une
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /ranger : une
  * demande explicite de rangement, immédiate plutôt que d'attendre que le
  * modèle la déduise seul de la conversation.
  */
-function describeDossierCommand(args: string): string[] {
+function describeRangerCommand(args: string): string[] {
   return args.length > 0
     ? [
-        `Commande /dossier : l'utilisateur demande explicitement à ranger cette`,
+        `Commande /ranger : l'utilisateur demande explicitement à ranger cette`,
         `conversation, en visant « ${args} ». Traite-le comme un rangement demandé`,
         "explicitement (« range-la plutôt dans... ») et appelle `suggest_folders`",
         "tout de suite avec ce dossier, existant ou à créer selon ce qui est déjà là.",
       ]
     : [
-        "Commande /dossier, sans rien après elle : l'utilisateur demande",
+        "Commande /ranger, sans rien après elle : l'utilisateur demande",
         "explicitement un rangement pour cette conversation, sans indiquer où.",
         "Appelle `suggest_folders` tout de suite avec ce que son sujet réel indique",
         "— jamais un dossier qui ne lui correspond que de loin.",
@@ -1779,20 +1780,20 @@ function describeDossierCommand(args: string): string[] {
 }
 
 /**
- * Note ajoutée à la consigne quand l'utilisateur déclenche /projet : le texte
- * qui suit nomme le projet, jamais les sous-dossiers qui le composent — ils
- * restent déduits de ce que /projet décrit, jamais inventés au-delà.
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /événement : le
+ * texte qui suit porte le titre et la récurrence, jamais une heure ou un
+ * jour inventés pour compléter ce qui manque.
  */
-function describeProjetCommand(args: string): string[] {
+function describeEvenementCommand(args: string): string[] {
   const description = args.length > 0 ? `« ${args} »` : "sans rien après elle";
 
   return [
-    `Commande /projet : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
-    "C'est une demande explicite de structurer un projet en dossiers — pas une",
-    "faute de frappe. S'il ne dit pas encore de quoi ce projet traite, ne l'appelle",
-    "pas encore : demande-le d'abord. Dès que le sujet est connu — dans ce message",
-    "ou le suivant — appelle `suggest_project_folders` tout de suite, en ne",
-    "proposant que les sous-dossiers (IDÉE, TODO, ACHAT, PRENDRE RDV) pertinents.",
+    `Commande /événement : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
+    "C'est une demande explicite de poser un rendez-vous récurrent — pas une",
+    "faute de frappe. S'il manque le jour ou l'heure pour construire une RRULE",
+    "fiable, ne l'appelle pas encore : demande-le d'abord. Dès que la récurrence",
+    "est connue — dans ce message ou le suivant — appelle `suggest_recurring_event`",
+    "tout de suite, comme pour toute autre demande explicite.",
   ];
 }
 
@@ -1816,16 +1817,16 @@ function describeBugCommand(args: string): string[] {
 }
 
 /**
- * Un outil et sa note par commande activable (§ raccourcis) — /help n'y
+ * Un outil et sa note par commande activable (§ raccourcis) — /aide n'y
  * figure pas, elle court-circuite le modèle avant d'atteindre ce point.
  */
 const COMMAND_NOTES: Record<
-  Exclude<SlashCommandName, "help">,
+  Exclude<SlashCommandName, "aide">,
   { tool: LlmTool; describe: (args: string) => string[] }
 > = {
   todo: { tool: SUGGEST_TASK_LIST, describe: describeTodoCommand },
-  dossier: { tool: SUGGEST_FOLDERS, describe: describeDossierCommand },
-  projet: { tool: SUGGEST_PROJECT_FOLDERS, describe: describeProjetCommand },
+  ranger: { tool: SUGGEST_FOLDERS, describe: describeRangerCommand },
+  "événement": { tool: SUGGEST_RECURRING_EVENT, describe: describeEvenementCommand },
   bug: { tool: REPORT_BUG, describe: describeBugCommand },
 };
 

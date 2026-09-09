@@ -11,11 +11,11 @@
 
 /**
  * Un nom par outil de suggestion déjà exposé au modèle (`core/llm/llm.tools.ts`),
- * plus /help : la commande ne fait rien qu'un outil ne fasse déjà, elle
+ * plus /aide : la commande ne fait rien qu'un outil ne fasse déjà, elle
  * force juste sa prise en compte immédiate plutôt que d'attendre que le
  * modèle la déduise seul de la conversation.
  */
-export const SLASH_COMMAND_NAMES = ["todo", "dossier", "projet", "bug", "help"] as const;
+export const SLASH_COMMAND_NAMES = ["todo", "aide", "ranger", "événement", "bug"] as const;
 export type SlashCommandName = (typeof SLASH_COMMAND_NAMES)[number];
 
 export type SlashCommandDefinition = {
@@ -33,14 +33,14 @@ export const SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
     description: "Crée une todoliste et aide à la remplir",
   },
   {
-    name: "dossier",
-    usage: "/dossier [dossier visé]",
+    name: "ranger",
+    usage: "/ranger [dossier visé]",
     description: "Range cette conversation dans un dossier",
   },
   {
-    name: "projet",
-    usage: "/projet <nom>",
-    description: "Structure un projet en sous-dossiers",
+    name: "événement",
+    usage: "/événement <titre> <récurrence>",
+    description: "Pose un rendez-vous qui se répète",
   },
   {
     name: "bug",
@@ -48,15 +48,19 @@ export const SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
     description: "Signale un problème technique",
   },
   {
-    name: "help",
-    usage: "/help",
+    name: "aide",
+    usage: "/aide",
     description: "Explique comment utiliser Jean-Claude",
   },
 ];
 
 export type SlashCommand = { name: SlashCommandName; args: string };
 
-const COMMAND_PATTERN = /^\/([a-z]+)\s*([\s\S]*)$/i;
+/**
+ * `à-öø-ÿ` couvre les lettres accentuées du français (é, è, ê, à, ç...) —
+ * sans elles, `/événement` ne matchait même pas le premier caractère du nom.
+ */
+const COMMAND_PATTERN = /^\/([a-zà-öø-ÿ]+)\s*([\s\S]*)$/i;
 
 /**
  * Reconnaît une commande slash en tête de message.

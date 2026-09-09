@@ -1564,13 +1564,13 @@ describe("ConversationService", () => {
       });
     }
 
-    describe("commande /help", () => {
+    describe("commande /aide", () => {
       it("répond par un texte fixe sans appeler le modèle", async () => {
-        const repo = withLastUserMessage("/help");
+        const repo = withLastUserMessage("/aide");
         const llm = makeLlm();
 
         const events = await drain(makeService(repo, llm), {
-          content: "/help",
+          content: "/aide",
           inputMode: "text",
           attachmentIds: [],
         });
@@ -1587,10 +1587,10 @@ describe("ConversationService", () => {
       });
 
       it("répond de la même façon, quel que soit le texte tapé après la commande", async () => {
-        const repo = withLastUserMessage("/help comment ça marche");
+        const repo = withLastUserMessage("/aide comment ça marche");
 
         await drain(makeService(repo, makeLlm()), {
-          content: "/help comment ça marche",
+          content: "/aide comment ça marche",
           inputMode: "text",
           attachmentIds: [],
         });
@@ -1601,7 +1601,7 @@ describe("ConversationService", () => {
           { content: string },
           string,
         ];
-        expect(call[2].content).toContain("Commandes : /todo, /dossier, /projet, /bug, /help.");
+        expect(call[2].content).toContain("Commandes : /todo, /ranger, /événement, /bug, /aide.");
       });
     });
 
@@ -1657,18 +1657,18 @@ describe("ConversationService", () => {
       });
     });
 
-    describe("commande /dossier", () => {
+    describe("commande /ranger", () => {
       it("ajoute à la consigne une note qui reconnaît la commande", async () => {
         const llm = makeLlm();
 
-        await drain(makeService(withLastUserMessage("/dossier Jardin"), llm), {
-          content: "/dossier Jardin",
+        await drain(makeService(withLastUserMessage("/ranger Jardin"), llm), {
+          content: "/ranger Jardin",
           inputMode: "text",
           attachmentIds: [],
         });
 
         const system = lastRequest(llm).system ?? "";
-        expect(system).toContain("Commande /dossier");
+        expect(system).toContain("Commande /ranger");
         expect(system).toContain("« Jardin »");
       });
 
@@ -1677,53 +1677,61 @@ describe("ConversationService", () => {
         const repo = makeRepository({
           findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
           listMessages: jest.fn().mockResolvedValue({
-            items: [makeMessage({ id: "m1", role: "user", content: "/dossier Jardin" })],
+            items: [makeMessage({ id: "m1", role: "user", content: "/ranger Jardin" })],
             nextCursor: null,
           }),
         });
 
         await drain(makeService(repo, llm), {
-          content: "/dossier Jardin",
+          content: "/ranger Jardin",
           inputMode: "text",
           attachmentIds: [],
         });
 
-        expect(lastRequest(llm).system ?? "").not.toContain("Commande /dossier");
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /ranger");
       });
     });
 
-    describe("commande /projet", () => {
-      it("ajoute à la consigne une note qui reconnaît la commande, dans le canal permanent (A.10)", async () => {
+    describe("commande /événement", () => {
+      /**
+       * `suggest_recurring_event` est hors de tout jeu d'outils pour l'instant
+       * (cf. sa définition dans llm.tools.ts) : `translate()` ne sait pas encore
+       * le traduire en suggestion. La note ne peut donc s'ajouter nulle part
+       * tant que ce câblage n'existe pas — ces deux tests le confirment plutôt
+       * que de laisser la commande injecter une consigne pour un outil que le
+       * modèle ne peut pas appeler.
+       */
+      it("ne l'ajoute pas dans une conversation classique, faute d'outil exposé", async () => {
+        const llm = makeLlm();
+
+        await drain(makeService(withLastUserMessage("/événement kiné tous les mardis à 18h"), llm), {
+          content: "/événement kiné tous les mardis à 18h",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /événement");
+      });
+
+      it("ne l'ajoute pas non plus dans le canal permanent, faute d'outil exposé", async () => {
         const llm = makeLlm();
         const repo = makeRepository({
           findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
           listMessages: jest.fn().mockResolvedValue({
-            items: [makeMessage({ id: "m1", role: "user", content: "/projet Jardin" })],
+            items: [
+              makeMessage({ id: "m1", role: "user", content: "/événement kiné tous les mardis à 18h" }),
+            ],
             nextCursor: null,
           }),
         });
 
         await drain(makeService(repo, llm), {
-          content: "/projet Jardin",
+          content: "/événement kiné tous les mardis à 18h",
           inputMode: "text",
           attachmentIds: [],
         });
 
-        const system = lastRequest(llm).system ?? "";
-        expect(system).toContain("Commande /projet");
-        expect(system).toContain("« Jardin »");
-      });
-
-      it("ne l'ajoute pas dans une conversation classique, où structurer un projet est hors périmètre", async () => {
-        const llm = makeLlm();
-
-        await drain(makeService(withLastUserMessage("/projet Jardin"), llm), {
-          content: "/projet Jardin",
-          inputMode: "text",
-          attachmentIds: [],
-        });
-
-        expect(lastRequest(llm).system ?? "").not.toContain("Commande /projet");
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /événement");
       });
     });
 
