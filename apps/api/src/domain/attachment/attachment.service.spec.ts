@@ -117,11 +117,11 @@ describe("AttachmentService", () => {
       expect(repo.create).not.toHaveBeenCalled();
     });
 
-    it("refuse un format hors périmètre, comme un fichier texte brut", async () => {
+    it("refuse un format hors périmètre, comme un fichier audio", async () => {
       const repo = makeRepository();
 
       await expect(
-        new AttachmentService(repo).upload("user-1", makeFile(1024, "text/plain"), TOKEN),
+        new AttachmentService(repo).upload("user-1", makeFile(1024, "audio/mpeg"), TOKEN),
       ).rejects.toMatchObject({ status: 400 });
       expect(repo.create).not.toHaveBeenCalled();
     });
@@ -156,6 +156,54 @@ describe("AttachmentService", () => {
       const file = new File([new Uint8Array([1, 2, 3, 4, 5])], "scan.pdf", {
         type: "application/pdf",
       });
+
+      await expect(new AttachmentService(repo).upload("user-1", file, TOKEN)).rejects.toMatchObject({
+        status: 422,
+      });
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("upload un fichier texte brut, lu tel quel sans extraction", async () => {
+      const attachment = makeAttachment({
+        fileName: "notes.txt",
+        mimeType: "text/plain",
+        extractedText: "Liste de courses : pain, lait, œufs.",
+      });
+      const repo = makeRepository({ create: jest.fn().mockResolvedValue(attachment) });
+      const file = new File(["Liste de courses : pain, lait, œufs."], "notes.txt", {
+        type: "text/plain",
+      });
+
+      const result = await new AttachmentService(repo).upload("user-1", file, TOKEN);
+
+      expect(result).toEqual(attachment);
+      expect(repo.create).toHaveBeenCalledWith(
+        "user-1",
+        {
+          mimeType: "text/plain",
+          byteSize: file.size,
+          fileName: "notes.txt",
+          extractedText: "Liste de courses : pain, lait, œufs.",
+          file: expect.any(File),
+        },
+        TOKEN,
+      );
+    });
+
+    it("accepte le Markdown et le CSV au même titre que le texte brut", async () => {
+      const repo = makeRepository();
+
+      for (const type of ["text/markdown", "text/csv"]) {
+        const file = new File(["contenu"], "fichier", { type });
+        await new AttachmentService(repo).upload("user-1", file, TOKEN);
+      }
+
+      expect(repo.create).toHaveBeenCalledTimes(2);
+    });
+
+    it("refuse un fichier texte vide une fois les espaces retirés", async () => {
+      const repo = makeRepository();
+      const file = new File(["   \n\t  "], "vide.txt", { type: "text/plain" });
 
       await expect(new AttachmentService(repo).upload("user-1", file, TOKEN)).rejects.toMatchObject({
         status: 422,

@@ -80,15 +80,15 @@ function toPickedFilesFromDocuments(assets: DocumentPicker.DocumentPickerAsset[]
 }
 
 /**
- * Sélection d'image et de PDF.
+ * Sélection d'image, de PDF et de fichier texte (.txt, .md, .csv).
  *
  * Web : sélecteur de fichier, glisser-déposer sur la coque du Composer,
  * collage d'une capture d'écran dans le champ — le geste le plus direct pour
- * "screens" (le PDF n'y est volontairement pas repris : coller un PDF depuis
- * le presse-papier n'est pas un geste courant). Natif : galerie, appareil
- * photo ou document, choisis via une alerte plutôt qu'une feuille d'action
- * dédiée (aucun composant de ce type n'existe encore dans `shared/ui/`, une
- * alerte suffit pour ce choix à trois branches).
+ * "screens" (PDF et texte n'y sont volontairement pas repris : coller ce
+ * genre de fichier depuis le presse-papier n'est pas un geste courant).
+ * Natif : galerie, appareil photo ou document, choisis via une alerte plutôt
+ * qu'une feuille d'action dédiée (aucun composant de ce type n'existe encore
+ * dans `shared/ui/`, une alerte suffit pour ce choix à trois branches).
  *
  * Un seul fichier plutôt qu'une extension `.web`/`.native` : à l'essai, cette
  * dernière casse le typage de `lucide-react-native` dans tout le projet dès
@@ -201,7 +201,7 @@ export function useAttachmentPicker(
 
   const fromDocuments = useCallback(async () => {
     const result = await DocumentPicker.getDocumentAsync({
-      type: "application/pdf",
+      type: ["application/pdf", "text/plain", "text/markdown", "text/csv"],
       multiple: true,
     });
     if (!result.canceled) latest.current(toPickedFilesFromDocuments(result.assets));

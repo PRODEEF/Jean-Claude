@@ -55,14 +55,22 @@ describe("sendMessageSchema", () => {
 });
 
 describe("messageAttachmentMimeTypeSchema", () => {
-  it("accepte les images et le PDF pris en charge", () => {
-    for (const mimeType of ["image/jpeg", "image/png", "image/webp", "application/pdf"]) {
+  it("accepte les images, le PDF et le texte pris en charge", () => {
+    for (const mimeType of [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+      "text/plain",
+      "text/markdown",
+      "text/csv",
+    ]) {
       expect(messageAttachmentMimeTypeSchema.safeParse(mimeType).success).toBe(true);
     }
   });
 
-  it("refuse un format hors périmètre, comme un fichier texte brut", () => {
-    expect(messageAttachmentMimeTypeSchema.safeParse("text/plain").success).toBe(false);
+  it("refuse un format hors périmètre, comme un fichier audio", () => {
+    expect(messageAttachmentMimeTypeSchema.safeParse("audio/mpeg").success).toBe(false);
   });
 });
 

@@ -1321,6 +1321,7 @@ describe("ConversationService", () => {
       const events = await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Je me lance dans le jardin.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // Sans isolement, l'échec de la première capture aurait interrompu la
@@ -1742,6 +1743,63 @@ describe("ConversationService", () => {
                 text: "Voici mon bail et une photo du logement.\n\n--- contrat.pdf ---\nPréavis de deux mois.",
               },
               { type: "image", url: "https://storage.example/att-img.png", mediaType: "image/png" },
+            ],
+          },
+        ]);
+      });
+
+      it("accepte un fichier texte seul, même avec un modèle qui ne lit pas les images", async () => {
+        const repo = makeRepository();
+        const attachment = makeAttachment({
+          mimeType: "text/plain",
+          fileName: "notes.txt",
+          extractedText: "Liste de courses : pain, lait.",
+        });
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([attachment]),
+        });
+
+        const events = await drain(withAttachments(attachments, repo), {
+          content: "",
+          inputMode: "text",
+          attachmentIds: ["att-1"],
+        });
+
+        expect(events[0]).toEqual({
+          type: "message",
+          message: expect.objectContaining({ attachments: [attachment] }),
+        });
+      });
+
+      it("place le texte d'un fichier texte brut dans le contexte, jamais comme une partie image", async () => {
+        const repo = makeRepository({
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({
+                id: "msg-user",
+                role: "user",
+                content: "Voici mes notes.",
+                attachments: [
+                  makeAttachment({
+                    mimeType: "text/plain",
+                    fileName: "notes.txt",
+                    extractedText: "Liste de courses : pain, lait.",
+                  }),
+                ],
+              }),
+            ],
+            nextCursor: null,
+          }),
+        });
+        const llm = makeLlm();
+
+        await drain(makeService(repo, llm), { content: "?", inputMode: "text", attachmentIds: [] });
+
+        expect(lastRequest(llm).messages).toEqual([
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Voici mes notes.\n\n--- notes.txt ---\nListe de courses : pain, lait." },
             ],
           },
         ]);
@@ -2931,6 +2989,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Crée une liste de courses pour samedi à 10h.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       // Le jour vient du filet (le prochain samedi, 5 septembre), mais
@@ -2979,6 +3038,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Crée une liste de courses pour samedi.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).toHaveBeenCalledWith(
@@ -3021,6 +3081,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Crée une liste de courses pour samedi.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).toHaveBeenCalledWith(
@@ -3192,6 +3253,7 @@ describe("ConversationService", () => {
       await drain(makeService(makeRepository(), llm, suggestions), {
         content: "Il me fallait du pain hier.",
         inputMode: "text",
+        attachmentIds: [],
       });
 
       expect(suggestions.create).toHaveBeenCalledWith(
@@ -3276,7 +3338,7 @@ describe("ConversationService", () => {
           makeCalendarRepository(),
           tasks,
         ),
-        { content: "Décale les travaux du jardin à vendredi.", inputMode: "text" },
+        { content: "Décale les travaux du jardin à vendredi.", inputMode: "text", attachmentIds: [] },
       );
 
       // Vendredi 4 septembre, minuit à Paris.
@@ -3320,7 +3382,11 @@ describe("ConversationService", () => {
           makeCalendarRepository(),
           tasks,
         ),
-        { content: "Décale les travaux du jardin à vendredi 14h.", inputMode: "text" },
+        {
+          content: "Décale les travaux du jardin à vendredi 14h.",
+          inputMode: "text",
+          attachmentIds: [],
+        },
       );
 
       // Vendredi 4 septembre, 14h à Paris (UTC+2).
@@ -3362,7 +3428,7 @@ describe("ConversationService", () => {
           makeCalendarRepository(),
           tasks,
         ),
-        { content: "Décale les travaux du jardin au 1er.", inputMode: "text" },
+        { content: "Décale les travaux du jardin au 1er.", inputMode: "text", attachmentIds: [] },
       );
 
       expect(suggestions.create).not.toHaveBeenCalled();

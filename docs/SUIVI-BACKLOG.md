@@ -8,8 +8,8 @@ Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (s
 schéma prêts, comportement à écrire)
 
 Dernière mise à jour : **9 septembre 2026** — l'assistant lit désormais les
-images et les PDF joints à un message, nouveau domaine API `attachment` et
-port LLM étendu au contenu multimodal.
+images, les PDF et les fichiers texte joints à un message, nouveau domaine
+API `attachment` et port LLM étendu au contenu multimodal.
 
 **L'assistant lit les images jointes à un message.** Nouveau geste de capture
 (§13.2.1, §13.4.1 : « quel que soit son format — texte, voix, image, lien »),
@@ -43,8 +43,18 @@ donné au modèle, avant les images ; `assertVisionCapable` ne compte que les
 images, un PDF seul passe donc avec n'importe quel modèle. Sélecteur de
 document natif (`expo-document-picker`) en plus de la photothèque et de
 l'appareil photo côté mobile ; web reste au sélecteur de fichier, sans
-glisser-déposer ni collage pour ce type. Fichiers texte simples restent hors
-périmètre de cette itération.
+glisser-déposer ni collage pour ce type.
+
+**L'assistant lit aussi les fichiers texte joints (.txt, .md, .csv).** Même
+mécanisme que le PDF, plus direct : le contenu est déjà du texte, il est lu
+tel quel (`file.text()`) sans bibliothèque d'extraction, puis rejoint le
+contexte donné au modèle exactement comme un PDF — jamais une image, jamais
+besoin d'un modèle qui lit la vision. Un fichier vide une fois les espaces
+retirés est refusé à l'upload (422), même logique que le PDF sans texte
+exploitable. Le sélecteur de document natif accepte désormais ces trois types
+en plus du PDF ; côté carte et aperçu, le critère de bascule entre vignette
+image et carte de fichier est devenu « est-ce une image ? » plutôt que « est-ce
+un PDF ? », pour ne pas avoir à réénumérer chaque nouveau type non-image.
 
 Dernière mise à jour : **9 septembre 2026** — une échéance de todoliste qui
 porte une heure explicite (« à 10h ») n'est plus systématiquement ramenée à

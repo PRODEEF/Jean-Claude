@@ -581,10 +581,10 @@ export class ConversationService {
    * Un message sans pièce jointe garde la simple chaîne d'avant — inutile
    * d'imposer un tableau à un tour de dialogue qui n'en a jamais eu besoin.
    *
-   * Un PDF ne devient jamais une partie `image` (§13.4.1) : son texte, déjà
-   * extrait à l'upload, rejoint le texte du message dans la même partie
-   * `text` — avant les images, pour que le modèle lise le contexte écrit
-   * avant de regarder ce qui l'illustre.
+   * Un PDF ou un fichier texte ne devient jamais une partie `image` (§13.4.1) :
+   * son texte, déjà extrait à l'upload, rejoint le texte du message dans la
+   * même partie `text` — avant les images, pour que le modèle lise le
+   * contexte écrit avant de regarder ce qui l'illustre.
    */
   private toLlmMessages(dialogue: Message[]): LlmMessage[] {
     return dialogue.map((m) => {
@@ -604,7 +604,7 @@ export class ConversationService {
       }
       parts.push(
         ...m.attachments
-          .filter((a) => a.mimeType !== "application/pdf")
+          .filter((a) => a.mimeType.startsWith("image/"))
           .map((a) => ({ type: "image" as const, url: a.url, mediaType: a.mimeType })),
       );
 
@@ -614,11 +614,12 @@ export class ConversationService {
 
   /**
    * Refuse une image que le modèle actif ne peut pas lire (§12.1 — le
-   * serveur fait respecter la règle). Un PDF n'entre pas dans ce compte : son
-   * texte extrait se lit avec n'importe quel modèle, aucun besoin de vision.
+   * serveur fait respecter la règle). Un PDF ou un fichier texte n'entre pas
+   * dans ce compte : son texte extrait se lit avec n'importe quel modèle,
+   * aucun besoin de vision.
    */
   private assertVisionCapable(model: string, attachments: MessageAttachment[]): void {
-    const images = attachments.filter((a) => a.mimeType !== "application/pdf");
+    const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
     if (images.length === 0 || isVisionCapableModel(model)) return;
 
     const label = ASSISTANT_MODELS.find((m) => m.id === model)?.label ?? model;

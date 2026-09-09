@@ -21,6 +21,9 @@ const EXTENSION_BY_MIME: Record<MessageAttachmentMimeType, string> = {
   "image/png": "png",
   "image/webp": "webp",
   "application/pdf": "pdf",
+  "text/plain": "txt",
+  "text/markdown": "md",
+  "text/csv": "csv",
 };
 
 /**

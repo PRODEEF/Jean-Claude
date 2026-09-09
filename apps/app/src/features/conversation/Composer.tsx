@@ -187,7 +187,7 @@ export function Composer({
       {attachments.length > 0 ? (
         <View style={styles.attachmentsRow}>
           {attachments.map((attachment) =>
-            attachment.mimeType === "application/pdf" ? (
+            !attachment.mimeType.startsWith("image/") ? (
               <AttachmentFileCard
                 key={attachment.localId}
                 fileName={attachment.fileName}

@@ -36,12 +36,15 @@ export const askedQuestionSchema = z.object({
 
 export type AskedQuestion = z.infer<typeof askedQuestionSchema>;
 
-/** Type MIME accepté pour une pièce jointe (§13.4.1) — images et PDF. */
+/** Type MIME accepté pour une pièce jointe (§13.4.1) — images, PDF et texte brut. */
 export const messageAttachmentMimeTypeSchema = z.enum([
   "image/jpeg",
   "image/png",
   "image/webp",
   "application/pdf",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
 ]);
 export type MessageAttachmentMimeType = z.infer<typeof messageAttachmentMimeTypeSchema>;
 
@@ -59,9 +62,10 @@ export const messageAttachmentSchema = z.object({
   mimeType: messageAttachmentMimeTypeSchema,
   byteSize: z.number().int().positive(),
   /**
-   * Texte extrait côté serveur pour un PDF — jamais pour une image, qui parle
-   * directement au modèle par la vision. `null` pour une image ; jamais vide
-   * pour un PDF accepté, un PDF sans texte exploitable étant refusé à l'upload.
+   * Texte extrait côté serveur pour un PDF ou un fichier texte — jamais pour
+   * une image, qui parle directement au modèle par la vision. `null` pour une
+   * image ; jamais vide pour les deux autres, un fichier sans texte
+   * exploitable étant refusé à l'upload.
    */
   extractedText: z.string().nullable(),
   createdAt: isoDateTimeSchema,
@@ -76,9 +80,10 @@ export const messageSchema = z.object({
   content: z.string(),
   inputMode: messageInputModeSchema,
   /**
-   * Images et PDF joints. Une image parle au modèle par la vision ; un PDF
-   * lui parle par son texte, extrait une fois pour toutes à l'upload.
-   * Toujours un tableau : une jointure vide donne `[]`, jamais `null`.
+   * Images, PDF et fichiers texte joints. Une image parle au modèle par la
+   * vision ; les deux autres lui parlent par leur texte, extrait une fois
+   * pour toutes à l'upload. Toujours un tableau : une jointure vide donne
+   * `[]`, jamais `null`.
    */
   attachments: z.array(messageAttachmentSchema),
   /**
@@ -129,8 +134,8 @@ export const MESSAGE_ATTACHMENT_MAX_COUNT = 4;
 
 /**
  * Taille maximale d'une pièce jointe, en octets — 10 Mo (décision produit).
- * Même borne pour une image et un PDF : un PDF texte la dépasse rarement, à
- * revoir séparément si l'usage montre le seuil trop bas pour ce second cas.
+ * Même borne pour les trois types : un PDF ou un fichier texte la dépasse
+ * rarement, à revoir séparément si l'usage montre le seuil trop bas.
  */
 export const MESSAGE_ATTACHMENT_MAX_BYTES = 10_485_760;
 

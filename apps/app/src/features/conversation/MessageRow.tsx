@@ -171,7 +171,7 @@ export const MessageRow = memo(function MessageRow({
               {message.attachments.length > 0 ? (
                 <View style={styles.attachmentsRow}>
                   {message.attachments.map((attachment) =>
-                    attachment.mimeType === "application/pdf" ? (
+                    !attachment.mimeType.startsWith("image/") ? (
                       <AttachmentFileCard
                         key={attachment.id}
                         fileName={attachment.fileName}
@@ -318,17 +318,22 @@ export const MessageRow = memo(function MessageRow({
 
       {/* Hors de la bulle : l'aperçu plein écran n'est pas un élément du fil,
           c'est une fenêtre par-dessus — même point d'entrée modal que le
-          reste de l'application (`shared/ui/modal.tsx`). Le PDF n'y montre
-          jamais le fichier lui-même, seulement le texte qu'on en a extrait —
-          c'est la même donnée que celle relue par le modèle. */}
+          reste de l'application (`shared/ui/modal.tsx`). Un PDF ou un fichier
+          texte n'y montre jamais le fichier lui-même, seulement le texte
+          qu'on en a extrait — c'est la même donnée que celle relue par le
+          modèle. */}
       {message.attachments.length > 0 ? (
         <Modal
           open={previewAttachment !== null}
           onClose={() => setPreviewAttachment(null)}
-          title={previewAttachment?.mimeType === "application/pdf" ? previewAttachment.fileName : "Image jointe"}
+          title={
+            previewAttachment && !previewAttachment.mimeType.startsWith("image/")
+              ? previewAttachment.fileName
+              : "Image jointe"
+          }
           actions={[{ label: "Fermer", onPress: () => setPreviewAttachment(null) }]}
         >
-          {previewAttachment?.mimeType === "application/pdf" ? (
+          {previewAttachment && !previewAttachment.mimeType.startsWith("image/") ? (
             <Text style={[styles.previewText, { color: palette.text }]}>
               {previewAttachment.extractedText}
             </Text>
