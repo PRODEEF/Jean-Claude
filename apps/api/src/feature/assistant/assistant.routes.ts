@@ -36,6 +36,7 @@ const service = new AssistantService(
   ),
   tasks,
   calendar,
+  userRepository,
 );
 
 export const assistantRoutes = new Hono<AuthEnv>()

@@ -801,11 +801,14 @@ describe("ConversationService", () => {
       );
     });
 
-    it("n'écrit aucune réponse d'assistant quand le modèle n'a rien produit", async () => {
+    it("signale l'échec quand le modèle n'a rien produit, sans perdre le message de l'utilisateur", async () => {
+      // Sonar (§5.1) peut répondre sans erreur technique et sans le moindre
+      // appel d'outil : ce silence doit remonter, pas disparaître.
       const repo = makeRepository();
 
-      await drain(makeService(repo, makeLlm([])));
+      await expect(drain(makeService(repo, makeLlm([])))).rejects.toMatchObject({ status: 502 });
 
+      // Le message de l'utilisateur reste acquis : seule la réponse manque.
       expect(repo.appendMessage).toHaveBeenCalledTimes(1);
     });
 
@@ -2582,6 +2585,137 @@ describe("ConversationService", () => {
       );
     });
 
+    it("conserve l'heure donnée explicitement même quand le jour vient du filet déterministe", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  dueAt: "2026-09-05T08:00:00.000Z",
+                  dueAtText: "samedi",
+                  dueTime: "10:00",
+                  items: [{ title: "Œufs" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Crée une liste de courses pour samedi à 10h.",
+        inputMode: "text",
+      });
+
+      // Le jour vient du filet (le prochain samedi, 5 septembre), mais
+      // `dueTime` porte l'heure donnée explicitement : elle n'est plus
+      // perdue au passage du filet, contrairement à avant ce champ (#18).
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ title: "Courses", dueAt: "2026-09-05T08:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ignore l'heure du calcul du modèle en l'absence de dueTime, même non nulle", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  // Le modèle s'est trompé de fuseau (2h du matin à Paris,
+                  // ni minuit ni une heure demandée) sans qu'aucune heure
+                  // n'ait été donnée : sans `dueTime`, ce n'est pas une heure
+                  // à retenir — la déduire de `dueAt` créerait un faux
+                  // rendez-vous là où l'utilisateur n'en a jamais demandé.
+                  dueAt: "2026-09-05T00:00:00.000Z",
+                  dueAtText: "samedi",
+                  items: [{ title: "Œufs" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Crée une liste de courses pour samedi.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-04T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ignore une heure au format invalide plutôt que d'échouer", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  dueAt: "2026-09-05T08:00:00.000Z",
+                  dueAtText: "samedi",
+                  // Hallucination de format : ni « HH:mm » ni exploitable.
+                  dueTime: "10h",
+                  items: [{ title: "Œufs" }],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Crée une liste de courses pour samedi.",
+        inputMode: "text",
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            lists: [expect.objectContaining({ dueAt: "2026-09-04T22:00:00.000Z" })],
+          }),
+        }),
+        TOKEN,
+      );
+    });
+
     it("ramène l'échéance du modèle à minuit local quand l'expression n'est pas reconnue", async () => {
       const suggestions = makeSuggestionRepository();
       const llm = makeLlm(
@@ -2830,6 +2964,50 @@ describe("ConversationService", () => {
         expect.objectContaining({
           kind: "update_task_list_due_date",
           payload: { listId: EXISTING_LIST.id, dueAt: "2026-09-03T22:00:00.000Z" },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("conserve l'heure donnée explicitement lors d'une reprogrammation", async () => {
+      const suggestions = makeSuggestionRepository();
+      const tasks = makeTaskRepository([EXISTING_LIST]);
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list_due_date",
+            input: {
+              message: "Je décale Travaux jardin à vendredi 14h ?",
+              listId: EXISTING_LIST.id,
+              dueAt: "2026-09-04T12:00:00.000Z",
+              dueAtText: "vendredi",
+              dueTime: "14:00",
+            },
+          },
+        ],
+      );
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          tasks,
+        ),
+        { content: "Décale les travaux du jardin à vendredi 14h.", inputMode: "text" },
+      );
+
+      // Vendredi 4 septembre, 14h à Paris (UTC+2).
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_task_list_due_date",
+          payload: { listId: EXISTING_LIST.id, dueAt: "2026-09-04T12:00:00.000Z" },
         }),
         TOKEN,
       );
