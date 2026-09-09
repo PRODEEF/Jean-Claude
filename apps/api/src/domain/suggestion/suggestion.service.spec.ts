@@ -134,6 +134,33 @@ describe("SuggestionService", () => {
       );
     });
 
+    it("capture un rendez-vous ponctuel proposé sans règle de récurrence (A.11)", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "J'ai noté Zumba vendredi à 18h30, je pose le rendez-vous ?",
+            title: "Zumba",
+            startsAt: NOW,
+          },
+          "suggest_recurring_event",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_recurring_event",
+          payload: { title: "Zumba", startsAt: NOW },
+        }),
+        TOKEN,
+      );
+    });
+
     it("ignore un rendez-vous récurrent dont la règle est illisible", async () => {
       const repo = makeRepository();
 

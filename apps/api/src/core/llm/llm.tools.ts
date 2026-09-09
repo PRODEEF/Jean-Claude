@@ -391,15 +391,20 @@ export const NAME_CONVERSATION: LlmTool = {
 };
 
 /**
- * Rendez-vous récurrent (A.11). Remis aux conversations classiques quand
- * `proactiveScheduling` est actif — pas au canal permanent (A.10).
+ * Rendez-vous ponctuel ou récurrent (A.11). Remis aux conversations
+ * classiques quand `proactiveScheduling` est actif — pas au canal permanent
+ * (A.10).
  */
 export const SUGGEST_RECURRING_EVENT: LlmTool = {
   name: "suggest_recurring_event",
   description:
-    "À appeler quand l'utilisateur mentionne un rendez-vous récurrent " +
-    "(« j'ai kiné tous les mardis à 18h »). Produire une règle RRULE (RFC 5545) " +
-    "plutôt qu'une liste de dates, pour que la série n'ait pas à être ressaisie. " +
+    "À appeler quand l'utilisateur mentionne un rendez-vous daté — « Zumba vendredi " +
+    "soir à 18h30 » comme « j'ai kiné tous les mardis à 18h ». " +
+    "Omettre `rrule` pour un rendez-vous qui n'a lieu qu'une fois : rien dans le texte " +
+    "n'indique qu'il se répète, donc ne pas demander à quel rythme. " +
+    "Renseigner `rrule` avec une règle RRULE (RFC 5545) seulement quand l'utilisateur dit " +
+    "que ça se répète (« tous les... », « chaque... », « toutes les semaines »), pour que " +
+    "la série n'ait pas à être ressaisie. " +
     "Ne jamais présenter le rendez-vous comme déjà posé : c'est une proposition.",
   inputSchema: {
     type: "object",
@@ -408,30 +413,32 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
         type: "string",
         description:
           "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
-          "de question — ex. « J'ai noté kiné tous les mardis à 18h, je pose le rappel ? ». " +
+          "de question — ex. « J'ai noté Zumba vendredi à 18h30, je pose le rendez-vous ? » " +
+          "ou « J'ai noté kiné tous les mardis à 18h, je pose le rappel ? ». " +
           "Ne jamais présenter le rendez-vous comme déjà créé. 500 caractères maximum.",
       },
       title: { type: "string", description: "Titre court du rendez-vous" },
       startsAt: {
         type: "string",
         description:
-          "Première occurrence, ISO 8601 — la prochaine date qui correspond à la " +
-          "récurrence, pas une date passée.",
+          "Occurrence à poser, ISO 8601 — la date demandée pour un rendez-vous ponctuel, " +
+          "ou la prochaine date qui correspond à la récurrence, jamais une date passée.",
       },
       rrule: {
         type: "string",
         description:
           "Règle RRULE sans le préfixe « RRULE: » — ex. FREQ=WEEKLY;BYDAY=TU. " +
-          "FREQ obligatoire (DAILY, WEEKLY, MONTHLY ou YEARLY).",
+          "FREQ obligatoire (DAILY, WEEKLY, MONTHLY ou YEARLY). Omettre entièrement pour " +
+          "un rendez-vous qui n'a lieu qu'une fois.",
       },
       reminderMinutesBefore: {
         type: "number",
         description:
-          "Rappel avant chaque occurrence, en minutes. Omettre pour laisser le " +
-          "serveur poser 30 minutes par défaut.",
+          "Rappel avant l'occurrence, en minutes. Omettre pour laisser le serveur poser " +
+          "30 minutes par défaut.",
       },
     },
-    required: ["message", "title", "startsAt", "rrule"],
+    required: ["message", "title", "startsAt"],
   },
 };
 

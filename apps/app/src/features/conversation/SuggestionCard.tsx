@@ -620,7 +620,9 @@ function useSuggestionPreview(suggestion: Suggestion): {
               key: "event",
               label: proposed.data.title,
               nested: false,
-              hint: `${dueLabel(proposed.data.startsAt)} · ${rruleHint(proposed.data.rrule)}`,
+              hint: proposed.data.rrule
+                ? `${dueLabel(proposed.data.startsAt)} · ${rruleHint(proposed.data.rrule)}`
+                : dueLabel(proposed.data.startsAt),
             },
           ]
         : [],

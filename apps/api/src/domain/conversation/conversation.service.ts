@@ -1805,19 +1805,23 @@ function describeRangerCommand(args: string): string[] {
 
 /**
  * Note ajoutée à la consigne quand l'utilisateur déclenche /planifier : le
- * texte qui suit porte le titre et la récurrence, jamais une heure ou un
- * jour inventés pour compléter ce qui manque.
+ * texte qui suit porte le titre et, s'il y en a, la récurrence — jamais une
+ * heure, un jour ou une répétition inventés pour compléter ce qui manque.
  */
 function describePlanifierCommand(args: string): string[] {
   const description = args.length > 0 ? `« ${args} »` : "sans rien après elle";
 
   return [
     `Commande /planifier : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
-    "C'est une demande explicite de poser un rendez-vous récurrent — pas une",
-    "faute de frappe. S'il manque le jour ou l'heure pour construire une RRULE",
-    "fiable, ne l'appelle pas encore : demande-le d'abord. Dès que la récurrence",
-    "est connue — dans ce message ou le suivant — appelle `suggest_recurring_event`",
-    "tout de suite, comme pour toute autre demande explicite.",
+    "C'est une demande explicite de poser un rendez-vous — pas une faute de",
+    "frappe. S'il manque le jour ou l'heure, ne l'appelle pas encore : demande-le",
+    "d'abord. Rien dans le texte n'indique que ça se répète ? Pose-le comme un",
+    "rendez-vous unique, sans `rrule` et sans jamais demander à quel rythme le",
+    "répéter. Seul un mot de répétition explicite (« tous les... »,",
+    "« chaque... ») justifie une RRULE. Dès que la date (et la récurrence,",
+    "si elle est dite) est connue — dans ce message ou le suivant — appelle",
+    "`suggest_recurring_event` tout de suite, comme pour toute autre demande",
+    "explicite.",
   ];
 }
 
@@ -2031,11 +2035,14 @@ function buildSystemPrompt(
   if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) {
     lines.push(
       "",
-      "Quand l'utilisateur mentionne un rendez-vous qui se répète — « kiné tous",
-      "les mardis à 18h », « réunion chaque lundi » — appelle",
-      "`suggest_recurring_event` avec une règle RRULE (FREQ=WEEKLY;BYDAY=…)",
-      "plutôt qu'une liste de dates. Ne présente jamais le rendez-vous comme",
-      "déjà posé : c'est une proposition.",
+      "Quand l'utilisateur mentionne un rendez-vous daté — « Zumba vendredi soir",
+      "à 18h30 » comme « kiné tous les mardis à 18h » — appelle",
+      "`suggest_recurring_event`. N'ajoute une règle RRULE (FREQ=WEEKLY;BYDAY=…)",
+      "que si le texte dit explicitement que ça se répète (« tous les... »,",
+      "« chaque... », « toutes les semaines ») ; sinon omets `rrule` entièrement",
+      "et pose la date donnée comme un rendez-vous unique, sans jamais demander",
+      "à quel rythme le répéter. Ne présente jamais le rendez-vous comme déjà",
+      "posé : c'est une proposition.",
     );
   }
 

@@ -265,18 +265,22 @@ export type ScheduleListsPayload = z.infer<typeof scheduleListsPayloadSchema>;
 /**
  * Charge utile d'une suggestion `create_recurring_event` (A.11).
  *
- * Une règle RRULE plutôt qu'une liste de dates : « kiné tous les mardis »
- * n'a pas à être ressaisi. `startsAt` ancre la première occurrence ;
+ * `rrule` est omis pour un rendez-vous ponctuel (« Zumba vendredi soir » —
+ * une seule occurrence, pas de série à poser), renseigné pour un rendez-vous
+ * qui se répète (« kiné tous les mardis ») afin de ne pas devoir le ressaisir.
+ * `startsAt` ancre la première (et parfois seule) occurrence ;
  * `reminderMinutesBefore` est optionnel à la capture — l'acceptation pose
  * 30 min par défaut si le modèle l'omet (A.11).
  */
 export const createRecurringEventPayloadSchema = z.object({
   title: labelSchema,
   startsAt: isoDateTimeSchema,
-  rrule: rruleSchema.refine(
-    (value) => RRULE_FREQ.test(value),
-    "La récurrence doit porter une fréquence FREQ (DAILY, WEEKLY, MONTHLY ou YEARLY).",
-  ),
+  rrule: rruleSchema
+    .refine(
+      (value) => RRULE_FREQ.test(value),
+      "La récurrence doit porter une fréquence FREQ (DAILY, WEEKLY, MONTHLY ou YEARLY).",
+    )
+    .optional(),
   reminderMinutesBefore: z.number().int().min(0).max(10_080).optional(),
 });
 

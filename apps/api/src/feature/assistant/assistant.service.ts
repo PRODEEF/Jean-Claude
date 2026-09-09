@@ -38,8 +38,8 @@ const DEFAULT_TIMEZONE: UserPreferences["timezone"] = userPreferencesSchema.shap
   undefined,
 );
 
-/** Rappel par défaut d'une série récurrente, en minutes (A.11). */
-const DEFAULT_RECURRING_REMINDER_MINUTES = 30;
+/** Rappel par défaut d'un rendez-vous, ponctuel ou récurrent, en minutes (A.11). */
+const DEFAULT_EVENT_REMINDER_MINUTES = 30;
 
 export type ResolvedSuggestion = {
   suggestion: Suggestion;
@@ -445,12 +445,13 @@ export class AssistantService {
   }
 
   /**
-   * Pose un rendez-vous récurrent dans l'agenda (A.11).
+   * Pose un rendez-vous dans l'agenda, ponctuel ou récurrent (A.11).
    *
-   * Une seule ligne avec `rrule` : les occurrences ne sont pas encore
-   * expansées — l'événement n'apparaît qu'à son premier créneau. Le rappel
-   * tombe à 30 min si le modèle n'en a pas proposé, pour que la série ne
-   * demande pas de ressaisie.
+   * `rrule` absent pose une occurrence unique ; renseigné, une seule ligne
+   * le porte — les occurrences ne sont pas encore expansées, l'événement
+   * n'apparaît qu'à son premier créneau. Le rappel tombe à 30 min si le
+   * modèle n'en a pas proposé, pour que le rendez-vous n'ait pas à être
+   * réglé une seconde fois.
    */
   private async createRecurringEvent(
     userId: string,
@@ -460,7 +461,7 @@ export class AssistantService {
     const payload = createRecurringEventPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
-      logger.error(SCOPE, "Charge utile de rendez-vous récurrent illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de rendez-vous illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -475,8 +476,8 @@ export class AssistantService {
         startsAt: payload.data.startsAt,
         endsAt: timed ? oneHourAfter(payload.data.startsAt) : null,
         allDay: !timed,
-        rrule: payload.data.rrule,
-        reminderMinutesBefore: payload.data.reminderMinutesBefore ?? DEFAULT_RECURRING_REMINDER_MINUTES,
+        rrule: payload.data.rrule ?? null,
+        reminderMinutesBefore: payload.data.reminderMinutesBefore ?? DEFAULT_EVENT_REMINDER_MINUTES,
       },
       accessToken,
     );

@@ -1540,6 +1540,36 @@ describe("AssistantService", () => {
       expect(events.create).not.toHaveBeenCalled();
     });
 
+    it("pose un rendez-vous unique sans règle quand le modèle n'en propose pas", async () => {
+      const events = makeCalendarRepository();
+
+      await makeService(
+        makeSuggestionStore(
+          makeKineSuggestion({
+            message: "J'ai noté Zumba vendredi à 18h30, je pose le rendez-vous ?",
+            payload: { title: "Zumba", startsAt: KINE },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(events.create).toHaveBeenCalledWith(
+        USER,
+        {
+          title: "Zumba",
+          startsAt: KINE,
+          endsAt: "2026-09-08T17:00:00.000Z",
+          allDay: false,
+          rrule: null,
+          reminderMinutesBefore: 30,
+        },
+        TOKEN,
+      );
+    });
+
     it("refuse une charge utile illisible", async () => {
       await expect(
         makeService(
