@@ -1,11 +1,13 @@
-import { useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { useRef, useState } from "react";
+import { StyleSheet, View, type TextInput } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Sparkles } from "lucide-react-native";
 import { spacing } from "@jc/design";
 import { api } from "@/shared/lib/api";
 import { Composer } from "@/features/conversation/Composer";
+import { useAttachmentPicker } from "@/features/conversation/hooks/use-attachment-picker";
+import { useComposerAttachments } from "@/features/conversation/hooks/use-composer-attachments";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useCurrentUser } from "@/shared/hooks/use-current-user";
@@ -27,23 +29,46 @@ export default function ChatHomeScreen() {
   const queryClient = useQueryClient();
   const { firstName } = useCurrentUser();
   const [draft, setDraft] = useState("");
+  const inputRef = useRef<TextInput>(null);
+  const attachments = useComposerAttachments();
+  const picker = useAttachmentPicker(attachments.add, inputRef);
 
   // La conversation naît sans qu'on demande où la ranger ; le message part
   // avec elle et s'envoie à l'ouverture du fil, ce qui évite d'inventer un
-  // second chemin d'envoi (§13.4.1).
+  // second chemin d'envoi (§13.4.1). Le trombone fonctionne dès cet écran :
+  // l'upload ne dépend que de l'utilisateur authentifié, jamais d'une
+  // conversation qui n'existe pas encore.
   const create = useMutation({
-    mutationFn: (_content: string) => api.conversations.create({ folderIds: [] }),
-    onSuccess: async (conversation, content) => {
+    mutationFn: (_input: { content: string; attachmentIds: string[] }) =>
+      api.conversations.create({ folderIds: [] }),
+    onSuccess: async (conversation, input) => {
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      router.push({ pathname: "/chat/[id]", params: { id: conversation.id, draft: content } });
+      router.push({
+        pathname: "/chat/[id]",
+        params: {
+          id: conversation.id,
+          draft: input.content,
+          ...(input.attachmentIds.length > 0
+            ? { attachmentIds: input.attachmentIds.join(",") }
+            : {}),
+        },
+      });
     },
   });
 
   const start = () => {
     const content = draft.trim();
-    if (content.length === 0 || create.isPending) return;
+    const attachmentIds = attachments.readyIds;
+    if (
+      (content.length === 0 && attachmentIds.length === 0) ||
+      create.isPending ||
+      attachments.uploading
+    ) {
+      return;
+    }
     setDraft("");
-    create.mutate(content);
+    attachments.reset();
+    create.mutate({ content, attachmentIds });
   };
 
   return (
@@ -74,6 +99,10 @@ export default function ChatHomeScreen() {
           placeholder="Écrivez ce que vous avez en tête"
           busy={create.isPending}
           autoFocus
+          inputRef={inputRef}
+          attachments={attachments.items}
+          onRemoveAttachment={attachments.remove}
+          picker={picker}
         />
       </View>
 

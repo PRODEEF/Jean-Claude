@@ -12,7 +12,11 @@ import { useTheme } from "@/shared/providers/theme-provider";
 
 /** Fil d'une conversation classique. */
 export default function ConversationScreen() {
-  const { id, draft } = useLocalSearchParams<{ id: string; draft?: string }>();
+  const { id, draft, attachmentIds } = useLocalSearchParams<{
+    id: string;
+    draft?: string;
+    attachmentIds?: string;
+  }>();
   const { palette } = useTheme();
   const breakpoint = useBreakpoint();
   const router = useRouter();
@@ -50,7 +54,11 @@ export default function ConversationScreen() {
       // virtualisation dans le `ScrollView` du shell.
       scrolls={false}
     >
-      <ConversationThread conversationId={id} initialDraft={draft} />
+      <ConversationThread
+        conversationId={id}
+        initialDraft={draft}
+        initialAttachmentIds={attachmentIds ? attachmentIds.split(",") : undefined}
+      />
 
       <ConversationDialog
         conversation={actionsOpen ? (conversation.data ?? null) : null}

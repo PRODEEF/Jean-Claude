@@ -16,6 +16,7 @@ import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { validate } from "../../core/http.js";
 import { llm } from "../../core/llm/providers/gateway.provider.js";
 import { rateLimit } from "../../core/rate-limit/rate-limit.middleware.js";
+import { attachmentRepository } from "../attachment/attachment.repository.js";
 import { calendarRepository } from "../calendar/calendar.repository.js";
 import { CalendarService } from "../calendar/calendar.service.js";
 import { folderRepository } from "../folder/folder.repository.js";
@@ -36,6 +37,7 @@ const service = new ConversationService(
   userRepository,
   new CalendarService(calendarRepository),
   new TaskService(taskRepository),
+  attachmentRepository,
 );
 
 const idParam = validate("param", z.object({ id: uuidSchema }));

@@ -1,10 +1,12 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { Platform, Pressable, StyleSheet, TextInput, useWindowDimensions } from "react-native";
-import { ArrowUp, Square } from "lucide-react-native";
-import { MESSAGE_MAX_LENGTH } from "@jc/domain";
+import { Platform, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from "react-native";
+import { ArrowUp, Paperclip, Square } from "lucide-react-native";
+import { MESSAGE_ATTACHMENT_MAX_COUNT, MESSAGE_MAX_LENGTH } from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { AttachmentThumbnail } from "./AttachmentThumbnail";
+import type { ComposerAttachment } from "./hooks/use-composer-attachments";
 
 /**
  * Part de la hauteur de fenêtre au-delà de laquelle la saisie cesse de
@@ -39,6 +41,11 @@ export type ComposerProps = {
   onStop?: () => void;
   inputRef?: RefObject<TextInput | null>;
   autoFocus?: boolean;
+  /** Images en cours de composition, affichées au-dessus du champ (§13.4.1). */
+  attachments: ComposerAttachment[];
+  onRemoveAttachment: (localId: string) => void;
+  /** Résultat de `useAttachmentPicker`, instancié par l'appelant — voir ce hook. */
+  picker: { pick: () => void; dropRef: RefObject<View | null>; isOver: boolean };
 };
 
 /**
@@ -70,10 +77,18 @@ export function Composer({
   onStop,
   inputRef,
   autoFocus = false,
+  attachments,
+  onRemoveAttachment,
+  picker,
 }: ComposerProps) {
   const { palette } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
-  const empty = value.trim().length === 0;
+  const hasText = value.trim().length > 0;
+  // Un message peut se composer d'une image seule, sans texte — comme chez
+  // Claude (§13.4.1).
+  const hasReadyAttachment = attachments.some((a) => a.status === "done");
+  const uploading = attachments.some((a) => a.status === "uploading");
+  const atAttachmentLimit = attachments.length >= MESSAGE_ATTACHMENT_MAX_COUNT;
   const stoppable = busy && onStop !== undefined;
 
   const node = useRef<TextInput | null>(null);
@@ -103,93 +118,138 @@ export function Composer({
   }, [value, maxHeight]);
 
   return (
-    <Pressable
-      onPress={() => node.current?.focus()}
-      // Rien à annoncer : le champ et la flèche portent déjà leurs libellés,
-      // et une cible de plus dans l'ordre de lecture ne dirait rien de neuf.
-      accessible={false}
-      className="web:cursor-text"
-      style={[styles.shell, { backgroundColor: palette.surface, borderColor: palette.border }]}
-    >
-      <TextInput
-        ref={attach}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={palette.textMuted}
-        autoFocus={autoFocus}
-        multiline
-        // Bornée ici comme elle l'est au contrat partagé : sans cela, un texte
-        // trop long partait au serveur, revenait en 400 générique, et le
-        // brouillon était perdu en chemin.
-        maxLength={MESSAGE_MAX_LENGTH}
-        onSubmitEditing={onSubmit}
-        // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde un
-        // retour à la ligne, la saisie multiligne y étant la norme.
-        blurOnSubmit={Platform.OS === "web"}
-        accessibilityLabel={placeholder}
-        // Le cadre est porté par la coque : celui du champ ferait double trait.
-        // `web:` seulement — sur mobile, `outline` n'existe pas et le retrait
-        // du liseré de focus enlèverait le repère de navigation au clavier,
-        // qui est ici la coque elle-même.
-        className="web:outline-none"
-        onContentSizeChange={(event) => setContentHeight(event.nativeEvent.contentSize.height)}
-        style={[
-          styles.input,
-          { color: palette.text, maxHeight },
-          // Sur web, la hauteur est posée sur le nœud lui-même : un style de
-          // plus ici la remettrait à sa valeur de rendu à chaque frappe.
-          Platform.OS === "web"
-            ? null
-            : { height: Math.min(Math.max(contentHeight, MIN_INPUT_HEIGHT), maxHeight) },
-        ]}
-        // Un `textarea` s'ouvre sur deux rangées par défaut : le champ naissait
-        // donc deux fois trop haut, texte collé en haut et flèche en bas. Sur
-        // mobile, `numberOfLines` bornerait au contraire la saisie à une ligne.
-        {...(Platform.OS === "web" ? { numberOfLines: 1 } : {})}
-      />
+    <View style={styles.root}>
+      {attachments.length > 0 ? (
+        <View style={styles.attachmentsRow}>
+          {attachments.map((attachment) => (
+            <AttachmentThumbnail
+              key={attachment.localId}
+              uri={attachment.previewUri}
+              status={attachment.status}
+              onRemove={() => onRemoveAttachment(attachment.localId)}
+            />
+          ))}
+        </View>
+      ) : null}
 
-      {/* Pendant la génération, le même bouton arrête la réponse plutôt que de
-          rester grisé : c'est ce que font ChatGPT, Claude et Perplexity (§4.2),
-          et rien n'est perdu — le serveur conserve le texte déjà produit. */}
       <Pressable
-        onPress={stoppable ? onStop : onSubmit}
-        disabled={stoppable ? false : busy || empty}
-        accessibilityRole="button"
-        accessibilityLabel={stoppable ? "Arrêter la réponse en cours" : "Envoyer le message"}
-        // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie, plus
-        // 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
-        // `MIN_TOUCH_TARGET` sans faire grandir le champ.
-        hitSlop={8}
+        ref={picker.dropRef}
+        onPress={() => node.current?.focus()}
+        // Rien à annoncer : le champ, le trombone et la flèche portent déjà
+        // leurs libellés, et une cible de plus dans l'ordre de lecture ne
+        // dirait rien de neuf.
+        accessible={false}
+        className="web:cursor-text"
         style={[
-          styles.send,
+          styles.shell,
           {
-            backgroundColor: palette.accent,
-            opacity: !stoppable && (busy || empty) ? 0.4 : 1,
+            backgroundColor: palette.surface,
+            // Web seulement : `isOver` reste toujours `false` côté natif,
+            // aucun dépôt de fichier n'y étant possible.
+            borderColor: picker.isOver ? palette.accent : palette.border,
           },
         ]}
       >
-        {stoppable ? (
-          <Square size={14} fill={palette.accentText} color={palette.accentText} />
-        ) : (
-          <ArrowUp size={18} color={palette.accentText} />
-        )}
+        <Pressable
+          onPress={picker.pick}
+          disabled={atAttachmentLimit}
+          accessibilityRole="button"
+          accessibilityLabel="Joindre une image"
+          hitSlop={8}
+          style={[styles.attach, { opacity: atAttachmentLimit ? 0.4 : 1 }]}
+        >
+          <Paperclip size={16} color={palette.textMuted} />
+        </Pressable>
+
+        <TextInput
+          ref={attach}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={palette.textMuted}
+          autoFocus={autoFocus}
+          multiline
+          // Bornée ici comme elle l'est au contrat partagé : sans cela, un texte
+          // trop long partait au serveur, revenait en 400 générique, et le
+          // brouillon était perdu en chemin.
+          maxLength={MESSAGE_MAX_LENGTH}
+          onSubmitEditing={onSubmit}
+          // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde un
+          // retour à la ligne, la saisie multiligne y étant la norme.
+          blurOnSubmit={Platform.OS === "web"}
+          accessibilityLabel={placeholder}
+          // Le cadre est porté par la coque : celui du champ ferait double trait.
+          // `web:` seulement — sur mobile, `outline` n'existe pas et le retrait
+          // du liseré de focus enlèverait le repère de navigation au clavier,
+          // qui est ici la coque elle-même.
+          className="web:outline-none"
+          onContentSizeChange={(event) => setContentHeight(event.nativeEvent.contentSize.height)}
+          style={[
+            styles.input,
+            { color: palette.text, maxHeight },
+            // Sur web, la hauteur est posée sur le nœud lui-même : un style de
+            // plus ici la remettrait à sa valeur de rendu à chaque frappe.
+            Platform.OS === "web"
+              ? null
+              : { height: Math.min(Math.max(contentHeight, MIN_INPUT_HEIGHT), maxHeight) },
+          ]}
+          // Un `textarea` s'ouvre sur deux rangées par défaut : le champ naissait
+          // donc deux fois trop haut, texte collé en haut et flèche en bas. Sur
+          // mobile, `numberOfLines` bornerait au contraire la saisie à une ligne.
+          {...(Platform.OS === "web" ? { numberOfLines: 1 } : {})}
+        />
+
+        {/* Pendant la génération, le même bouton arrête la réponse plutôt que de
+            rester grisé : c'est ce que font ChatGPT, Claude et Perplexity (§4.2),
+            et rien n'est perdu — le serveur conserve le texte déjà produit. */}
+        <Pressable
+          onPress={stoppable ? onStop : onSubmit}
+          disabled={stoppable ? false : busy || uploading || (!hasText && !hasReadyAttachment)}
+          accessibilityRole="button"
+          accessibilityLabel={stoppable ? "Arrêter la réponse en cours" : "Envoyer le message"}
+          // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie, plus
+          // 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
+          // `MIN_TOUCH_TARGET` sans faire grandir le champ.
+          hitSlop={8}
+          style={[
+            styles.send,
+            {
+              backgroundColor: palette.accent,
+              opacity: !stoppable && (busy || uploading || (!hasText && !hasReadyAttachment)) ? 0.4 : 1,
+            },
+          ]}
+        >
+          {stoppable ? (
+            <Square size={14} fill={palette.accentText} color={palette.accentText} />
+          ) : (
+            <ArrowUp size={18} color={palette.accentText} />
+          )}
+        </Pressable>
       </Pressable>
-    </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { gap: spacing.xs },
+  attachmentsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   shell: {
     flexDirection: "row",
     alignItems: "flex-end",
     gap: spacing.sm,
     minHeight: MIN_TOUCH_TARGET,
-    paddingLeft: spacing.md,
+    paddingLeft: spacing.sm,
     paddingRight: spacing.sm,
     paddingVertical: spacing.sm,
     borderWidth: 1,
     borderRadius: radius.lg,
+  },
+  attach: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
   },
   input: {
     fontFamily: FONT_FAMILY,

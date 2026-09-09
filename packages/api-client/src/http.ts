@@ -67,6 +67,26 @@ export class HttpClient {
   }
 
   /**
+   * Variante de `request` pour un envoi `multipart/form-data`.
+   *
+   * Distincte de `request` plutôt qu'un simple passage de `FormData` en
+   * `body` : au-delà du transport (déjà couvert par `send`), un upload
+   * n'attend jamais de code `204` — la réponse est toujours la ressource créée.
+   */
+  async upload<T>(
+    path: string,
+    formData: FormData,
+    init: { signal?: AbortSignal } = {},
+  ): Promise<T> {
+    const response = await this.send(path, "application/json", { method: "POST", body: formData, ...init });
+
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) throw toApiError(response.status, payload);
+
+    return payload as T;
+  }
+
+  /**
    * Variante de `request` qui rend le corps au fil de son arrivée.
    *
    * Nécessaire parce que `request` attend la réponse entière avant de la
@@ -134,13 +154,17 @@ export class HttpClient {
 
     const token = await this.options.getAccessToken();
     const headers: Record<string, string> = { Accept: accept };
-    if (body !== undefined) headers["Content-Type"] = "application/json";
+    // `FormData` pose son propre `Content-Type` (avec la frontière multipart) :
+    // un en-tête posé à la main ici la casserait.
+    if (body !== undefined && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
     const response = await (this.options.fetchImpl ?? fetch)(url.toString(), {
       method,
       headers,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(body !== undefined
+        ? { body: body instanceof FormData ? body : JSON.stringify(body) }
+        : {}),
       ...(signal ? { signal } : {}),
     });
 

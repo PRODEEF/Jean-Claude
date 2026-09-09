@@ -4,6 +4,7 @@ import { resolveSuggestionSchema, uuidSchema } from "@jc/domain";
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { validate } from "../../core/http.js";
 import { llm } from "../../core/llm/providers/gateway.provider.js";
+import { attachmentRepository } from "../../domain/attachment/attachment.repository.js";
 import { calendarRepository } from "../../domain/calendar/calendar.repository.js";
 import { CalendarService } from "../../domain/calendar/calendar.service.js";
 import { conversationRepository } from "../../domain/conversation/conversation.repository.js";
@@ -33,6 +34,7 @@ const service = new AssistantService(
     userRepository,
     calendar,
     tasks,
+    attachmentRepository,
   ),
   tasks,
   calendar,

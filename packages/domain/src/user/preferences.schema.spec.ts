@@ -1,6 +1,7 @@
 import {
   ASSISTANT_MODELS,
   isSovereignModel,
+  isVisionCapableModel,
   toAssistantModel,
   updateUserProfileSchema,
   userPreferencesSchema,
@@ -31,6 +32,22 @@ describe("catalogue des modèles", () => {
   it("annonce la souveraineté de chaque entrée conformément à son éditeur", () => {
     for (const model of ASSISTANT_MODELS) {
       expect(model.sovereign).toBe(isSovereignModel(model.id));
+    }
+  });
+});
+
+describe("isVisionCapableModel", () => {
+  it("refuse un modèle hors catalogue", () => {
+    expect(isVisionCapableModel("openai/gpt-4")).toBe(false);
+  });
+
+  it("refuse une chaîne vide", () => {
+    expect(isVisionCapableModel("")).toBe(false);
+  });
+
+  it("déclare capables les cinq modèles du catalogue, vérifiés individuellement", () => {
+    for (const model of ASSISTANT_MODELS) {
+      expect(isVisionCapableModel(model.id)).toBe(true);
     }
   });
 });

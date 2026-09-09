@@ -7,6 +7,28 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **9 septembre 2026** — l'assistant lit désormais les
+images jointes à un message (vision), nouveau domaine API `attachment` et port
+LLM étendu au contenu multimodal.
+
+**L'assistant lit les images jointes à un message.** Nouveau geste de capture
+(§13.2.1, §13.4.1 : « quel que soit son format — texte, voix, image, lien »),
+absent jusqu'ici et sans point d'Annexe A dédié (contrairement au vocal, A.12).
+Un trombone dans le Composer permet de joindre jusqu'à 4 images par message,
+10 Mo chacune, JPEG/PNG/WebP : sélecteur de fichier, glisser-déposer et collage
+d'une capture d'écran côté web, galerie ou appareil photo côté natif.
+L'upload part dès la sélection, avant l'envoi du message — ce qui laisse le
+trombone utilisable depuis l'écran d'accueil, sans conversation encore ouverte
+— vers un nouveau domaine `attachment` (`POST /api/attachments`, bucket
+Storage privé, URLs signées à la lecture, jamais publiques). Le port
+`LlmProvider` (`core/llm/llm.port.ts`) accepte désormais un contenu
+multi-parties (texte + images) en plus de la simple chaîne d'avant ; les cinq
+modèles du catalogue (`preferences.schema.ts`) lisent tous les images d'après
+leur documentation — un modèle qui ne le ferait pas verrait le serveur refuser
+l'envoi (422) plutôt que de l'expédier dans le vide (§12.1, le serveur fait
+respecter la règle). Pièces jointes affichées dans le fil, aperçu plein écran
+à l'appui. PDF et fichiers texte restent hors périmètre de cette itération.
+
 Dernière mise à jour : **7 septembre 2026** — une todoliste datée pose
 désormais un créneau journée entière plutôt qu'un rendez-vous à heure fixe,
 pastille de non-lu sur les conversations, réglage « bandeau uni », section
