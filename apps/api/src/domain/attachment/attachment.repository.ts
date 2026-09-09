@@ -19,10 +19,13 @@ type AttachmentRow = {
   storage_path: string;
   mime_type: string;
   byte_size: number;
+  file_name: string;
+  extracted_text: string | null;
   created_at: string;
 };
 
-const COLUMNS = "id, message_id, storage_path, mime_type, byte_size, created_at";
+const COLUMNS =
+  "id, message_id, storage_path, mime_type, byte_size, file_name, extracted_text, created_at";
 
 /**
  * Le mapping snake_case ↔ camelCase est confiné ici. `url` n'est pas une
@@ -34,8 +37,10 @@ function toRecord(row: AttachmentRow, url: string): AttachmentRecord {
     id: row.id,
     messageId: row.message_id,
     url,
+    fileName: row.file_name,
     mimeType: row.mime_type as MessageAttachmentMimeType,
     byteSize: row.byte_size,
+    extractedText: row.extracted_text,
     createdAt: row.created_at,
   };
 }
@@ -61,6 +66,8 @@ export const attachmentRepository: IAttachmentRepository = {
         storage_path: path,
         mime_type: input.mimeType,
         byte_size: input.byteSize,
+        file_name: input.fileName,
+        extracted_text: input.extractedText,
       })
       .select(COLUMNS)
       .single();

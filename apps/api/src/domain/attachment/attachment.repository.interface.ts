@@ -3,6 +3,9 @@ import type { MessageAttachment, MessageAttachmentMimeType } from "@jc/domain";
 export type CreateAttachmentInput = {
   mimeType: MessageAttachmentMimeType;
   byteSize: number;
+  fileName: string;
+  /** Texte extrait d'un PDF côté Service — `null` pour une image. */
+  extractedText: string | null;
   file: File;
 };
 

@@ -38,6 +38,8 @@ type AttachmentSubRow = {
   storage_path: string;
   mime_type: string;
   byte_size: number;
+  file_name: string;
+  extracted_text: string | null;
   created_at: string;
 };
 
@@ -95,8 +97,10 @@ function toMessage(row: MessageRow, urlByPath: ReadonlyMap<string, string>): Mes
         {
           id: a.id,
           url,
+          fileName: a.file_name,
           mimeType: a.mime_type as MessageAttachmentMimeType,
           byteSize: a.byte_size,
+          extractedText: a.extracted_text,
           createdAt: a.created_at,
         },
       ];
@@ -135,7 +139,7 @@ export const CONVERSATION_COLUMNS =
 const MESSAGE_COLUMNS =
   "id, conversation_id, role, content, input_mode, provider, model, choices, " +
   "redirect_title, redirect_accepted_at, created_at, " +
-  "message_attachments(id, storage_path, mime_type, byte_size, created_at)";
+  "message_attachments(id, storage_path, mime_type, byte_size, file_name, extracted_text, created_at)";
 
 export const conversationRepository: IConversationRepository = {
   async findAll(accessToken, options) {

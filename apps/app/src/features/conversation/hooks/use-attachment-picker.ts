@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Alert, Platform, type TextInput, type View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
 import { messageAttachmentMimeTypeSchema } from "@jc/domain";
 
 export type PickedFile = {
@@ -60,14 +61,34 @@ function toPickedFilesNative(assets: ImagePicker.ImagePickerAsset[]): PickedFile
     });
 }
 
+function toPickedFilesFromDocuments(assets: DocumentPicker.DocumentPickerAsset[]): PickedFile[] {
+  return assets
+    .filter((asset) => !asset.mimeType || ACCEPTED_MIME_TYPES.includes(asset.mimeType))
+    .map((asset) => {
+      const mimeType = asset.mimeType ?? "application/pdf";
+
+      return {
+        uri: asset.uri,
+        name: asset.name,
+        mimeType,
+        size: asset.size ?? 0,
+        appendTo: (formData) => {
+          formData.append("file", { uri: asset.uri, name: asset.name, type: mimeType } as unknown as Blob);
+        },
+      };
+    });
+}
+
 /**
- * Sélection d'image.
+ * Sélection d'image et de PDF.
  *
  * Web : sélecteur de fichier, glisser-déposer sur la coque du Composer,
  * collage d'une capture d'écran dans le champ — le geste le plus direct pour
- * "screens". Natif : galerie ou appareil photo, choisis via une alerte plutôt
- * qu'une feuille d'action dédiée (aucun composant de ce type n'existe encore
- * dans `shared/ui/`, une alerte suffit pour ce choix binaire).
+ * "screens" (le PDF n'y est volontairement pas repris : coller un PDF depuis
+ * le presse-papier n'est pas un geste courant). Natif : galerie, appareil
+ * photo ou document, choisis via une alerte plutôt qu'une feuille d'action
+ * dédiée (aucun composant de ce type n'existe encore dans `shared/ui/`, une
+ * alerte suffit pour ce choix à trois branches).
  *
  * Un seul fichier plutôt qu'une extension `.web`/`.native` : à l'essai, cette
  * dernière casse le typage de `lucide-react-native` dans tout le projet dès
@@ -178,13 +199,22 @@ export function useAttachmentPicker(
     if (!result.canceled) latest.current(toPickedFilesNative(result.assets));
   }, []);
 
+  const fromDocuments = useCallback(async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: "application/pdf",
+      multiple: true,
+    });
+    if (!result.canceled) latest.current(toPickedFilesFromDocuments(result.assets));
+  }, []);
+
   const pickNative = useCallback(() => {
-    Alert.alert("Joindre une image", undefined, [
+    Alert.alert("Joindre un fichier", undefined, [
       { text: "Photothèque", onPress: () => void fromLibrary() },
       { text: "Appareil photo", onPress: () => void fromCamera() },
+      { text: "Document", onPress: () => void fromDocuments() },
       { text: "Annuler", style: "cancel" },
     ]);
-  }, [fromLibrary, fromCamera]);
+  }, [fromLibrary, fromCamera, fromDocuments]);
 
   return { pick: Platform.OS === "web" ? pickWeb : pickNative, dropRef, isOver };
 }

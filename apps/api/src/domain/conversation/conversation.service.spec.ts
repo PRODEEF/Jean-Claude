@@ -363,8 +363,10 @@ function makeAttachment(overrides: Partial<AttachmentRecord> = {}): AttachmentRe
     id: "att-1",
     messageId: null,
     url: "https://storage.example/att-1.png",
+    fileName: "photo.png",
     mimeType: "image/png",
     byteSize: 1024,
+    extractedText: null,
     createdAt: "2026-09-09T08:00:00.000Z",
     ...overrides,
   };
@@ -1570,6 +1572,105 @@ describe("ConversationService", () => {
         });
 
         expect(events.at(-1)?.type).toBe("done");
+      });
+
+      it("accepte un PDF seul, même avec un modèle qui ne lit pas les images", async () => {
+        const repo = makeRepository();
+        const attachment = makeAttachment({
+          mimeType: "application/pdf",
+          fileName: "contrat.pdf",
+          extractedText: "Préavis de deux mois.",
+        });
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([attachment]),
+        });
+
+        const events = await drain(withAttachments(attachments, repo), {
+          content: "",
+          inputMode: "text",
+          attachmentIds: ["att-1"],
+        });
+
+        expect(events[0]).toEqual({
+          type: "message",
+          message: expect.objectContaining({ attachments: [attachment] }),
+        });
+      });
+
+      it("place le texte extrait d'un PDF avant le texte du message, dans une seule partie texte", async () => {
+        const repo = makeRepository({
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({
+                id: "msg-user",
+                role: "user",
+                content: "Voici mon bail.",
+                attachments: [
+                  makeAttachment({
+                    mimeType: "application/pdf",
+                    fileName: "contrat.pdf",
+                    extractedText: "Préavis de deux mois.",
+                  }),
+                ],
+              }),
+            ],
+            nextCursor: null,
+          }),
+        });
+        const llm = makeLlm();
+
+        await drain(makeService(repo, llm), { content: "?", inputMode: "text", attachmentIds: [] });
+
+        expect(lastRequest(llm).messages).toEqual([
+          {
+            role: "user",
+            content: [{ type: "text", text: "Voici mon bail.\n\n--- contrat.pdf ---\nPréavis de deux mois." }],
+          },
+        ]);
+      });
+
+      it("combine le texte extrait d'un PDF et une image dans le même message", async () => {
+        const repo = makeRepository({
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({
+                id: "msg-user",
+                role: "user",
+                content: "Voici mon bail et une photo du logement.",
+                attachments: [
+                  makeAttachment({
+                    id: "att-pdf",
+                    mimeType: "application/pdf",
+                    fileName: "contrat.pdf",
+                    extractedText: "Préavis de deux mois.",
+                  }),
+                  makeAttachment({
+                    id: "att-img",
+                    url: "https://storage.example/att-img.png",
+                    mimeType: "image/png",
+                  }),
+                ],
+              }),
+            ],
+            nextCursor: null,
+          }),
+        });
+        const llm = makeLlm();
+
+        await drain(makeService(repo, llm), { content: "?", inputMode: "text", attachmentIds: [] });
+
+        expect(lastRequest(llm).messages).toEqual([
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Voici mon bail et une photo du logement.\n\n--- contrat.pdf ---\nPréavis de deux mois.",
+              },
+              { type: "image", url: "https://storage.example/att-img.png", mediaType: "image/png" },
+            ],
+          },
+        ]);
       });
     });
   });

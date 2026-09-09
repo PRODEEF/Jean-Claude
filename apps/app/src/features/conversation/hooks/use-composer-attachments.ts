@@ -3,10 +3,12 @@ import { MESSAGE_ATTACHMENT_MAX_BYTES, MESSAGE_ATTACHMENT_MAX_COUNT } from "@jc/
 import { api } from "@/shared/lib/api";
 import type { PickedFile } from "./use-attachment-picker";
 
+type ComposerAttachmentBase = { localId: string; previewUri: string; mimeType: string; fileName: string; byteSize: number };
+
 export type ComposerAttachment =
-  | { localId: string; previewUri: string; status: "uploading" }
-  | { localId: string; previewUri: string; status: "done"; id: string }
-  | { localId: string; previewUri: string; status: "error"; message: string };
+  | (ComposerAttachmentBase & { status: "uploading" })
+  | (ComposerAttachmentBase & { status: "done"; id: string })
+  | (ComposerAttachmentBase & { status: "error"; message: string });
 
 let nextLocalId = 0;
 
@@ -36,9 +38,7 @@ export function useComposerAttachments() {
       .then((attachment) => {
         setItems((current) =>
           current.map((item) =>
-            item.localId === localId
-              ? { localId, previewUri: item.previewUri, status: "done", id: attachment.id }
-              : item,
+            item.localId === localId ? { ...item, status: "done", id: attachment.id } : item,
           ),
         );
       })
@@ -47,8 +47,7 @@ export function useComposerAttachments() {
           current.map((item) =>
             item.localId === localId
               ? {
-                  localId,
-                  previewUri: item.previewUri,
+                  ...item,
                   status: "error",
                   message: error instanceof Error ? error.message : "Envoi impossible.",
                 }
@@ -66,14 +65,10 @@ export function useComposerAttachments() {
 
       const added: ComposerAttachment[] = accepted.map((file) => {
         const localId = `att-${nextLocalId++}`;
+        const base = { localId, previewUri: file.uri, mimeType: file.mimeType, fileName: file.name, byteSize: file.size };
         return file.size > MESSAGE_ATTACHMENT_MAX_BYTES
-          ? {
-              localId,
-              previewUri: file.uri,
-              status: "error" as const,
-              message: "Image trop lourde : 10 Mo maximum.",
-            }
-          : { localId, previewUri: file.uri, status: "uploading" as const };
+          ? { ...base, status: "error" as const, message: "Fichier trop lourd : 10 Mo maximum." }
+          : { ...base, status: "uploading" as const };
       });
 
       setItems((current) => [...current, ...added]);

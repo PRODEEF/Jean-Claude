@@ -36,22 +36,34 @@ export const askedQuestionSchema = z.object({
 
 export type AskedQuestion = z.infer<typeof askedQuestionSchema>;
 
-/** Type MIME accepté pour une pièce jointe (§13.4.1) — images uniquement en v1. */
-export const messageAttachmentMimeTypeSchema = z.enum(["image/jpeg", "image/png", "image/webp"]);
+/** Type MIME accepté pour une pièce jointe (§13.4.1) — images et PDF. */
+export const messageAttachmentMimeTypeSchema = z.enum([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+]);
 export type MessageAttachmentMimeType = z.infer<typeof messageAttachmentMimeTypeSchema>;
 
 /**
  * Pièce jointe telle que le client la reçoit.
  *
  * `url` est une URL signée à courte durée de vie, jamais le chemin de
- * stockage brut — le bucket est privé, une image pouvant porter une capture
- * d'écran sensible (§8, §13.4.6).
+ * stockage brut — le bucket est privé, un fichier pouvant porter une donnée
+ * sensible (§8, §13.4.6).
  */
 export const messageAttachmentSchema = z.object({
   id: uuidSchema,
   url: z.string().url(),
+  fileName: z.string(),
   mimeType: messageAttachmentMimeTypeSchema,
   byteSize: z.number().int().positive(),
+  /**
+   * Texte extrait côté serveur pour un PDF — jamais pour une image, qui parle
+   * directement au modèle par la vision. `null` pour une image ; jamais vide
+   * pour un PDF accepté, un PDF sans texte exploitable étant refusé à l'upload.
+   */
+  extractedText: z.string().nullable(),
   createdAt: isoDateTimeSchema,
 });
 
@@ -63,7 +75,11 @@ export const messageSchema = z.object({
   role: messageRoleSchema,
   content: z.string(),
   inputMode: messageInputModeSchema,
-  /** Images jointes, lues par le modèle (vision). Toujours un tableau : une jointure vide donne `[]`, jamais `null`. */
+  /**
+   * Images et PDF joints. Une image parle au modèle par la vision ; un PDF
+   * lui parle par son texte, extrait une fois pour toutes à l'upload.
+   * Toujours un tableau : une jointure vide donne `[]`, jamais `null`.
+   */
   attachments: z.array(messageAttachmentSchema),
   /**
    * Traçabilité du moteur IA (§5.1). Conservée par message et non par conversation :
@@ -111,13 +127,17 @@ export const MESSAGE_MAX_LENGTH = 32_000;
 /** Nombre maximum de pièces jointes par message (décision produit). */
 export const MESSAGE_ATTACHMENT_MAX_COUNT = 4;
 
-/** Taille maximale d'une image jointe, en octets — 10 Mo (décision produit). */
+/**
+ * Taille maximale d'une pièce jointe, en octets — 10 Mo (décision produit).
+ * Même borne pour une image et un PDF : un PDF texte la dépasse rarement, à
+ * revoir séparément si l'usage montre le seuil trop bas pour ce second cas.
+ */
 export const MESSAGE_ATTACHMENT_MAX_BYTES = 10_485_760;
 
 /**
- * Un message composé uniquement d'une image, sans texte, est valide — comme
- * chez Claude. Le `refine` remplace le `min(1)` sur `content` par une règle
- * portant sur l'ensemble : texte ou pièce jointe, l'un des deux au moins.
+ * Un message composé uniquement d'une pièce jointe, sans texte, est valide —
+ * comme chez Claude. Le `refine` remplace le `min(1)` sur `content` par une
+ * règle portant sur l'ensemble : texte ou pièce jointe, l'un des deux au moins.
  */
 export const sendMessageSchema = z
   .object({
@@ -126,7 +146,7 @@ export const sendMessageSchema = z
     attachmentIds: z.array(uuidSchema).max(MESSAGE_ATTACHMENT_MAX_COUNT).default([]),
   })
   .refine((value) => value.content.length > 0 || value.attachmentIds.length > 0, {
-    message: "Écrivez un message ou joignez une image.",
+    message: "Écrivez un message ou joignez une pièce jointe.",
     path: ["content"],
   });
 

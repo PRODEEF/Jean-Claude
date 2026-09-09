@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { Check, Copy, Pencil, RotateCcw, ThumbsDown, ThumbsUp } from "lucide-react-native";
-import type { Message, MessageRatingValue } from "@jc/domain";
+import type { Message, MessageAttachment, MessageRatingValue } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useFeedbackContext, useRateMessage } from "@/features/feedback/hooks/use-feedback";
@@ -10,6 +10,7 @@ import { Markdown } from "@/shared/ui/Markdown";
 import { Modal } from "@/shared/ui/modal";
 import { formatRelativeTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { AttachmentFileCard } from "./AttachmentFileCard";
 import { AttachmentThumbnail } from "./AttachmentThumbnail";
 
 /** Retour visuel après une copie réussie, avant de revenir à l'icône normale. */
@@ -76,7 +77,7 @@ export const MessageRow = memo(function MessageRow({
   const [revealed, setRevealed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isUser = message.role === "user";
@@ -154,14 +155,24 @@ export const MessageRow = memo(function MessageRow({
             <>
               {message.attachments.length > 0 ? (
                 <View style={styles.attachmentsRow}>
-                  {message.attachments.map((attachment) => (
-                    <AttachmentThumbnail
-                      key={attachment.id}
-                      uri={attachment.url}
-                      status="done"
-                      onPress={() => setPreviewUrl(attachment.url)}
-                    />
-                  ))}
+                  {message.attachments.map((attachment) =>
+                    attachment.mimeType === "application/pdf" ? (
+                      <AttachmentFileCard
+                        key={attachment.id}
+                        fileName={attachment.fileName}
+                        byteSize={attachment.byteSize}
+                        status="done"
+                        onPress={() => setPreviewAttachment(attachment)}
+                      />
+                    ) : (
+                      <AttachmentThumbnail
+                        key={attachment.id}
+                        uri={attachment.url}
+                        status="done"
+                        onPress={() => setPreviewAttachment(attachment)}
+                      />
+                    ),
+                  )}
                 </View>
               ) : null}
               {answeredQuestion ? (
@@ -283,16 +294,22 @@ export const MessageRow = memo(function MessageRow({
 
       {/* Hors de la bulle : l'aperçu plein écran n'est pas un élément du fil,
           c'est une fenêtre par-dessus — même point d'entrée modal que le
-          reste de l'application (`shared/ui/modal.tsx`). */}
+          reste de l'application (`shared/ui/modal.tsx`). Le PDF n'y montre
+          jamais le fichier lui-même, seulement le texte qu'on en a extrait —
+          c'est la même donnée que celle relue par le modèle. */}
       {message.attachments.length > 0 ? (
         <Modal
-          open={previewUrl !== null}
-          onClose={() => setPreviewUrl(null)}
-          title="Image jointe"
-          actions={[{ label: "Fermer", onPress: () => setPreviewUrl(null) }]}
+          open={previewAttachment !== null}
+          onClose={() => setPreviewAttachment(null)}
+          title={previewAttachment?.mimeType === "application/pdf" ? previewAttachment.fileName : "Image jointe"}
+          actions={[{ label: "Fermer", onPress: () => setPreviewAttachment(null) }]}
         >
-          {previewUrl ? (
-            <Image source={{ uri: previewUrl }} style={styles.previewImage} resizeMode="contain" />
+          {previewAttachment?.mimeType === "application/pdf" ? (
+            <Text style={[styles.previewText, { color: palette.text }]}>
+              {previewAttachment.extractedText}
+            </Text>
+          ) : previewAttachment ? (
+            <Image source={{ uri: previewAttachment.url }} style={styles.previewImage} resizeMode="contain" />
           ) : null}
         </Modal>
       ) : null}
@@ -509,6 +526,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   previewImage: { width: "100%", aspectRatio: 1 },
+  previewText: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, lineHeight: 20 },
   bubble: {
     maxWidth: "85%",
     paddingVertical: spacing.md,

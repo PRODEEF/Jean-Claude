@@ -9,8 +9,10 @@ function makeAttachment(overrides: Partial<AttachmentRecord> = {}): AttachmentRe
     id: "att-1",
     messageId: null,
     url: "https://storage.example/att-1.png",
+    fileName: "photo.png",
     mimeType: "image/png",
     byteSize: 1024,
+    extractedText: null,
     createdAt: "2026-09-09T08:00:00.000Z",
     ...overrides,
   };
@@ -31,6 +33,38 @@ function makeFile(byteSize: number, type = "image/png"): File {
   return new File([new Uint8Array(byteSize)], "photo.png", { type });
 }
 
+/**
+ * PDF minimal construit à la main — même fixture que `core/pdf-text.spec.ts`,
+ * pour un seul objet `stream` de texte. Dupliquée plutôt que partagée : deux
+ * fichiers de test ne justifient pas un module de fixtures.
+ */
+function makePdfFile(text: string, fileName = "document.pdf"): File {
+  const objects: Record<number, string> = {
+    1: `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`,
+    2: `2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n`,
+    3: `3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 200 100] /Contents 5 0 R >>\nendobj\n`,
+    4: `4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`,
+  };
+  const stream = `BT /F1 24 Tf 10 50 Td (${text}) Tj ET`;
+  objects[5] = `5 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj\n`;
+
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [0];
+  for (let i = 1; i <= 5; i++) {
+    offsets[i] = Buffer.byteLength(pdf, "latin1");
+    pdf += objects[i];
+  }
+  const xrefStart = Buffer.byteLength(pdf, "latin1");
+  let xref = `xref\n0 6\n0000000000 65535 f \n`;
+  for (let i = 1; i <= 5; i++) {
+    xref += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += xref;
+  pdf += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+
+  return new File([Buffer.from(pdf, "latin1")], fileName, { type: "application/pdf" });
+}
+
 describe("AttachmentService", () => {
   describe("upload", () => {
     it("upload une image valide", async () => {
@@ -42,7 +76,13 @@ describe("AttachmentService", () => {
       expect(result).toEqual(attachment);
       expect(repo.create).toHaveBeenCalledWith(
         "user-1",
-        { mimeType: "image/png", byteSize: 1024, file: expect.any(File) },
+        {
+          mimeType: "image/png",
+          byteSize: 1024,
+          fileName: "photo.png",
+          extractedText: null,
+          file: expect.any(File),
+        },
         TOKEN,
       );
     });
@@ -77,12 +117,49 @@ describe("AttachmentService", () => {
       expect(repo.create).not.toHaveBeenCalled();
     });
 
-    it("refuse un format hors périmètre, comme un PDF", async () => {
+    it("refuse un format hors périmètre, comme un fichier texte brut", async () => {
       const repo = makeRepository();
 
       await expect(
-        new AttachmentService(repo).upload("user-1", makeFile(1024, "application/pdf"), TOKEN),
+        new AttachmentService(repo).upload("user-1", makeFile(1024, "text/plain"), TOKEN),
       ).rejects.toMatchObject({ status: 400 });
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
+    it("upload un PDF contenant du texte exploitable", async () => {
+      const attachment = makeAttachment({
+        fileName: "document.pdf",
+        mimeType: "application/pdf",
+        extractedText: "Hello World",
+      });
+      const repo = makeRepository({ create: jest.fn().mockResolvedValue(attachment) });
+      const file = makePdfFile("Hello World");
+
+      const result = await new AttachmentService(repo).upload("user-1", file, TOKEN);
+
+      expect(result).toEqual(attachment);
+      expect(repo.create).toHaveBeenCalledWith(
+        "user-1",
+        {
+          mimeType: "application/pdf",
+          byteSize: file.size,
+          fileName: "document.pdf",
+          extractedText: "Hello World",
+          file: expect.any(File),
+        },
+        TOKEN,
+      );
+    });
+
+    it("refuse un PDF sans texte exploitable, comme un document scanné", async () => {
+      const repo = makeRepository();
+      const file = new File([new Uint8Array([1, 2, 3, 4, 5])], "scan.pdf", {
+        type: "application/pdf",
+      });
+
+      await expect(new AttachmentService(repo).upload("user-1", file, TOKEN)).rejects.toMatchObject({
+        status: 422,
+      });
       expect(repo.create).not.toHaveBeenCalled();
     });
   });

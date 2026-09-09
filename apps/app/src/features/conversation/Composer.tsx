@@ -5,6 +5,7 @@ import { MESSAGE_ATTACHMENT_MAX_COUNT, MESSAGE_MAX_LENGTH } from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { AttachmentFileCard } from "./AttachmentFileCard";
 import { AttachmentThumbnail } from "./AttachmentThumbnail";
 import type { ComposerAttachment } from "./hooks/use-composer-attachments";
 
@@ -41,7 +42,7 @@ export type ComposerProps = {
   onStop?: () => void;
   inputRef?: RefObject<TextInput | null>;
   autoFocus?: boolean;
-  /** Images en cours de composition, affichées au-dessus du champ (§13.4.1). */
+  /** Images et PDF en cours de composition, affichés au-dessus du champ (§13.4.1). */
   attachments: ComposerAttachment[];
   onRemoveAttachment: (localId: string) => void;
   /** Résultat de `useAttachmentPicker`, instancié par l'appelant — voir ce hook. */
@@ -121,14 +122,24 @@ export function Composer({
     <View style={styles.root}>
       {attachments.length > 0 ? (
         <View style={styles.attachmentsRow}>
-          {attachments.map((attachment) => (
-            <AttachmentThumbnail
-              key={attachment.localId}
-              uri={attachment.previewUri}
-              status={attachment.status}
-              onRemove={() => onRemoveAttachment(attachment.localId)}
-            />
-          ))}
+          {attachments.map((attachment) =>
+            attachment.mimeType === "application/pdf" ? (
+              <AttachmentFileCard
+                key={attachment.localId}
+                fileName={attachment.fileName}
+                byteSize={attachment.byteSize}
+                status={attachment.status}
+                onRemove={() => onRemoveAttachment(attachment.localId)}
+              />
+            ) : (
+              <AttachmentThumbnail
+                key={attachment.localId}
+                uri={attachment.previewUri}
+                status={attachment.status}
+                onRemove={() => onRemoveAttachment(attachment.localId)}
+              />
+            ),
+          )}
         </View>
       ) : null}
 
@@ -154,7 +165,7 @@ export function Composer({
           onPress={picker.pick}
           disabled={atAttachmentLimit}
           accessibilityRole="button"
-          accessibilityLabel="Joindre une image"
+          accessibilityLabel="Joindre un fichier"
           hitSlop={8}
           style={[styles.attach, { opacity: atAttachmentLimit ? 0.4 : 1 }]}
         >
