@@ -11,6 +11,7 @@ import type {
   TaskListWithTasks,
 } from "@jc/domain";
 import type { LlmProvider } from "../../core/llm/llm.port.js";
+import type { IAttachmentRepository } from "../../domain/attachment/attachment.repository.interface.js";
 import type { ICalendarRepository } from "../../domain/calendar/calendar.repository.interface.js";
 import { CalendarService } from "../../domain/calendar/calendar.service.js";
 import type { IConversationRepository } from "../../domain/conversation/conversation.repository.interface.js";
@@ -202,6 +203,14 @@ const IDLE_USERS: IUserRepository = {
   deleteAccount: jest.fn(),
 };
 
+const IDLE_ATTACHMENTS: IAttachmentRepository = {
+  create: jest.fn(),
+  findById: jest.fn(),
+  findByIds: jest.fn().mockResolvedValue([]),
+  linkToMessage: jest.fn(),
+  delete: jest.fn(),
+};
+
 /**
  * Double avec état : `TaskService` relit la liste avant d'y ajouter une tâche,
  * pour en déduire sa position, et relit la tâche avant de lui rattacher un
@@ -342,6 +351,7 @@ function makeService(
       users,
       calendarService,
       taskService,
+      IDLE_ATTACHMENTS,
     ),
     taskService,
     calendarService,

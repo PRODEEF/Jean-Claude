@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { isAllowedOrigin } from "./core/allowed-origin.js";
 import { config } from "./core/config.js";
 import { onError } from "./core/http.js";
+import { attachmentRoutes } from "./domain/attachment/attachment.routes.js";
 import { calendarRoutes } from "./domain/calendar/calendar.routes.js";
 import { conversationRoutes } from "./domain/conversation/conversation.routes.js";
 import { feedbackRoutes } from "./domain/feedback/feedback.routes.js";
@@ -33,6 +34,7 @@ export const app = new Hono()
       credentials: true,
     }),
   )
+  .route("/api/attachments", attachmentRoutes)
   .route("/api/folders", folderRoutes)
   .route("/api/conversations", conversationRoutes)
   .route("/api/calendar", calendarRoutes)

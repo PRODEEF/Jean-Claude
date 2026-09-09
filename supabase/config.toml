@@ -25,6 +25,12 @@ shadow_port = 54320
 enabled = true
 port = 54323
 
+# Plafond global aligné sur la limite du bucket `message-attachments`
+# (migration 20260909090000) — une pièce jointe ne dépasse jamais 10 Mo.
+[storage]
+enabled = true
+file_size_limit = "10MiB"
+
 # Boîte de réception locale : c'est là qu'arrivent les codes en développement.
 # Permet de dérouler le parcours de connexion entier sans dépendre d'un vrai
 # service d'envoi, et donc de le démontrer (§0.1) dès le premier jour.

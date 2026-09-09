@@ -15,6 +15,7 @@ import {
   type Folder,
   type FolderTreeNode,
   type Message,
+  type MessageAttachment,
   type MessageRating,
   type MessageStreamEvent,
   type Paginated,
@@ -223,6 +224,24 @@ export class JeanClaudeClient {
           ...(filters.cursor ? { cursor: filters.cursor } : {}),
         },
       }),
+  };
+
+  /**
+   * Pièces jointes (images), uploadées indépendamment de tout message.
+   *
+   * Le trombone est utilisable dès l'écran d'accueil, avant qu'aucune
+   * conversation n'existe : une pièce jointe ne peut donc pas dépendre d'un
+   * identifiant de conversation. `send` référence ensuite les identifiants
+   * déjà uploadés (`attachmentIds`), qui les rattache au message créé.
+   */
+  readonly attachments = {
+    upload: (formData: FormData, signal?: AbortSignal) =>
+      this.http.upload<MessageAttachment>("/attachments", formData, {
+        ...(signal ? { signal } : {}),
+      }),
+
+    /** Retire une pièce jointe pas encore envoyée. */
+    remove: (id: string) => this.http.request<void>(`/attachments/${id}`, { method: "DELETE" }),
   };
 
   readonly conversations = {

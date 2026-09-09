@@ -8,7 +8,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { ArrowUp, Mic, Square } from "lucide-react-native";
+import { ArrowUp, Mic, Paperclip, Square } from "lucide-react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -17,11 +17,14 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import { MESSAGE_MAX_LENGTH, type MessageInputMode } from "@jc/domain";
+import { MESSAGE_ATTACHMENT_MAX_COUNT, MESSAGE_MAX_LENGTH, type MessageInputMode } from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { AttachmentFileCard } from "./AttachmentFileCard";
+import { AttachmentThumbnail } from "./AttachmentThumbnail";
 import { useDictation } from "./hooks/use-dictation";
+import type { ComposerAttachment } from "./hooks/use-composer-attachments";
 
 /**
  * Part de la hauteur de fenêtre au-delà de laquelle la saisie cesse de
@@ -62,6 +65,11 @@ export type ComposerProps = {
   onStop?: () => void;
   inputRef?: RefObject<TextInput | null>;
   autoFocus?: boolean;
+  /** Images et PDF en cours de composition, affichés au-dessus du champ (§13.4.1). */
+  attachments: ComposerAttachment[];
+  onRemoveAttachment: (localId: string) => void;
+  /** Résultat de `useAttachmentPicker`, instancié par l'appelant — voir ce hook. */
+  picker: { pick: () => void; dropRef: RefObject<View | null>; isOver: boolean };
 };
 
 /**
@@ -93,10 +101,18 @@ export function Composer({
   onStop,
   inputRef,
   autoFocus = false,
+  attachments,
+  onRemoveAttachment,
+  picker,
 }: ComposerProps) {
   const { palette } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
-  const empty = value.trim().length === 0;
+  const hasText = value.trim().length > 0;
+  // Un message peut se composer d'une image seule, sans texte — comme chez
+  // Claude (§13.4.1).
+  const hasReadyAttachment = attachments.some((a) => a.status === "done");
+  const uploading = attachments.some((a) => a.status === "uploading");
+  const atAttachmentLimit = attachments.length >= MESSAGE_ATTACHMENT_MAX_COUNT;
   const stoppable = busy && onStop !== undefined;
 
   const node = useRef<TextInput | null>(null);
@@ -168,14 +184,58 @@ export function Composer({
 
   return (
     <View style={styles.root}>
+      {attachments.length > 0 ? (
+        <View style={styles.attachmentsRow}>
+          {attachments.map((attachment) =>
+            !attachment.mimeType.startsWith("image/") ? (
+              <AttachmentFileCard
+                key={attachment.localId}
+                fileName={attachment.fileName}
+                byteSize={attachment.byteSize}
+                status={attachment.status}
+                onRemove={() => onRemoveAttachment(attachment.localId)}
+              />
+            ) : (
+              <AttachmentThumbnail
+                key={attachment.localId}
+                uri={attachment.previewUri}
+                status={attachment.status}
+                onRemove={() => onRemoveAttachment(attachment.localId)}
+              />
+            ),
+          )}
+        </View>
+      ) : null}
+
       <Pressable
+        ref={picker.dropRef}
         onPress={() => node.current?.focus()}
-        // Rien à annoncer : le champ et la flèche portent déjà leurs libellés,
-        // et une cible de plus dans l'ordre de lecture ne dirait rien de neuf.
+        // Rien à annoncer : le champ, le trombone et la flèche portent déjà
+        // leurs libellés, et une cible de plus dans l'ordre de lecture ne
+        // dirait rien de neuf.
         accessible={false}
         className="web:cursor-text"
-        style={[styles.shell, { backgroundColor: palette.surface, borderColor: palette.border }]}
+        style={[
+          styles.shell,
+          {
+            backgroundColor: palette.surface,
+            // Web seulement : `isOver` reste toujours `false` côté natif,
+            // aucun dépôt de fichier n'y étant possible.
+            borderColor: picker.isOver ? palette.accent : palette.border,
+          },
+        ]}
       >
+        <Pressable
+          onPress={picker.pick}
+          disabled={atAttachmentLimit}
+          accessibilityRole="button"
+          accessibilityLabel="Joindre un fichier"
+          hitSlop={8}
+          style={[styles.attach, { opacity: atAttachmentLimit ? 0.4 : 1 }]}
+        >
+          <Paperclip size={16} color={palette.textMuted} />
+        </Pressable>
+
         <TextInput
           ref={attach}
           value={value}
@@ -246,7 +306,7 @@ export function Composer({
             produit. */}
         <Pressable
           onPress={stoppable ? onStop : handleSubmit}
-          disabled={stoppable ? false : busy || empty}
+          disabled={stoppable ? false : busy || uploading || (!hasText && !hasReadyAttachment)}
           accessibilityRole="button"
           accessibilityLabel={stoppable ? "Arrêter la réponse en cours" : "Envoyer le message"}
           // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie,
@@ -257,7 +317,8 @@ export function Composer({
             styles.send,
             {
               backgroundColor: palette.accent,
-              opacity: !stoppable && (busy || empty) ? 0.4 : 1,
+              opacity:
+                !stoppable && (busy || uploading || (!hasText && !hasReadyAttachment)) ? 0.4 : 1,
             },
           ]}
         >
@@ -278,17 +339,25 @@ export function Composer({
 
 const styles = StyleSheet.create({
   root: { gap: spacing.xs },
+  attachmentsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   notice: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, paddingHorizontal: spacing.md },
   shell: {
     flexDirection: "row",
     alignItems: "flex-end",
     gap: spacing.sm,
     minHeight: MIN_TOUCH_TARGET,
-    paddingLeft: spacing.md,
+    paddingLeft: spacing.sm,
     paddingRight: spacing.sm,
     paddingVertical: spacing.sm,
     borderWidth: 1,
     borderRadius: radius.lg,
+  },
+  attach: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
   },
   input: {
     fontFamily: FONT_FAMILY,
