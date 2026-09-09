@@ -1975,19 +1975,23 @@ function describeRangerCommand(args: string): string[] {
 
 /**
  * Note ajoutée à la consigne quand l'utilisateur déclenche /planifier : le
- * texte qui suit porte le titre et la récurrence, jamais une heure ou un
- * jour inventés pour compléter ce qui manque.
+ * texte qui suit porte le titre et, s'il y en a, la récurrence — jamais une
+ * heure, un jour ou une répétition inventés pour compléter ce qui manque.
  */
 function describePlanifierCommand(args: string): string[] {
   const description = args.length > 0 ? `« ${args} »` : "sans rien après elle";
 
   return [
     `Commande /planifier : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
-    "C'est une demande explicite de poser un rendez-vous récurrent — pas une",
-    "faute de frappe. S'il manque le jour ou l'heure pour construire une RRULE",
-    "fiable, ne l'appelle pas encore : demande-le d'abord. Dès que la récurrence",
-    "est connue — dans ce message ou le suivant — appelle `suggest_recurring_event`",
-    "tout de suite, comme pour toute autre demande explicite.",
+    "C'est une demande explicite de poser un rendez-vous — pas une faute de",
+    "frappe. S'il manque le jour ou l'heure, ne l'appelle pas encore : demande-le",
+    "d'abord. Un mot de répétition explicite (« tous les... », « chaque... »,",
+    "« toutes les semaines ») appelle `suggest_recurring_event` avec sa RRULE ;",
+    "sinon, c'est un rendez-vous ponctuel et `suggest_events` le pose tel quel,",
+    "sans jamais demander à quel rythme le répéter. Dès que la date (et la",
+    "récurrence, si elle est dite) est connue — dans ce message ou le suivant —",
+    "appelle l'outil qui convient tout de suite, comme pour toute autre demande",
+    "explicite.",
   ];
 }
 
@@ -2209,7 +2213,9 @@ function buildSystemPrompt(
       "appelle l'outil tout de suite : un « C'est noté » ou « Je note » en texte",
       "ne crée rien et viole la règle du §12.1. Ne laisse pas `suggest_folders`",
       "se substituer à cette proposition quand la demande porte clairement sur",
-      "un créneau récurrent. Ne présente jamais le rendez-vous comme déjà posé.",
+      "un créneau récurrent. Un rendez-vous daté sans mention de répétition",
+      "relève de `suggest_events`, pas de celui-ci. Ne présente jamais le",
+      "rendez-vous comme déjà posé.",
     );
   }
 

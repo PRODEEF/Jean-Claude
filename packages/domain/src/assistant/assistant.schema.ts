@@ -270,7 +270,8 @@ export type ScheduleListsPayload = z.infer<typeof scheduleListsPayloadSchema>;
  * Une règle RRULE plutôt qu'une liste de dates : « kiné tous les mardis »
  * n'a pas à être ressaisi. `startsAt` ancre la première occurrence ;
  * `reminderMinutesBefore` est optionnel à la capture — l'acceptation pose
- * 30 min par défaut si le modèle l'omet (A.11).
+ * 30 min par défaut si le modèle l'omet (A.11). Réservée aux séries : un
+ * rendez-vous ponctuel relève de `create_events` (A.3).
  */
 export const createRecurringEventPayloadSchema = z.object({
   title: labelSchema,

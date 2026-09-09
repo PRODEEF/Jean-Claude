@@ -392,7 +392,8 @@ export const NAME_CONVERSATION: LlmTool = {
 
 /**
  * Rendez-vous récurrent (A.11). Remis aux conversations classiques quand
- * `proactiveScheduling` est actif — pas au canal permanent (A.10).
+ * `proactiveScheduling` est actif — pas au canal permanent (A.10). Réservé
+ * aux séries : un rendez-vous ponctuel relève de `suggest_events` (A.3).
  */
 export const SUGGEST_RECURRING_EVENT: LlmTool = {
   name: "suggest_recurring_event",
@@ -403,6 +404,7 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
     "de s'en rappeler ou de le retenir : ce n'est pas un simple accusé de réception, " +
     "c'est une proposition de série à valider. Produire une règle RRULE (RFC 5545) " +
     "plutôt qu'une liste de dates, pour que la série n'ait pas à être ressaisie. " +
+    "Distinct de `suggest_events`, réservé aux rendez-vous ponctuels sans répétition. " +
     "Ne jamais écrire « c'est noté » ni présenter le rendez-vous comme déjà posé.",
   inputSchema: {
     type: "object",
