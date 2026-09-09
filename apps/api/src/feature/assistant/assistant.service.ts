@@ -1,6 +1,7 @@
 import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
+  createEventsPayloadSchema,
   createFeedbackSchema,
   createProjectFoldersPayloadSchema,
   createRecurringEventPayloadSchema,
@@ -38,8 +39,8 @@ const DEFAULT_TIMEZONE: UserPreferences["timezone"] = userPreferencesSchema.shap
   undefined,
 );
 
-/** Rappel par défaut d'un rendez-vous, ponctuel ou récurrent, en minutes (A.11). */
-const DEFAULT_EVENT_REMINDER_MINUTES = 30;
+/** Rappel par défaut d'une série récurrente, en minutes (A.11). */
+const DEFAULT_RECURRING_REMINDER_MINUTES = 30;
 
 export type ResolvedSuggestion = {
   suggestion: Suggestion;
@@ -175,6 +176,10 @@ export class AssistantService {
     }
     if (suggestion.kind === "create_recurring_event") {
       const events = await this.createRecurringEvent(userId, suggestion, accessToken);
+      return { ...nothingApplied(), events };
+    }
+    if (suggestion.kind === "create_events") {
+      const events = await this.createEvents(userId, suggestion, accessToken);
       return { ...nothingApplied(), events };
     }
 
@@ -445,13 +450,12 @@ export class AssistantService {
   }
 
   /**
-   * Pose un rendez-vous dans l'agenda, ponctuel ou récurrent (A.11).
+   * Pose un rendez-vous récurrent dans l'agenda (A.11).
    *
-   * `rrule` absent pose une occurrence unique ; renseigné, une seule ligne
-   * le porte — les occurrences ne sont pas encore expansées, l'événement
-   * n'apparaît qu'à son premier créneau. Le rappel tombe à 30 min si le
-   * modèle n'en a pas proposé, pour que le rendez-vous n'ait pas à être
-   * réglé une seconde fois.
+   * Une seule ligne avec `rrule` : les occurrences ne sont pas encore
+   * expansées — l'événement n'apparaît qu'à son premier créneau. Le rappel
+   * tombe à 30 min si le modèle n'en a pas proposé, pour que la série ne
+   * demande pas de ressaisie.
    */
   private async createRecurringEvent(
     userId: string,
@@ -461,7 +465,7 @@ export class AssistantService {
     const payload = createRecurringEventPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
-      logger.error(SCOPE, "Charge utile de rendez-vous illisible", suggestion.id);
+      logger.error(SCOPE, "Charge utile de rendez-vous récurrent illisible", suggestion.id);
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
@@ -476,13 +480,61 @@ export class AssistantService {
         startsAt: payload.data.startsAt,
         endsAt: timed ? oneHourAfter(payload.data.startsAt) : null,
         allDay: !timed,
-        rrule: payload.data.rrule ?? null,
-        reminderMinutesBefore: payload.data.reminderMinutesBefore ?? DEFAULT_EVENT_REMINDER_MINUTES,
+        rrule: payload.data.rrule,
+        reminderMinutesBefore: payload.data.reminderMinutesBefore ?? DEFAULT_RECURRING_REMINDER_MINUTES,
       },
       accessToken,
     );
 
     return [event];
+  }
+
+  /**
+   * Pose dans l'agenda un rendez-vous par entrée proposée (A.3).
+   *
+   * Distincte de `createRecurringEvent` : chaque entrée est un événement
+   * indépendant, sans `rrule`. Les rendez-vous sont posés l'un après l'autre
+   * plutôt qu'en parallèle pour qu'un événement dont la création échoue ne
+   * fasse pas perdre ceux qui le suivent dans le même lot.
+   *
+   * `allDay` et `endsAt` sont dérivés de l'heure murale de `startsAt`, même
+   * principe que `scheduleTasks` et `createRecurringEvent` : minuit vaut
+   * « dans la journée », une heure précise vaut un rendez-vous à heure fixe.
+   */
+  private async createEvents(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<CalendarEvent[]> {
+    const payload = createEventsPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de rendez-vous illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    const profile = await this.users.findById(userId, accessToken);
+    const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
+
+    const events: CalendarEvent[] = [];
+
+    for (const proposed of payload.data.events) {
+      const timed = hasWallTime(proposed.startsAt, timezone);
+      events.push(
+        await this.calendar.create(
+          userId,
+          {
+            title: proposed.title,
+            startsAt: proposed.startsAt,
+            endsAt: timed ? oneHourAfter(proposed.startsAt) : null,
+            allDay: !timed,
+          },
+          accessToken,
+        ),
+      );
+    }
+
+    return events;
   }
 
   /**

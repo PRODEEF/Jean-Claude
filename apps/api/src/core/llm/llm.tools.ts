@@ -391,24 +391,21 @@ export const NAME_CONVERSATION: LlmTool = {
 };
 
 /**
- * Rendez-vous ponctuel ou récurrent (A.11). Remis aux conversations
- * classiques quand `proactiveScheduling` est actif — pas au canal permanent
- * (A.10).
+ * Rendez-vous récurrent (A.11). Remis aux conversations classiques quand
+ * `proactiveScheduling` est actif — pas au canal permanent (A.10). Réservé
+ * aux séries : un rendez-vous ponctuel relève de `suggest_events` (A.3).
  */
 export const SUGGEST_RECURRING_EVENT: LlmTool = {
   name: "suggest_recurring_event",
   description:
-    "À appeler quand l'utilisateur mentionne un rendez-vous ou une activité daté — " +
-    "« Zumba vendredi soir à 18h30 » comme « j'ai kiné tous les mardis à 18h » — y " +
-    "compris quand il demande de le noter, de s'en rappeler ou de le retenir : ce " +
-    "n'est pas un simple accusé de réception, c'est une proposition à valider. " +
-    "Omettre `rrule` pour un rendez-vous qui n'a lieu qu'une fois : rien dans le texte " +
-    "n'indique qu'il se répète, donc ne pas demander à quel rythme. " +
-    "Renseigner `rrule` avec une règle RRULE (RFC 5545) seulement quand l'utilisateur dit " +
-    "que ça se répète (« tous les... », « chaque... », « toutes les semaines »), pour que " +
-    "la série n'ait pas à être ressaisie. " +
-    "Ne jamais écrire « c'est noté » ni présenter le rendez-vous comme déjà posé : " +
-    "c'est une proposition.",
+    "À appeler quand l'utilisateur mentionne un rendez-vous ou une activité qui se " +
+    "répète (« j'ai kiné tous les mardis à 18h », « zumba chaque mercredi », " +
+    "« réunion toutes les semaines ») — y compris quand il demande de le noter, " +
+    "de s'en rappeler ou de le retenir : ce n'est pas un simple accusé de réception, " +
+    "c'est une proposition de série à valider. Produire une règle RRULE (RFC 5545) " +
+    "plutôt qu'une liste de dates, pour que la série n'ait pas à être ressaisie. " +
+    "Distinct de `suggest_events`, réservé aux rendez-vous ponctuels sans répétition. " +
+    "Ne jamais écrire « c'est noté » ni présenter le rendez-vous comme déjà posé.",
   inputSchema: {
     type: "object",
     properties: {
@@ -416,32 +413,82 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
         type: "string",
         description:
           "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
-          "de question — ex. « J'ai noté Zumba vendredi à 18h30, je pose le rendez-vous ? » " +
-          "ou « Je te pose kiné tous les mardis à 18h ? ». " +
+          "de question — ex. « Je te pose zumba tous les mercredis à 18h30 ? ». " +
           "Ne jamais présenter le rendez-vous comme déjà créé. 500 caractères maximum.",
       },
       title: { type: "string", description: "Titre court du rendez-vous" },
       startsAt: {
         type: "string",
         description:
-          "Occurrence à poser, ISO 8601 — la date demandée pour un rendez-vous ponctuel, " +
-          "ou la prochaine date qui correspond à la récurrence, jamais une date passée.",
+          "Première occurrence, ISO 8601 — la prochaine date qui correspond à la " +
+          "récurrence, pas une date passée.",
       },
       rrule: {
         type: "string",
         description:
           "Règle RRULE sans le préfixe « RRULE: » — ex. FREQ=WEEKLY;BYDAY=TU. " +
-          "FREQ obligatoire (DAILY, WEEKLY, MONTHLY ou YEARLY). Omettre entièrement pour " +
-          "un rendez-vous qui n'a lieu qu'une fois.",
+          "FREQ obligatoire (DAILY, WEEKLY, MONTHLY ou YEARLY).",
       },
       reminderMinutesBefore: {
         type: "number",
         description:
-          "Rappel avant l'occurrence, en minutes. Omettre pour laisser le serveur poser " +
-          "30 minutes par défaut.",
+          "Rappel avant chaque occurrence, en minutes. Omettre pour laisser le " +
+          "serveur poser 30 minutes par défaut.",
       },
     },
-    required: ["message", "title", "startsAt"],
+    required: ["message", "title", "startsAt", "rrule"],
+  },
+};
+
+/**
+ * Rendez-vous ponctuels (A.3). Distinct de `suggest_recurring_event` : chaque
+ * entrée est un événement indépendant, sans règle de répétition. Regrouper
+ * plusieurs rendez-vous dans un seul appel évite d'empiler une carte par
+ * rendez-vous quand l'utilisateur les énumère dans le même message.
+ */
+export const SUGGEST_EVENTS: LlmTool = {
+  name: "suggest_events",
+  description:
+    "À appeler quand l'utilisateur mentionne un ou plusieurs rendez-vous ponctuels à " +
+    "noter dans l'agenda (« j'ai un rendez-vous chez le dentiste jeudi à 15h », " +
+    "« pose-moi ces trois rendez-vous : … ») — y compris quand il demande de les noter, " +
+    "de s'en souvenir ou de les retenir : ce n'est pas un simple accusé de réception, " +
+    "c'est une proposition à valider. " +
+    "Distinct de `suggest_recurring_event`, réservé aux activités qui se répètent selon " +
+    "une règle : ici chaque rendez-vous est indépendant, avec sa propre date. " +
+    "Regrouper tous les rendez-vous du tour en un seul appel avec plusieurs entrées dans " +
+    "`events`, jamais un appel par rendez-vous. " +
+    "Ne jamais écrire « c'est noté » ni présenter les rendez-vous comme déjà posés.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « Je te pose ces deux rendez-vous dans ton agenda ? ». " +
+          "Ne jamais présenter les rendez-vous comme déjà créés. 500 caractères maximum.",
+      },
+      events: {
+        type: "array",
+        description:
+          "Un objet par rendez-vous. Au moins un — une proposition vide n'a rien à poser.",
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Titre court du rendez-vous" },
+            startsAt: {
+              type: "string",
+              description: "Date et heure ISO 8601 du rendez-vous.",
+            },
+          },
+          required: ["title", "startsAt"],
+        },
+      },
+    },
+    required: ["message", "events"],
   },
 };
 
@@ -652,6 +699,7 @@ export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_UPDATE_TASK_ITEMS,
   SUGGEST_RECURRING_EVENT,
+  SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   ASK_QUESTION,
 ];
@@ -688,6 +736,7 @@ const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST_DUE_DATE.name]: "proactiveTaskDetection",
   [SUGGEST_UPDATE_TASK_ITEMS.name]: "proactiveTaskDetection",
   [SUGGEST_RECURRING_EVENT.name]: "proactiveScheduling",
+  [SUGGEST_EVENTS.name]: "proactiveScheduling",
   [SUGGEST_FOLDERS.name]: "folderOrganization",
   [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",
 };

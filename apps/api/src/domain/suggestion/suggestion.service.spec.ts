@@ -134,7 +134,7 @@ describe("SuggestionService", () => {
       );
     });
 
-    it("capture un rendez-vous ponctuel proposé sans règle de récurrence (A.11)", async () => {
+    it("capture plusieurs rendez-vous ponctuels proposés en un seul appel (A.3)", async () => {
       const repo = makeRepository();
 
       await new SuggestionService(repo).capture(
@@ -142,11 +142,13 @@ describe("SuggestionService", () => {
         CONVERSATION,
         makeToolCall(
           {
-            message: "J'ai noté Zumba vendredi à 18h30, je pose le rendez-vous ?",
-            title: "Zumba",
-            startsAt: NOW,
+            message: "Je te pose ces deux rendez-vous dans ton agenda ?",
+            events: [
+              { title: "Dentiste", startsAt: NOW },
+              { title: "Coiffeur", startsAt: "2026-09-03T08:00:00.000Z" },
+            ],
           },
-          "suggest_recurring_event",
+          "suggest_events",
         ),
         TOKEN,
       );
@@ -154,11 +156,31 @@ describe("SuggestionService", () => {
       expect(repo.create).toHaveBeenCalledWith(
         USER,
         expect.objectContaining({
-          kind: "create_recurring_event",
-          payload: { title: "Zumba", startsAt: NOW },
+          kind: "create_events",
+          message: "Je te pose ces deux rendez-vous dans ton agenda ?",
+          payload: {
+            events: [
+              { title: "Dentiste", startsAt: NOW },
+              { title: "Coiffeur", startsAt: "2026-09-03T08:00:00.000Z" },
+            ],
+          },
         }),
         TOKEN,
       );
+    });
+
+    it("ignore une proposition de rendez-vous ponctuels sans aucun événement", async () => {
+      const repo = makeRepository();
+
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall({ message: "Je te les pose ?", events: [] }, "suggest_events"),
+        TOKEN,
+      );
+
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
     });
 
     it("ignore un rendez-vous récurrent dont la règle est illisible", async () => {

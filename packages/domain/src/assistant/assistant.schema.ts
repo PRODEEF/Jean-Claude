@@ -51,6 +51,8 @@ export const suggestionKindSchema = z.enum([
   "create_project_folders",
   /** « J'ai noté kiné tous les mardis à 18h, je pose le rappel ? » (A.11) */
   "create_recurring_event",
+  /** « Je te pose ces deux rendez-vous dans ton agenda ? » (A.3) */
+  "create_events",
   /** « Je décale Courses à vendredi ? » (§12.1, A.2) */
   "update_task_list_due_date",
   /** « Je coche le pain et je renomme les œufs ? » (§12.1, A.2) */
@@ -265,26 +267,48 @@ export type ScheduleListsPayload = z.infer<typeof scheduleListsPayloadSchema>;
 /**
  * Charge utile d'une suggestion `create_recurring_event` (A.11).
  *
- * `rrule` est omis pour un rendez-vous ponctuel (« Zumba vendredi soir » —
- * une seule occurrence, pas de série à poser), renseigné pour un rendez-vous
- * qui se répète (« kiné tous les mardis ») afin de ne pas devoir le ressaisir.
- * `startsAt` ancre la première (et parfois seule) occurrence ;
+ * Une règle RRULE plutôt qu'une liste de dates : « kiné tous les mardis »
+ * n'a pas à être ressaisi. `startsAt` ancre la première occurrence ;
  * `reminderMinutesBefore` est optionnel à la capture — l'acceptation pose
- * 30 min par défaut si le modèle l'omet (A.11).
+ * 30 min par défaut si le modèle l'omet (A.11). Réservée aux séries : un
+ * rendez-vous ponctuel relève de `create_events` (A.3).
  */
 export const createRecurringEventPayloadSchema = z.object({
   title: labelSchema,
   startsAt: isoDateTimeSchema,
-  rrule: rruleSchema
-    .refine(
-      (value) => RRULE_FREQ.test(value),
-      "La récurrence doit porter une fréquence FREQ (DAILY, WEEKLY, MONTHLY ou YEARLY).",
-    )
-    .optional(),
+  rrule: rruleSchema.refine(
+    (value) => RRULE_FREQ.test(value),
+    "La récurrence doit porter une fréquence FREQ (DAILY, WEEKLY, MONTHLY ou YEARLY).",
+  ),
   reminderMinutesBefore: z.number().int().min(0).max(10_080).optional(),
 });
 
 export type CreateRecurringEventPayload = z.infer<typeof createRecurringEventPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `create_events` (A.3).
+ *
+ * Plusieurs rendez-vous ponctuels et non un seul : l'utilisateur en énumère
+ * souvent plusieurs dans le même message (« pose-moi ces trois rendez-vous »),
+ * et les capturer en un seul appel d'outil évite d'empiler une carte par
+ * rendez-vous. Distincte de `create_recurring_event` : chaque entrée est un
+ * événement indépendant, sans règle de répétition — `allDay` et `endsAt` sont
+ * dérivés à l'acceptation de la présence d'une heure dans `startsAt`, comme
+ * pour un rendez-vous récurrent.
+ */
+export const createEventsPayloadSchema = z.object({
+  events: z
+    .array(
+      z.object({
+        title: labelSchema,
+        startsAt: isoDateTimeSchema,
+      }),
+    )
+    .min(1)
+    .max(8),
+});
+
+export type CreateEventsPayload = z.infer<typeof createEventsPayloadSchema>;
 
 /**
  * Charge utile d'une suggestion `update_task_list_due_date` (§12.1, A.2).

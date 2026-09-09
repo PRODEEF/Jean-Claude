@@ -1540,36 +1540,6 @@ describe("AssistantService", () => {
       expect(events.create).not.toHaveBeenCalled();
     });
 
-    it("pose un rendez-vous unique sans règle quand le modèle n'en propose pas", async () => {
-      const events = makeCalendarRepository();
-
-      await makeService(
-        makeSuggestionStore(
-          makeKineSuggestion({
-            message: "J'ai noté Zumba vendredi à 18h30, je pose le rendez-vous ?",
-            payload: { title: "Zumba", startsAt: KINE },
-          }),
-        ),
-        makeFolderRepository(),
-        makeConversationRepository(),
-        makeTaskRepository(),
-        events,
-      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
-
-      expect(events.create).toHaveBeenCalledWith(
-        USER,
-        {
-          title: "Zumba",
-          startsAt: KINE,
-          endsAt: "2026-09-08T17:00:00.000Z",
-          allDay: false,
-          rrule: null,
-          reminderMinutesBefore: 30,
-        },
-        TOKEN,
-      );
-    });
-
     it("refuse une charge utile illisible", async () => {
       await expect(
         makeService(
@@ -1578,6 +1548,70 @@ describe("AssistantService", () => {
               payload: { title: "Kiné", startsAt: KINE, rrule: "tous les mardis" },
             }),
           ),
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  describe("acceptation de plusieurs rendez-vous ponctuels (A.3)", () => {
+    function makeEventsSuggestion(overrides: Partial<Suggestion> = {}): Suggestion {
+      return makeSuggestion({
+        kind: "create_events",
+        message: "Je te pose ces deux rendez-vous dans ton agenda ?",
+        payload: {
+          events: [
+            { title: "Dentiste", startsAt: DESHERBAGE },
+            { title: "Anniversaire", startsAt: MINUIT_PARIS },
+          ],
+        },
+        ...overrides,
+      });
+    }
+
+    it("pose un événement par entrée, à heure fixe ou journée entière selon `startsAt`", async () => {
+      const events = makeCalendarRepository();
+
+      const resolved = await makeService(
+        makeSuggestionStore(makeEventsSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(resolved.events).toHaveLength(2);
+      expect(events.create).toHaveBeenNthCalledWith(
+        1,
+        USER,
+        { title: "Dentiste", startsAt: DESHERBAGE, endsAt: "2026-09-12T10:00:00.000Z", allDay: false },
+        TOKEN,
+      );
+      expect(events.create).toHaveBeenNthCalledWith(
+        2,
+        USER,
+        { title: "Anniversaire", startsAt: MINUIT_PARIS, endsAt: null, allDay: true },
+        TOKEN,
+      );
+    });
+
+    it("ne crée rien quand la proposition est ignorée", async () => {
+      const events = makeCalendarRepository();
+
+      await makeService(
+        makeSuggestionStore(makeEventsSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+
+      expect(events.create).not.toHaveBeenCalled();
+    });
+
+    it("refuse une charge utile illisible", async () => {
+      await expect(
+        makeService(
+          makeSuggestionStore(makeEventsSuggestion({ payload: { events: [] } })),
         ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
       ).rejects.toMatchObject({ status: 422 });
     });
