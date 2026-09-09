@@ -7,13 +7,45 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **9 septembre 2026** — un tour de dialogue sans texte
-ni proposition l'annonce désormais plutôt que de se refermer en silence,
-supprimer ou déplacer un rendez-vous lié à une todoliste répercute enfin le
-changement dans Mes listes et la barre latérale sans recharger la page,
-modifier l'échéance d'une todoliste déjà liée à un rendez-vous répercute
-désormais l'heure sur ce rendez-vous, et le pied d'action d'une fenêtre
-modale ne se retrouve plus rogné sur le web.
+Dernière mise à jour : **9 septembre 2026** — une échéance de todoliste qui
+porte une heure explicite (« à 10h ») n'est plus systématiquement ramenée à
+minuit, et le créneau posé dans l'agenda pour une échéance ainsi précisée
+devient un rendez-vous à heure fixe plutôt qu'une journée entière ; un tour
+de dialogue sans texte ni proposition l'annonce désormais plutôt que de se
+refermer en silence ; supprimer ou déplacer un rendez-vous lié à une
+todoliste répercute enfin le changement dans Mes listes et la barre latérale
+sans recharger la page ; modifier l'échéance d'une todoliste déjà liée à un
+rendez-vous répercute désormais l'heure sur ce rendez-vous ; et le pied
+d'action d'une fenêtre modale ne se retrouve plus rogné sur le web.
+
+**Une échéance de todoliste qui porte une heure explicite n'est plus
+systématiquement ramenée à minuit, et le créneau bloqué dans l'agenda pour
+elle devient un rendez-vous à heure fixe (A.3, #18).** Signalé en usage
+réel : « crée une liste de courses pour samedi à 10h » produisait une liste
+échue le samedi mais sans l'heure, et un « Bloquer le créneau » accepté sur
+cette liste posait un événement journée entière plutôt qu'un rendez-vous à
+10h — l'heure donnée disparaissait purement et simplement. En cause, deux
+mécanismes distincts, tous deux volontaires à l'origine (points du 7
+septembre) : `withCorrectedDueDates` ramenait *toujours* l'heure du modèle à
+minuit, y compris une heure explicitement demandée ; et `scheduleTasks`
+posait *toujours* un créneau journée entière (`allDay: true`), sans jamais
+regarder l'échéance de la liste.
+
+Plutôt que de déduire une « heure volontaire » depuis le calcul de date du
+modèle (`dueAt`), risqué — un modèle qui se trompe de fuseau y pose parfois
+une heure qui n'est ni minuit ni une heure demandée, un cas déjà couvert par
+un test existant sur une correction de date — un nouveau champ explicite,
+`dueTime` (« HH:mm », `suggest_task_list` et `suggest_task_list_due_date`),
+porte l'heure uniquement quand l'utilisateur en a donné une. `resolveDueAt`
+(`conversation.service.ts`) combine désormais le jour (filet de date relative
+ou calcul du modèle, inchangé) et cette heure (`dueTime`, nouveau) ; sans
+elle, l'échéance reste à minuit exactement comme avant ce champ — aucun des
+tests existants sur la correction de dates n'a dû changer. Côté agenda,
+`AssistantService.scheduleTasks` reçoit `IUserRepository` (même pattern que
+`TaskService.syncLinkedEvent` pour le sens inverse) et pose `allDay` selon
+`hasWallTime`, désormais partagée depuis `core/timezone.ts` plutôt que
+dupliquée. Le créneau à heure fixe dure une heure par défaut, même
+convention que celle déjà simulée à l'affichage pour un événement sans fin.
 
 **Un tour de dialogue qui ne produit ni texte ni proposition l'annonce
 désormais, plutôt que de se refermer en silence.** Un modèle qui répond sans
