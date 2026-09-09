@@ -2511,6 +2511,47 @@ describe("ConversationService", () => {
       expect(repo.update).not.toHaveBeenCalled();
     });
 
+    it("retire les pseudo-appels d'outils collés en tête et récupère le titre (A.11)", async () => {
+      const repo = untitled();
+      const llm = makeLlm([
+        'nameconversation("Zumba")\n',
+        'suggestfolders(["Courses (4e561b0b-3ada-4613-892d-963a7d6222b2)"])\n',
+        "C'est noté !",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: "C'est noté !" },
+      ]);
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          role: "assistant",
+          content: "C'est noté !",
+        }),
+        TOKEN,
+      );
+      expect(repo.update).toHaveBeenCalledWith("conv-1", { title: "Zumba" }, TOKEN);
+    });
+
+    it("attend qu'un pseudo-appel soit clos avant d'émettre, même à cheval sur deux fragments", async () => {
+      const repo = untitled();
+      const llm = makeLlm([
+        "nameconversation(\"Zum",
+        'ba")\nsuggestfolders(["Courses"])\nJe te propose de le poser.',
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: "Je te propose de le poser." },
+      ]);
+      expect(repo.update).toHaveBeenCalledWith("conv-1", { title: "Zumba" }, TOKEN);
+    });
+
     it("donne au modèle les dossiers existants quand le fil n'est rangé nulle part", async () => {
       const llm = makeLlm();
       const folders = makeFolderRepository([
@@ -2951,6 +2992,25 @@ describe("ConversationService", () => {
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).not.toContain("suggest_recurring_event");
       expect(lastRequest(llm).system).not.toContain("suggest_recurring_event");
+    });
+
+    it("réclame suggest_recurring_event dès qu'on demande de noter une récurrence", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(makeRepository(), llm),
+        {
+          content: "Je vais faire de la zumba tous les mercredi à 18h30, note le.",
+          inputMode: "text",
+          attachmentIds: [],
+        },
+      );
+
+      const system = lastRequest(llm).system ?? "";
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_recurring_event");
+      expect(system).toContain("suggest_recurring_event");
+      expect(system).toMatch(/noter|rappeler|retenir/i);
+      expect(system).toMatch(/C'est noté|Je note/);
     });
 
     it("cesse de réclamer dans la consigne un outil qu'on ne remet plus", async () => {

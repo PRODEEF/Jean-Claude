@@ -752,16 +752,24 @@ export class ConversationService {
       ...(context.model ? { model: context.model } : {}),
     };
 
-    // Certains modèles (surtout OpenAI) recopient `name_conversation` en JSON
-    // au début du texte. On ne filtre que tant que l'outil est réellement
-    // proposé : une fois le fil nommé, `{"title":...}` peut être une réponse
-    // légitime.
-    const titleLeak = todo.tools.includes(NAME_CONVERSATION) ? createTitleLeakFilter() : null;
+    // Certains modèles recopient les outils en texte — JSON `{"title":...}`
+    // ou pseudo-appels `nameconversation("…")` / `suggestfolders([...])` —
+    // au lieu d'émettre de vrais `tool_call`. On filtre tant qu'il y a des
+    // outils dans le tour ; le JSON de titre seulement si `name_conversation`
+    // est réellement proposé (une fois le fil nommé, `{"title":...}` peut
+    // être une réponse légitime).
+    const textLeak =
+      todo.tools.length > 0
+        ? createTextLeakFilter({
+            toolNames: todo.tools.map((tool) => tool.name),
+            stripTitleJson: todo.tools.includes(NAME_CONVERSATION),
+          })
+        : null;
 
     try {
       for await (const chunk of this.llm.stream(request)) {
         if (chunk.type === "text") {
-          const visible = titleLeak ? titleLeak.push(chunk.text) : chunk.text;
+          const visible = textLeak ? textLeak.push(chunk.text) : chunk.text;
           if (visible.length > 0) {
             text += visible;
             yield { type: "text", text: visible };
@@ -774,8 +782,8 @@ export class ConversationService {
         }
       }
 
-      if (titleLeak) {
-        const tail = titleLeak.flush();
+      if (textLeak) {
+        const tail = textLeak.flush();
         if (tail.length > 0) {
           text += tail;
           yield { type: "text", text: tail };
@@ -796,7 +804,7 @@ export class ConversationService {
       // pleine génération, le texte déjà produit est déjà facturé. Le perdre
       // priverait l'utilisateur d'une réponse qu'il retrouverait de toute façon
       // au rechargement.
-      if (titleLeak) text += titleLeak.flush();
+      if (textLeak) text += textLeak.flush();
       // Résolu avant l'écriture : les réponses proposées voyagent sur le
       // message qui porte la question, pas dans une seconde requête.
       const asked = readQuestion(toolCalls);
@@ -872,7 +880,7 @@ export class ConversationService {
         conversationId,
         toolCalls,
         accessToken,
-        titleLeak?.leakedTitle() ?? null,
+        textLeak?.leakedTitle() ?? null,
       );
 
       await this.applyOnboardingMemory(userId, toolCalls, accessToken);
@@ -1199,23 +1207,28 @@ export class ConversationService {
  * « Nouvelle conversation » vide serait plus déroutant que de ne rien faire.
  */
 /**
- * Certains modèles (OpenAI surtout) recopient `name_conversation` en JSON au
- * début du texte au lieu de n'utiliser que l'outil. On retient le début du
- * flux jusqu'à savoir si c'est cette fuite — assez court pour ne pas retarder
- * une vraie réponse, assez long pour un titre de 120 caractères.
+ * Certains modèles recopient les outils en texte au lieu d'émettre de vrais
+ * `tool_call` : JSON `{"title":…}` (OpenAI surtout) ou pseudo-appels
+ * `nameconversation("…")` / `suggestfolders([...])`. On retient le début du
+ * flux jusqu'à savoir si c'est une fuite — assez court pour ne pas retarder
+ * une vraie réponse, assez long pour un titre ou un argument d'outil.
  */
-const MAX_TITLE_LEAK_PREFIX = 240;
+const MAX_TEXT_LEAK_PREFIX = 800;
 
-type TitleLeakFilter = {
+type TextLeakFilter = {
   push: (chunk: string) => string;
   flush: () => string;
   leakedTitle: () => string | null;
 };
 
-function createTitleLeakFilter(): TitleLeakFilter {
+function createTextLeakFilter(options: {
+  toolNames: string[];
+  stripTitleJson: boolean;
+}): TextLeakFilter {
   let buffer = "";
   let released = false;
   let title: string | null = null;
+  const toolPattern = buildToolNamePattern(options.toolNames);
 
   const consume = (atEnd: boolean): string => {
     if (released) {
@@ -1224,15 +1237,22 @@ function createTitleLeakFilter(): TitleLeakFilter {
       return out;
     }
 
-    const verdict = inspectTitleLeak(buffer, atEnd);
+    const verdict = inspectTextLeak(buffer, atEnd, {
+      toolPattern,
+      stripTitleJson: options.stripTitleJson,
+    });
     if (verdict.kind === "hold") return "";
+
+    if (verdict.kind === "stripped") {
+      if (verdict.title !== null) title = verdict.title;
+      // D'autres fuites peuvent suivre (JSON puis pseudo-appels, ou plusieurs
+      // lignes d'outils) : on ne libère le flux qu'une fois le préambule nettoyé.
+      buffer = verdict.rest;
+      return consume(atEnd);
+    }
 
     released = true;
     buffer = "";
-    if (verdict.kind === "stripped") {
-      title = verdict.title;
-      return verdict.rest;
-    }
     return verdict.text;
   };
 
@@ -1247,16 +1267,37 @@ function createTitleLeakFilter(): TitleLeakFilter {
   };
 }
 
-type TitleLeakVerdict =
+type TextLeakVerdict =
   | { kind: "hold" }
   | { kind: "passthrough"; text: string }
   | { kind: "stripped"; title: string | null; rest: string };
 
-function inspectTitleLeak(buffer: string, atEnd: boolean): TitleLeakVerdict {
+function inspectTextLeak(
+  buffer: string,
+  atEnd: boolean,
+  options: { toolPattern: RegExp | null; stripTitleJson: boolean },
+): TextLeakVerdict {
   const start = buffer.search(/\S/);
   if (start === -1) return atEnd ? { kind: "passthrough", text: buffer } : { kind: "hold" };
-  if (buffer[start] !== "{") return { kind: "passthrough", text: buffer };
 
+  if (options.stripTitleJson && buffer[start] === "{") {
+    const json = inspectTitleJsonLeak(buffer, start, atEnd);
+    if (json !== null) return json;
+  }
+
+  if (options.toolPattern) {
+    const pseudo = inspectPseudoToolLeak(buffer, start, atEnd, options.toolPattern);
+    if (pseudo !== null) return pseudo;
+  }
+
+  return { kind: "passthrough", text: buffer };
+}
+
+function inspectTitleJsonLeak(
+  buffer: string,
+  start: number,
+  atEnd: boolean,
+): TextLeakVerdict | null {
   const taken = takeJsonObject(buffer, start);
   if (taken === "incomplete") {
     if (atEnd) {
@@ -1266,7 +1307,7 @@ function inspectTitleLeak(buffer: string, atEnd: boolean): TitleLeakVerdict {
         ? { kind: "stripped", title: null, rest: "" }
         : { kind: "passthrough", text: buffer };
     }
-    if (buffer.length > MAX_TITLE_LEAK_PREFIX) return { kind: "passthrough", text: buffer };
+    if (buffer.length > MAX_TEXT_LEAK_PREFIX) return { kind: "passthrough", text: buffer };
     return { kind: "hold" };
   }
 
@@ -1274,11 +1315,11 @@ function inspectTitleLeak(buffer: string, atEnd: boolean): TitleLeakVerdict {
   try {
     parsed = JSON.parse(buffer.slice(start, taken));
   } catch {
-    return { kind: "passthrough", text: buffer };
+    return null;
   }
 
   const leaked = readSoleTitle(parsed);
-  if (leaked === null) return { kind: "passthrough", text: buffer };
+  if (leaked === null) return null;
 
   const title = labelSchema.safeParse(leaked);
   return {
@@ -1286,6 +1327,100 @@ function inspectTitleLeak(buffer: string, atEnd: boolean): TitleLeakVerdict {
     title: title.success ? title.data : null,
     rest: buffer.slice(taken).replace(/^\s+/, ""),
   };
+}
+
+/**
+ * Ligne du type `nameconversation("Zumba")` ou `suggestfolders([...])` —
+ * y compris sans les underscores du vrai nom d'outil.
+ */
+function inspectPseudoToolLeak(
+  buffer: string,
+  start: number,
+  atEnd: boolean,
+  toolPattern: RegExp,
+): TextLeakVerdict | null {
+  const slice = buffer.slice(start);
+  toolPattern.lastIndex = 0;
+  if (!toolPattern.test(slice)) return null;
+
+  const closed = takeBalancedCall(slice);
+  if (closed === "incomplete") {
+    if (atEnd) return { kind: "stripped", title: null, rest: "" };
+    if (buffer.length > MAX_TEXT_LEAK_PREFIX) return { kind: "passthrough", text: buffer };
+    return { kind: "hold" };
+  }
+
+  const callText = slice.slice(0, closed).trim();
+  const title = readLeakedNameConversationTitle(callText);
+  const rest = slice.slice(closed).replace(/^\s+/, "");
+  return { kind: "stripped", title, rest };
+}
+
+/** `name_conversation` → `name_?conversation`, pour matcher aussi `nameconversation`. */
+function buildToolNamePattern(toolNames: string[]): RegExp | null {
+  if (toolNames.length === 0) return null;
+  const alts = toolNames.map((name) =>
+    name
+      .split("_")
+      .map(escapeRegExp)
+      .join("_?"),
+  );
+  return new RegExp(`^(?:${alts.join("|")})\\s*\\(`, "i");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Fin d'un appel `outil(...)` en tête de chaîne, parenthèses équilibrées
+ * (chaînes entre guillemets comprises), ou incomplete si l'appel n'est pas clos.
+ */
+function takeBalancedCall(text: string): number | "incomplete" {
+  const open = text.indexOf("(");
+  if (open === -1) return "incomplete";
+
+  let depth = 0;
+  let inString: '"' | "'" | null = null;
+  let escaped = false;
+  for (let i = open; i < text.length; i++) {
+    const c = text[i];
+    if (c === undefined) break;
+    if (inString !== null) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (c === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (c === inString) inString = null;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inString = c;
+      continue;
+    }
+    if (c === "(") depth += 1;
+    else if (c === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        let end = i + 1;
+        while (end < text.length && /[ \t\r]/.test(text[end] ?? "")) end += 1;
+        if (text[end] === "\n") end += 1;
+        return end;
+      }
+    }
+  }
+  return "incomplete";
+}
+
+function readLeakedNameConversationTitle(callText: string): string | null {
+  const match = callText.match(/^name_?conversation\s*\(\s*["']([^"']+)["']\s*\)\s*$/i);
+  if (!match?.[1]) return null;
+  const title = labelSchema.safeParse(match[1]);
+  return title.success ? title.data : null;
 }
 
 function readSoleTitle(value: unknown): string | null {
@@ -2005,11 +2140,15 @@ function buildSystemPrompt(
   if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) {
     lines.push(
       "",
-      "Quand l'utilisateur mentionne un rendez-vous qui se répète — « kiné tous",
-      "les mardis à 18h », « réunion chaque lundi » — appelle",
-      "`suggest_recurring_event` avec une règle RRULE (FREQ=WEEKLY;BYDAY=…)",
-      "plutôt qu'une liste de dates. Ne présente jamais le rendez-vous comme",
-      "déjà posé : c'est une proposition.",
+      "Quand l'utilisateur mentionne un rendez-vous ou une activité qui se",
+      "répète — « kiné tous les mardis à 18h », « réunion chaque lundi »,",
+      "« zumba tous les mercredis » — appelle `suggest_recurring_event` avec",
+      "une règle RRULE (FREQ=WEEKLY;BYDAY=…) plutôt qu'une liste de dates.",
+      "Si en plus il demande de le noter, de s'en rappeler ou de le retenir,",
+      "appelle l'outil tout de suite : un « C'est noté » ou « Je note » en texte",
+      "ne crée rien et viole la règle du §12.1. Ne laisse pas `suggest_folders`",
+      "se substituer à cette proposition quand la demande porte clairement sur",
+      "un créneau récurrent. Ne présente jamais le rendez-vous comme déjà posé.",
     );
   }
 
@@ -2021,7 +2160,8 @@ function buildSystemPrompt(
       "mieux qu'une liste de « Nouvelle conversation » indiscernables dans la barre",
       "latérale, et l'utilisateur peut le corriger. N'attends pas qu'on te le",
       "demande et n'en parle pas : le titre s'applique seul. N'écris jamais",
-      'le titre dans ta réponse, ni en JSON (`{"title":...}`) ni en clair.',
+      "le titre dans ta réponse, ni en JSON (`{\"title\":...}`), ni en clair,",
+      "ni sous forme d'appel inventé (`nameconversation(...)`) : utilise l'outil.",
     );
   }
 
