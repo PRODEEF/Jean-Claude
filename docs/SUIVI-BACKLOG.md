@@ -7,9 +7,27 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **9 septembre 2026** — corrigé une course qui pouvait
-empêcher le contenu d'une pièce jointe d'atteindre le modèle dès le premier
-message, sans la moindre erreur visible.
+Dernière mise à jour : **9 septembre 2026** — le tiroir de navigation mobile
+ne se refermait toujours pas au second appui sur le bouton, cette fois
+seulement sur le web.
+
+**Le tiroir de navigation ne se refermait toujours pas sur mobile, mais sur
+le web seulement (branche `fix/attachments`, malgré le nom).** Un premier
+correctif (8 septembre, ci-dessous) avait déjà diagnostiqué que la `View`
+plein écran posée par-dessus le contenu une fois le tiroir ouvert captait le
+second appui (fermeture) au lieu de le laisser atteindre le bouton, et
+posé `pointerEvents: "box-none"` dans son `style` pour l'en empêcher. Ce
+correctif est complet pour React Native natif, mais incomplet pour le web :
+`react-native-web` ne sait traduire `pointerEvents` en CSS que si l'objet
+`style` entier est statique, or il partage cet objet avec `paddingTop:
+insets.top + 56`, calculé à l'exécution — l'ensemble bascule alors en style
+inline brut, où `pointerEvents` finit écrit tel quel dans l'attribut HTML
+`style`, une valeur invalide que le navigateur ignore silencieusement.
+`pointerEvents="box-none"` est donc désormais posé en prop du composant,
+seule forme que `react-native-web` traduit de façon fiable quel que soit le
+reste du style (`apps/app/src/app/(app)/_layout.tsx`). Les autres usages du
+même mécanisme dans l'app (calendrier, recherche) ne mélangent jamais
+`pointerEvents` à une valeur dynamique dans le même objet — non concernés.
 
 **Le contenu d'une pièce jointe pouvait ne pas atteindre le modèle au
 premier tour, sans erreur visible (branche `fix/attachments`).** Signalé en
