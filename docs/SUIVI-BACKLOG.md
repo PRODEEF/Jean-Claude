@@ -7,6 +7,191 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **9 septembre 2026** — une échéance de todoliste qui
+porte une heure explicite (« à 10h ») n'est plus systématiquement ramenée à
+minuit, et le créneau posé dans l'agenda pour une échéance ainsi précisée
+devient un rendez-vous à heure fixe plutôt qu'une journée entière ; un tour
+de dialogue sans texte ni proposition l'annonce désormais plutôt que de se
+refermer en silence ; supprimer ou déplacer un rendez-vous lié à une
+todoliste répercute enfin le changement dans Mes listes et la barre latérale
+sans recharger la page ; modifier l'échéance d'une todoliste déjà liée à un
+rendez-vous répercute désormais l'heure sur ce rendez-vous ; le pied
+d'action d'une fenêtre modale ne se retrouve plus rogné sur le web, et son
+corps défilant reçoit une marge de sécurité supplémentaire ; et la fenêtre
+d'avis général est plus simple à remplir.
+
+**Une échéance de todoliste qui porte une heure explicite n'est plus
+systématiquement ramenée à minuit, et le créneau bloqué dans l'agenda pour
+elle devient un rendez-vous à heure fixe (A.3, #18).** Signalé en usage
+réel : « crée une liste de courses pour samedi à 10h » produisait une liste
+échue le samedi mais sans l'heure, et un « Bloquer le créneau » accepté sur
+cette liste posait un événement journée entière plutôt qu'un rendez-vous à
+10h — l'heure donnée disparaissait purement et simplement. En cause, deux
+mécanismes distincts, tous deux volontaires à l'origine (points du 7
+septembre) : `withCorrectedDueDates` ramenait *toujours* l'heure du modèle à
+minuit, y compris une heure explicitement demandée ; et `scheduleTasks`
+posait *toujours* un créneau journée entière (`allDay: true`), sans jamais
+regarder l'échéance de la liste.
+
+Plutôt que de déduire une « heure volontaire » depuis le calcul de date du
+modèle (`dueAt`), risqué — un modèle qui se trompe de fuseau y pose parfois
+une heure qui n'est ni minuit ni une heure demandée, un cas déjà couvert par
+un test existant sur une correction de date — un nouveau champ explicite,
+`dueTime` (« HH:mm », `suggest_task_list` et `suggest_task_list_due_date`),
+porte l'heure uniquement quand l'utilisateur en a donné une. `resolveDueAt`
+(`conversation.service.ts`) combine désormais le jour (filet de date relative
+ou calcul du modèle, inchangé) et cette heure (`dueTime`, nouveau) ; sans
+elle, l'échéance reste à minuit exactement comme avant ce champ — aucun des
+tests existants sur la correction de dates n'a dû changer. Côté agenda,
+`AssistantService.scheduleTasks` reçoit `IUserRepository` (même pattern que
+`TaskService.syncLinkedEvent` pour le sens inverse) et pose `allDay` selon
+`hasWallTime`, désormais partagée depuis `core/timezone.ts` plutôt que
+dupliquée. Le créneau à heure fixe dure une heure par défaut, même
+convention que celle déjà simulée à l'affichage pour un événement sans fin.
+
+**Un tour de dialogue qui ne produit ni texte ni proposition l'annonce
+désormais, plutôt que de se refermer en silence.** Un modèle qui répond sans
+erreur technique mais sans le moindre appel d'outil — Sonar (§5.1) peut le
+faire — laissait jusqu'ici la conversation utilisable mais l'assistant muet,
+sans aucun signal : ni carte, ni message, ni bannière, le mécanisme d'erreur
+déjà en place (`llm-error.ts` : 429 quota, 402 crédit épuisé, 503 panne) ne
+couvrant que les échecs techniques du moteur, pas une réponse vide et
+techniquement réussie. `ConversationService.generate` lève désormais une
+erreur (502) quand le tour se referme sans message d'assistant ni suggestion
+capturée, empruntant le même canal `type: "error"` du flux déjà affiché au
+fil. Le message de l'utilisateur, lui, reste acquis : seule la réponse
+manque. Reste hors périmètre, dette déjà consignée : aucun repli automatique
+sur un second moteur si celui choisi refuse ou reste muet, l'utilisateur doit
+encore aller en changer lui-même dans Réglages.
+
+**Supprimer ou déplacer un rendez-vous lié à une todoliste répercute enfin le
+changement dans Mes listes, la barre latérale et la vue Todo, sans recharger
+la page (A.3).** Le serveur détachait déjà `task_lists.event_id` à la
+suppression (contrainte `on delete set null`, posée le 3 septembre) et
+mettait déjà à jour l'échéance au déplacement (`CalendarService.
+syncLinkedTaskList`, point du 7 septembre) : la donnée était cohérente en
+base dès ce jour-là. Ce qui ne suivait pas, c'est le cache : `useCalendarActions()`
+n'invalidait que la clé `["calendar"]`, jamais `["taskLists"]`, que
+partagent pourtant les trois écrans qui affichent les todolistes
+(`use-task-lists.ts`) — la liste continuait donc de s'afficher à sa date ou
+son créneau d'origine jusqu'à ce qu'un autre geste déclenche un rechargement.
+`update` et `remove` invalident désormais `["taskLists"]` en plus du
+calendrier. Le point noté le 7 septembre comme dette (« la suppression d'un
+rendez-vous lié... ne détache pas encore task_lists.event_id ») décrivait en
+réalité ce trou de cache, pas une incohérence en base.
+
+**Modifier l'échéance d'une todoliste déjà liée à un rendez-vous répercute
+désormais l'heure sur ce rendez-vous (A.3).** Signalé en usage réel,
+prolongement direct du point d'hier sur le calendrier Jour/Semaine : une
+todoliste dont le créneau avait déjà été posé (« Bloquer le créneau »
+accepté) restait affichée toute la journée dans le calendrier même après
+avoir précisé une heure sur la liste, la modification ne portant que sur
+`task_lists.due_at`. `CalendarService.syncLinkedTaskList` faisait déjà ce
+travail dans l'autre sens (déplacer le rendez-vous met à jour la liste) ;
+`TaskService.updateList` fait maintenant de même vers le rendez-vous quand
+`eventId` est renseigné, `allDay` étant dérivé de l'heure murale du profil —
+minuit vaut « dans la journée », comme partout ailleurs dans le produit.
+`TaskService` reçoit à cette occasion `ICalendarRepository` et
+`IUserRepository` en plus de son Repository propre, symétriquement à
+`CalendarService`, qui consultait déjà `ITaskRepository` — deuxième et non
+plus seul endroit du projet où un service `domain/` en consulte un autre
+directement plutôt que de passer par `feature/`.
+
+**Le pied d'action d'une fenêtre modale ne se retrouve plus rogné sur le
+web.** Signalé en usage réel, urgent, sur la confirmation de suppression de
+compte — mais affectait potentiellement toute `Modal` dont le contenu
+dépassait une certaine hauteur. En cause, `@rn-primitives/dialog` insère sur
+le web un `<div>` intermédiaire (le `Dialog.Content` de Radix) sans hauteur
+explicitement posée : `max-h-[85%]`/`max-h-[88%]` n'avait alors plus de bloc
+englobant défini pour se résoudre, et Chromium le calculait contre la
+hauteur intrinsèque du dialogue lui-même — toujours plus petite que son
+contenu réel, d'où la troncature silencieuse par `overflow-hidden`. Remplacé
+par `max-h-[85vh]`/`max-h-[88vh]` sur le web uniquement (`Platform.select`),
+qui se résout contre la fenêtre sans dépendre de cette chaîne ; le natif
+n'était pas concerné.
+
+**Le corps défilant d'une fenêtre modale reçoit `min-h-0`, en renfort du
+correctif précédent.** Un enfant flex garde par défaut pour hauteur minimale
+celle de son contenu (`min-height: auto`) et refuse de s'y réduire — sur
+certains moteurs de rendu, cela suffit à repousser le pied hors de
+`max-h-[85vh]`/`[88vh]` même une fois la cause initiale ci-dessus corrigée.
+Repéré en creusant un nouveau signalement sur la fenêtre d'avis général, sans
+qu'aucune combinaison de taille de fenêtre ne le reproduise ici (testé sur
+Chromium jusqu'à 480 px de haut, fix précédent inclus ou non) : traité par
+prudence plutôt que laissé en l'état, faute de pouvoir tester tous les
+moteurs de rendu depuis cet environnement.
+
+**La fenêtre d'avis général (bug, idée, autre) gagne trois détails
+d'ergonomie.** Le champ de texte affiche une piste selon la catégorie choisie
+plutôt qu'un seul texte générique (« Que s'est-il passé ? Qu'attendiez-vous à
+la place ? » pour un bug, par exemple) ; il reçoit le focus dès l'ouverture,
+comme les autres formulaires courts de l'app ; et l'envoi affiche désormais
+une confirmation avant de se refermer — jusque-là la fenêtre se contentait de
+disparaître, sans rien dire de l'issue de l'envoi.
+
+Dernière mise à jour : **8 septembre 2026** — une todoliste à heure précise
+s'affiche enfin à son heure dans la grille Jour/Semaine du calendrier, une
+suggestion de l'assistant ne peut plus en faire disparaître une autre du même
+tour, la todoliste se lit plus dense, et le tiroir de navigation se referme
+correctement sur mobile.
+
+**Une todoliste à heure précise s'affiche enfin à son heure, pas comme
+« toute la journée ».** Signalé en usage réel. En cause, `TimeGrid` (vues
+Jour et Semaine) plaçait systématiquement les todolistes échues dans un
+bandeau plat au-dessus de la grille horaire, sans jamais regarder si leur
+`dueAt` portait une heure précise — à la différence des rendez-vous, où seuls
+ceux marqués `allDay` y échappent. `layoutDayLists` (`calendar-dates.ts`)
+sépare désormais les deux cas avec la même convention que `momentOf` :
+minuit pile vaut « dans la journée », une heure précise se place dans la
+grille comme un rendez-vous.
+
+**Une suggestion de l'assistant ne peut plus en faire disparaître une autre
+du même tour.** Signalé en usage réel (« l'IA ne propose parfois que le
+1er choix »). Deux causes cumulées. D'abord, la contrainte CHECK de
+`assistant_suggestions.kind` n'avait jamais été mise à jour pour
+`update_task_list_due_date`, introduit plus tôt dans la journée : toute
+reprogrammation de todoliste échouait donc en base — et comme la boucle qui
+capture les suggestions d'un tour n'isolait pas ses erreurs, cet échec
+interrompait aussi la capture de toutes celles qui suivaient dans le même
+tour. La migration ajoute le kind manquant, et chaque capture est désormais
+isolée dans son propre `try`/`catch` (`conversation.service.ts`). Ensuite,
+plus étroit : le geste explicite « Extraire la todoliste » ne gardait que le
+premier appel d'outil (`toolCalls.find`) quand le modèle répondait par
+plusieurs appels `suggest_task_list` séparés plutôt qu'un seul groupé —
+`mergeTaskListCalls` les regroupe désormais avant capture.
+
+**La todoliste se lit plus dense.** Demandé directement. Les lignes de
+`TaskListEditor` et de `TaskRow` se rapprochent et la case à cocher rétrécit
+(`TASK_ROW_HEIGHT` : 32 pt, `TASK_CHECKBOX_SIZE` : 16 px) — sous
+`MIN_TOUCH_TARGET` (44 pt) par dérogation explicite à la règle
+d'accessibilité du projet (200-app.md), acceptée pour cette liste en
+particulier.
+
+**Le tiroir de navigation se referme correctement sur mobile.** Signalé en
+usage réel : le bouton l'ouvrait mais ne le refermait pas. En cause, la `View`
+plein écran posée par-dessus le contenu une fois le tiroir ouvert couvrait
+aussi la bannière, sans y porter aucun enfant — le second appui (fermeture)
+était capté par cette zone vide avant d'atteindre le bouton, qui ne pouvait
+donc qu'ouvrir le tiroir, jamais le refermer. Il lui manquait
+`pointerEvents: "box-none"`, déjà en usage ailleurs dans le calendrier pour
+le même besoin.
+
+Dernière mise à jour : **8 septembre 2026** — le bandeau du calendrier reprend
+la disposition de Google Agenda sur desktop.
+
+**Le bandeau du calendrier reprend la disposition de Google Agenda, sur
+desktop (§4.2).** Demande explicite, clarifiée point par point avant
+implémentation. Une seule ligne, packée à gauche : bascule de vue, « Aujourd'hui »,
+période affichée, puis les deux flèches — remplace la disposition à trois
+zones (grand titre séparé au-dessus, bascule centrée, navigation à droite) et
+fusionne ce grand titre avec le texte qui vivait jusque-là entre les flèches.
+Un seul texte de période subsiste ; en vue Semaine, il affiche le mois plutôt
+que la plage complète (« Semaine du 7 au 13 septembre »), qui ne tenait plus à
+côté des autres commandes. `weekLabel` et `weekdayLabel` (`shared/lib/dates.ts`)
+sont retirées, devenues inutilisées. Le mode compact (téléphone) garde son
+organisation actuelle en deux lignes, déjà pensée pour cette largeur — seul le
+layout ≥768pt change.
+
 Dernière mise à jour : **8 septembre 2026** — la moitié sombre des pastilles
 de couleur des réglages n'était plus qu'un aplat noir, le modèle IA par
 défaut sort du catalogue de test pour rejoindre celui des réglages, cliquer
@@ -927,6 +1112,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre — ce dernier désormais choisi par l'utilisateur. Réponses du modèle rendues en Markdown (titres, listes, tableaux, liens) ; barre latérale redimensionnable au geste ; calendrier divergent par point de rupture, pastilles et liste du jour en `compact`, barre d'outils sur deux lignes sous 768 pt |
 | §4.4 | React Native                                           |   ✅   | Expo SDK 57, Expo Router, React 19                                                                                                                                                                                                                                                                                                                                                        |
 | §8   | Postgres portable, migration UE possible               |   ✅   | Aucune extension propriétaire                                                                                                                                                                                                                                                                                                                                                             |
+| §8 / §13.4.6 | Droit à l'effacement — suppression de son propre compte | ✅ | `DELETE /api/me`, confirmation dans les réglages. `admin.auth.admin.deleteUser` sur `auth.users` ; la cascade SQL déjà en place efface profil, dossiers, conversations, messages, todolistes, calendrier, suggestions et feedback. Immédiat, sans délai de grâce |
 | §8   | **Créer le projet Supabase en région UE**              |   ⬜   | **À faire avant tout remplissage de données**                                                                                                                                                                                                                                                                                                                                             |
 | §10  | Repo structuré et documenté                            |   ✅   | `README.md`, `docs/ARCHITECTURE.md`, ce fichier                                                                                                                                                                                                                                                                                                                                           |
 

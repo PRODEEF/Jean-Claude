@@ -259,6 +259,11 @@ export class ConversationService {
         { content: welcomeMessage(context.name), inputMode: "text", role: "assistant" },
         accessToken,
       );
+      // `channel` a été capturé avant ce message : il porte encore le
+      // `unreadCount` d'un fil vide. Le relire fait remonter celui que le
+      // trigger vient de poser, sans quoi la pastille resterait éteinte à la
+      // toute première connexion malgré la question qui attend une réponse.
+      return this.getById(channel.id, accessToken);
     }
 
     return channel;
@@ -452,7 +457,11 @@ export class ConversationService {
       if (chunk.type === "tool_call") toolCalls.push(chunk.toolCall);
     }
 
-    const call = toolCalls.find((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name);
+    // Le modèle peut fragmenter la proposition en plusieurs appels séparés au
+    // lieu d'un seul portant plusieurs entrées dans `lists`, comme la
+    // consigne le demande : les regrouper évite d'en perdre au-delà du
+    // premier.
+    const call = mergeTaskListCalls(toolCalls);
     // Même filet que le tour de dialogue ordinaire : sans lui, une échéance
     // extraite ici échapperait à la correction de date (A.3, #18).
     const corrected = call ? withCorrectedDueDates(call, now, context.timezone) : null;
@@ -557,6 +566,10 @@ export class ConversationService {
     let provider: string | null = null;
     let model: string | null = null;
     const toolCalls: LlmToolCall[] = [];
+    let assistantMessage: Message | null = null;
+    // Une suggestion capturée est déjà une carte à l'écran : ça compte comme
+    // une réponse du tour, même sans le moindre mot de texte.
+    let suggestionCaptured = false;
 
     // Entretien du fil : résolu avant l'appel au modèle, parce qu'il décide des
     // outils qu'on lui expose — et il se lit à partir du profil.
@@ -613,7 +626,7 @@ export class ConversationService {
           ? text
           : (asked?.question ?? "");
 
-      const assistantMessage =
+      assistantMessage =
         content.length > 0
           ? await this.conversations.appendMessage(
               conversationId,
@@ -645,16 +658,30 @@ export class ConversationService {
           logger.warn(SCOPE, `Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
-        const corrected = withCorrectedRescheduleDueDate(
-          withCorrectedDueDates(
-            withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+        try {
+          const corrected = withCorrectedRescheduleDueDate(
+            withCorrectedDueDates(
+              withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+              now,
+              context.timezone,
+            ),
             now,
             context.timezone,
-          ),
-          now,
-          context.timezone,
-        );
-        await this.suggestions.capture(userId, conversationId, corrected, accessToken);
+          );
+          await this.suggestions.capture(userId, conversationId, corrected, accessToken);
+          suggestionCaptured = true;
+        } catch (error) {
+          // Une capture ne doit jamais faire perdre les suivantes : sans cet
+          // isolement, l'échec d'un seul appel d'outil (ex. une nature de
+          // suggestion que la contrainte de la table ne reconnaît pas encore)
+          // coupait la boucle et emportait avec lui les propositions du même
+          // tour qui restaient à capturer.
+          logger.error(
+            SCOPE,
+            `Capture de suggestion \`${toolCall.name}\` impossible :`,
+            error instanceof Error ? error.message : error,
+          );
+        }
       }
 
       await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
@@ -662,6 +689,17 @@ export class ConversationService {
       await this.applyOnboardingMemory(userId, toolCalls, accessToken);
 
       if (assistantMessage) yield { type: "done", message: assistantMessage };
+    }
+
+    // Le modèle a pu répondre sans lever d'erreur technique et pourtant ne
+    // rien produire d'exploitable (ex. un moteur qui ne rend aucun appel
+    // d'outil, cf. Sonar) : sans ce garde-fou, le tour se clôt sans un mot ni
+    // une carte, et l'utilisateur ne sait même pas que sa demande a été reçue.
+    if (!assistantMessage && !suggestionCaptured) {
+      throw httpError(
+        502,
+        "Le modèle n'a produit aucune réponse. Réessayez, ou changez de modèle dans Réglages.",
+      );
     }
   }
 
@@ -1033,19 +1071,90 @@ function verifyNewFolder(
 }
 
 /**
+ * Regroupe en un seul appel les éventuels appels `suggest_task_list` multiples
+ * d'un même tour.
+ *
+ * La consigne demande une entrée par liste dans un unique appel, mais rien
+ * n'empêche le modèle de répondre par plusieurs appels séparés à la place —
+ * ne garder que le premier (`toolCalls.find`) en perdrait alors le reste.
+ */
+function mergeTaskListCalls(toolCalls: LlmToolCall[]): LlmToolCall | null {
+  const calls = toolCalls.filter((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name);
+  const first = calls[0];
+  if (!first) return null;
+  if (calls.length === 1) return first;
+
+  const lists = calls.flatMap((call) => {
+    const entries = call.input["lists"];
+    return Array.isArray(entries) ? entries : [];
+  });
+
+  return { ...first, input: { ...first.input, lists } };
+}
+
+/**
+ * `text` au format `HH:mm` (24 h), vers heure et minute — `null` si le format
+ * ou les bornes ne correspondent pas, ex. une hallucination du modèle.
+ */
+function parseWallTime(text: string): { hours: number; minutes: number } | null {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(text.trim());
+  if (!match || match[1] === undefined || match[2] === undefined) return null;
+  return { hours: Number(match[1]), minutes: Number(match[2]) };
+}
+
+/** Pose une heure murale sur le jour mural que porte `dayIso`. */
+function withWallTime(
+  dayIso: string,
+  time: { hours: number; minutes: number },
+  timeZone: string,
+): string {
+  const wall = toWall(new Date(dayIso), timeZone);
+  const wallMs = Date.UTC(
+    wall.getUTCFullYear(),
+    wall.getUTCMonth(),
+    wall.getUTCDate(),
+    time.hours,
+    time.minutes,
+  );
+  return fromWall(wallMs, timeZone).toISOString();
+}
+
+/**
+ * Échéance à retenir entre le calcul du modèle et les deux filets
+ * déterministes (A.3, #18).
+ *
+ * Le jour vient du filet de date relative quand `dueAtText` est reconnu avec
+ * certitude — plus fiable que l'arithmétique du modèle sur les jours de la
+ * semaine —, sinon du calcul du modèle tel quel. L'heure, elle, ne vient
+ * jamais d'une lecture de `dueAt` : un modèle qui se trompe de fuseau y pose
+ * parfois une heure qui n'est ni minuit ni une heure demandée, et la prendre
+ * pour une heure volontaire créerait de faux rendez-vous. Elle ne vient donc
+ * que de `dueTime`, rempli uniquement quand l'utilisateur en a donné une
+ * (« à 10h ») — absent, l'échéance reste à minuit, comme avant ce champ.
+ */
+function resolveDueAt(
+  dueAtText: unknown,
+  rawDueAt: unknown,
+  dueTime: unknown,
+  now: Date,
+  timezone: string,
+): string | null {
+  const parsedDate =
+    typeof dueAtText === "string" ? parseRelativeDateFr(dueAtText, now, timezone) : null;
+  const day = parsedDate ?? (typeof rawDueAt === "string" ? rawDueAt : null);
+  if (day === null) return null;
+
+  const time = typeof dueTime === "string" ? parseWallTime(dueTime) : null;
+  return time !== null ? withWallTime(day, time, timezone) : truncateToMidnight(day, timezone);
+}
+
+/**
  * Corrige les échéances d'un `suggest_task_list` avant capture (A.3, #18).
  *
  * Le modèle calcule déjà `dueAt` lui-même, mais se trompe parfois dans
  * l'arithmétique des jours de la semaine. Quand il a aussi recopié
  * l'expression source (`dueAtText`) et qu'elle est reconnue avec certitude,
- * le calcul déterministe du serveur remplace le sien.
- *
- * Dans tous les cas, l'heure est ensuite ramenée à minuit dans le fuseau du
- * profil : une todoliste date un jour, jamais un horaire — laissé à sa propre
- * arithmétique, un LLM retombe souvent sur une convention de « fin de
- * journée » (23h59) plutôt que sur minuit, ce qui posait un événement à la
- * mauvaise heure une fois `schedule_task` accepté au lieu d'un créneau
- * journée entière.
+ * le calcul déterministe du serveur remplace le sien (`resolveDueAt`).
  *
  * Une échéance qui retombe malgré tout dans le passé est effacée plutôt que
  * gardée telle quelle : une todoliste proposée par l'assistant est toujours à
@@ -1062,13 +1171,14 @@ function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: strin
   const corrected = lists.map((entry) => {
     if (typeof entry !== "object" || entry === null) return entry;
 
-    const dueAtText = (entry as Record<string, unknown>)["dueAtText"];
-    const parsed =
-      typeof dueAtText === "string" ? parseRelativeDateFr(dueAtText, now, timezone) : null;
-
-    const rawDueAt = (entry as Record<string, unknown>)["dueAt"];
-    const dueAt =
-      parsed ?? (typeof rawDueAt === "string" ? truncateToMidnight(rawDueAt, timezone) : null);
+    const record = entry as Record<string, unknown>;
+    const dueAt = resolveDueAt(
+      record["dueAtText"],
+      record["dueAt"],
+      record["dueTime"],
+      now,
+      timezone,
+    );
     if (dueAt === null) return entry;
 
     if (isPastDay(dueAt, now, timezone)) {
@@ -1085,12 +1195,13 @@ function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: strin
 /**
  * Corrige l'échéance d'un `suggest_task_list_due_date` avant capture (A.2).
  *
- * Même filet que pour la création — expression relative fiabilisée, heure
- * ramenée à minuit — mais une échéance dans le passé n'y est pas effaçable :
- * contrairement à la création d'une liste, l'outil n'a rien à proposer
- * d'autre qu'une nouvelle date. Le champ est retiré, ce qui fait échouer la
- * validation du schéma en aval et abandonne la proposition entière plutôt que
- * de reprogrammer une liste dans le passé (§12.1).
+ * Même filet que pour la création (`resolveDueAt`) — expression relative
+ * fiabilisée, heure reprise de `dueTime` quand l'utilisateur en a donné une —
+ * mais une échéance dans le passé n'y est pas effaçable : contrairement à la
+ * création d'une liste, l'outil n'a rien à proposer d'autre qu'une nouvelle
+ * date. Le champ est retiré, ce qui fait échouer la validation du schéma en
+ * aval et abandonne la proposition entière plutôt que de reprogrammer une
+ * liste dans le passé (§12.1).
  */
 function withCorrectedRescheduleDueDate(
   toolCall: LlmToolCall,
@@ -1099,12 +1210,13 @@ function withCorrectedRescheduleDueDate(
 ): LlmToolCall {
   if (toolCall.name !== SUGGEST_TASK_LIST_DUE_DATE.name) return toolCall;
 
-  const dueAtText = toolCall.input["dueAtText"];
-  const parsed = typeof dueAtText === "string" ? parseRelativeDateFr(dueAtText, now, timezone) : null;
-
-  const rawDueAt = toolCall.input["dueAt"];
-  const dueAt =
-    parsed ?? (typeof rawDueAt === "string" ? truncateToMidnight(rawDueAt, timezone) : null);
+  const dueAt = resolveDueAt(
+    toolCall.input["dueAtText"],
+    toolCall.input["dueAt"],
+    toolCall.input["dueTime"],
+    now,
+    timezone,
+  );
 
   const input = { ...toolCall.input };
   if (dueAt === null || isPastDay(dueAt, now, timezone)) {

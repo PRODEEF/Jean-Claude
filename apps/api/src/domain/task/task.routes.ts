@@ -11,10 +11,12 @@ import {
 } from "@jc/domain";
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { validate } from "../../core/http.js";
+import { calendarRepository } from "../calendar/calendar.repository.js";
+import { userRepository } from "../user/user.repository.js";
 import { taskRepository } from "./task.repository.js";
 import { TaskService } from "./task.service.js";
 
-const service = new TaskService(taskRepository);
+const service = new TaskService(taskRepository, calendarRepository, userRepository);
 
 const idParam = validate("param", z.object({ id: uuidSchema }));
 const itemParams = validate("param", z.object({ id: uuidSchema, itemId: uuidSchema }));
@@ -40,8 +42,9 @@ export const taskRoutes = new Hono<AuthEnv>()
   })
 
   .patch("/:id", idParam, validate("json", updateTaskListSchema), async (c) => {
+    const user = c.get("user");
     const { id } = c.req.valid("param");
-    return c.json(await service.updateList(id, c.req.valid("json"), c.get("user").accessToken));
+    return c.json(await service.updateList(user.id, id, c.req.valid("json"), user.accessToken));
   })
 
   .delete("/:id", idParam, async (c) => {

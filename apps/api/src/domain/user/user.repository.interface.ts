@@ -33,4 +33,12 @@ export interface IUserRepository {
     memory: string | null,
     accessToken: string,
   ): Promise<ProfileRecord>;
+  /**
+   * Supprime le compte et, par cascade (§8, §13.4.6), toutes les données qui
+   * lui appartiennent. Irréversible, sans délai de grâce.
+   *
+   * Pas d'`accessToken` : l'implémentation ne passe pas par `forUser`, voir
+   * le Repository.
+   */
+  deleteAccount(userId: string): Promise<void>;
 }

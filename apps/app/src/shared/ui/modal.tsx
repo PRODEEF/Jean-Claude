@@ -17,6 +17,21 @@ import { Text } from "@/shared/ui/text";
 /** Sur iOS, la fenêtre doit sortir de la hiérarchie de l'écran pour couvrir la barre d'état. */
 const FullWindowOverlay = Platform.OS === "ios" ? RNFullWindowOverlay : Fragment;
 
+/**
+ * Hauteur maximale du dialogue, en pourcentage de l'écran — sauf sur le web,
+ * où `vh` remplace `%`.
+ *
+ * `@rn-primitives/dialog` insère sur le web un `<div>` intermédiaire (le
+ * `Dialog.Content` de Radix) sans hauteur explicitement posée : un `max-h-%`
+ * n'a alors plus de bloc englobant défini pour se résoudre, et Chromium le
+ * calcule contre la hauteur intrinsèque du dialogue lui-même — un pied de
+ * modale plus haut que prévu se voyait alors amputé de sa fin, `overflow-
+ * hidden` masquant la coupe sans jamais faire défiler. `vh` se résout contre
+ * la fenêtre, sans dépendre de cette chaîne.
+ */
+const MAX_HEIGHT_COMPACT = Platform.select({ web: "max-h-[88vh]", default: "max-h-[88%]" });
+const MAX_HEIGHT_EXPANDED = Platform.select({ web: "max-h-[85vh]", default: "max-h-[85%]" });
+
 /** Un bouton du pied. Le dernier de la liste porte l'action principale. */
 export type ModalAction = {
   label: string;
@@ -128,8 +143,8 @@ export function Modal({
                 className={cn(
                   "bg-background border-border w-full flex-col overflow-hidden border shadow-lg shadow-black/20",
                   compact
-                    ? "max-h-[88%] rounded-t-2xl border-b-0"
-                    : cn("max-h-[85%] rounded-xl", variant === "confirm" ? "max-w-md" : "max-w-lg"),
+                    ? cn(MAX_HEIGHT_COMPACT, "rounded-t-2xl border-b-0")
+                    : cn(MAX_HEIGHT_EXPANDED, "rounded-xl", variant === "confirm" ? "max-w-md" : "max-w-lg"),
                 )}
               >
                 {/* Poignée : elle dit qu'on est devant une feuille et non
@@ -194,8 +209,12 @@ export function Modal({
                 </View>
 
                 {variant === "form" ? (
+                  // `min-h-0` : sans lui, un enfant flex garde pour minimum la
+                  // hauteur de son contenu (`min-height: auto`) et refuse de se
+                  // réduire sous ce point — un formulaire long repousse alors le
+                  // pied hors de `max-h-[85vh]` au lieu de faire défiler ce corps.
                   <ScrollView
-                    className="shrink"
+                    className="min-h-0 shrink"
                     contentContainerClassName="gap-5 px-6 py-5"
                     keyboardShouldPersistTaps="handled"
                   >

@@ -5,6 +5,7 @@ import {
   createTaskListsPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
+  userPreferencesSchema,
   type AssignFoldersPayload,
   type CalendarEvent,
   type CreateTaskListsPayload,
@@ -16,14 +17,22 @@ import {
   type Suggestion,
   type TaskList,
   type TaskListKind,
+  type UserPreferences,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { logger } from "../../core/logger.js";
+import { hasWallTime } from "../../core/timezone.js";
 import type { CalendarService } from "../../domain/calendar/calendar.service.js";
 import type { ConversationService } from "../../domain/conversation/conversation.service.js";
 import type { FolderService } from "../../domain/folder/folder.service.js";
 import type { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
 import type { TaskService } from "../../domain/task/task.service.js";
+import type { IUserRepository } from "../../domain/user/user.repository.interface.js";
+
+/** Fuseau retenu quand le profil est illisible — celui du schéma partagé. */
+const DEFAULT_TIMEZONE: UserPreferences["timezone"] = userPreferencesSchema.shape.timezone.parse(
+  undefined,
+);
 
 export type ResolvedSuggestion = {
   suggestion: Suggestion;
@@ -69,6 +78,7 @@ export class AssistantService {
     private readonly conversations: ConversationService,
     private readonly tasks: TaskService,
     private readonly calendar: CalendarService,
+    private readonly users: IUserRepository,
   ) {}
 
   /**
@@ -143,7 +153,7 @@ export class AssistantService {
       return { ...nothingApplied(), events };
     }
     if (suggestion.kind === "update_task_list_due_date") {
-      const taskLists = await this.rescheduleTaskList(suggestion, accessToken);
+      const taskLists = await this.rescheduleTaskList(userId, suggestion, accessToken);
       return { ...nothingApplied(), taskLists };
     }
 
@@ -266,6 +276,7 @@ export class AssistantService {
    * plutôt que d'écrire dans le vide.
    */
   private async rescheduleTaskList(
+    userId: string,
     suggestion: Suggestion,
     accessToken: string,
   ): Promise<TaskList[]> {
@@ -277,6 +288,7 @@ export class AssistantService {
     }
 
     const updated = await this.tasks.updateList(
+      userId,
       payload.data.listId,
       { dueAt: payload.data.dueAt },
       accessToken,
@@ -314,10 +326,10 @@ export class AssistantService {
    * et poser autant d'événements qu'elle a d'items remplirait la journée de
    * doublons pour une seule chose à faire.
    *
-   * Une échéance déduite d'une conversation dit quand, pas combien de temps :
-   * une todoliste ne porte jamais d'horaire, seulement un jour (§12.1) — le
-   * créneau posé est donc une journée entière, jamais un rendez-vous à heure
-   * fixe (#18, A.3).
+   * `allDay` est dérivé de l'heure murale du profil, même principe que
+   * `TaskService.syncLinkedEvent` pour le sens inverse : minuit vaut « dans
+   * la journée », une échéance qui porte une heure précise (« les courses
+   * samedi à 10h », A.3, #18) vaut un rendez-vous à heure fixe.
    */
   private async scheduleTasks(
     userId: string,
@@ -331,16 +343,20 @@ export class AssistantService {
       throw httpError(422, "Cette proposition n'est plus exploitable.");
     }
 
+    const profile = await this.users.findById(userId, accessToken);
+    const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
+
     const events: CalendarEvent[] = [];
 
     for (const entry of payload.data.lists) {
+      const timed = hasWallTime(entry.dueAt, timezone);
       const event = await this.calendar.create(
         userId,
         {
           title: entry.title,
           startsAt: entry.dueAt,
-          endsAt: null,
-          allDay: true,
+          endsAt: timed ? oneHourAfter(entry.dueAt) : null,
+          allDay: !timed,
         },
         accessToken,
       );
@@ -614,4 +630,13 @@ function findTypedFolder(
   }
 
   return null;
+}
+
+/**
+ * Durée par défaut d'un créneau à heure fixe posé pour une todoliste — même
+ * convention que celle déjà simulée à l'affichage pour un événement sans fin
+ * (calendrier, A.3).
+ */
+function oneHourAfter(iso: string): string {
+  return new Date(new Date(iso).getTime() + 60 * 60 * 1000).toISOString();
 }

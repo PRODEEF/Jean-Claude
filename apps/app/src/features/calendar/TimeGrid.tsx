@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
-import { eventsOfDay, layoutDayEvents } from "./lib/calendar-dates";
+import { eventsOfDay, layoutDayEvents, layoutDayLists } from "./lib/calendar-dates";
 import { formatDayLabel, formatTime, isSameDay } from "@/shared/lib/dates";
 import { listsOfDay } from "@/shared/lib/tasks";
 
@@ -48,11 +48,15 @@ export function TimeGrid({
 
   const perDay = days.map((day) => {
     const dayEvents = eventsOfDay(events, day);
+    // Une todoliste à heure précise se place comme un rendez-vous ; sans
+    // heure, elle reste dans le bandeau plat au-dessus de la grille.
+    const { timed: timedLists, untimed: dayLists } = layoutDayLists(listsOfDay(lists, day), day);
     return {
       day,
       allDay: dayEvents.filter((event) => event.allDay),
       timed: layoutDayEvents(dayEvents, day),
-      lists: listsOfDay(lists, day),
+      timedLists,
+      lists: dayLists,
     };
   });
 
@@ -166,6 +170,28 @@ export function TimeGrid({
                 onCreateAt(column.day, Math.floor(gesture.nativeEvent.locationY / HOUR_HEIGHT) * 60)
               }
             />
+
+            {/* Todolistes échues à heure précise : même placement que les
+                événements, mais sans appui — on les coche dans Mes listes. */}
+            {column.timedLists.map((box) => (
+              <View
+                key={box.list.id}
+                className="bg-muted absolute overflow-hidden rounded px-1 py-0.5"
+                style={{
+                  top: (box.startMinute / 60) * HOUR_HEIGHT,
+                  height: Math.max(
+                    ((box.endMinute - box.startMinute) / 60) * HOUR_HEIGHT,
+                    MIN_EVENT_HEIGHT,
+                  ),
+                  left: `${(box.lane / box.laneCount) * 100}%`,
+                  width: `${100 / box.laneCount}%`,
+                }}
+              >
+                <Text numberOfLines={1} className="text-muted-foreground text-[11px] leading-4">
+                  {box.list.title}
+                </Text>
+              </View>
+            ))}
 
             {column.timed.map((box) => (
               <Pressable

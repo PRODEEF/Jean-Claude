@@ -15,12 +15,8 @@ import { Text } from "@/shared/ui/text";
 export type CalendarView = "day" | "week" | "month" | "year" | "todo";
 
 export type CalendarToolbarProps = {
+  /** Période affichée — son contenu dépend de la vue (jour, mois et année, ou année seule). */
   label: string;
-  /**
-   * Texte affiché entre les deux flèches de navigation — son contenu dépend
-   * de la vue (jour de la semaine, mois et année, ou année seule).
-   */
-  navLabel: string;
   view: CalendarView;
   onViewChange: (view: CalendarView) => void;
   onPrevious: () => void;
@@ -37,20 +33,18 @@ const VIEWS: SegmentedOption<CalendarView>[] = [
 ];
 
 /**
- * En-tête du calendrier : période affichée, choix de la vue, navigation.
+ * En-tête du calendrier : choix de la vue, navigation, période affichée.
  *
- * Les trois références du domaine placent identiquement ces trois blocs —
- * période à gauche, bascule de vue au centre, navigation à droite (§4.2) —
- * et c'est aussi la disposition de la maquette web. À l'intérieur du bloc de
- * navigation : « Aujourd'hui », puis les flèches encadrant `navLabel`.
+ * Bascule de vue à gauche, bloc période/navigation à droite — écartés au
+ * maximum (`justify-between`). À l'intérieur de ce bloc : la période, les
+ * deux flèches, puis « Aujourd'hui » en bout de ligne (§4.2, choix produit).
  *
  * Sous le point de rupture, la période passe sur sa propre ligne : la bascule
- * et les trois commandes de navigation ne tiennent pas à côté d'elle sur la
- * largeur d'un téléphone.
+ * et les commandes de navigation ne tiennent pas à côté d'elle sur la largeur
+ * d'un téléphone.
  */
 export function CalendarToolbar({
   label,
-  navLabel,
   view,
   onViewChange,
   onPrevious,
@@ -59,19 +53,16 @@ export function CalendarToolbar({
 }: CalendarToolbarProps) {
   const compact = useBreakpoint() === "compact";
 
-  const period = (
-    <Text className="text-2xl font-semibold" numberOfLines={1}>
-      {label}
-    </Text>
-  );
-
   const switcher = <SegmentedControl options={VIEWS} value={view} onChange={onViewChange} />;
 
-  const navigation = (
+  const todayButton = (
+    <Button variant="outline" size="sm" onPress={onToday} accessibilityRole="button">
+      <Text>Aujourd'hui</Text>
+    </Button>
+  );
+
+  const arrows = (
     <View className="flex-row items-center gap-1">
-      <Button variant="outline" size="sm" onPress={onToday} accessibilityRole="button">
-        <Text>Aujourd'hui</Text>
-      </Button>
       <Button
         variant="ghost"
         size="icon"
@@ -82,9 +73,6 @@ export function CalendarToolbar({
       >
         <Icon as={ChevronLeft} className="size-4" />
       </Button>
-      <Text className="text-sm font-semibold" numberOfLines={1}>
-        {navLabel}
-      </Text>
       <Button
         variant="ghost"
         size="icon"
@@ -101,28 +89,40 @@ export function CalendarToolbar({
   if (compact) {
     return (
       <View className="gap-3">
-        {period}
+        <Text className="text-2xl font-semibold" numberOfLines={1}>
+          {label}
+        </Text>
         <View className="flex-row items-center justify-between gap-2">
-          {/* Cinq segments et trois commandes de navigation ne tiennent pas sur
+          {/* Cinq segments et les commandes de navigation ne tiennent pas sur
               la largeur d'un téléphone. La bascule défile plutôt que de
               déborder : la navigation, elle, doit rester entièrement visible —
               c'est le geste le plus répété du calendrier. */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1">
             {switcher}
           </ScrollView>
-          {navigation}
+          <View className="flex-row items-center gap-1">
+            {todayButton}
+            {arrows}
+          </View>
         </View>
       </View>
     );
   }
 
-  // Les deux zones latérales portent le même `flex-1` : la bascule de vue reste
-  // optiquement centrée quelle que soit la longueur de la période affichée.
   return (
-    <View className="flex-row items-center gap-3">
-      <View className="min-w-0 flex-1">{period}</View>
+    <View className="flex-row items-center justify-between gap-3">
       {switcher}
-      <View className="min-w-0 flex-1 flex-row justify-end">{navigation}</View>
+      {/* `min-w-0` sur ce groupe et sur le texte qu'il porte : sans eux,
+          react-native-web (vraie CSS flexbox) refuse de rétrécir sous leur
+          largeur intrinsèque, et une période longue (vue Jour) ferait déborder
+          le bandeau au lieu de tronquer. */}
+      <View className="min-w-0 flex-row items-center gap-3">
+        <Text className="min-w-0 flex-shrink text-sm font-semibold" numberOfLines={1}>
+          {label}
+        </Text>
+        {arrows}
+        {todayButton}
+      </View>
     </View>
   );
 }

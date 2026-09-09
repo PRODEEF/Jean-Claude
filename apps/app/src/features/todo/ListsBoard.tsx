@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { findNodeHandle, ScrollView, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import {
   CalendarClock,
   ChevronDown,
@@ -120,8 +120,8 @@ function ListCard({
     if (!highlighted || !scrollRef) return;
 
     const frame = requestAnimationFrame(() => {
-      const scrollNode = findNodeHandle(scrollRef.current);
-      if (scrollNode === null) return;
+      const scrollNode = scrollRef.current?.getNativeScrollRef();
+      if (!scrollNode) return;
 
       // Mesurée relativement au défilement lui-même plutôt qu'à l'écran : la
       // carte peut être imbriquée sous n'importe quel nombre de vues

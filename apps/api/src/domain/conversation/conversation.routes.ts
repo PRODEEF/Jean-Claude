@@ -35,7 +35,7 @@ const service = new ConversationService(
   new FolderService(folderRepository),
   userRepository,
   new CalendarService(calendarRepository, taskRepository),
-  new TaskService(taskRepository),
+  new TaskService(taskRepository, calendarRepository, userRepository),
 );
 
 const idParam = validate("param", z.object({ id: uuidSchema }));
