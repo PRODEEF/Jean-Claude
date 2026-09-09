@@ -1,6 +1,7 @@
 import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
+  createFeedbackSchema,
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
   scheduleListsPayloadSchema,
@@ -24,6 +25,7 @@ import { logger } from "../../core/logger.js";
 import { hasWallTime } from "../../core/timezone.js";
 import type { CalendarService } from "../../domain/calendar/calendar.service.js";
 import type { ConversationService } from "../../domain/conversation/conversation.service.js";
+import type { FeedbackService } from "../../domain/feedback/feedback.service.js";
 import type { FolderService } from "../../domain/folder/folder.service.js";
 import type { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
 import type { TaskService } from "../../domain/task/task.service.js";
@@ -79,6 +81,7 @@ export class AssistantService {
     private readonly tasks: TaskService,
     private readonly calendar: CalendarService,
     private readonly users: IUserRepository,
+    private readonly feedback: FeedbackService,
   ) {}
 
   /**
@@ -114,7 +117,8 @@ export class AssistantService {
     // dire ce qui a été fait.
     const retained = retainedFolders(suggestion, input.folderSelection);
     const edited = editedTaskLists(suggestion, input.taskListEdits);
-    const payload = retained ?? edited;
+    const withContext = withBugReportContext(suggestion, input.bugReportContext);
+    const payload = retained ?? edited ?? withContext;
     const applied = await this.apply(
       userId,
       payload ? { ...suggestion, payload } : suggestion,
@@ -155,6 +159,10 @@ export class AssistantService {
     if (suggestion.kind === "update_task_list_due_date") {
       const taskLists = await this.rescheduleTaskList(userId, suggestion, accessToken);
       return { ...nothingApplied(), taskLists };
+    }
+    if (suggestion.kind === "report_bug") {
+      await this.reportBug(userId, suggestion, accessToken);
+      return nothingApplied();
     }
 
     // Reste le rendez-vous récurrent (A.11), inscrit au contrat mais sans
@@ -295,6 +303,25 @@ export class AssistantService {
     );
 
     return [updated];
+  }
+
+  /**
+   * Transmet le signalement à `feedback`, catégorie bug (§12.1, A.10).
+   *
+   * `platform` et `screen` n'arrivent qu'à l'acceptation, fusionnés dans la
+   * charge utile par `withBugReportContext` : une acceptation reçue sans eux —
+   * client ancien, appel direct à l'API — rend la charge utile illisible
+   * plutôt que d'insérer un signalement à moitié renseigné.
+   */
+  private async reportBug(userId: string, suggestion: Suggestion, accessToken: string): Promise<void> {
+    const payload = createFeedbackSchema.safeParse({ ...suggestion.payload, category: "bug" });
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de signalement illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    await this.feedback.submitGeneral(userId, payload.data, accessToken);
   }
 
   /**
@@ -576,6 +603,22 @@ function editedTaskLists(
   edits: CreateTaskListsPayload | undefined,
 ): CreateTaskListsPayload | undefined {
   return suggestion.kind === "create_task_list" ? edits : undefined;
+}
+
+/**
+ * Charge utile `report_bug` complétée du contexte transmis à l'acceptation,
+ * ou `undefined` s'il n'y a rien à y ajouter.
+ *
+ * Contrairement à `retainedFolders`, ce n'est pas une restriction de la
+ * proposition d'origine : `platform` et `screen` n'existent nulle part dans
+ * ce que le modèle a produit, ils s'y ajoutent.
+ */
+function withBugReportContext(
+  suggestion: Suggestion,
+  context: ResolveSuggestion["bugReportContext"],
+): Record<string, unknown> | undefined {
+  if (suggestion.kind !== "report_bug" || !context) return undefined;
+  return { ...suggestion.payload, ...context };
 }
 
 /**

@@ -22,14 +22,20 @@ l'UI : le serveur refuse de produire la suggestion correspondante.
 
 ## Le canal permanent est borné (A.10)
 
-Le canal Jean-Claude couvre **trois sujets** : les rappels, l'organisation
-interne de l'outil (dossiers, rangement), et la structure du projet de
-l'utilisateur.
+Le canal Jean-Claude couvre **quatre sujets** : les rappels, l'organisation
+interne de l'outil (dossiers, rangement), la structure du projet de
+l'utilisateur, et le signalement d'un problème technique avec l'application
+(`report_bug`).
 
 Hors de ce périmètre → nouvelle conversation classique, rangée en dossier. Le
 bornage est appliqué **côté serveur** (`buildSystemPrompt`), jamais dans l'UI :
 c'est une règle métier, elle doit valoir identiquement sur les quatre
 plateformes.
+
+`report_bug` reste soumis à la règle du §12.1 ci-dessus comme les trois autres
+sujets : un appel d'outil du modèle devient une suggestion en attente dans
+`assistant_suggestions`, jamais une entrée écrite directement dans `feedback`.
+L'utilisateur voit le texte rédigé par le modèle avant de valider.
 
 ## Une conversation appartient à plusieurs dossiers (§5.2, A.1)
 

@@ -292,6 +292,47 @@ describe("SuggestionService", () => {
       );
     });
 
+    it("traduit un signalement en proposition report_bug", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "On dirait un bug, je le signale ?",
+            content: "Le bouton d'envoi reste grisé après une erreur réseau.",
+          },
+          "report_bug",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "report_bug",
+          message: "On dirait un bug, je le signale ?",
+          payload: { content: "Le bouton d'envoi reste grisé après une erreur réseau." },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ignore un signalement sans description exploitable", async () => {
+      const repo = makeRepository();
+
+      const suggestion = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall({ message: "On dirait un bug, je le signale ?", content: "   " }, "report_bug"),
+        TOKEN,
+      );
+
+      expect(suggestion).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
     it("ignore une reprogrammation sans nouvelle échéance exploitable", async () => {
       const repo = makeRepository();
 

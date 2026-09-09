@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { feedbackPlatformSchema, FEEDBACK_CONTENT_MAX_LENGTH } from "../feedback/feedback.schema";
 import { folderPurposeSchema } from "../folder/folder.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 import { taskListKindSchema } from "../task/task.schema";
@@ -48,6 +49,8 @@ export const suggestionKindSchema = z.enum([
   "create_recurring_event",
   /** « Je décale Courses à vendredi ? » (§12.1, A.2) */
   "update_task_list_due_date",
+  /** « On dirait un bug, je le signale ? » (A.10) */
+  "report_bug",
 ]);
 
 export type SuggestionKind = z.infer<typeof suggestionKindSchema>;
@@ -195,11 +198,22 @@ export type CreateTaskListsPayload = z.infer<typeof createTaskListsPayloadSchema
  * en écarter une partie. Le même schéma que la proposition initiale suffit à
  * le border : ce n'est ni plus ni moins que ce qu'accepterait la création
  * d'une todoliste ordinaire.
+ *
+ * `bugReportContext` complète une proposition `report_bug` : `platform` et
+ * `screen` ne sont connus que du client, jamais du modèle, contrairement au
+ * texte du signalement — comme le contexte technique déjà joint
+ * automatiquement à la fenêtre d'avis général (`useFeedbackContext`).
  */
 export const resolveSuggestionSchema = z.object({
   action: z.enum(["accept", "dismiss"]),
   folderSelection: assignFoldersPayloadSchema.optional(),
   taskListEdits: createTaskListsPayloadSchema.optional(),
+  bugReportContext: z
+    .object({
+      platform: feedbackPlatformSchema,
+      screen: z.string().trim().min(1).max(120),
+    })
+    .optional(),
 });
 
 export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
@@ -256,3 +270,18 @@ export const updateTaskListDueDatePayloadSchema = z.object({
 });
 
 export type UpdateTaskListDueDatePayload = z.infer<typeof updateTaskListDueDatePayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `report_bug` (A.10).
+ *
+ * `content` seul à la capture : c'est tout ce que le modèle peut renseigner,
+ * rédigé à partir de ce que l'utilisateur a décrit. `platform` et `screen`
+ * n'arrivent qu'à l'acceptation, via `bugReportContext` — c'est alors ce
+ * triplet complet qui devient la charge utile stockée, dans la forme
+ * qu'attend `createFeedbackSchema` une fois `category: "bug"` ajoutée.
+ */
+export const reportBugPayloadSchema = z.object({
+  content: z.string().trim().min(1).max(FEEDBACK_CONTENT_MAX_LENGTH),
+});
+
+export type ReportBugPayload = z.infer<typeof reportBugPayloadSchema>;
