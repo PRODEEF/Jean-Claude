@@ -192,6 +192,7 @@ const IDLE_USERS: IUserRepository = {
   findById: jest.fn(),
   update: jest.fn(),
   completeOnboarding: jest.fn(),
+  deleteAccount: jest.fn(),
 };
 
 /**

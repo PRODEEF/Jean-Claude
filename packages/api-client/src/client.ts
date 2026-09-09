@@ -76,6 +76,12 @@ export class JeanClaudeClient {
      */
     completeOnboarding: () =>
       this.http.request<UserProfile>("/me/onboarding/complete", { method: "POST" }),
+
+    /**
+     * Supprime le compte et toutes ses données (§8, §13.4.6). Irréversible,
+     * sans délai de grâce.
+     */
+    deleteAccount: () => this.http.request<void>("/me", { method: "DELETE" }),
   };
 
   /**

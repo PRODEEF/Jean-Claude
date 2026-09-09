@@ -1,6 +1,6 @@
 import { toAssistantModel, type AssistantScope, type Theme } from "@jc/domain";
 import { httpError } from "../../core/http.js";
-import { forUser } from "../../core/supabase/supabase.js";
+import { admin, forUser } from "../../core/supabase/supabase.js";
 import type { IUserRepository, ProfilePatch, ProfileRecord } from "./user.repository.interface.js";
 
 /** Ligne Postgres — snake_case, telle que renvoyée par Supabase. */
@@ -88,6 +88,22 @@ export const userRepository: IUserRepository = {
     if (memory !== null) payload["memory"] = memory;
 
     return write(userId, payload, accessToken);
+  },
+
+  /**
+   * `admin` et non `forUser` : GoTrue n'expose la suppression d'un compte que
+   * via l'API Admin (clé service_role), et `auth.users` n'a pas de policy RLS
+   * à respecter. Pas de fuite entre utilisateurs pour autant — `userId` est
+   * toujours `owner.id`, posé par le middleware depuis le token vérifié,
+   * jamais un `:id` de route (voir user.routes.ts).
+   *
+   * Rien d'autre à supprimer ici : la cascade du schéma SQL sur
+   * `auth.users(id) on delete cascade` efface profil, dossiers,
+   * conversations, messages, todolistes, calendrier, suggestions et feedback.
+   */
+  async deleteAccount(userId) {
+    const { error } = await admin.auth.admin.deleteUser(userId);
+    if (error) throw new Error(error.message);
   },
 };
 

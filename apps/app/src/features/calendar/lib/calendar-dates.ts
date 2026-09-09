@@ -1,5 +1,6 @@
-import type { CalendarEvent, CalendarRange } from "@jc/domain";
+import type { CalendarEvent, CalendarRange, TaskListWithTasks } from "@jc/domain";
 import { addDays, startOfDay } from "@/shared/lib/dates";
+import { momentOf } from "./task-week";
 
 /**
  * Placement des événements dans la grille du calendrier.
@@ -53,36 +54,38 @@ export type PositionedEvent = {
   laneCount: number;
 };
 
+export type PositionedList = {
+  list: TaskListWithTasks;
+  startMinute: number;
+  endMinute: number;
+  lane: number;
+  laneCount: number;
+};
+
+type TimeBox<T> = { ref: T; startMinute: number; endMinute: number };
+type PositionedBox<T> = TimeBox<T> & { lane: number; laneCount: number };
+
 /**
- * Place les événements horaires d'une journée en colonnes.
+ * Place des créneaux d'une journée en colonnes.
  *
- * Deux rendez-vous simultanés se partagent la largeur du jour plutôt que de se
+ * Deux créneaux simultanés se partagent la largeur du jour plutôt que de se
  * masquer l'un l'autre — c'est ce que font le Calendrier iOS, Google Calendar
  * et Fantastical, et sans quoi une journée chargée devient illisible (§4.2).
+ *
+ * Générique parce que la grille y place aussi bien des rendez-vous que des
+ * todolistes échues à heure précise : l'algorithme de placement est le même,
+ * seul ce qu'il positionne diffère.
  */
-export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedEvent[] {
-  const dayStart = startOfDay(day).getTime();
+function layoutBoxes<T>(boxes: TimeBox<T>[]): PositionedBox<T>[] {
+  const sorted = [...boxes].sort(
+    (a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute,
+  );
 
-  const boxes = events
-    .filter((event) => !event.allDay)
-    .map((event) => {
-      const start = new Date(event.startsAt).getTime();
-      const end = event.endsAt
-        ? new Date(event.endsAt).getTime()
-        : start + IMPLICIT_DURATION_MINUTES * 60_000;
-      return {
-        event,
-        startMinute: clamp(Math.round((start - dayStart) / 60_000), 0, MINUTES_PER_DAY),
-        endMinute: clamp(Math.round((end - dayStart) / 60_000), 0, MINUTES_PER_DAY),
-      };
-    })
-    .sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute);
-
-  const positioned: PositionedEvent[] = [];
-  let cluster: typeof boxes = [];
+  const positioned: PositionedBox<T>[] = [];
+  let cluster: TimeBox<T>[] = [];
   let clusterEnd = -1;
 
-  // Un groupe se ferme dès qu'un événement commence après la fin de tous les
+  // Un groupe se ferme dès qu'un créneau commence après la fin de tous les
   // précédents : le partage de largeur ne vaut que dans le groupe, sinon un
   // seul chevauchement du matin rétrécirait toute la journée.
   const flush = () => {
@@ -99,7 +102,7 @@ export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedE
     clusterEnd = -1;
   };
 
-  for (const box of boxes) {
+  for (const box of sorted) {
     if (cluster.length > 0 && box.startMinute >= clusterEnd) flush();
     cluster.push(box);
     clusterEnd = Math.max(clusterEnd, box.endMinute);
@@ -107,6 +110,68 @@ export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedE
   if (cluster.length > 0) flush();
 
   return positioned;
+}
+
+/** Place les événements horaires d'une journée en colonnes. */
+export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedEvent[] {
+  const dayStart = startOfDay(day).getTime();
+
+  const boxes = events
+    .filter((event) => !event.allDay)
+    .map((event) => {
+      const start = new Date(event.startsAt).getTime();
+      const end = event.endsAt
+        ? new Date(event.endsAt).getTime()
+        : start + IMPLICIT_DURATION_MINUTES * 60_000;
+      return {
+        ref: event,
+        startMinute: clamp(Math.round((start - dayStart) / 60_000), 0, MINUTES_PER_DAY),
+        endMinute: clamp(Math.round((end - dayStart) / 60_000), 0, MINUTES_PER_DAY),
+      };
+    });
+
+  return layoutBoxes(boxes).map(({ ref, ...box }) => ({ ...box, event: ref }));
+}
+
+/**
+ * Sépare les todolistes échues d'un jour entre celles qui portent une heure
+ * précise — à placer dans la grille horaire, comme un rendez-vous — et celles
+ * qui n'en portent pas, réservées au bandeau au-dessus.
+ *
+ * Minuit pile vaut « dans la journée », jamais un instant de la grille — même
+ * convention que `momentOf`, déjà appliquée à la vue Todo du calendrier et au
+ * formulaire de todoliste. Sans cette distinction, une liste pourtant datée à
+ * heure précise se retrouvait dans le bandeau plat, indiscernable d'une liste
+ * sans horaire.
+ */
+export function layoutDayLists(
+  lists: TaskListWithTasks[],
+  day: Date,
+): { timed: PositionedList[]; untimed: TaskListWithTasks[] } {
+  const dayStart = startOfDay(day).getTime();
+  const untimed: TaskListWithTasks[] = [];
+
+  const boxes = lists.flatMap((list) => {
+    if (list.dueAt === null || momentOf(list.dueAt) === "anytime") {
+      untimed.push(list);
+      return [];
+    }
+
+    const start = new Date(list.dueAt).getTime();
+    const startMinute = clamp(Math.round((start - dayStart) / 60_000), 0, MINUTES_PER_DAY);
+    return [
+      {
+        ref: list,
+        startMinute,
+        endMinute: clamp(startMinute + IMPLICIT_DURATION_MINUTES, 0, MINUTES_PER_DAY),
+      },
+    ];
+  });
+
+  return {
+    timed: layoutBoxes(boxes).map(({ ref, ...box }) => ({ ...box, list: ref })),
+    untimed,
+  };
 }
 
 function clamp(value: number, min: number, max: number): number {
