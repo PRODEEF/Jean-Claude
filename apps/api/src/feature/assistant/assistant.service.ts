@@ -1,6 +1,7 @@
 import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
+  createEventsPayloadSchema,
   createFeedbackSchema,
   createProjectFoldersPayloadSchema,
   createRecurringEventPayloadSchema,
@@ -175,6 +176,10 @@ export class AssistantService {
     }
     if (suggestion.kind === "create_recurring_event") {
       const events = await this.createRecurringEvent(userId, suggestion, accessToken);
+      return { ...nothingApplied(), events };
+    }
+    if (suggestion.kind === "create_events") {
+      const events = await this.createEvents(userId, suggestion, accessToken);
       return { ...nothingApplied(), events };
     }
 
@@ -482,6 +487,54 @@ export class AssistantService {
     );
 
     return [event];
+  }
+
+  /**
+   * Pose dans l'agenda un rendez-vous par entrée proposée (A.3).
+   *
+   * Distincte de `createRecurringEvent` : chaque entrée est un événement
+   * indépendant, sans `rrule`. Les rendez-vous sont posés l'un après l'autre
+   * plutôt qu'en parallèle pour qu'un événement dont la création échoue ne
+   * fasse pas perdre ceux qui le suivent dans le même lot.
+   *
+   * `allDay` et `endsAt` sont dérivés de l'heure murale de `startsAt`, même
+   * principe que `scheduleTasks` et `createRecurringEvent` : minuit vaut
+   * « dans la journée », une heure précise vaut un rendez-vous à heure fixe.
+   */
+  private async createEvents(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<CalendarEvent[]> {
+    const payload = createEventsPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de rendez-vous illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    const profile = await this.users.findById(userId, accessToken);
+    const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
+
+    const events: CalendarEvent[] = [];
+
+    for (const proposed of payload.data.events) {
+      const timed = hasWallTime(proposed.startsAt, timezone);
+      events.push(
+        await this.calendar.create(
+          userId,
+          {
+            title: proposed.title,
+            startsAt: proposed.startsAt,
+            endsAt: timed ? oneHourAfter(proposed.startsAt) : null,
+            allDay: !timed,
+          },
+          accessToken,
+        ),
+      );
+    }
+
+    return events;
   }
 
   /**

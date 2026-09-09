@@ -438,6 +438,58 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
   },
 };
 
+/**
+ * Rendez-vous ponctuels (A.3). Distinct de `suggest_recurring_event` : chaque
+ * entrée est un événement indépendant, sans règle de répétition. Regrouper
+ * plusieurs rendez-vous dans un seul appel évite d'empiler une carte par
+ * rendez-vous quand l'utilisateur les énumère dans le même message.
+ */
+export const SUGGEST_EVENTS: LlmTool = {
+  name: "suggest_events",
+  description:
+    "À appeler quand l'utilisateur mentionne un ou plusieurs rendez-vous ponctuels à " +
+    "noter dans l'agenda (« j'ai un rendez-vous chez le dentiste jeudi à 15h », " +
+    "« pose-moi ces trois rendez-vous : … ») — y compris quand il demande de les noter, " +
+    "de s'en souvenir ou de les retenir : ce n'est pas un simple accusé de réception, " +
+    "c'est une proposition à valider. " +
+    "Distinct de `suggest_recurring_event`, réservé aux activités qui se répètent selon " +
+    "une règle : ici chaque rendez-vous est indépendant, avec sa propre date. " +
+    "Regrouper tous les rendez-vous du tour en un seul appel avec plusieurs entrées dans " +
+    "`events`, jamais un appel par rendez-vous. " +
+    "Ne jamais écrire « c'est noté » ni présenter les rendez-vous comme déjà posés.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « Je te pose ces deux rendez-vous dans ton agenda ? ». " +
+          "Ne jamais présenter les rendez-vous comme déjà créés. 500 caractères maximum.",
+      },
+      events: {
+        type: "array",
+        description:
+          "Un objet par rendez-vous. Au moins un — une proposition vide n'a rien à poser.",
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Titre court du rendez-vous" },
+            startsAt: {
+              type: "string",
+              description: "Date et heure ISO 8601 du rendez-vous.",
+            },
+          },
+          required: ["title", "startsAt"],
+        },
+      },
+    },
+    required: ["message", "events"],
+  },
+};
+
 const PURPOSE_VALUES = ["generic", "idea", "todo", "purchase", "appointment"];
 
 /**
@@ -645,6 +697,7 @@ export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_UPDATE_TASK_ITEMS,
   SUGGEST_RECURRING_EVENT,
+  SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   ASK_QUESTION,
 ];
@@ -681,6 +734,7 @@ const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST_DUE_DATE.name]: "proactiveTaskDetection",
   [SUGGEST_UPDATE_TASK_ITEMS.name]: "proactiveTaskDetection",
   [SUGGEST_RECURRING_EVENT.name]: "proactiveScheduling",
+  [SUGGEST_EVENTS.name]: "proactiveScheduling",
   [SUGGEST_FOLDERS.name]: "folderOrganization",
   [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",
 };

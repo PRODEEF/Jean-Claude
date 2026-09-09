@@ -5,6 +5,7 @@ import { Check, X } from "lucide-react-native";
 import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
+  createEventsPayloadSchema,
   createProjectFoldersPayloadSchema,
   createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
@@ -495,6 +496,8 @@ function outcomeLabel(suggestion: Suggestion): string {
       return "Créneaux posés";
     case "create_recurring_event":
       return "Rendez-vous posé";
+    case "create_events":
+      return "Rendez-vous posés";
     case "update_task_list_due_date":
       return "Échéance déplacée";
     case "update_task_list_items":
@@ -623,6 +626,24 @@ function useSuggestionPreview(suggestion: Suggestion): {
               hint: `${dueLabel(proposed.data.startsAt)} · ${rruleHint(proposed.data.rrule)}`,
             },
           ]
+        : [],
+    };
+  }
+
+  // Plusieurs rendez-vous ponctuels, chacun avec sa propre date — distinct
+  // d'un rendez-vous récurrent, qui n'affiche qu'une seule ligne.
+  if (suggestion.kind === "create_events") {
+    const proposed = createEventsPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Poser les rendez-vous",
+      lines: proposed.success
+        ? proposed.data.events.map((event, index) => ({
+            key: `event-${index}`,
+            label: event.title,
+            nested: false,
+            hint: dueLabel(event.startsAt),
+          }))
         : [],
     };
   }

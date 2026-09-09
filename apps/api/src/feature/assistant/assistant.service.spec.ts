@@ -1553,6 +1553,70 @@ describe("AssistantService", () => {
     });
   });
 
+  describe("acceptation de plusieurs rendez-vous ponctuels (A.3)", () => {
+    function makeEventsSuggestion(overrides: Partial<Suggestion> = {}): Suggestion {
+      return makeSuggestion({
+        kind: "create_events",
+        message: "Je te pose ces deux rendez-vous dans ton agenda ?",
+        payload: {
+          events: [
+            { title: "Dentiste", startsAt: DESHERBAGE },
+            { title: "Anniversaire", startsAt: MINUIT_PARIS },
+          ],
+        },
+        ...overrides,
+      });
+    }
+
+    it("pose un événement par entrée, à heure fixe ou journée entière selon `startsAt`", async () => {
+      const events = makeCalendarRepository();
+
+      const resolved = await makeService(
+        makeSuggestionStore(makeEventsSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(resolved.events).toHaveLength(2);
+      expect(events.create).toHaveBeenNthCalledWith(
+        1,
+        USER,
+        { title: "Dentiste", startsAt: DESHERBAGE, endsAt: "2026-09-12T10:00:00.000Z", allDay: false },
+        TOKEN,
+      );
+      expect(events.create).toHaveBeenNthCalledWith(
+        2,
+        USER,
+        { title: "Anniversaire", startsAt: MINUIT_PARIS, endsAt: null, allDay: true },
+        TOKEN,
+      );
+    });
+
+    it("ne crée rien quand la proposition est ignorée", async () => {
+      const events = makeCalendarRepository();
+
+      await makeService(
+        makeSuggestionStore(makeEventsSuggestion()),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+
+      expect(events.create).not.toHaveBeenCalled();
+    });
+
+    it("refuse une charge utile illisible", async () => {
+      await expect(
+        makeService(
+          makeSuggestionStore(makeEventsSuggestion({ payload: { events: [] } })),
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
   describe("signalement d'un bug (A.10)", () => {
     it("transmet le signalement à feedback, catégorie bug", async () => {
       const feedback = makeFeedbackRepository();

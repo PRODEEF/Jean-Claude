@@ -1,6 +1,7 @@
 import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
+  createEventsPayloadSchema,
   createProjectFoldersPayloadSchema,
   createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
@@ -17,6 +18,7 @@ import type { LlmToolCall } from "../../core/llm/llm.port.js";
 import { logger } from "../../core/logger.js";
 import {
   REPORT_BUG,
+  SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
   SUGGEST_RECURRING_EVENT,
@@ -163,6 +165,9 @@ function translate(
   } else if (toolCall.name === SUGGEST_RECURRING_EVENT.name) {
     const payload = createRecurringEventPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "create_recurring_event", payload: payload.data };
+  } else if (toolCall.name === SUGGEST_EVENTS.name) {
+    const payload = createEventsPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "create_events", payload: payload.data };
   } else if (toolCall.name === REPORT_BUG.name) {
     const payload = reportBugPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "report_bug", payload: payload.data };
