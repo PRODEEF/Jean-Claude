@@ -1,8 +1,10 @@
 import type {
   Conversation,
   CreateCalendarEvent,
+  CreateFeedback,
   CreateTask,
   CreateTaskList,
+  Feedback,
   Folder,
   Suggestion,
   Task,
@@ -14,6 +16,8 @@ import type { ICalendarRepository } from "../../domain/calendar/calendar.reposit
 import { CalendarService } from "../../domain/calendar/calendar.service.js";
 import type { IConversationRepository } from "../../domain/conversation/conversation.repository.interface.js";
 import { ConversationService } from "../../domain/conversation/conversation.service.js";
+import type { IFeedbackRepository } from "../../domain/feedback/feedback.repository.interface.js";
+import { FeedbackService } from "../../domain/feedback/feedback.service.js";
 import type { IFolderRepository } from "../../domain/folder/folder.repository.interface.js";
 import { FolderService } from "../../domain/folder/folder.service.js";
 import type {
@@ -329,6 +333,7 @@ function makeService(
   tasks: ITaskRepository = makeTaskRepository(),
   events: ICalendarRepository = makeCalendarRepository(),
   users: IUserRepository = IDLE_USERS,
+  feedback: IFeedbackRepository = makeFeedbackRepository(),
 ): AssistantService {
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
@@ -351,6 +356,7 @@ function makeService(
     taskService,
     calendarService,
     users,
+    new FeedbackService(feedback),
   );
 }
 
@@ -429,6 +435,22 @@ function createdLists(repo: ITaskRepository): (CreateTaskList & TaskListOrigin)[
 
 function makeFilingSuggestion(payload: Record<string, unknown>): Suggestion {
   return makeSuggestion({ kind: "assign_folders", message: "Je range ça ?", payload });
+}
+
+function makeReportBugSuggestion(payload: Record<string, unknown>): Suggestion {
+  return makeSuggestion({ kind: "report_bug", message: "On dirait un bug, je le signale ?", payload });
+}
+
+function makeFeedbackRepository(overrides: Partial<IFeedbackRepository> = {}): IFeedbackRepository {
+  return {
+    createGeneral: jest
+      .fn()
+      .mockImplementation((_userId: string, input: CreateFeedback) =>
+        Promise.resolve<Feedback>({ id: "fb-1", createdAt: NOW, ...input }),
+      ),
+    rateMessage: jest.fn(),
+    ...overrides,
+  };
 }
 
 /** Dossiers finalement rattachés à la conversation, dans l'ordre d'appel. */
@@ -1343,6 +1365,86 @@ describe("AssistantService", () => {
       // Sans ce lien, le calendrier montrerait deux fois la même échéance : la
       // liste datée et le créneau posé pour elle.
       expect(travaux?.eventId).toBe(second.events[0]?.id);
+    });
+  });
+
+  describe("signalement d'un bug (A.10)", () => {
+    it("transmet le signalement à feedback, catégorie bug", async () => {
+      const feedback = makeFeedbackRepository();
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeReportBugSuggestion({ content: "Le bouton reste grisé." })),
+      });
+
+      await makeService(
+        suggestions,
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        makeCalendarRepository(),
+        IDLE_USERS,
+        feedback,
+      ).resolve(
+        USER,
+        "sug-1",
+        { action: "accept", bugReportContext: { platform: "web", screen: "/assistant" } },
+        TOKEN,
+      );
+
+      expect(feedback.createGeneral).toHaveBeenCalledWith(
+        USER,
+        { category: "bug", content: "Le bouton reste grisé.", platform: "web", screen: "/assistant" },
+        TOKEN,
+      );
+    });
+
+    it("refuse un signalement accepté sans le contexte de plateforme", async () => {
+      jest.spyOn(console, "error").mockImplementation(() => undefined);
+      const feedback = makeFeedbackRepository();
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeReportBugSuggestion({ content: "Le bouton reste grisé." })),
+      });
+
+      // `platform` et `screen` n'arrivent qu'avec `bugReportContext` : sans lui,
+      // la charge utile ne porte que le texte du bug, illisible pour `feedback`.
+      await expect(
+        makeService(
+          suggestions,
+          makeFolderRepository(),
+          makeConversationRepository(),
+          makeTaskRepository(),
+          makeCalendarRepository(),
+          IDLE_USERS,
+          feedback,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+
+      expect(feedback.createGeneral).not.toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it("ne transmet rien quand le signalement est ignoré", async () => {
+      const feedback = makeFeedbackRepository();
+      const suggestions = makeSuggestionRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeReportBugSuggestion({ content: "Le bouton reste grisé." })),
+      });
+
+      await makeService(
+        suggestions,
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        makeCalendarRepository(),
+        IDLE_USERS,
+        feedback,
+      ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+
+      expect(feedback.createGeneral).not.toHaveBeenCalled();
     });
   });
 

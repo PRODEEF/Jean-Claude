@@ -3,6 +3,7 @@ import {
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
+  reportBugPayloadSchema,
   updateTaskListDueDatePayloadSchema,
   uuidSchema,
   type Suggestion,
@@ -13,6 +14,7 @@ import { httpError } from "../../core/http.js";
 import type { LlmToolCall } from "../../core/llm/llm.port.js";
 import { logger } from "../../core/logger.js";
 import {
+  REPORT_BUG,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
   SUGGEST_TASK_LIST,
@@ -151,6 +153,9 @@ function translate(
   } else if (toolCall.name === SUGGEST_TASK_LIST_DUE_DATE.name) {
     const payload = updateTaskListDueDatePayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "update_task_list_due_date", payload: payload.data };
+  } else if (toolCall.name === REPORT_BUG.name) {
+    const payload = reportBugPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "report_bug", payload: payload.data };
   } else {
     logger.warn(SCOPE, `Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
     return null;

@@ -7,14 +7,17 @@ import {
   assignFoldersPayloadSchema,
   createProjectFoldersPayloadSchema,
   createTaskListsPayloadSchema,
+  reportBugPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
   type AssignFoldersPayload,
   type CreateTaskListsPayload,
+  type FeedbackPlatform,
   type Suggestion,
   type TaskListKind,
 } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { useFeedbackContext } from "@/features/feedback/hooks/use-feedback";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
@@ -34,6 +37,11 @@ export type SuggestionAcceptInput = {
    * a ici aucune donnée externe (arborescence) que la carte ignorerait encore.
    */
   taskListEdits?: CreateTaskListsPayload;
+  /**
+   * Contexte technique d'un signalement de bug (A.10), inconnu du modèle —
+   * même contexte que celui joint automatiquement à la fenêtre d'avis général.
+   */
+  bugReportContext?: { platform: FeedbackPlatform; screen: string };
 };
 
 export type SuggestionCardProps = {
@@ -60,7 +68,11 @@ export function SuggestionCard({
   const { palette } = useTheme();
   const preview = useSuggestionPreview(suggestion);
   const editableTaskLists = suggestion.kind === "create_task_list";
+  const isBugReport = suggestion.kind === "report_bug";
   const editable = useEditableTaskLists(suggestion);
+  // Même contexte que celui joint automatiquement à la fenêtre d'avis général :
+  // le modèle ne peut pas le connaître, il n'arrive qu'ici, à l'acceptation.
+  const bugReportContext = useFeedbackContext();
 
   // Les dossiers écartés, et non ceux retenus : un rangement propose de
   // ranger, pas de choisir à partir de rien. Décochés plutôt que cochés aussi
@@ -78,6 +90,10 @@ export function SuggestionCard({
   const accept = () => {
     if (editableTaskLists) {
       onAccept({ taskListEdits: editedPayload });
+      return;
+    }
+    if (isBugReport) {
+      onAccept({ bugReportContext });
       return;
     }
     // Rien n'est envoyé tant que rien n'a été décoché : le serveur applique
@@ -475,6 +491,8 @@ function outcomeLabel(suggestion: Suggestion): string {
       return "Créneaux posés";
     case "update_task_list_due_date":
       return "Échéance déplacée";
+    case "report_bug":
+      return "Bug signalé";
     default:
       return "Dossiers créés";
   }
@@ -592,6 +610,19 @@ function useSuggestionPreview(suggestion: Suggestion): {
       acceptLabel: "Décaler la liste",
       lines: proposed.success
         ? [{ key: proposed.data.listId, label: dueLabel(proposed.data.dueAt), nested: false }]
+        : [],
+    };
+  }
+
+  // Le texte rédigé par le modèle, pour relecture avant de le transmettre :
+  // c'est ce que `content` deviendra dans `feedback`, tel quel.
+  if (suggestion.kind === "report_bug") {
+    const proposed = reportBugPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Signaler le bug",
+      lines: proposed.success
+        ? [{ key: "content", label: proposed.data.content, nested: false }]
         : [],
     };
   }

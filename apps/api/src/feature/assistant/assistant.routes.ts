@@ -9,6 +9,8 @@ import { calendarRepository } from "../../domain/calendar/calendar.repository.js
 import { CalendarService } from "../../domain/calendar/calendar.service.js";
 import { conversationRepository } from "../../domain/conversation/conversation.repository.js";
 import { ConversationService } from "../../domain/conversation/conversation.service.js";
+import { feedbackRepository } from "../../domain/feedback/feedback.repository.js";
+import { FeedbackService } from "../../domain/feedback/feedback.service.js";
 import { folderRepository } from "../../domain/folder/folder.repository.js";
 import { FolderService } from "../../domain/folder/folder.service.js";
 import { suggestionRepository } from "../../domain/suggestion/suggestion.repository.js";
@@ -22,6 +24,7 @@ const suggestions = new SuggestionService(suggestionRepository);
 const folders = new FolderService(folderRepository);
 const calendar = new CalendarService(calendarRepository, taskRepository);
 const tasks = new TaskService(taskRepository, calendarRepository, userRepository);
+const feedback = new FeedbackService(feedbackRepository);
 
 const service = new AssistantService(
   suggestions,
@@ -39,6 +42,7 @@ const service = new AssistantService(
   tasks,
   calendar,
   userRepository,
+  feedback,
 );
 
 export const assistantRoutes = new Hono<AuthEnv>()

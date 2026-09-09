@@ -871,7 +871,7 @@ describe("ConversationService", () => {
       ]);
     });
 
-    it("borne le canal permanent aux trois sujets prévus (A.10)", async () => {
+    it("borne le canal permanent aux quatre sujets prévus (A.10)", async () => {
       const llm = makeLlm();
       const repo = makeRepository({
         findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
@@ -884,7 +884,7 @@ describe("ConversationService", () => {
       });
 
       const system = lastRequest(llm).system ?? "";
-      expect(system).toContain("réservé à trois sujets");
+      expect(system).toContain("réservé à quatre sujets");
       expect(system).toContain("conversation dédiée");
     });
 
@@ -908,7 +908,7 @@ describe("ConversationService", () => {
       expect(system).toContain("vient de créer son compte");
       // Le bornage du canal ferait ouvrir une conversation dédiée au premier
       // projet évoqué, alors que l'accueil cherche justement à en entendre parler.
-      expect(system).not.toContain("réservé à trois sujets");
+      expect(system).not.toContain("réservé à quatre sujets");
       expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("finish_onboarding");
     });
 
@@ -1123,7 +1123,7 @@ describe("ConversationService", () => {
         attachmentIds: [],
       });
 
-      expect(lastRequest(llm).system ?? "").not.toContain("réservé à trois sujets");
+      expect(lastRequest(llm).system ?? "").not.toContain("réservé à quatre sujets");
     });
 
     it("expose les outils de suggestion au modèle sans jamais les exécuter (§12.1)", async () => {
@@ -2414,7 +2414,7 @@ describe("ConversationService", () => {
         ),
       );
 
-      // Le canal annonce les rappels comme premier de ses trois sujets : sans
+      // Le canal annonce les rappels comme premier de ses quatre sujets : sans
       // cette lecture, « qu'est-ce que j'ai cette semaine ? » ne pouvait
       // produire qu'une invention.
       const system = lastRequest(llm).system ?? "";
@@ -2648,10 +2648,11 @@ describe("ConversationService", () => {
       );
 
       // Sans elle, le canal répondrait lui-même hors de son périmètre : A.10
-      // ne tiendrait plus. `ask_question` reste lui aussi : il ne fait que
-      // donner une forme à une question, il n'ouvre aucune capacité.
+      // ne tiendrait plus. `report_bug` et `ask_question` restent eux aussi :
+      // ni l'un ni l'autre n'ouvre de capacité désactivable.
       expect(lastRequest(llm).tools?.map((t) => t.name)).toEqual([
         "open_new_conversation",
+        "report_bug",
         "ask_question",
       ]);
     });

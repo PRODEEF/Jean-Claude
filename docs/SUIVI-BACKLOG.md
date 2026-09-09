@@ -9,7 +9,20 @@ schéma prêts, comportement à écrire)
 
 Dernière mise à jour : **9 septembre 2026** — l'assistant lit désormais les
 images, les PDF et les fichiers texte joints à un message, nouveau domaine
-API `attachment` et port LLM étendu au contenu multimodal.
+API `attachment` et port LLM étendu au contenu multimodal ; Jean-Claude peut
+signaler un bug de sa propre initiative depuis le canal permanent, retenu
+comme n'importe quelle suggestion jusqu'à validation ; une échéance de
+todoliste qui porte une heure explicite (« à 10h ») n'est plus
+systématiquement ramenée à minuit, et le créneau posé dans l'agenda pour une
+échéance ainsi précisée devient un rendez-vous à heure fixe plutôt qu'une
+journée entière ; un tour de dialogue sans texte ni proposition l'annonce
+désormais plutôt que de se refermer en silence ; supprimer ou déplacer un
+rendez-vous lié à une todoliste répercute enfin le changement dans Mes
+listes et la barre latérale sans recharger la page ; modifier l'échéance
+d'une todoliste déjà liée à un rendez-vous répercute désormais l'heure sur
+ce rendez-vous ; le pied d'action d'une fenêtre modale ne se retrouve plus
+rogné sur le web, et son corps défilant reçoit une marge de sécurité
+supplémentaire ; et la fenêtre d'avis général est plus simple à remplir.
 
 **L'assistant lit les images jointes à un message.** Nouveau geste de capture
 (§13.2.1, §13.4.1 : « quel que soit son format — texte, voix, image, lien »),
@@ -56,22 +69,33 @@ en plus du PDF ; côté carte et aperçu, le critère de bascule entre vignette
 image et carte de fichier est devenu « est-ce une image ? » plutôt que « est-ce
 un PDF ? », pour ne pas avoir à réénumérer chaque nouveau type non-image.
 
-Dernière mise à jour : **9 septembre 2026** — une échéance de todoliste qui
-porte une heure explicite (« à 10h ») n'est plus systématiquement ramenée à
-minuit, et le créneau posé dans l'agenda pour une échéance ainsi précisée
-devient un rendez-vous à heure fixe plutôt qu'une journée entière ; un tour
-de dialogue sans texte ni proposition l'annonce désormais plutôt que de se
-refermer en silence ; supprimer ou déplacer un rendez-vous lié à une
-todoliste répercute enfin le changement dans Mes listes et la barre latérale
-sans recharger la page ; modifier l'échéance d'une todoliste déjà liée à un
-rendez-vous répercute désormais l'heure sur ce rendez-vous ; le pied
-d'action d'une fenêtre modale ne se retrouve plus rogné sur le web, et son
-corps défilant reçoit une marge de sécurité supplémentaire ; et la fenêtre
-d'avis général est plus simple à remplir.
+Auparavant le même jour : **Jean-Claude peut signaler un bug depuis le canal
+permanent, retenu comme suggestion à valider (A.10).** Jusqu'ici, remonter
+un avis passait uniquement par la fenêtre d'avis général (posée le 4
+septembre) — un geste
+direct, jamais soumis au modèle. Le signalement conversationnel est un canal
+supplémentaire, pas un remplacement : un nouveau kind `report_bug` rejoint
+les six déjà connus d'`assistant_suggestions` (migration du jour), et le
+canal permanent passe de trois à quatre sujets autorisés — les trois
+premiers restent inchangés, `buildSystemPrompt` et
+`.claude/rules/400-produit.md` (A.10) documentent désormais ce quatrième.
+L'invariant du §12.1 tient sans exception : le modèle rédige un message de
+confirmation et le texte du signalement, l'utilisateur voit ce texte dans la
+carte de proposition et valide ou ignore, et ce n'est qu'à l'acceptation que
+le serveur écrit dans `feedback` (catégorie « bug »), via le service déjà
+existant — jamais depuis le tool_call lui-même. Ceci amende la doctrine
+posée le 4 septembre, qui tenait `feedback` volontairement hors de portée du
+modèle pour préserver le bornage du canal : la table elle-même ne change
+pas, seule la façon d'y écrire depuis le canal permanent s'ouvre, sous
+condition de validation. `platform` et `screen` — que le modèle ne peut pas
+connaître — sont fournis par le client au moment de l'acceptation plutôt
+qu'à la capture, en réutilisant le même contexte technique déjà joint à la
+fenêtre d'avis général.
 
-**Une échéance de todoliste qui porte une heure explicite n'est plus
-systématiquement ramenée à minuit, et le créneau bloqué dans l'agenda pour
-elle devient un rendez-vous à heure fixe (A.3, #18).** Signalé en usage
+Auparavant le même jour : **une échéance de todoliste qui porte une heure
+explicite n'est plus systématiquement ramenée à minuit, et le créneau
+bloqué dans l'agenda pour elle devient un rendez-vous à heure fixe (A.3,
+#18).** Signalé en usage
 réel : « crée une liste de courses pour samedi à 10h » produisait une liste
 échue le samedi mais sans l'heure, et un « Bloquer le créneau » accepté sur
 cette liste posait un événement journée entière plutôt qu'un rendez-vous à

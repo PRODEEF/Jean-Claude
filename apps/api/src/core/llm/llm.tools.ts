@@ -443,6 +443,36 @@ export const OPEN_NEW_CONVERSATION: LlmTool = {
   },
 };
 
+export const REPORT_BUG: LlmTool = {
+  name: "report_bug",
+  description:
+    "À appeler quand l'utilisateur décrit un dysfonctionnement de l'application — " +
+    "quelque chose qui ne marche pas comme attendu, une erreur, un blocage, un " +
+    "comportement inattendu. Ne pas l'appeler pour une idée d'amélioration ou une " +
+    "question sur le fonctionnement de l'outil : uniquement un problème réellement " +
+    "constaté.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « On dirait un bug, je le signale ? ». Ne jamais présenter " +
+          "le signalement comme déjà transmis. 500 caractères maximum.",
+      },
+      content: {
+        type: "string",
+        description:
+          "Description du problème à l'intention de l'équipe technique, rédigée " +
+          "clairement à partir de ce que l'utilisateur a décrit : ce qui s'est passé, " +
+          "ce qui était attendu à la place. 2000 caractères maximum.",
+      },
+    },
+    required: ["message", "content"],
+  },
+};
+
 export const FINISH_ONBOARDING: LlmTool = {
   name: "finish_onboarding",
   description:
@@ -529,6 +559,7 @@ export const CHAT_TOOLS: LlmTool[] = [
 export const ASSISTANT_TOOLS: LlmTool[] = [
   SUGGEST_PROJECT_FOLDERS,
   OPEN_NEW_CONVERSATION,
+  REPORT_BUG,
   ASK_QUESTION,
 ];
 
@@ -538,9 +569,11 @@ export const ASSISTANT_TOOLS: LlmTool[] = [
  * Les outils absents de cette table ne relèvent d'aucun réglage :
  * `name_conversation` ne fait que poser un libellé, `finish_onboarding` clôt
  * un accueil qui ne se produit qu'une fois, `ask_question` ne fait que donner
- * une forme à une question que le modèle poserait de toute façon, et
+ * une forme à une question que le modèle poserait de toute façon,
  * `open_new_conversation` applique le bornage du canal lui-même — le rendre
- * désactivable reviendrait à supprimer A.10.
+ * désactivable reviendrait à supprimer A.10 — et `report_bug` ne fait que
+ * proposer de transmettre un problème que l'utilisateur vient lui-même de
+ * décrire : le désactiver l'empêcherait de signaler ce qu'il a déjà exprimé.
  */
 const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",
