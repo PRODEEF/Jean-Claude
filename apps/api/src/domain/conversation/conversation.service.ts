@@ -6,6 +6,7 @@ import {
   askedQuestionSchema,
   isVisionCapableModel,
   labelSchema,
+  parseSlashCommand,
   userMemorySchema,
   userPreferencesSchema,
 } from "@jc/domain";
@@ -26,6 +27,7 @@ import type {
   MessageStreamEvent,
   Paginated,
   SendMessage,
+  SlashCommandName,
   Suggestion,
   TaskListWithTasks,
   UpdateConversation,
@@ -51,6 +53,7 @@ import {
   isAllowedByScope,
   NAME_CONVERSATION,
   OPEN_NEW_CONVERSATION,
+  REPORT_BUG,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
   SUGGEST_RECURRING_EVENT,
@@ -125,6 +128,22 @@ const APPLIED_DIRECTLY = new Set([
   FINISH_ONBOARDING.name,
   ASK_QUESTION.name,
 ]);
+
+/**
+ * Réponse fixe de la commande /aide : un texte figé plutôt qu'un tour de
+ * modèle, pour qu'elle ne varie jamais ni n'invente une fonctionnalité
+ * absente — la fiabilité prime ici sur la personnalisation (Cible 2, §0.2).
+ */
+const AIDE_MESSAGE = [
+  "Voici comment m'utiliser :",
+  "",
+  "- Dis-moi ce qui est important cette semaine, je te le rappelle et je t'aide à ranger tes conversations en dossiers.",
+  "- Décris une liste dans une conversation, je te propose de la créer — ou tape /todo <titre> [échéance] pour aller plus vite.",
+  "- Je te propose un rangement pour chaque conversation ; corrige-le à tout moment avec /ranger, une même conversation peut appartenir à plusieurs dossiers.",
+  "- Décris-moi un problème technique depuis ce canal, je transmets un rapport — ou tape /bug <description> pour aller plus vite.",
+  "",
+  "Commandes : /todo, /ranger, /planifier, /bug, /aide.",
+].join("\n");
 
 /**
  * Ce que le tour peut encore faire du fil. `filing` à `null` signifie qu'aucun
@@ -686,6 +705,18 @@ export class ConversationService {
       throw httpError(422, "Il n'y a rien à quoi répondre dans cette conversation.");
     }
 
+    // Commande slash (à la manière des skills) : reconnue sur le dernier
+    // message de l'utilisateur, quel que soit le geste qui l'y a amené —
+    // envoi, correction ou reprise.
+    const lastMessage = dialogue[dialogue.length - 1];
+    const command =
+      lastMessage && lastMessage.role === "user" ? parseSlashCommand(lastMessage.content) : null;
+
+    if (command?.name === "aide") {
+      yield* this.answerAideCommand(conversationId, userId, accessToken);
+      return;
+    }
+
     let text = "";
     let provider: string | null = null;
     let model: string | null = null;
@@ -699,8 +730,21 @@ export class ConversationService {
     // outils qu'on lui expose — et il se lit à partir du profil.
     const todo = await this.pendingHousekeeping(conversation, context, now, accessToken);
 
+    const baseSystem = buildSystemPrompt(conversation.kind, todo, context, now);
+    // Chaque commande n'a de sens que là où son outil est exposé — jamais
+    // dans le canal permanent pour /ranger et /planifier, jamais dans une
+    // conversation classique pour /bug (A.10) : la note serait sinon une
+    // consigne pour un outil que le modèle ne peut pas appeler.
+    // `command.name` exclut déjà "aide" ici : le premier `if` de la méthode
+    // court-circuite ce cas avant d'atteindre ce point.
+    const activeCommand = command ? { note: COMMAND_NOTES[command.name], args: command.args } : null;
+    const system =
+      activeCommand && todo.tools.includes(activeCommand.note.tool)
+        ? [baseSystem, "", ...activeCommand.note.describe(activeCommand.args)].join("\n")
+        : baseSystem;
+
     const request: LlmCompletionRequest = {
-      system: buildSystemPrompt(conversation.kind, todo, context, now),
+      system,
       messages: this.toLlmMessages(dialogue),
       tools: todo.tools,
       // Le modèle du profil ne remplace celui du serveur que s'il existe :
@@ -846,6 +890,35 @@ export class ConversationService {
         "Le modèle n'a produit aucune réponse. Réessayez, ou changez de modèle dans Réglages.",
       );
     }
+  }
+
+  /**
+   * Répond à la commande /aide sans appeler le modèle : un texte fixe plutôt
+   * qu'un tour de dialogue, pour qu'il ne varie jamais ni n'invente une
+   * fonctionnalité absente.
+   */
+  private async *answerAideCommand(
+    conversationId: string,
+    userId: string,
+    accessToken: string,
+  ): AsyncGenerator<MessageStreamEvent> {
+    yield { type: "text", text: AIDE_MESSAGE };
+
+    const assistantMessage = await this.conversations.appendMessage(
+      conversationId,
+      userId,
+      {
+        content: AIDE_MESSAGE,
+        inputMode: "text",
+        role: "assistant",
+        attachmentIds: [],
+        provider: null,
+        model: null,
+      },
+      accessToken,
+    );
+
+    yield { type: "done", message: assistantMessage };
   }
 
   /**
@@ -1662,6 +1735,99 @@ function forgetSwitchedAside(messages: Message[]): Message[] {
  * l'UI : c'est une règle métier, elle doit valoir identiquement pour le web,
  * le mobile et le desktop (§5.3).
  */
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /todo (raccourci
+ * de commande, à la manière des skills) : le texte qui suit sert de titre et
+ * d'échéance possibles, jamais d'articles inventés — la liste ne se propose
+ * qu'une fois son contenu connu.
+ */
+function describeTodoCommand(args: string): string[] {
+  const description = args.length > 0 ? `« ${args} »` : "sans rien après elle";
+
+  return [
+    `Commande /todo : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
+    "C'est une demande explicite de créer une todoliste ou une liste d'achats — pas",
+    "une faute de frappe. Le texte qui suit /todo peut porter un titre et une échéance",
+    "(« samedi », « ce week-end »...), jamais le contenu de la liste : ne l'invente pas.",
+    "S'il ne dit pas encore quoi y mettre, ne l'appelle pas encore : demande-le d'abord,",
+    "en gardant le titre et l'échéance pour le tour où la réponse arrivera. Dès que le",
+    "contenu est connu — dans ce message ou le suivant — appelle `suggest_task_list`",
+    "tout de suite, comme pour toute autre demande explicite.",
+  ];
+}
+
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /ranger : une
+ * demande explicite de rangement, immédiate plutôt que d'attendre que le
+ * modèle la déduise seul de la conversation.
+ */
+function describeRangerCommand(args: string): string[] {
+  return args.length > 0
+    ? [
+        `Commande /ranger : l'utilisateur demande explicitement à ranger cette`,
+        `conversation, en visant « ${args} ». Traite-le comme un rangement demandé`,
+        "explicitement (« range-la plutôt dans... ») et appelle `suggest_folders`",
+        "tout de suite avec ce dossier, existant ou à créer selon ce qui est déjà là.",
+      ]
+    : [
+        "Commande /ranger, sans rien après elle : l'utilisateur demande",
+        "explicitement un rangement pour cette conversation, sans indiquer où.",
+        "Appelle `suggest_folders` tout de suite avec ce que son sujet réel indique",
+        "— jamais un dossier qui ne lui correspond que de loin.",
+      ];
+}
+
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /planifier : le
+ * texte qui suit porte le titre et la récurrence, jamais une heure ou un
+ * jour inventés pour compléter ce qui manque.
+ */
+function describePlanifierCommand(args: string): string[] {
+  const description = args.length > 0 ? `« ${args} »` : "sans rien après elle";
+
+  return [
+    `Commande /planifier : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
+    "C'est une demande explicite de poser un rendez-vous récurrent — pas une",
+    "faute de frappe. S'il manque le jour ou l'heure pour construire une RRULE",
+    "fiable, ne l'appelle pas encore : demande-le d'abord. Dès que la récurrence",
+    "est connue — dans ce message ou le suivant — appelle `suggest_recurring_event`",
+    "tout de suite, comme pour toute autre demande explicite.",
+  ];
+}
+
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /bug : le texte
+ * qui suit décrit le problème, jamais un dysfonctionnement inventé pour
+ * combler ce qui manque.
+ */
+function describeBugCommand(args: string): string[] {
+  return args.length > 0
+    ? [
+        `Commande /bug : l'utilisateur signale explicitement un problème, décrit`,
+        `ainsi : « ${args} ». Appelle \`report_bug\` tout de suite avec ce contenu,`,
+        "reformulé clairement pour l'équipe technique.",
+      ]
+    : [
+        "Commande /bug, sans rien après elle : l'utilisateur signale un problème",
+        "sans encore le décrire. Demande ce qui s'est passé plutôt que d'appeler",
+        "`report_bug` avec un contenu inventé.",
+      ];
+}
+
+/**
+ * Un outil et sa note par commande activable (§ raccourcis) — /aide n'y
+ * figure pas, elle court-circuite le modèle avant d'atteindre ce point.
+ */
+const COMMAND_NOTES: Record<
+  Exclude<SlashCommandName, "aide">,
+  { tool: LlmTool; describe: (args: string) => string[] }
+> = {
+  todo: { tool: SUGGEST_TASK_LIST, describe: describeTodoCommand },
+  ranger: { tool: SUGGEST_FOLDERS, describe: describeRangerCommand },
+  planifier: { tool: SUGGEST_RECURRING_EVENT, describe: describePlanifierCommand },
+  bug: { tool: REPORT_BUG, describe: describeBugCommand },
+};
+
 function buildSystemPrompt(
   kind: Conversation["kind"],
   todo: Housekeeping,

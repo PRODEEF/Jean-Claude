@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   Platform,
   Pressable,
@@ -17,7 +25,13 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import { MESSAGE_ATTACHMENT_MAX_COUNT, MESSAGE_MAX_LENGTH, type MessageInputMode } from "@jc/domain";
+import {
+  MESSAGE_ATTACHMENT_MAX_COUNT,
+  MESSAGE_MAX_LENGTH,
+  SLASH_COMMANDS,
+  type MessageInputMode,
+  type SlashCommandDefinition,
+} from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -119,6 +133,30 @@ export function Composer({
   const [contentHeight, setContentHeight] = useState(MIN_INPUT_HEIGHT);
   const maxHeight = Math.max(MIN_INPUT_HEIGHT * 3, Math.round(windowHeight * MAX_HEIGHT_RATIO));
 
+  /**
+   * Commandes slash correspondant à ce qui est tapé — à la manière des
+   * skills de Claude Code (menu posé à la frappe de « / »).
+   *
+   * Ne s'affiche que tant que le nom de la commande est en cours de frappe :
+   * un espace referme le menu, la saisie continue alors comme un message
+   * ordinaire — le serveur, seul, décide ensuite ce qu'il en fait (§200-app,
+   * pas de logique métier dans un écran).
+   */
+  const commandMatches = useMemo(() => {
+    const match = /^\/([a-z]*)$/i.exec(value);
+    if (!match) return [];
+    const typed = (match[1] ?? "").toLowerCase();
+    return SLASH_COMMANDS.filter((command) => command.name.startsWith(typed));
+  }, [value]);
+
+  const selectCommand = useCallback(
+    (command: SlashCommandDefinition) => {
+      onChangeText(`/${command.name} `);
+      node.current?.focus();
+    },
+    [onChangeText],
+  );
+
   // Origine du brouillon courant (§12.3, A.12) : local au composant, jamais
   // remonté tant que rien n'est envoyé. Un caractère retapé au clavier
   // ramène en « text » — un message qu'on a soi-même corrigé n'est plus
@@ -184,6 +222,30 @@ export function Composer({
 
   return (
     <View style={styles.root}>
+      {commandMatches.length > 0 ? (
+        <View
+          style={[
+            styles.commandMenu,
+            { backgroundColor: palette.surface, borderColor: palette.border },
+          ]}
+        >
+          {commandMatches.map((command) => (
+            <Pressable
+              key={command.name}
+              onPress={() => selectCommand(command)}
+              accessibilityRole="button"
+              accessibilityLabel={`Commande ${command.usage}`}
+              style={styles.commandRow}
+            >
+              <Text style={[styles.commandUsage, { color: palette.text }]}>{command.usage}</Text>
+              <Text style={[styles.commandDescription, { color: palette.textMuted }]}>
+                {command.description}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
       {attachments.length > 0 ? (
         <View style={styles.attachmentsRow}>
           {attachments.map((attachment) =>
@@ -339,6 +401,16 @@ export function Composer({
 
 const styles = StyleSheet.create({
   root: { gap: spacing.xs },
+  commandMenu: { borderWidth: 1, borderRadius: radius.lg, overflow: "hidden" },
+  commandRow: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: "center",
+    gap: 2,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  commandUsage: { fontFamily: FONT_FAMILY, fontSize: fontSize.md },
+  commandDescription: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs },
   attachmentsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   notice: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, paddingHorizontal: spacing.md },
   shell: {

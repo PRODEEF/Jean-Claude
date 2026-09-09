@@ -1549,6 +1549,235 @@ describe("ConversationService", () => {
       ]);
     });
 
+    /**
+     * `generate()` relit le fil depuis `listMessages` plutôt que depuis le
+     * texte transmis à `streamMessage` : c'est ce que le double doit rendre
+     * pour que la commande soit reconnue, exactement comme un aller-retour
+     * réel en base l'aurait fait.
+     */
+    function withLastUserMessage(content: string): IConversationRepository {
+      return makeRepository({
+        listMessages: jest.fn().mockResolvedValue({
+          items: [makeMessage({ id: "m1", role: "user", content })],
+          nextCursor: null,
+        }),
+      });
+    }
+
+    describe("commande /aide", () => {
+      it("répond par un texte fixe sans appeler le modèle", async () => {
+        const repo = withLastUserMessage("/aide");
+        const llm = makeLlm();
+
+        const events = await drain(makeService(repo, llm), {
+          content: "/aide",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(llm.stream).not.toHaveBeenCalled();
+        expect(events.map((e) => e.type)).toEqual(["message", "text", "done"]);
+        expect(repo.appendMessage).toHaveBeenNthCalledWith(
+          2,
+          "conv-1",
+          USER,
+          expect.objectContaining({ role: "assistant", provider: null, model: null }),
+          TOKEN,
+        );
+      });
+
+      it("répond de la même façon, quel que soit le texte tapé après la commande", async () => {
+        const repo = withLastUserMessage("/aide comment ça marche");
+
+        await drain(makeService(repo, makeLlm()), {
+          content: "/aide comment ça marche",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const call = (repo.appendMessage as jest.Mock).mock.calls[1] as [
+          string,
+          string,
+          { content: string },
+          string,
+        ];
+        expect(call[2].content).toContain("Commandes : /todo, /ranger, /planifier, /bug, /aide.");
+      });
+    });
+
+    describe("commande /todo", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande, sans en inventer le contenu", async () => {
+        const llm = makeLlm();
+
+        await drain(makeService(withLastUserMessage("/todo liste de courses samedi"), llm), {
+          content: "/todo liste de courses samedi",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /todo");
+        expect(system).toContain("« liste de courses samedi »");
+      });
+
+      it("ne l'ajoute pas dans le canal permanent, où les todolistes sont hors périmètre (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [makeMessage({ id: "m1", role: "user", content: "/todo liste de courses samedi" })],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/todo liste de courses samedi",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /todo");
+      });
+
+      it("ne l'ajoute pas quand la détection proactive de todolistes est désactivée (A.10)", async () => {
+        const llm = makeLlm();
+
+        await drain(
+          makeService(
+            withLastUserMessage("/todo liste de courses samedi"),
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            makeUserRepository({ proactiveTaskDetection: false }),
+          ),
+          { content: "/todo liste de courses samedi", inputMode: "text", attachmentIds: [] },
+        );
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /todo");
+      });
+    });
+
+    describe("commande /ranger", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande", async () => {
+        const llm = makeLlm();
+
+        await drain(makeService(withLastUserMessage("/ranger Jardin"), llm), {
+          content: "/ranger Jardin",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /ranger");
+        expect(system).toContain("« Jardin »");
+      });
+
+      it("ne l'ajoute pas dans le canal permanent, où le rangement ne s'applique pas (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [makeMessage({ id: "m1", role: "user", content: "/ranger Jardin" })],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/ranger Jardin",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /ranger");
+      });
+    });
+
+    describe("commande /planifier", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande, sans en inventer la récurrence", async () => {
+        const llm = makeLlm();
+
+        await drain(makeService(withLastUserMessage("/planifier kiné tous les mardis à 18h"), llm), {
+          content: "/planifier kiné tous les mardis à 18h",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /planifier");
+        expect(system).toContain("« kiné tous les mardis à 18h »");
+      });
+
+      it("ne l'ajoute pas dans le canal permanent, où les rendez-vous récurrents sont hors périmètre (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({ id: "m1", role: "user", content: "/planifier kiné tous les mardis à 18h" }),
+            ],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/planifier kiné tous les mardis à 18h",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /planifier");
+      });
+    });
+
+    describe("commande /bug", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande, dans le canal permanent (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({ id: "m1", role: "user", content: "/bug le bouton d'envoi ne répond plus" }),
+            ],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/bug le bouton d'envoi ne répond plus",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /bug");
+        expect(system).toContain("« le bouton d'envoi ne répond plus »");
+      });
+
+      it("ne l'ajoute pas dans une conversation classique, où le signalement de bug est hors périmètre", async () => {
+        const llm = makeLlm();
+
+        await drain(
+          makeService(withLastUserMessage("/bug le bouton d'envoi ne répond plus"), llm),
+          { content: "/bug le bouton d'envoi ne répond plus", inputMode: "text", attachmentIds: [] },
+        );
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /bug");
+      });
+    });
+
+    it("laisse une commande inconnue suivre le tour de dialogue ordinaire", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(withLastUserMessage("/inexistante quelque chose"), llm), {
+        content: "/inexistante quelque chose",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(llm.stream).toHaveBeenCalledTimes(1);
+      expect(lastRequest(llm).system ?? "").not.toContain("Commande /todo");
+    });
+
     describe("pièces jointes", () => {
       function withAttachments(
         attachments: IAttachmentRepository,
