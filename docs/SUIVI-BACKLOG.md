@@ -7,10 +7,44 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **9 septembre 2026** — modifier l'échéance d'une
-todoliste déjà liée à un rendez-vous répercute désormais l'heure sur ce
-rendez-vous, et le pied d'action d'une fenêtre modale ne se retrouve plus
-rogné sur le web.
+Dernière mise à jour : **9 septembre 2026** — un tour de dialogue sans texte
+ni proposition l'annonce désormais plutôt que de se refermer en silence,
+supprimer ou déplacer un rendez-vous lié à une todoliste répercute enfin le
+changement dans Mes listes et la barre latérale sans recharger la page,
+modifier l'échéance d'une todoliste déjà liée à un rendez-vous répercute
+désormais l'heure sur ce rendez-vous, et le pied d'action d'une fenêtre
+modale ne se retrouve plus rogné sur le web.
+
+**Un tour de dialogue qui ne produit ni texte ni proposition l'annonce
+désormais, plutôt que de se refermer en silence.** Un modèle qui répond sans
+erreur technique mais sans le moindre appel d'outil — Sonar (§5.1) peut le
+faire — laissait jusqu'ici la conversation utilisable mais l'assistant muet,
+sans aucun signal : ni carte, ni message, ni bannière, le mécanisme d'erreur
+déjà en place (`llm-error.ts` : 429 quota, 402 crédit épuisé, 503 panne) ne
+couvrant que les échecs techniques du moteur, pas une réponse vide et
+techniquement réussie. `ConversationService.generate` lève désormais une
+erreur (502) quand le tour se referme sans message d'assistant ni suggestion
+capturée, empruntant le même canal `type: "error"` du flux déjà affiché au
+fil. Le message de l'utilisateur, lui, reste acquis : seule la réponse
+manque. Reste hors périmètre, dette déjà consignée : aucun repli automatique
+sur un second moteur si celui choisi refuse ou reste muet, l'utilisateur doit
+encore aller en changer lui-même dans Réglages.
+
+**Supprimer ou déplacer un rendez-vous lié à une todoliste répercute enfin le
+changement dans Mes listes, la barre latérale et la vue Todo, sans recharger
+la page (A.3).** Le serveur détachait déjà `task_lists.event_id` à la
+suppression (contrainte `on delete set null`, posée le 3 septembre) et
+mettait déjà à jour l'échéance au déplacement (`CalendarService.
+syncLinkedTaskList`, point du 7 septembre) : la donnée était cohérente en
+base dès ce jour-là. Ce qui ne suivait pas, c'est le cache : `useCalendarActions()`
+n'invalidait que la clé `["calendar"]`, jamais `["taskLists"]`, que
+partagent pourtant les trois écrans qui affichent les todolistes
+(`use-task-lists.ts`) — la liste continuait donc de s'afficher à sa date ou
+son créneau d'origine jusqu'à ce qu'un autre geste déclenche un rechargement.
+`update` et `remove` invalident désormais `["taskLists"]` en plus du
+calendrier. Le point noté le 7 septembre comme dette (« la suppression d'un
+rendez-vous lié... ne détache pas encore task_lists.event_id ») décrivait en
+réalité ce trou de cache, pas une incohérence en base.
 
 **Modifier l'échéance d'une todoliste déjà liée à un rendez-vous répercute
 désormais l'heure sur ce rendez-vous (A.3).** Signalé en usage réel,
