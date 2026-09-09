@@ -1,6 +1,15 @@
-import { parseSlashCommand } from "./command.schema";
+import { parseSlashCommand, SLASH_COMMANDS } from "./command.schema";
 
 describe("parseSlashCommand", () => {
+  it("reconnaît chacune des commandes déclarées dans le catalogue", () => {
+    for (const command of SLASH_COMMANDS) {
+      expect(parseSlashCommand(`/${command.name} un argument`)).toEqual({
+        name: command.name,
+        args: "un argument",
+      });
+    }
+  });
+
   it("reconnaît /todo et distingue son nom de ses arguments", () => {
     expect(parseSlashCommand("/todo liste de courses samedi")).toEqual({
       name: "todo",

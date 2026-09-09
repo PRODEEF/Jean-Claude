@@ -27,6 +27,7 @@ import type {
   MessageStreamEvent,
   Paginated,
   SendMessage,
+  SlashCommandName,
   Suggestion,
   TaskListWithTasks,
   UpdateConversation,
@@ -52,6 +53,7 @@ import {
   isAllowedByScope,
   NAME_CONVERSATION,
   OPEN_NEW_CONVERSATION,
+  REPORT_BUG,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
   SUGGEST_RECURRING_EVENT,
@@ -137,10 +139,11 @@ const HELP_MESSAGE = [
   "",
   "- Dis-moi ce qui est important cette semaine, je te le rappelle et je t'aide à ranger tes conversations en dossiers.",
   "- Décris une liste dans une conversation, je te propose de la créer — ou tape /todo <titre> [échéance] pour aller plus vite.",
-  "- Je te propose un rangement pour chaque conversation ; corrige-le à tout moment, une même conversation peut appartenir à plusieurs dossiers.",
-  "- Décris-moi un problème technique, je transmets un rapport.",
+  "- Je te propose un rangement pour chaque conversation ; corrige-le à tout moment avec /dossier, une même conversation peut appartenir à plusieurs dossiers.",
+  "- /projet <nom> structure un projet en sous-dossiers, depuis ce canal.",
+  "- Décris-moi un problème technique, je transmets un rapport — ou tape /bug <description> pour aller plus vite.",
   "",
-  "Commandes : /todo, /help.",
+  "Commandes : /todo, /dossier, /projet, /bug, /help.",
 ].join("\n");
 
 /**
@@ -729,13 +732,16 @@ export class ConversationService {
     const todo = await this.pendingHousekeeping(conversation, context, now, accessToken);
 
     const baseSystem = buildSystemPrompt(conversation.kind, todo, context, now);
-    // Le raccourci /todo n'a de sens que là où `suggest_task_list` est exposé
-    // — jamais dans le canal permanent, borné à ses quatre sujets (A.10) : la
-    // note serait sinon une consigne pour un outil que le modèle ne peut pas
-    // appeler.
+    // Chaque commande n'a de sens que là où son outil est exposé — jamais
+    // dans le canal permanent pour /dossier, jamais dans une conversation
+    // classique pour /projet et /bug (A.10) : la note serait sinon une
+    // consigne pour un outil que le modèle ne peut pas appeler.
+    // `command.name` exclut déjà "help" ici : le premier `if` de la méthode
+    // court-circuite ce cas avant d'atteindre ce point.
+    const activeCommand = command ? { note: COMMAND_NOTES[command.name], args: command.args } : null;
     const system =
-      command?.name === "todo" && todo.tools.includes(SUGGEST_TASK_LIST)
-        ? [baseSystem, "", ...describeTodoCommand(command.args)].join("\n")
+      activeCommand && todo.tools.includes(activeCommand.note.tool)
+        ? [baseSystem, "", ...activeCommand.note.describe(activeCommand.args)].join("\n")
         : baseSystem;
 
     const request: LlmCompletionRequest = {
@@ -1750,6 +1756,78 @@ function describeTodoCommand(args: string): string[] {
     "tout de suite, comme pour toute autre demande explicite.",
   ];
 }
+
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /dossier : une
+ * demande explicite de rangement, immédiate plutôt que d'attendre que le
+ * modèle la déduise seul de la conversation.
+ */
+function describeDossierCommand(args: string): string[] {
+  return args.length > 0
+    ? [
+        `Commande /dossier : l'utilisateur demande explicitement à ranger cette`,
+        `conversation, en visant « ${args} ». Traite-le comme un rangement demandé`,
+        "explicitement (« range-la plutôt dans... ») et appelle `suggest_folders`",
+        "tout de suite avec ce dossier, existant ou à créer selon ce qui est déjà là.",
+      ]
+    : [
+        "Commande /dossier, sans rien après elle : l'utilisateur demande",
+        "explicitement un rangement pour cette conversation, sans indiquer où.",
+        "Appelle `suggest_folders` tout de suite avec ce que son sujet réel indique",
+        "— jamais un dossier qui ne lui correspond que de loin.",
+      ];
+}
+
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /projet : le texte
+ * qui suit nomme le projet, jamais les sous-dossiers qui le composent — ils
+ * restent déduits de ce que /projet décrit, jamais inventés au-delà.
+ */
+function describeProjetCommand(args: string): string[] {
+  const description = args.length > 0 ? `« ${args} »` : "sans rien après elle";
+
+  return [
+    `Commande /projet : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
+    "C'est une demande explicite de structurer un projet en dossiers — pas une",
+    "faute de frappe. S'il ne dit pas encore de quoi ce projet traite, ne l'appelle",
+    "pas encore : demande-le d'abord. Dès que le sujet est connu — dans ce message",
+    "ou le suivant — appelle `suggest_project_folders` tout de suite, en ne",
+    "proposant que les sous-dossiers (IDÉE, TODO, ACHAT, PRENDRE RDV) pertinents.",
+  ];
+}
+
+/**
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /bug : le texte
+ * qui suit décrit le problème, jamais un dysfonctionnement inventé pour
+ * combler ce qui manque.
+ */
+function describeBugCommand(args: string): string[] {
+  return args.length > 0
+    ? [
+        `Commande /bug : l'utilisateur signale explicitement un problème, décrit`,
+        `ainsi : « ${args} ». Appelle \`report_bug\` tout de suite avec ce contenu,`,
+        "reformulé clairement pour l'équipe technique.",
+      ]
+    : [
+        "Commande /bug, sans rien après elle : l'utilisateur signale un problème",
+        "sans encore le décrire. Demande ce qui s'est passé plutôt que d'appeler",
+        "`report_bug` avec un contenu inventé.",
+      ];
+}
+
+/**
+ * Un outil et sa note par commande activable (§ raccourcis) — /help n'y
+ * figure pas, elle court-circuite le modèle avant d'atteindre ce point.
+ */
+const COMMAND_NOTES: Record<
+  Exclude<SlashCommandName, "help">,
+  { tool: LlmTool; describe: (args: string) => string[] }
+> = {
+  todo: { tool: SUGGEST_TASK_LIST, describe: describeTodoCommand },
+  dossier: { tool: SUGGEST_FOLDERS, describe: describeDossierCommand },
+  projet: { tool: SUGGEST_PROJECT_FOLDERS, describe: describeProjetCommand },
+  bug: { tool: REPORT_BUG, describe: describeBugCommand },
+};
 
 function buildSystemPrompt(
   kind: Conversation["kind"],

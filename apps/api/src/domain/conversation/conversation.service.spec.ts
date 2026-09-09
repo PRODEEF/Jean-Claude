@@ -1601,7 +1601,7 @@ describe("ConversationService", () => {
           { content: string },
           string,
         ];
-        expect(call[2].content).toContain("Commandes : /todo, /help.");
+        expect(call[2].content).toContain("Commandes : /todo, /dossier, /projet, /bug, /help.");
       });
     });
 
@@ -1654,6 +1654,112 @@ describe("ConversationService", () => {
         );
 
         expect(lastRequest(llm).system ?? "").not.toContain("Commande /todo");
+      });
+    });
+
+    describe("commande /dossier", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande", async () => {
+        const llm = makeLlm();
+
+        await drain(makeService(withLastUserMessage("/dossier Jardin"), llm), {
+          content: "/dossier Jardin",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /dossier");
+        expect(system).toContain("« Jardin »");
+      });
+
+      it("ne l'ajoute pas dans le canal permanent, où le rangement ne s'applique pas (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [makeMessage({ id: "m1", role: "user", content: "/dossier Jardin" })],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/dossier Jardin",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /dossier");
+      });
+    });
+
+    describe("commande /projet", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande, dans le canal permanent (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [makeMessage({ id: "m1", role: "user", content: "/projet Jardin" })],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/projet Jardin",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /projet");
+        expect(system).toContain("« Jardin »");
+      });
+
+      it("ne l'ajoute pas dans une conversation classique, où structurer un projet est hors périmètre", async () => {
+        const llm = makeLlm();
+
+        await drain(makeService(withLastUserMessage("/projet Jardin"), llm), {
+          content: "/projet Jardin",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /projet");
+      });
+    });
+
+    describe("commande /bug", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande, dans le canal permanent (A.10)", async () => {
+        const llm = makeLlm();
+        const repo = makeRepository({
+          findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({ id: "m1", role: "user", content: "/bug le bouton d'envoi ne répond plus" }),
+            ],
+            nextCursor: null,
+          }),
+        });
+
+        await drain(makeService(repo, llm), {
+          content: "/bug le bouton d'envoi ne répond plus",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /bug");
+        expect(system).toContain("« le bouton d'envoi ne répond plus »");
+      });
+
+      it("ne l'ajoute pas dans une conversation classique, où le signalement de bug est hors périmètre", async () => {
+        const llm = makeLlm();
+
+        await drain(
+          makeService(withLastUserMessage("/bug le bouton d'envoi ne répond plus"), llm),
+          { content: "/bug le bouton d'envoi ne répond plus", inputMode: "text", attachmentIds: [] },
+        );
+
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /bug");
       });
     });
 

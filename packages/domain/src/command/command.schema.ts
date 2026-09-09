@@ -9,7 +9,13 @@
  * modèle. Un seul endroit à mettre à jour pour ajouter une commande.
  */
 
-export const SLASH_COMMAND_NAMES = ["todo", "help"] as const;
+/**
+ * Un nom par outil de suggestion déjà exposé au modèle (`core/llm/llm.tools.ts`),
+ * plus /help : la commande ne fait rien qu'un outil ne fasse déjà, elle
+ * force juste sa prise en compte immédiate plutôt que d'attendre que le
+ * modèle la déduise seul de la conversation.
+ */
+export const SLASH_COMMAND_NAMES = ["todo", "dossier", "projet", "bug", "help"] as const;
 export type SlashCommandName = (typeof SLASH_COMMAND_NAMES)[number];
 
 export type SlashCommandDefinition = {
@@ -25,6 +31,21 @@ export const SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
     name: "todo",
     usage: "/todo <titre> [échéance]",
     description: "Crée une todoliste et aide à la remplir",
+  },
+  {
+    name: "dossier",
+    usage: "/dossier [dossier visé]",
+    description: "Range cette conversation dans un dossier",
+  },
+  {
+    name: "projet",
+    usage: "/projet <nom>",
+    description: "Structure un projet en sous-dossiers",
+  },
+  {
+    name: "bug",
+    usage: "/bug <description>",
+    description: "Signale un problème technique",
   },
   {
     name: "help",
