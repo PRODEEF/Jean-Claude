@@ -15,7 +15,7 @@ import type {
 import { userPreferencesSchema } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { logger } from "../../core/logger.js";
-import { toWall } from "../../core/timezone.js";
+import { hasWallTime } from "../../core/timezone.js";
 import type { ICalendarRepository } from "../calendar/calendar.repository.interface.js";
 import type { IUserRepository } from "../user/user.repository.interface.js";
 import type {
@@ -242,14 +242,4 @@ export class TaskService {
     if (!task) throw httpError(404, "Tâche introuvable.");
     return task;
   }
-}
-
-/**
- * `iso` porte-t-il une heure murale précise dans `timezone`, ou tombe-t-il
- * pile à minuit — la convention déjà en usage côté client (`momentOf`,
- * `TaskListDialog`) pour dire « dans la journée, sans créneau » ?
- */
-function hasWallTime(iso: string, timezone: string): boolean {
-  const wall = toWall(new Date(iso), timezone);
-  return wall.getUTCHours() !== 0 || wall.getUTCMinutes() !== 0;
 }
