@@ -5,7 +5,7 @@ import { ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEvent, TaskList, TaskListWithTasks } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
-import { listsOfDay, unscheduledLists } from "@/shared/lib/tasks";
+import { datedLists, listsOfDay, unscheduledLists } from "@/shared/lib/tasks";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
@@ -33,7 +33,6 @@ import {
   startOfDay,
   startOfWeek,
   weekDays,
-  weekLabel,
   yearBounds,
   yearLabel,
 } from "@/shared/lib/dates";
@@ -80,7 +79,14 @@ export function CalendarScreen() {
   // l'aveugle. Elles restent en lecture seule ici — on les coche dans
   // l'onglet Mes listes, qui est leur écran.
   const { data: lists } = useTaskLists();
+  // Vues Jour/Semaine/Mois : elles affichent déjà le rendez-vous d'une liste
+  // qui en porte un, donc on l'exclut d'ici pour ne pas doubler la même
+  // échéance sur la même journée (A.3).
   const dueLists = useMemo(() => unscheduledLists(lists ?? []), [lists]);
+  // Vue Todo : elle ne montre aucun rendez-vous, seulement les listes — une
+  // liste dont le créneau a été posé n'a donc nulle part ailleurs où
+  // apparaître ici, contrairement aux autres vues.
+  const allDatedLists = useMemo(() => datedLists(lists ?? []), [lists]);
 
   /** Masque par défaut : sur un mois entier, tout afficher noierait les jours qui comptent. */
   const [hideEmptyDays, setHideEmptyDays] = useState(true);
@@ -93,8 +99,8 @@ export function CalendarScreen() {
     [days, anchor],
   );
   const monthListDays = useMemo(
-    () => monthDays.filter((day) => listsOfDay(dueLists, day).length > 0),
-    [monthDays, dueLists],
+    () => monthDays.filter((day) => listsOfDay(allDatedLists, day).length > 0),
+    [monthDays, allDatedLists],
   );
 
   // La sélection suit la période affichée : sans cela, la liste du jour
@@ -120,7 +126,19 @@ export function CalendarScreen() {
   // Le clic ouvre d'abord un détail, à la façon de Google Calendar (§4.2) — pas
   // directement le formulaire de modification. `editEvent` est le pas de plus,
   // déclenché depuis ce détail.
-  const openEvent = (event: CalendarEvent) => setEventDetail(event);
+  //
+  // Une todoliste datée avec horaire porte un événement (`list.eventId`) : la
+  // grille l'affiche comme n'importe quel rendez-vous, mais le clic doit rouvrir
+  // le détail de la liste — cochable — et non un détail de rendez-vous générique
+  // qui ne montrerait rien de ce qu'il y a à faire.
+  const openEvent = (event: CalendarEvent) => {
+    const linkedList = lists?.find((list) => list.eventId === event.id);
+    if (linkedList) {
+      setListDetail(linkedList);
+      return;
+    }
+    setEventDetail(event);
+  };
   const editEvent = (event: CalendarEvent) => {
     setEventDetail(null);
     setDialogTarget({ mode: "edit", event });
@@ -223,7 +241,10 @@ export function CalendarScreen() {
           {hideEmptyDays && monthListDays.length === 0 ? (
             <Text className="text-muted-foreground text-sm">Aucune todoliste ce mois-ci.</Text>
           ) : (
-            <DueListsBoard days={hideEmptyDays ? monthListDays : monthDays} lists={dueLists} />
+            <DueListsBoard
+              days={hideEmptyDays ? monthListDays : monthDays}
+              lists={allDatedLists}
+            />
           )}
         </View>
       ) : null}
@@ -286,9 +307,16 @@ function shiftAnchor(view: CalendarView, anchor: Date, direction: 1 | -1): Date 
   return addYears(anchor, direction);
 }
 
+/**
+ * Période affichée dans le bandeau — seul texte de date, depuis la fusion
+ * avec l'ancien texte de navigation (§4.2, disposition Google Agenda).
+ *
+ * En vue Semaine, le mois seul : une plage complète (« Semaine du 7 au 13
+ * septembre ») ne tient pas à côté des autres commandes du bandeau, et le
+ * mois suffit à la situer.
+ */
 function periodLabel(view: CalendarView, anchor: Date): string {
   if (view === "day") return dayLabel(anchor);
-  if (view === "week") return weekLabel(anchor);
-  if (view === "month" || view === "todo") return monthLabel(anchor);
+  if (view === "week" || view === "month" || view === "todo") return monthLabel(anchor);
   return yearLabel(anchor);
 }

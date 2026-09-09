@@ -1,12 +1,29 @@
-import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { Platform, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from "react-native";
-import { ArrowUp, Paperclip, Square } from "lucide-react-native";
-import { MESSAGE_ATTACHMENT_MAX_COUNT, MESSAGE_MAX_LENGTH } from "@jc/domain";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { ArrowUp, Mic, Paperclip, Square } from "lucide-react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
+import { MESSAGE_ATTACHMENT_MAX_COUNT, MESSAGE_MAX_LENGTH, type MessageInputMode } from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { AttachmentFileCard } from "./AttachmentFileCard";
 import { AttachmentThumbnail } from "./AttachmentThumbnail";
+import { useDictation } from "./hooks/use-dictation";
 import type { ComposerAttachment } from "./hooks/use-composer-attachments";
 
 /**
@@ -34,8 +51,14 @@ function asTextArea(node: unknown): HTMLTextAreaElement | null {
 export type ComposerProps = {
   value: string;
   onChangeText: (value: string) => void;
-  /** Appelé sur Entrée comme sur la flèche. À l'appelant de vider le champ. */
-  onSubmit: () => void;
+  /**
+   * Appelé sur Entrée comme sur la flèche. À l'appelant de vider le champ.
+   *
+   * Porte le mode d'entrée du message qui part : « voice » si le dernier
+   * geste sur ce brouillon a été un fragment dicté, « text » sinon — retapé
+   * par-dessus, il n'y a plus lieu de le lire à voix haute (§12.3, A.12).
+   */
+  onSubmit: (inputMode: MessageInputMode) => void;
   placeholder: string;
   /** Un tour est en cours : la flèche devient un bouton d'arrêt. */
   busy?: boolean;
@@ -95,6 +118,47 @@ export function Composer({
   const node = useRef<TextInput | null>(null);
   const [contentHeight, setContentHeight] = useState(MIN_INPUT_HEIGHT);
   const maxHeight = Math.max(MIN_INPUT_HEIGHT * 3, Math.round(windowHeight * MAX_HEIGHT_RATIO));
+
+  // Origine du brouillon courant (§12.3, A.12) : local au composant, jamais
+  // remonté tant que rien n'est envoyé. Un caractère retapé au clavier
+  // ramène en « text » — un message qu'on a soi-même corrigé n'est plus
+  // fidèlement ce qui a été dit.
+  const [inputMode, setInputMode] = useState<MessageInputMode>("text");
+
+  const handleChangeText = useCallback(
+    (text: string) => {
+      setInputMode("text");
+      onChangeText(text);
+    },
+    [onChangeText],
+  );
+
+  const dictation = useDictation((text) => {
+    setInputMode("voice");
+    onChangeText(text);
+  });
+
+  // Pulsation tant que la dictée écoute : avec l'icône, le seul repère que
+  // l'enregistrement est actif — sans elle, le bouton ne se distinguait que
+  // par la couleur de son fond, fixe.
+  const reducedMotion = useReducedMotion();
+  const micPulse = useSharedValue(1);
+
+  useEffect(() => {
+    micPulse.value =
+      dictation.listening && !reducedMotion
+        ? withRepeat(withTiming(1.3, { duration: 650, easing: Easing.inOut(Easing.ease) }), -1, true)
+        : withTiming(1, { duration: 150 });
+  }, [dictation.listening, reducedMotion, micPulse]);
+
+  const micPulseStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: micPulse.value }],
+  }));
+
+  const handleSubmit = useCallback(() => {
+    onSubmit(inputMode);
+    setInputMode("text");
+  }, [onSubmit, inputMode]);
 
   // L'appelant garde la main sur le champ — le fil y rend le focus après un
   // envoi — sans que le composant perde la référence dont il a besoin ici.
@@ -175,58 +239,86 @@ export function Composer({
         <TextInput
           ref={attach}
           value={value}
-          onChangeText={onChangeText}
+          onChangeText={handleChangeText}
           placeholder={placeholder}
           placeholderTextColor={palette.textMuted}
           autoFocus={autoFocus}
           multiline
-          // Bornée ici comme elle l'est au contrat partagé : sans cela, un texte
-          // trop long partait au serveur, revenait en 400 générique, et le
-          // brouillon était perdu en chemin.
+          // Bornée ici comme elle l'est au contrat partagé : sans cela, un
+          // texte trop long partait au serveur, revenait en 400 générique, et
+          // le brouillon était perdu en chemin.
           maxLength={MESSAGE_MAX_LENGTH}
-          onSubmitEditing={onSubmit}
-          // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde un
-          // retour à la ligne, la saisie multiligne y étant la norme.
+          onSubmitEditing={handleSubmit}
+          // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde
+          // un retour à la ligne, la saisie multiligne y étant la norme.
           blurOnSubmit={Platform.OS === "web"}
           accessibilityLabel={placeholder}
-          // Le cadre est porté par la coque : celui du champ ferait double trait.
-          // `web:` seulement — sur mobile, `outline` n'existe pas et le retrait
-          // du liseré de focus enlèverait le repère de navigation au clavier,
-          // qui est ici la coque elle-même.
+          // Le cadre est porté par la coque : celui du champ ferait double
+          // trait. `web:` seulement — sur mobile, `outline` n'existe pas et
+          // le retrait du liseré de focus enlèverait le repère de navigation
+          // au clavier, qui est ici la coque elle-même.
           className="web:outline-none"
           onContentSizeChange={(event) => setContentHeight(event.nativeEvent.contentSize.height)}
           style={[
             styles.input,
             { color: palette.text, maxHeight },
-            // Sur web, la hauteur est posée sur le nœud lui-même : un style de
-            // plus ici la remettrait à sa valeur de rendu à chaque frappe.
+            // Sur web, la hauteur est posée sur le nœud lui-même : un style
+            // de plus ici la remettrait à sa valeur de rendu à chaque frappe.
             Platform.OS === "web"
               ? null
               : { height: Math.min(Math.max(contentHeight, MIN_INPUT_HEIGHT), maxHeight) },
           ]}
-          // Un `textarea` s'ouvre sur deux rangées par défaut : le champ naissait
-          // donc deux fois trop haut, texte collé en haut et flèche en bas. Sur
-          // mobile, `numberOfLines` bornerait au contraire la saisie à une ligne.
+          // Un `textarea` s'ouvre sur deux rangées par défaut : le champ
+          // naissait donc deux fois trop haut, texte collé en haut et flèche
+          // en bas. Sur mobile, `numberOfLines` bornerait au contraire la
+          // saisie à une ligne.
           {...(Platform.OS === "web" ? { numberOfLines: 1 } : {})}
         />
 
-        {/* Pendant la génération, le même bouton arrête la réponse plutôt que de
-            rester grisé : c'est ce que font ChatGPT, Claude et Perplexity (§4.2),
-            et rien n'est perdu — le serveur conserve le texte déjà produit. */}
+        {/* Seconde porte d'entrée vers le même champ, jamais un mode à part
+            (§12.3, A.12) : la dictée complète ce qui est déjà tapé, elle ne
+            l'efface pas. Visible même pendant `busy` — le champ, lui, reste
+            éditable pendant qu'une réponse se génère. */}
         <Pressable
-          onPress={stoppable ? onStop : onSubmit}
+          onPress={() => (dictation.listening ? dictation.stop() : dictation.start(value))}
+          accessibilityRole="button"
+          accessibilityLabel={dictation.listening ? "Arrêter la dictée" : "Dicter le message"}
+          hitSlop={8}
+        >
+          <Animated.View
+            style={[
+              styles.mic,
+              dictation.listening ? { backgroundColor: palette.accent } : null,
+              micPulseStyle,
+            ]}
+          >
+            {dictation.listening ? (
+              <Square size={14} fill={palette.accentText} color={palette.accentText} />
+            ) : (
+              <Mic size={16} color={palette.textMuted} />
+            )}
+          </Animated.View>
+        </Pressable>
+
+        {/* Pendant la génération, le même bouton arrête la réponse plutôt que
+            de rester grisé : c'est ce que font ChatGPT, Claude et Perplexity
+            (§4.2), et rien n'est perdu — le serveur conserve le texte déjà
+            produit. */}
+        <Pressable
+          onPress={stoppable ? onStop : handleSubmit}
           disabled={stoppable ? false : busy || uploading || (!hasText && !hasReadyAttachment)}
           accessibilityRole="button"
           accessibilityLabel={stoppable ? "Arrêter la réponse en cours" : "Envoyer le message"}
-          // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie, plus
-          // 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
+          // 32 pt de côté pour tenir dans la hauteur d'une ligne de saisie,
+          // plus 8 pt de `hitSlop` : la zone touchable atteint les 44 pt de
           // `MIN_TOUCH_TARGET` sans faire grandir le champ.
           hitSlop={8}
           style={[
             styles.send,
             {
               backgroundColor: palette.accent,
-              opacity: !stoppable && (busy || uploading || (!hasText && !hasReadyAttachment)) ? 0.4 : 1,
+              opacity:
+                !stoppable && (busy || uploading || (!hasText && !hasReadyAttachment)) ? 0.4 : 1,
             },
           ]}
         >
@@ -237,6 +329,10 @@ export function Composer({
           )}
         </Pressable>
       </Pressable>
+
+      {dictation.error ? (
+        <Text style={[styles.notice, { color: palette.textMuted }]}>{dictation.error}</Text>
+      ) : null}
     </View>
   );
 }
@@ -244,6 +340,7 @@ export function Composer({
 const styles = StyleSheet.create({
   root: { gap: spacing.xs },
   attachmentsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
+  notice: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, paddingHorizontal: spacing.md },
   shell: {
     flexDirection: "row",
     alignItems: "flex-end",
@@ -267,6 +364,13 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: spacing.xs,
     fontSize: fontSize.md,
+  },
+  mic: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.pill,
   },
   send: {
     width: 32,

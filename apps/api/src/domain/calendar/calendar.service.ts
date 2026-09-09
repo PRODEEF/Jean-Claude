@@ -5,10 +5,22 @@ import type {
   UpdateCalendarEvent,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
+import type { ITaskRepository } from "../task/task.repository.interface.js";
 import type { ICalendarRepository } from "./calendar.repository.interface.js";
 
 export class CalendarService {
-  constructor(private readonly events: ICalendarRepository) {}
+  /**
+   * `taskLists` : un service `domain/` qui en consulte un autre directement
+   * (au lieu de passer par `feature/`), comme `TaskService` le fait dans
+   * l'autre sens avec `ICalendarRepository`. Le lien qu'il sert à
+   * maintenir — `task_lists.event_id` — appartient à la todoliste, pas au
+   * rendez-vous, mais c'est bien depuis la fiche du rendez-vous que
+   * l'utilisateur peut aussi déplacer la date des deux à la fois (A.3).
+   */
+  constructor(
+    private readonly events: ICalendarRepository,
+    private readonly taskLists: ITaskRepository,
+  ) {}
 
   /**
    * Événements de la fenêtre demandée.
@@ -53,7 +65,35 @@ export class CalendarService {
       patch.endsAt !== undefined ? patch.endsAt : existing.endsAt,
     );
 
-    return this.events.update(id, patch, accessToken);
+    const updated = await this.events.update(id, patch, accessToken);
+
+    // La liste ne le sait pas tant qu'on ne le lui dit pas : sans ce geste,
+    // la fiche du rendez-vous et l'échéance de la todoliste qu'il représente
+    // divergent en silence dès qu'on déplace l'un des deux depuis l'agenda.
+    if (patch.startsAt !== undefined) {
+      await this.syncLinkedTaskList(id, updated.startsAt, accessToken);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Répercute la date d'un rendez-vous sur l'échéance de la todoliste qui
+   * s'y rattache, quand il en existe une (A.3).
+   *
+   * Sans effet pour l'immense majorité des événements, qui ne représentent
+   * aucune liste — la lecture reste donc silencieuse plutôt que de faire
+   * échouer la modification du rendez-vous.
+   */
+  private async syncLinkedTaskList(
+    eventId: string,
+    startsAt: string,
+    accessToken: string,
+  ): Promise<void> {
+    const list = await this.taskLists.findByEventId(eventId, accessToken);
+    if (!list) return;
+
+    await this.taskLists.updateList(list.id, { dueAt: startsAt }, accessToken);
   }
 
   async delete(id: string, accessToken: string): Promise<void> {

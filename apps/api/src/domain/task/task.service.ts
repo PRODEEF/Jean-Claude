@@ -10,8 +10,14 @@ import type {
   TaskListWithTasks,
   UpdateTask,
   UpdateTaskList,
+  UserPreferences,
 } from "@jc/domain";
+import { userPreferencesSchema } from "@jc/domain";
 import { httpError } from "../../core/http.js";
+import { logger } from "../../core/logger.js";
+import { hasWallTime } from "../../core/timezone.js";
+import type { ICalendarRepository } from "../calendar/calendar.repository.interface.js";
+import type { IUserRepository } from "../user/user.repository.interface.js";
 import type {
   ITaskRepository,
   TaskListOrigin,
@@ -19,8 +25,19 @@ import type {
   TaskRowInput,
 } from "./task.repository.interface.js";
 
+/** Fuseau retenu quand le profil est illisible — celui du schéma partagé. */
+const DEFAULT_TIMEZONE: UserPreferences["timezone"] = userPreferencesSchema.shape.timezone.parse(
+  undefined,
+);
+
+const SCOPE = "task.service";
+
 export class TaskService {
-  constructor(private readonly lists: ITaskRepository) {}
+  constructor(
+    private readonly lists: ITaskRepository,
+    private readonly events: ICalendarRepository,
+    private readonly users: IUserRepository,
+  ) {}
 
   /**
    * Les listes, tâches comprises, par page — garde-fou pour un compte qui en
@@ -57,9 +74,60 @@ export class TaskService {
     return this.lists.createList(userId, input, accessToken);
   }
 
-  async updateList(id: string, patch: UpdateTaskList, accessToken: string): Promise<TaskList> {
-    await this.requireList(id, accessToken);
-    return this.lists.updateList(id, patch, accessToken);
+  /**
+   * Modifie une liste, en répercutant l'échéance sur le rendez-vous qu'elle
+   * représente déjà, quand elle en porte un (A.3).
+   *
+   * Sens inverse de `CalendarService.syncLinkedTaskList` : sans lui, la fiche
+   * du rendez-vous et l'échéance de la liste divergent en silence dès qu'on
+   * modifie l'une des deux indépendamment de l'autre.
+   */
+  async updateList(
+    userId: string,
+    id: string,
+    patch: UpdateTaskList,
+    accessToken: string,
+  ): Promise<TaskList> {
+    const existing = await this.requireList(id, accessToken);
+    const updated = await this.lists.updateList(id, patch, accessToken);
+
+    if (patch.dueAt !== undefined && patch.dueAt !== null && existing.eventId !== null) {
+      await this.syncLinkedEvent(userId, existing.eventId, patch.dueAt, accessToken);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Répercute la nouvelle échéance d'une liste sur son rendez-vous lié.
+   *
+   * `allDay` est dérivé de l'heure murale du profil — minuit vaut « dans la
+   * journée », une heure précise vaut un rendez-vous à heure fixe — même
+   * convention que côté client (`momentOf`, `TaskListDialog`).
+   */
+  private async syncLinkedEvent(
+    userId: string,
+    eventId: string,
+    dueAt: string,
+    accessToken: string,
+  ): Promise<void> {
+    try {
+      const profile = await this.users.findById(userId, accessToken);
+      const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
+      await this.events.update(
+        eventId,
+        { startsAt: dueAt, allDay: !hasWallTime(dueAt, timezone) },
+        accessToken,
+      );
+    } catch (error) {
+      // Le rendez-vous a pu disparaître entre-temps : la liste garde sa
+      // nouvelle échéance, seule leur synchronisation échoue.
+      logger.warn(
+        SCOPE,
+        "Synchronisation du rendez-vous lié impossible :",
+        error instanceof Error ? error.message : error,
+      );
+    }
   }
 
   async deleteList(id: string, accessToken: string): Promise<void> {

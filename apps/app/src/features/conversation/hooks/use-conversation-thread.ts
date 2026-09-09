@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Conversation, Message, MessageStreamEvent, Paginated } from "@jc/domain";
+import type {
+  Conversation,
+  Message,
+  MessageInputMode,
+  MessageStreamEvent,
+  Paginated,
+} from "@jc/domain";
 import { api } from "@/shared/lib/api";
 import { PROFILE_KEY } from "@/shared/hooks/use-profile";
 
@@ -21,7 +27,7 @@ export const THREAD_PAGE_SIZE = 50;
  * seule mutation les porte donc toutes.
  */
 type Turn =
-  | { kind: "send"; content: string; attachmentIds: string[] }
+  | { kind: "send"; content: string; inputMode: MessageInputMode; attachmentIds: string[] }
   | { kind: "edit"; messageId: string; content: string }
   | { kind: "retry"; messageId: string };
 
@@ -194,6 +200,12 @@ export function useConversationThread(
       // Filet : un tour interrompu avant l'événement `message` laisserait
       // sinon la bulle provisoire à l'écran indéfiniment.
       setPendingUserText(null);
+      // Ce tour vient de répondre dans le fil ouvert : ça compte comme lu.
+      // Sans ce geste, le trigger de `unread_count` remonterait la pastille de
+      // cette même conversation dans la barre latérale alors qu'elle est sous
+      // les yeux — `markRead` n'est sinon rejoué qu'à l'ouverture du fil, pas
+      // après chacun de ses tours suivants.
+      await api.conversations.markRead(conversationId);
       // Le tri de la liste des conversations dépend de `lastMessageAt`, que
       // ce tour vient de déplacer.
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -232,8 +244,8 @@ export function useConversationThread(
   });
 
   const submit = useCallback(
-    (content: string, attachmentIds: string[] = []) =>
-      send.mutate({ kind: "send", content, attachmentIds }),
+    (content: string, inputMode: MessageInputMode = "text", attachmentIds: string[] = []) =>
+      send.mutate({ kind: "send", content, inputMode, attachmentIds }),
     [send.mutate],
   );
 
@@ -305,7 +317,7 @@ function turnEvents(
   }
   return api.conversations.send(
     conversationId,
-    { content: turn.content, inputMode: "text", attachmentIds: turn.attachmentIds },
+    { content: turn.content, inputMode: turn.inputMode, attachmentIds: turn.attachmentIds },
     signal,
   );
 }

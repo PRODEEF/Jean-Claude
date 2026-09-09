@@ -17,6 +17,21 @@ import { Text } from "@/shared/ui/text";
 /** Sur iOS, la fenêtre doit sortir de la hiérarchie de l'écran pour couvrir la barre d'état. */
 const FullWindowOverlay = Platform.OS === "ios" ? RNFullWindowOverlay : Fragment;
 
+/**
+ * Hauteur maximale du dialogue, en pourcentage de l'écran — sauf sur le web,
+ * où `vh` remplace `%`.
+ *
+ * `@rn-primitives/dialog` insère sur le web un `<div>` intermédiaire (le
+ * `Dialog.Content` de Radix) sans hauteur explicitement posée : un `max-h-%`
+ * n'a alors plus de bloc englobant défini pour se résoudre, et Chromium le
+ * calcule contre la hauteur intrinsèque du dialogue lui-même — un pied de
+ * modale plus haut que prévu se voyait alors amputé de sa fin, `overflow-
+ * hidden` masquant la coupe sans jamais faire défiler. `vh` se résout contre
+ * la fenêtre, sans dépendre de cette chaîne.
+ */
+const MAX_HEIGHT_COMPACT = Platform.select({ web: "max-h-[88vh]", default: "max-h-[88%]" });
+const MAX_HEIGHT_EXPANDED = Platform.select({ web: "max-h-[85vh]", default: "max-h-[85%]" });
+
 /** Un bouton du pied. Le dernier de la liste porte l'action principale. */
 export type ModalAction = {
   label: string;
@@ -128,8 +143,8 @@ export function Modal({
                 className={cn(
                   "bg-background border-border w-full flex-col overflow-hidden border shadow-lg shadow-black/20",
                   compact
-                    ? "max-h-[88%] rounded-t-2xl border-b-0"
-                    : cn("max-h-[85%] rounded-xl", variant === "confirm" ? "max-w-md" : "max-w-lg"),
+                    ? cn(MAX_HEIGHT_COMPACT, "rounded-t-2xl border-b-0")
+                    : cn(MAX_HEIGHT_EXPANDED, "rounded-xl", variant === "confirm" ? "max-w-md" : "max-w-lg"),
                 )}
               >
                 {/* Poignée : elle dit qu'on est devant une feuille et non
@@ -203,37 +218,45 @@ export function Modal({
                   </ScrollView>
                 ) : null}
 
-                <View
-                  className="border-border gap-4 border-t px-6 pb-5 pt-5"
-                  // La feuille touche le bord bas de l'écran : sans ce retrait,
-                  // le bouton principal passerait sous l'indicateur d'accueil.
-                  style={compact ? { paddingBottom: insets.bottom + spacing.xl } : undefined}
-                >
-                  {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
-
-                  {/* En colonne inversée sous le point de rupture : l'action
-                      principale, dernière de la liste, remonte alors en tête —
-                      c'est elle que le pouce atteint. */}
+                {/* Pied absent et non vide : une modale sans action (croix de
+                    fermeture suffisante) n'a pas à porter une barre qui ne
+                    montre plus qu'un filet et du vide. */}
+                {actions.length > 0 || destructiveAction || error ? (
                   <View
-                    className={cn(
-                      "gap-3",
-                      compact ? "flex-col-reverse" : "flex-row items-center justify-end",
-                    )}
+                    className="border-border gap-4 border-t px-6 pt-5"
+                    // Le dialogue centré n'a pas de zone système à éviter, mais
+                    // mérite le même retrait que la feuille mobile pour ne pas
+                    // coller ses boutons au bord. En compact, la feuille touche
+                    // elle le bord bas de l'écran : sans l'ajout de l'inset, le
+                    // bouton principal passerait sous l'indicateur d'accueil.
+                    style={{ paddingBottom: compact ? insets.bottom + spacing.xl : spacing.xl }}
                   >
-                    {destructiveAction ? (
-                      <FooterButton
-                        action={destructiveAction}
-                        compact={compact}
-                        className={compact ? undefined : "mr-auto"}
-                        destructive
-                      />
-                    ) : null}
+                    {error ? <Text className="text-destructive text-sm">{error}</Text> : null}
 
-                    {actions.map((action) => (
-                      <FooterButton key={action.label} action={action} compact={compact} />
-                    ))}
+                    {/* En colonne inversée sous le point de rupture : l'action
+                        principale, dernière de la liste, remonte alors en tête —
+                        c'est elle que le pouce atteint. */}
+                    <View
+                      className={cn(
+                        "gap-3",
+                        compact ? "flex-col-reverse" : "flex-row items-center justify-end",
+                      )}
+                    >
+                      {destructiveAction ? (
+                        <FooterButton
+                          action={destructiveAction}
+                          compact={compact}
+                          className={compact ? undefined : "mr-auto"}
+                          destructive
+                        />
+                      ) : null}
+
+                      {actions.map((action) => (
+                        <FooterButton key={action.label} action={action} compact={compact} />
+                      ))}
+                    </View>
                   </View>
-                </View>
+                ) : null}
               </DialogPrimitive.Content>
             </NativeOnlyAnimatedView>
           </DialogPrimitive.Overlay>

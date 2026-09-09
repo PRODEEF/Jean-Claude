@@ -5,6 +5,7 @@ import { Palette } from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
 import { ASSISTANT_MODELS, type AssistantScope, type Theme } from "@jc/domain";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
+import { AccountDeleteDialog } from "@/features/settings/AccountDeleteDialog";
 import { useProfile, useUpdateProfile } from "@/shared/hooks/use-profile";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -85,6 +86,7 @@ export function SettingsScreen() {
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
 
   const health = useQuery({ queryKey: ["health"], queryFn: () => api.health.check() });
 
@@ -244,10 +246,7 @@ export function SettingsScreen() {
                         ]}
                       />
                       <View
-                        style={[
-                          styles.swatchHalf,
-                          { backgroundColor: softenAccent(color, "dark") },
-                        ]}
+                        style={[styles.swatchHalf, { backgroundColor: previewDarkHalf(color) }]}
                       />
                     </View>
                     <View style={[styles.swatchCore, { backgroundColor: color }]} />
@@ -387,6 +386,18 @@ export function SettingsScreen() {
           </Pressable>
         </Section>
 
+        <Section title="Supprimer le compte">
+          <Pressable
+            onPress={() => setDeleteAccountOpen(true)}
+            className="flex-row items-center justify-between"
+            style={{ minHeight: MIN_TOUCH_TARGET }}
+            accessibilityRole="button"
+            accessibilityLabel="Supprimer mon compte"
+          >
+            <Text className="text-base text-destructive">Supprimer mon compte</Text>
+          </Pressable>
+        </Section>
+
         {updateProfile.isError ? (
           <Text className="text-sm text-destructive">
             Vos réglages n'ont pas pu être enregistrés. Réessayez.
@@ -395,6 +406,7 @@ export function SettingsScreen() {
       </View>
 
       <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      <AccountDeleteDialog open={deleteAccountOpen} onClose={() => setDeleteAccountOpen(false)} />
     </ScreenShell>
   );
 }
@@ -406,6 +418,28 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       {children}
     </View>
   );
+}
+
+/**
+ * Aperçu de la moitié sombre de la pastille — cet écran seulement.
+ *
+ * `softenAccent(color, "dark")` mélange à 72 % de noir : c'est le bon aplat
+ * pour une grande surface (bulles, calendrier), mais sur un disque de 20 px il
+ * écrase la teinte au point de rendre les huit pastilles indiscernables les
+ * unes des autres. Un mélange plus léger, propre à cet aperçu : l'aplat réel
+ * du reste de l'app garde `softenAccent`, inchangé.
+ */
+function previewDarkHalf(hex: string): string {
+  const normalized = hex.replace("#", "");
+  if (normalized.length !== 6) return hex;
+
+  const kept = 0.55;
+  const channel = (offset: number) =>
+    Math.round(parseInt(normalized.slice(offset, offset + 2), 16) * kept);
+
+  return `#${[0, 2, 4]
+    .map((offset) => channel(offset).toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 /**

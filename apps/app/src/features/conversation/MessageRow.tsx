@@ -1,7 +1,16 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Check, Copy, Pencil, RotateCcw, ThumbsDown, ThumbsUp } from "lucide-react-native";
+import {
+  Check,
+  Copy,
+  Pencil,
+  RotateCcw,
+  ThumbsDown,
+  ThumbsUp,
+  Volume2,
+  VolumeX,
+} from "lucide-react-native";
 import type { Message, MessageAttachment, MessageRatingValue } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
@@ -45,6 +54,10 @@ export type MessageRowProps = {
   onEdit: (messageId: string, content: string) => void;
   /** Un tour est déjà en cours : les deux gestes sont neutralisés. */
   busy: boolean;
+  /** Ce message est celui en cours de lecture à voix haute (§12.3, A.12). */
+  speaking: boolean;
+  /** Démarre la lecture à voix haute de ce message, ou l'arrête si en cours. */
+  onToggleSpeech: (messageId: string, content: string) => void;
 };
 
 /**
@@ -72,6 +85,8 @@ export const MessageRow = memo(function MessageRow({
   onRetry,
   onEdit,
   busy,
+  speaking,
+  onToggleSpeech,
 }: MessageRowProps) {
   const { palette } = useTheme();
   const [revealed, setRevealed] = useState(false);
@@ -227,10 +242,19 @@ export const MessageRow = memo(function MessageRow({
 
               <CopyAction content={message.content} onHoverIn={reveal} onHoverOut={scheduleHide} />
 
-              {/* Seules les réponses de l'assistant se notent : le fil est sa
-                  parole à lui, pas celle de l'utilisateur. */}
+              {/* Seules les réponses de l'assistant se lisent ou se notent :
+                  le fil est sa parole à lui, pas celle de l'utilisateur. */}
               {message.role === "assistant" ? (
                 <>
+                  <IconAction
+                    icon={speaking ? VolumeX : Volume2}
+                    label={speaking ? "Arrêter la lecture" : "Écouter"}
+                    active={speaking}
+                    disabled={false}
+                    onHoverIn={reveal}
+                    onHoverOut={scheduleHide}
+                    onPress={() => onToggleSpeech(message.id, message.content)}
+                  />
                   <IconAction
                     icon={ThumbsUp}
                     label="Utile"

@@ -45,8 +45,8 @@ export const SUGGEST_TASK_LIST: LlmTool = {
                 "une ou la rend déductible (« lundi prochain », « avant le week-end »), " +
                 "sinon omettre. La date vaut pour toute la liste, pas pour une de ses " +
                 "lignes : « les courses avant samedi » date la liste, pas la farine. " +
-                "Sans heure précise, viser minuit — c'est ce qui signifie « dans la " +
-                "journée » plutôt qu'un créneau décidé.",
+                "Viser minuit pour l'heure, qu'une heure précise ait été donnée ou non — " +
+                "elle se règle séparément avec `dueTime`, jamais ici.",
             },
             dueAtText: {
               type: "string",
@@ -54,10 +54,20 @@ export const SUGGEST_TASK_LIST: LlmTool = {
                 "Si `dueAt` est renseigné à partir d'une expression relative (« lundi » " +
                 "« vendredi prochain », « dans deux semaines », « demain », « ce week-end », " +
                 "« avant le week-end »), recopier cette expression telle quelle — quelques " +
-                "mots, pas la phrase entière. Le serveur la relit pour fiabiliser le calcul " +
-                "de date, qu'un modèle de langage fait parfois mal (confondre le jour de " +
-                "cette semaine avec celui de la prochaine). Omettre si l'échéance vient " +
-                "d'une date absolue (« le 15 septembre ») ou d'une heure précise.",
+                "mots, pas la phrase entière, et sans l'heure qui peut l'accompagner " +
+                "(« samedi à 10h » → « samedi »). Le serveur la relit pour fiabiliser le " +
+                "calcul de date, qu'un modèle de langage fait parfois mal (confondre le " +
+                "jour de cette semaine avec celui de la prochaine). Omettre si l'échéance " +
+                "vient d'une date absolue (« le 15 septembre »).",
+            },
+            dueTime: {
+              type: "string",
+              description:
+                "Heure précise de l'échéance, au format HH:mm (24 h) — « 10:00 » pour " +
+                "« à 10h », « 14:30 » pour « à 14h30 ». Uniquement si l'utilisateur en a " +
+                "donné une explicitement ; omettre dans tous les autres cas, y compris " +
+                "quand `dueAt` en calcule une par convention. Sans elle, la liste reste " +
+                "« dans la journée », sans créneau réservé.",
             },
             items: {
               type: "array",
@@ -125,6 +135,74 @@ export const SUGGEST_TASK_LIST_ITEMS: LlmTool = {
       },
     },
     required: ["message", "listId", "items"],
+  },
+};
+
+/**
+ * Décaler l'échéance d'une liste qui existe déjà (§12.1, A.2).
+ *
+ * Distinct de `suggest_task_list_items` : l'un ajoute des lignes, celui-ci
+ * déplace la date de la liste entière. Jamais de propre initiative — seule la
+ * demande explicite de l'utilisateur (« décale-la à... », « avance-la de... »,
+ * « il me la faut plutôt pour... ») déclenche cet outil.
+ */
+export const SUGGEST_TASK_LIST_DUE_DATE: LlmTool = {
+  name: "suggest_task_list_due_date",
+  description:
+    "À appeler uniquement quand l'utilisateur demande explicitement de reporter, " +
+    "avancer ou fixer l'échéance d'une todoliste qui existe déjà. Jamais de ta propre " +
+    "initiative : contrairement à `suggest_task_list`, ce n'est pas une détection " +
+    "proactive. " +
+    "Les listes existantes sont données dans la consigne avec leur identifiant et leur " +
+    "échéance actuelle : recopie l'identifiant caractère pour caractère, jamais " +
+    "reconstitué de mémoire ni remplacé par le titre de la liste. " +
+    "La nouvelle échéance doit toujours tomber aujourd'hui ou après : une todoliste ne " +
+    "se reprogramme jamais dans le passé.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question, nommant la liste et sa nouvelle échéance — ex. « Je décale " +
+          "Courses à vendredi ? ». Ne jamais présenter le changement comme déjà fait. " +
+          "500 caractères maximum.",
+      },
+      listId: {
+        type: "string",
+        description:
+          "Identifiant de la liste à reprogrammer, recopié caractère pour caractère " +
+          "depuis la consigne.",
+      },
+      dueAt: {
+        type: "string",
+        description:
+          "Nouvelle échéance ISO 8601 de la liste entière. Viser minuit pour l'heure, " +
+          "qu'une heure précise ait été donnée ou non — comme pour la création d'une " +
+          "liste, elle se règle séparément avec `dueTime`, jamais ici.",
+      },
+      dueAtText: {
+        type: "string",
+        description:
+          "Si `dueAt` est calculé à partir d'une expression relative au jour même " +
+          "(« demain », « vendredi », « dans une semaine », « ce week-end »), recopier " +
+          "cette expression telle quelle, sans l'heure qui peut l'accompagner (« vendredi " +
+          "à 10h » → « vendredi ») : le serveur la relit pour fiabiliser le calcul. " +
+          "Omettre pour une expression relative à l'échéance actuelle de la liste " +
+          "(« décale-la de 3 jours ») ou une date absolue (« le 15 septembre »).",
+      },
+      dueTime: {
+        type: "string",
+        description:
+          "Heure précise de la nouvelle échéance, au format HH:mm (24 h) — comme pour " +
+          "la création d'une liste. Uniquement si l'utilisateur en donne une " +
+          "explicitement dans cette demande de reprogrammation, y compris pour redonner " +
+          "l'heure que la liste portait déjà si elle doit rester la même. Omise, la " +
+          "nouvelle échéance revient à minuit même si l'ancienne portait une heure.",
+      },
+    },
+    required: ["message", "listId", "dueAt"],
   },
 };
 
@@ -435,6 +513,7 @@ export const ASK_QUESTION: LlmTool = {
 export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_ITEMS,
+  SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_FOLDERS,
   SUGGEST_RECURRING_EVENT,
   ASK_QUESTION,
@@ -466,6 +545,7 @@ export const ASSISTANT_TOOLS: LlmTool[] = [
 const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",
   [SUGGEST_TASK_LIST_ITEMS.name]: "proactiveTaskDetection",
+  [SUGGEST_TASK_LIST_DUE_DATE.name]: "proactiveTaskDetection",
   [SUGGEST_RECURRING_EVENT.name]: "proactiveScheduling",
   [SUGGEST_FOLDERS.name]: "folderOrganization",
   [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",

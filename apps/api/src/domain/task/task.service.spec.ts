@@ -1,10 +1,13 @@
-import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
+import type { CalendarEvent, Task, TaskList, TaskListWithTasks } from "@jc/domain";
+import type { ICalendarRepository } from "../calendar/calendar.repository.interface.js";
+import type { IUserRepository, ProfileRecord } from "../user/user.repository.interface.js";
 import type { ITaskRepository, TaskRowInput } from "./task.repository.interface.js";
 import { TaskService } from "./task.service.js";
 
 const TOKEN = "access-token";
 const USER = "user-1";
 const LIST = "list-1";
+const EVENT = "event-1";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -44,6 +47,7 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
     findAll: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
     findById: jest.fn().mockResolvedValue(makeList()),
     findByConversation: jest.fn().mockResolvedValue([]),
+    findByEventId: jest.fn().mockResolvedValue(null),
     createList: jest
       .fn()
       .mockImplementation((_userId, input: TaskList) => Promise.resolve(makeList(input))),
@@ -65,6 +69,85 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
   };
 }
 
+function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
+  return {
+    id: EVENT,
+    title: "Jardin",
+    notes: null,
+    startsAt: "2026-09-12T00:00:00.000Z",
+    endsAt: null,
+    allDay: true,
+    rrule: null,
+    reminderMinutesBefore: null,
+    folderId: null,
+    conversationId: null,
+    createdByAssistant: false,
+    createdAt: "2026-09-01T08:00:00.000Z",
+    updatedAt: "2026-09-01T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeCalendarRepository(overrides: Partial<ICalendarRepository> = {}): ICalendarRepository {
+  return {
+    findInRange: jest.fn().mockResolvedValue([]),
+    findById: jest.fn().mockResolvedValue(null),
+    create: jest.fn().mockResolvedValue(makeEvent()),
+    update: jest.fn().mockResolvedValue(makeEvent()),
+    delete: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+function makeProfile(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
+  return {
+    id: USER,
+    displayName: "Clarisse",
+    memory: null,
+    onboardingCompletedAt: "2026-08-31T09:00:00.000Z",
+    createdAt: "2026-08-31T08:00:00.000Z",
+    preferences: {
+      assistantName: "Jean-Claude",
+      assistantColor: "#6366F1",
+      theme: "system",
+      flatBanner: false,
+      timezone: "Europe/Paris",
+      speakResponses: false,
+      llmModel: null,
+      scope: {
+        morningReminders: true,
+        folderOrganization: true,
+        structureSuggestions: true,
+        proactiveTaskDetection: true,
+        proactiveScheduling: true,
+      },
+    },
+    ...overrides,
+  };
+}
+
+function makeUserRepository(overrides: Partial<IUserRepository> = {}): IUserRepository {
+  return {
+    findById: jest.fn().mockResolvedValue(makeProfile()),
+    update: jest.fn().mockResolvedValue(makeProfile()),
+    completeOnboarding: jest.fn().mockResolvedValue(makeProfile()),
+    deleteAccount: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+/**
+ * Service sous test, avec des doubles par défaut pour ses dépendances de
+ * synchronisation — la plupart des tests ne portent que sur `lists`.
+ */
+function makeService(
+  lists: ITaskRepository = makeRepository(),
+  events: ICalendarRepository = makeCalendarRepository(),
+  users: IUserRepository = makeUserRepository(),
+): TaskService {
+  return new TaskService(lists, events, users);
+}
+
 describe("TaskService", () => {
   describe("list", () => {
     it("rend une page de listes, tous dossiers confondus", async () => {
@@ -72,11 +155,11 @@ describe("TaskService", () => {
       const page = { items: lists, nextCursor: "2026-09-01T08:00:00.000Z" };
       const repo = makeRepository({ findAll: jest.fn().mockResolvedValue(page) });
 
-      await expect(new TaskService(repo).list(TOKEN, { limit: 30 })).resolves.toEqual(page);
+      await expect(makeService(repo).list(TOKEN, { limit: 30 })).resolves.toEqual(page);
     });
 
     it("rend une page vide quand aucune todoliste n'existe encore", async () => {
-      await expect(new TaskService(makeRepository()).list(TOKEN, { limit: 30 })).resolves.toEqual({
+      await expect(makeService(makeRepository()).list(TOKEN, { limit: 30 })).resolves.toEqual({
         items: [],
         nextCursor: null,
       });
@@ -85,7 +168,7 @@ describe("TaskService", () => {
     it("transmet le curseur et la limite reçus au Repository", async () => {
       const repo = makeRepository();
 
-      await new TaskService(repo).list(TOKEN, { cursor: "2026-09-01T08:00:00.000Z", limit: 10 });
+      await makeService(repo).list(TOKEN, { cursor: "2026-09-01T08:00:00.000Z", limit: 10 });
 
       expect(repo.findAll).toHaveBeenCalledWith(TOKEN, {
         cursor: "2026-09-01T08:00:00.000Z",
@@ -98,7 +181,7 @@ describe("TaskService", () => {
     it("crée une liste sans exiger de dossier", async () => {
       const repo = makeRepository();
 
-      const created = await new TaskService(repo).createList(
+      const created = await makeService(repo).createList(
         USER,
         { title: "Jardin", kind: "todo" },
         TOKEN,
@@ -111,7 +194,7 @@ describe("TaskService", () => {
     it("date la liste entière et non ses lignes", async () => {
       const repo = makeRepository();
 
-      const created = await new TaskService(repo).createList(
+      const created = await makeService(repo).createList(
         USER,
         { title: "Courses", kind: "shopping", dueAt: "2026-09-05T00:00:00.000Z" },
         TOKEN,
@@ -125,7 +208,7 @@ describe("TaskService", () => {
     it("rattache la liste au créneau posé pour elle", async () => {
       const repo = makeRepository();
 
-      await new TaskService(repo).linkEvent(LIST, "event-1", TOKEN);
+      await makeService(repo).linkEvent(LIST, "event-1", TOKEN);
 
       expect(repo.updateList).toHaveBeenCalledWith(LIST, { eventId: "event-1" }, TOKEN);
     });
@@ -133,7 +216,7 @@ describe("TaskService", () => {
     it("refuse de rattacher un créneau à une liste introuvable", async () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
 
-      await expect(new TaskService(repo).linkEvent(LIST, "event-1", TOKEN)).rejects.toMatchObject({
+      await expect(makeService(repo).linkEvent(LIST, "event-1", TOKEN)).rejects.toMatchObject({
         status: 404,
       });
       expect(repo.updateList).not.toHaveBeenCalled();
@@ -146,7 +229,7 @@ describe("TaskService", () => {
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
       });
 
-      await new TaskService(repo).replaceTasks(
+      await makeService(repo).replaceTasks(
         USER,
         LIST,
         {
@@ -168,7 +251,7 @@ describe("TaskService", () => {
     it("remonte au premier niveau une liste qui commence par une ligne indentée", async () => {
       const repo = makeRepository();
 
-      await new TaskService(repo).replaceTasks(
+      await makeService(repo).replaceTasks(
         USER,
         LIST,
         { items: [{ title: "Poncer", depth: 1 }] },
@@ -184,7 +267,7 @@ describe("TaskService", () => {
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
       });
 
-      await new TaskService(repo).replaceTasks(
+      await makeService(repo).replaceTasks(
         USER,
         LIST,
         { items: [{ id: "00000000-0000-4000-8000-000000000099", title: "Semer", depth: 0 }] },
@@ -200,7 +283,7 @@ describe("TaskService", () => {
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
       });
 
-      await new TaskService(repo).replaceTasks(USER, LIST, { items: [] }, TOKEN);
+      await makeService(repo).replaceTasks(USER, LIST, { items: [] }, TOKEN);
 
       expect(repo.replaceTasks).toHaveBeenCalledWith(USER, LIST, [], TOKEN);
     });
@@ -209,7 +292,7 @@ describe("TaskService", () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
 
       await expect(
-        new TaskService(repo).replaceTasks(
+        makeService(repo).replaceTasks(
           USER,
           LIST,
           { items: [{ title: "Semer", depth: 0 }] },
@@ -225,9 +308,97 @@ describe("TaskService", () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
 
       await expect(
-        new TaskService(repo).updateList(LIST, { title: "Potager" }, TOKEN),
+        makeService(repo).updateList(USER, LIST, { title: "Potager" }, TOKEN),
       ).rejects.toMatchObject({ status: 404 });
       expect(repo.updateList).not.toHaveBeenCalled();
+    });
+
+    it("ne touche à aucun rendez-vous quand la liste n'en porte pas", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeList({ eventId: null })) });
+      const events = makeCalendarRepository();
+
+      await makeService(repo, events).updateList(
+        USER,
+        LIST,
+        { dueAt: "2026-09-12T09:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(events.update).not.toHaveBeenCalled();
+    });
+
+    it("répercute la nouvelle échéance sur le rendez-vous déjà lié, à heure précise", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+      });
+      const events = makeCalendarRepository();
+
+      // 9h heure de Paris (UTC+2 en septembre) = 7h UTC. Le profil par défaut
+      // (makeProfile) est déjà sur ce fuseau.
+      await makeService(repo, events).updateList(
+        USER,
+        LIST,
+        { dueAt: "2026-09-12T07:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(events.update).toHaveBeenCalledWith(
+        EVENT,
+        { startsAt: "2026-09-12T07:00:00.000Z", allDay: false },
+        TOKEN,
+      );
+    });
+
+    it("garde le rendez-vous lié journée entière quand la nouvelle échéance ne porte pas d'heure", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+      });
+      const events = makeCalendarRepository();
+
+      // Minuit heure de Paris (UTC+2 en septembre) = 22h UTC la veille.
+      await makeService(repo, events).updateList(
+        USER,
+        LIST,
+        { dueAt: "2026-09-11T22:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(events.update).toHaveBeenCalledWith(
+        EVENT,
+        { startsAt: "2026-09-11T22:00:00.000Z", allDay: true },
+        TOKEN,
+      );
+    });
+
+    it("ne répercute rien quand l'échéance n'est pas modifiée", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+      });
+      const events = makeCalendarRepository();
+
+      await makeService(repo, events).updateList(USER, LIST, { title: "Potager" }, TOKEN);
+
+      expect(events.update).not.toHaveBeenCalled();
+    });
+
+    it("garde la nouvelle échéance de la liste même si le rendez-vous lié a disparu entre-temps", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+      });
+      const events = makeCalendarRepository({
+        update: jest.fn().mockRejectedValue(new Error("Événement introuvable.")),
+      });
+
+      const updated = await makeService(repo, events).updateList(
+        USER,
+        LIST,
+        { dueAt: "2026-09-12T07:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(updated).toBeDefined();
+      jest.restoreAllMocks();
     });
   });
 
@@ -241,7 +412,7 @@ describe("TaskService", () => {
         ),
       });
 
-      await new TaskService(repo).addTask(USER, LIST, { title: "Tailler la haie" }, TOKEN);
+      await makeService(repo).addTask(USER, LIST, { title: "Tailler la haie" }, TOKEN);
 
       expect(repo.createTask).toHaveBeenCalledWith(
         USER,
@@ -255,7 +426,7 @@ describe("TaskService", () => {
     it("place la première tâche d'une liste vide en position 0", async () => {
       const repo = makeRepository();
 
-      await new TaskService(repo).addTask(USER, LIST, { title: "Semer" }, TOKEN);
+      await makeService(repo).addTask(USER, LIST, { title: "Semer" }, TOKEN);
 
       expect(repo.createTask).toHaveBeenCalledWith(USER, LIST, { title: "Semer" }, 0, TOKEN);
     });
@@ -264,7 +435,7 @@ describe("TaskService", () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
 
       await expect(
-        new TaskService(repo).addTask(USER, LIST, { title: "Semer" }, TOKEN),
+        makeService(repo).addTask(USER, LIST, { title: "Semer" }, TOKEN),
       ).rejects.toMatchObject({ status: 404 });
       expect(repo.createTask).not.toHaveBeenCalled();
     });
@@ -276,7 +447,7 @@ describe("TaskService", () => {
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
       });
 
-      await new TaskService(repo).updateTask(LIST, "task-1", { done: true }, TOKEN);
+      await makeService(repo).updateTask(LIST, "task-1", { done: true }, TOKEN);
 
       const patch = (repo.updateTask as jest.Mock).mock.calls[0][2] as { completedAt: string };
       expect(typeof patch.completedAt).toBe("string");
@@ -293,7 +464,7 @@ describe("TaskService", () => {
           ),
       });
 
-      await new TaskService(repo).updateTask(LIST, "task-1", { done: false }, TOKEN);
+      await makeService(repo).updateTask(LIST, "task-1", { done: false }, TOKEN);
 
       expect(repo.updateTask).toHaveBeenCalledWith(
         LIST,
@@ -308,7 +479,7 @@ describe("TaskService", () => {
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
       });
 
-      await new TaskService(repo).updateTask(LIST, "task-1", { title: "Semer des radis" }, TOKEN);
+      await makeService(repo).updateTask(LIST, "task-1", { title: "Semer des radis" }, TOKEN);
 
       expect(repo.updateTask).toHaveBeenCalledWith(
         LIST,
@@ -324,7 +495,7 @@ describe("TaskService", () => {
       });
 
       await expect(
-        new TaskService(repo).updateTask(LIST, "task-99", { done: true }, TOKEN),
+        makeService(repo).updateTask(LIST, "task-99", { done: true }, TOKEN),
       ).rejects.toMatchObject({ status: 404 });
       expect(repo.updateTask).not.toHaveBeenCalled();
     });
@@ -336,7 +507,7 @@ describe("TaskService", () => {
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
       });
 
-      await new TaskService(repo).deleteTask(LIST, "task-1", TOKEN);
+      await makeService(repo).deleteTask(LIST, "task-1", TOKEN);
 
       expect(repo.deleteTask).toHaveBeenCalledWith(LIST, "task-1", TOKEN);
     });
@@ -344,7 +515,7 @@ describe("TaskService", () => {
     it("refuse de supprimer une tâche introuvable", async () => {
       const repo = makeRepository();
 
-      await expect(new TaskService(repo).deleteTask(LIST, "task-1", TOKEN)).rejects.toMatchObject({
+      await expect(makeService(repo).deleteTask(LIST, "task-1", TOKEN)).rejects.toMatchObject({
         status: 404,
       });
       expect(repo.deleteTask).not.toHaveBeenCalled();

@@ -144,3 +144,12 @@ export function titleMatchesQuery(title: string, query: string): boolean {
  * `TaskListEditor` et `TaskRow` pour que les deux rendus restent alignés.
  */
 export const TASK_INDENT = 22;
+
+/**
+ * Hauteur de ligne et taille de case à cocher resserrées, en dessous de
+ * MIN_TOUCH_TARGET (44 pt) — dérogation délibérée à la règle d'accessibilité
+ * du projet (200-app.md), demandée pour une todoliste plus dense. Cocher reste
+ * praticable ; la liste se lit avec des lignes plus rapprochées.
+ */
+export const TASK_ROW_HEIGHT = 32;
+export const TASK_CHECKBOX_SIZE = 16;

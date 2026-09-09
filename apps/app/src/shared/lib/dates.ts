@@ -127,19 +127,6 @@ export function yearLabel(anchor: Date): string {
   return String(anchor.getFullYear());
 }
 
-/** Ex. « Semaine du 7 au 13 septembre 2026 ». */
-export function weekLabel(anchor: Date): string {
-  const days = weekDays(anchor);
-  const first = days[0] ?? anchor;
-  const last = days[6] ?? anchor;
-  const monthOf = (date: Date) => (MONTH_NAMES[date.getMonth()] ?? "").toLowerCase();
-
-  if (first.getMonth() === last.getMonth()) {
-    return `Semaine du ${first.getDate()} au ${last.getDate()} ${monthOf(last)} ${last.getFullYear()}`;
-  }
-  return `Semaine du ${first.getDate()} ${monthOf(first)} au ${last.getDate()} ${monthOf(last)} ${last.getFullYear()}`;
-}
-
 /** Ex. « mercredi 2 septembre 2026 » — la période affichée en vue jour. */
 export function dayLabel(date: Date): string {
   return `${formatFullDay(date)} ${date.getFullYear()}`;

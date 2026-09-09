@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { Pressable, useWindowDimensions, View } from "react-native";
 import { Slot } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppBanner } from "@/features/navigation/AppBanner";
-import { AppSidebar, SIDEBAR_DEFAULT_WIDTH } from "@/features/navigation/AppSidebar";
+import { AppSidebar } from "@/features/navigation/AppSidebar";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 
 /**
@@ -19,6 +19,7 @@ export default function AppLayout() {
   const breakpoint = useBreakpoint();
   const insets = useSafeAreaInsets();
   const expanded = breakpoint === "expanded";
+  const { width: windowWidth } = useWindowDimensions();
 
   // `null` = l'utilisateur n'a pas encore tranché : la barre suit alors la
   // taille d'écran, ouverte sur desktop et fermée sur téléphone.
@@ -26,8 +27,10 @@ export default function AppLayout() {
   const visible = preference ?? expanded;
 
   // La largeur vit ici et non dans la barre : celle-ci est démontée à chaque
-  // repli, et l'ajustement de l'utilisateur serait perdu au passage.
-  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  // repli, et l'ajustement de l'utilisateur serait perdu au passage. 20% de la
+  // fenêtre au chargement, sans autre borne ; l'utilisateur reprend la main
+  // ensuite via la poignée.
+  const [sidebarWidth, setSidebarWidth] = useState(Math.round(windowWidth * 0.2));
 
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
@@ -48,8 +51,16 @@ export default function AppLayout() {
           plutôt que de le comprimer : à cette largeur, la partager laisserait
           les deux illisibles. */}
       {!expanded && visible ? (
-        <View className="absolute inset-0 flex-row" style={{ paddingTop: insets.top + 56 }}>
+        <View
+          className="absolute inset-0 flex-row"
+          style={{ paddingTop: insets.top + 56, pointerEvents: "box-none" }}
+        >
           <AppSidebar onNavigate={() => setPreference(false)} />
+          {/* `box-none` sur le conteneur : sa zone de padding, au-dessus de la
+              barre latérale, n'a aucun enfant mais couvrait déjà la bannière —
+              sans lui, le second appui sur le bouton hamburger (fermeture) y
+              était capté au lieu d'atteindre le bouton, qui ne pouvait donc
+              qu'ouvrir le tiroir, jamais le refermer. */}
           {/* Noir littéral et non un jeton de la palette : le modificateur
               d'opacité de Tailwind ne sait pas calculer d'alpha sur une
               variable CSS, et un voile clair en thème sombre n'assombrirait

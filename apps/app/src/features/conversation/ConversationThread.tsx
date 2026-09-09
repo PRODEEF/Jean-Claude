@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import type { Conversation, Message, Suggestion } from "@jc/domain";
+import type { Conversation, Message, MessageInputMode, Suggestion } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
@@ -23,6 +23,7 @@ import { Composer } from "./Composer";
 import { useAttachmentPicker } from "./hooks/use-attachment-picker";
 import { useComposerAttachments } from "./hooks/use-composer-attachments";
 import { THREAD_PAGE_SIZE, useConversationThread } from "./hooks/use-conversation-thread";
+import { useSpeech } from "./hooks/use-speech";
 import { useSuggestions } from "./hooks/use-suggestions";
 import { MessageRow } from "./MessageRow";
 import { QuestionCard } from "./QuestionCard";
@@ -96,6 +97,7 @@ export function ConversationThread({
   const { messages, send, submit, edit, retry, stop, switchAside, streamingText, pendingUserText } =
     useConversationThread(conversationId, goToDedicatedConversation, restoreDraft);
   const { pending, resolved, resolve } = useSuggestions(conversationId);
+  const { speakingId, toggle: toggleSpeech } = useSpeech();
 
   const failure = messages.error ?? send.error ?? resolve.error ?? switchAside.error;
 
@@ -139,7 +141,7 @@ export function ConversationThread({
     autoSent.current = true;
     // Les pièces jointes viennent de l'écran d'accueil, déjà uploadées : elles
     // ne transitent pas par l'état local `attachments` de ce fil.
-    submit(initialDraft ?? "", initialAttachmentIds ?? []);
+    submit(initialDraft ?? "", "text", initialAttachmentIds ?? []);
   }, [initialDraft, initialAttachmentIds, submit]);
 
   // Le rendu Markdown se met en page après le commit qui déclenche cet
@@ -161,14 +163,17 @@ export function ConversationThread({
     scrollToEndSoon();
   }, [streamingText, pendingUserText, scrollToEndSoon]);
 
-  const sendDraft = useCallback(() => {
-    const content = draft.trim();
-    const attachmentIds = attachments.readyIds;
-    if ((!content && attachmentIds.length === 0) || send.isPending || attachments.uploading) return;
-    setDraft("");
-    attachments.reset();
-    submit(content, attachmentIds);
-  }, [draft, send.isPending, submit, attachments]);
+  const sendDraft = useCallback(
+    (inputMode: MessageInputMode) => {
+      const content = draft.trim();
+      const attachmentIds = attachments.readyIds;
+      if ((!content && attachmentIds.length === 0) || send.isPending || attachments.uploading) return;
+      setDraft("");
+      attachments.reset();
+      submit(content, inputMode, attachmentIds);
+    },
+    [draft, send.isPending, submit, attachments],
+  );
 
   // Ne dépend ni de `items` (voir le calcul de `previous` ci-dessus) ni de
   // `switchAside`/`send` en entier : ces deux mutations sont de nouveaux
@@ -188,6 +193,8 @@ export function ConversationThread({
             onRetry={retry}
             onEdit={edit}
             busy={send.isPending}
+            speaking={speakingId === message.id}
+            onToggleSpeech={toggleSpeech}
           />
 
           {/* Le canal permanent propose, l'utilisateur valide (§12.1, A.10). La
@@ -208,7 +215,15 @@ export function ConversationThread({
         </>
       );
     },
-    [retry, edit, send.isPending, switchAside.mutate, switchAside.isPending],
+    [
+      retry,
+      edit,
+      send.isPending,
+      switchAside.mutate,
+      switchAside.isPending,
+      speakingId,
+      toggleSpeech,
+    ],
   );
 
   return (

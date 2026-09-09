@@ -46,6 +46,345 @@ l'appareil photo côté mobile ; web reste au sélecteur de fichier, sans
 glisser-déposer ni collage pour ce type. Fichiers texte simples restent hors
 périmètre de cette itération.
 
+Dernière mise à jour : **9 septembre 2026** — une échéance de todoliste qui
+porte une heure explicite (« à 10h ») n'est plus systématiquement ramenée à
+minuit, et le créneau posé dans l'agenda pour une échéance ainsi précisée
+devient un rendez-vous à heure fixe plutôt qu'une journée entière ; un tour
+de dialogue sans texte ni proposition l'annonce désormais plutôt que de se
+refermer en silence ; supprimer ou déplacer un rendez-vous lié à une
+todoliste répercute enfin le changement dans Mes listes et la barre latérale
+sans recharger la page ; modifier l'échéance d'une todoliste déjà liée à un
+rendez-vous répercute désormais l'heure sur ce rendez-vous ; et le pied
+d'action d'une fenêtre modale ne se retrouve plus rogné sur le web.
+
+**Une échéance de todoliste qui porte une heure explicite n'est plus
+systématiquement ramenée à minuit, et le créneau bloqué dans l'agenda pour
+elle devient un rendez-vous à heure fixe (A.3, #18).** Signalé en usage
+réel : « crée une liste de courses pour samedi à 10h » produisait une liste
+échue le samedi mais sans l'heure, et un « Bloquer le créneau » accepté sur
+cette liste posait un événement journée entière plutôt qu'un rendez-vous à
+10h — l'heure donnée disparaissait purement et simplement. En cause, deux
+mécanismes distincts, tous deux volontaires à l'origine (points du 7
+septembre) : `withCorrectedDueDates` ramenait *toujours* l'heure du modèle à
+minuit, y compris une heure explicitement demandée ; et `scheduleTasks`
+posait *toujours* un créneau journée entière (`allDay: true`), sans jamais
+regarder l'échéance de la liste.
+
+Plutôt que de déduire une « heure volontaire » depuis le calcul de date du
+modèle (`dueAt`), risqué — un modèle qui se trompe de fuseau y pose parfois
+une heure qui n'est ni minuit ni une heure demandée, un cas déjà couvert par
+un test existant sur une correction de date — un nouveau champ explicite,
+`dueTime` (« HH:mm », `suggest_task_list` et `suggest_task_list_due_date`),
+porte l'heure uniquement quand l'utilisateur en a donné une. `resolveDueAt`
+(`conversation.service.ts`) combine désormais le jour (filet de date relative
+ou calcul du modèle, inchangé) et cette heure (`dueTime`, nouveau) ; sans
+elle, l'échéance reste à minuit exactement comme avant ce champ — aucun des
+tests existants sur la correction de dates n'a dû changer. Côté agenda,
+`AssistantService.scheduleTasks` reçoit `IUserRepository` (même pattern que
+`TaskService.syncLinkedEvent` pour le sens inverse) et pose `allDay` selon
+`hasWallTime`, désormais partagée depuis `core/timezone.ts` plutôt que
+dupliquée. Le créneau à heure fixe dure une heure par défaut, même
+convention que celle déjà simulée à l'affichage pour un événement sans fin.
+
+**Un tour de dialogue qui ne produit ni texte ni proposition l'annonce
+désormais, plutôt que de se refermer en silence.** Un modèle qui répond sans
+erreur technique mais sans le moindre appel d'outil — Sonar (§5.1) peut le
+faire — laissait jusqu'ici la conversation utilisable mais l'assistant muet,
+sans aucun signal : ni carte, ni message, ni bannière, le mécanisme d'erreur
+déjà en place (`llm-error.ts` : 429 quota, 402 crédit épuisé, 503 panne) ne
+couvrant que les échecs techniques du moteur, pas une réponse vide et
+techniquement réussie. `ConversationService.generate` lève désormais une
+erreur (502) quand le tour se referme sans message d'assistant ni suggestion
+capturée, empruntant le même canal `type: "error"` du flux déjà affiché au
+fil. Le message de l'utilisateur, lui, reste acquis : seule la réponse
+manque. Reste hors périmètre, dette déjà consignée : aucun repli automatique
+sur un second moteur si celui choisi refuse ou reste muet, l'utilisateur doit
+encore aller en changer lui-même dans Réglages.
+
+**Supprimer ou déplacer un rendez-vous lié à une todoliste répercute enfin le
+changement dans Mes listes, la barre latérale et la vue Todo, sans recharger
+la page (A.3).** Le serveur détachait déjà `task_lists.event_id` à la
+suppression (contrainte `on delete set null`, posée le 3 septembre) et
+mettait déjà à jour l'échéance au déplacement (`CalendarService.
+syncLinkedTaskList`, point du 7 septembre) : la donnée était cohérente en
+base dès ce jour-là. Ce qui ne suivait pas, c'est le cache : `useCalendarActions()`
+n'invalidait que la clé `["calendar"]`, jamais `["taskLists"]`, que
+partagent pourtant les trois écrans qui affichent les todolistes
+(`use-task-lists.ts`) — la liste continuait donc de s'afficher à sa date ou
+son créneau d'origine jusqu'à ce qu'un autre geste déclenche un rechargement.
+`update` et `remove` invalident désormais `["taskLists"]` en plus du
+calendrier. Le point noté le 7 septembre comme dette (« la suppression d'un
+rendez-vous lié... ne détache pas encore task_lists.event_id ») décrivait en
+réalité ce trou de cache, pas une incohérence en base.
+
+**Modifier l'échéance d'une todoliste déjà liée à un rendez-vous répercute
+désormais l'heure sur ce rendez-vous (A.3).** Signalé en usage réel,
+prolongement direct du point d'hier sur le calendrier Jour/Semaine : une
+todoliste dont le créneau avait déjà été posé (« Bloquer le créneau »
+accepté) restait affichée toute la journée dans le calendrier même après
+avoir précisé une heure sur la liste, la modification ne portant que sur
+`task_lists.due_at`. `CalendarService.syncLinkedTaskList` faisait déjà ce
+travail dans l'autre sens (déplacer le rendez-vous met à jour la liste) ;
+`TaskService.updateList` fait maintenant de même vers le rendez-vous quand
+`eventId` est renseigné, `allDay` étant dérivé de l'heure murale du profil —
+minuit vaut « dans la journée », comme partout ailleurs dans le produit.
+`TaskService` reçoit à cette occasion `ICalendarRepository` et
+`IUserRepository` en plus de son Repository propre, symétriquement à
+`CalendarService`, qui consultait déjà `ITaskRepository` — deuxième et non
+plus seul endroit du projet où un service `domain/` en consulte un autre
+directement plutôt que de passer par `feature/`.
+
+**Le pied d'action d'une fenêtre modale ne se retrouve plus rogné sur le
+web.** Signalé en usage réel, urgent, sur la confirmation de suppression de
+compte — mais affectait potentiellement toute `Modal` dont le contenu
+dépassait une certaine hauteur. En cause, `@rn-primitives/dialog` insère sur
+le web un `<div>` intermédiaire (le `Dialog.Content` de Radix) sans hauteur
+explicitement posée : `max-h-[85%]`/`max-h-[88%]` n'avait alors plus de bloc
+englobant défini pour se résoudre, et Chromium le calculait contre la
+hauteur intrinsèque du dialogue lui-même — toujours plus petite que son
+contenu réel, d'où la troncature silencieuse par `overflow-hidden`. Remplacé
+par `max-h-[85vh]`/`max-h-[88vh]` sur le web uniquement (`Platform.select`),
+qui se résout contre la fenêtre sans dépendre de cette chaîne ; le natif
+n'était pas concerné.
+
+Dernière mise à jour : **8 septembre 2026** — une todoliste à heure précise
+s'affiche enfin à son heure dans la grille Jour/Semaine du calendrier, une
+suggestion de l'assistant ne peut plus en faire disparaître une autre du même
+tour, la todoliste se lit plus dense, et le tiroir de navigation se referme
+correctement sur mobile.
+
+**Une todoliste à heure précise s'affiche enfin à son heure, pas comme
+« toute la journée ».** Signalé en usage réel. En cause, `TimeGrid` (vues
+Jour et Semaine) plaçait systématiquement les todolistes échues dans un
+bandeau plat au-dessus de la grille horaire, sans jamais regarder si leur
+`dueAt` portait une heure précise — à la différence des rendez-vous, où seuls
+ceux marqués `allDay` y échappent. `layoutDayLists` (`calendar-dates.ts`)
+sépare désormais les deux cas avec la même convention que `momentOf` :
+minuit pile vaut « dans la journée », une heure précise se place dans la
+grille comme un rendez-vous.
+
+**Une suggestion de l'assistant ne peut plus en faire disparaître une autre
+du même tour.** Signalé en usage réel (« l'IA ne propose parfois que le
+1er choix »). Deux causes cumulées. D'abord, la contrainte CHECK de
+`assistant_suggestions.kind` n'avait jamais été mise à jour pour
+`update_task_list_due_date`, introduit plus tôt dans la journée : toute
+reprogrammation de todoliste échouait donc en base — et comme la boucle qui
+capture les suggestions d'un tour n'isolait pas ses erreurs, cet échec
+interrompait aussi la capture de toutes celles qui suivaient dans le même
+tour. La migration ajoute le kind manquant, et chaque capture est désormais
+isolée dans son propre `try`/`catch` (`conversation.service.ts`). Ensuite,
+plus étroit : le geste explicite « Extraire la todoliste » ne gardait que le
+premier appel d'outil (`toolCalls.find`) quand le modèle répondait par
+plusieurs appels `suggest_task_list` séparés plutôt qu'un seul groupé —
+`mergeTaskListCalls` les regroupe désormais avant capture.
+
+**La todoliste se lit plus dense.** Demandé directement. Les lignes de
+`TaskListEditor` et de `TaskRow` se rapprochent et la case à cocher rétrécit
+(`TASK_ROW_HEIGHT` : 32 pt, `TASK_CHECKBOX_SIZE` : 16 px) — sous
+`MIN_TOUCH_TARGET` (44 pt) par dérogation explicite à la règle
+d'accessibilité du projet (200-app.md), acceptée pour cette liste en
+particulier.
+
+**Le tiroir de navigation se referme correctement sur mobile.** Signalé en
+usage réel : le bouton l'ouvrait mais ne le refermait pas. En cause, la `View`
+plein écran posée par-dessus le contenu une fois le tiroir ouvert couvrait
+aussi la bannière, sans y porter aucun enfant — le second appui (fermeture)
+était capté par cette zone vide avant d'atteindre le bouton, qui ne pouvait
+donc qu'ouvrir le tiroir, jamais le refermer. Il lui manquait
+`pointerEvents: "box-none"`, déjà en usage ailleurs dans le calendrier pour
+le même besoin.
+
+Dernière mise à jour : **8 septembre 2026** — le bandeau du calendrier reprend
+la disposition de Google Agenda sur desktop.
+
+**Le bandeau du calendrier reprend la disposition de Google Agenda, sur
+desktop (§4.2).** Demande explicite, clarifiée point par point avant
+implémentation. Une seule ligne, packée à gauche : bascule de vue, « Aujourd'hui »,
+période affichée, puis les deux flèches — remplace la disposition à trois
+zones (grand titre séparé au-dessus, bascule centrée, navigation à droite) et
+fusionne ce grand titre avec le texte qui vivait jusque-là entre les flèches.
+Un seul texte de période subsiste ; en vue Semaine, il affiche le mois plutôt
+que la plage complète (« Semaine du 7 au 13 septembre »), qui ne tenait plus à
+côté des autres commandes. `weekLabel` et `weekdayLabel` (`shared/lib/dates.ts`)
+sont retirées, devenues inutilisées. Le mode compact (téléphone) garde son
+organisation actuelle en deux lignes, déjà pensée pour cette largeur — seul le
+layout ≥768pt change.
+
+Dernière mise à jour : **8 septembre 2026** — la moitié sombre des pastilles
+de couleur des réglages n'était plus qu'un aplat noir, le modèle IA par
+défaut sort du catalogue de test pour rejoindre celui des réglages, cliquer
+une todoliste échue depuis les vues Jour/Semaine/Mois ouvre enfin son détail
+au lieu d'une fiche de rendez-vous vide, la vue Todo du calendrier se coche
+directement, et le texte entre les flèches de navigation varie selon la vue.
+
+**La moitié sombre des pastilles de couleur, en réglages, n'était plus
+qu'un aplat noir.** Signalé en usage réel : les huit pastilles de « Sa
+couleur » devenaient indiscernables les unes des autres côté thème sombre.
+En cause, `softenAccent(couleur, "dark")` mélange 72 % de noir — le bon aplat
+pour une grande surface (bulles, calendrier), mais qui écrase toute teinte
+sur un disque de 20 px. Un aperçu propre à cet écran (`previewDarkHalf`,
+réglages.screen.tsx, mélange à 55 %) remplace ce demi-cercle ; l'aplat réel
+utilisé ailleurs dans l'app (bulles de conversation, calendrier en thème
+sombre) n'a volontairement pas changé.
+
+**Le modèle IA par défaut sort du catalogue de test pour rejoindre celui
+des réglages (§5.1).** Signalé en usage réel : à l'inscription comme pour
+tout profil n'ayant encore rien choisi, le sélecteur de « Modèle » n'affichait
+rien de coché. En cause, `LLM_MODEL` par défaut (`anthropic/claude-opus-5`)
+n'appartenait pas aux cinq modèles du catalogue de `@jc/domain` — geste
+délibéré à l'origine (« éprouver un moteur avant de le proposer »), mais qui
+laisse un profil neuf sans rien coché ni expliqué. Le défaut serveur passe à
+`mistral/mistral-medium-3.5`, dans le catalogue. Une variable d'environnement
+`LLM_MODEL` déjà positionnée explicitement sur un déploiement (Vercel) prime
+toujours sur ce défaut de code et reste à mettre à jour séparément si besoin.
+
+**Cliquer une todoliste échue depuis les vues Jour/Semaine/Mois ouvre enfin
+son détail, cochable.** Signalé en usage réel : une todoliste dont le
+créneau est représenté par un rendez-vous (« Bloquer le créneau » accepté)
+ouvrait, au clic, la fiche générique d'un événement — sans la liste, rien à
+cocher, et un bouton « Fermer » qui doublonnait la croix de fermeture du
+bandeau. En cause, la grille route tout clic sur un événement vers
+`EventDetailDialog`, qu'il représente une todoliste ou non. `calendar.screen`
+cherche désormais la todoliste que l'événement représente (`list.eventId`)
+et ouvre `TaskListDetailDialog` à sa place ; celle-ci embarque la liste,
+cochable via `TaskRow` (déjà écrit, jamais branché nulle part), plutôt que de
+renvoyer systématiquement vers Mes listes. Le bouton « Fermer » superflu est
+retiré de `EventDetailDialog`, et `Modal` n'affiche plus de pied vide quand
+il ne reste aucune action.
+
+**La vue Todo du calendrier se coche directement.** Jusqu'ici en lecture
+seule par choix assumé (« on coche dans Mes listes, qui en reste l'écran »).
+`DueListsBoard` sépare désormais l'en-tête de chaque carte (icône, titre,
+heure — toujours pressable, toujours vers Mes listes) du contenu, rendu par
+`TaskRow` au lieu d'un simple texte barré.
+
+**Le texte entre les flèches de navigation du calendrier varie selon la
+vue.** Avant, toujours l'année — y compris en vue Jour ou Semaine, où ça ne
+dit rien de la période affichée et double le titre en vue Mois. Vue Jour : le
+jour de la semaine seul (« lundi »). Semaine et Mois : mois et année. Année :
+inchangé.
+
+Dernière mise à jour : **8 septembre 2026** — l'assistant sait reprogrammer
+une todoliste existante et ne peut plus lui en proposer une dans le passé, la
+vue Todo du calendrier retrouve les listes déjà liées à un rendez-vous,
+déplacer un rendez-vous lié à une todoliste met désormais à jour son
+échéance, sélectionner une liste depuis la barre latérale y fait désormais
+défiler l'écran, et Mes listes comme la vue Todo du calendrier se resserrent
+sur grand écran.
+
+**L'assistant sait reprogrammer une todoliste existante (§12.1, A.2).**
+Jusqu'ici, seule la création portait une échéance : « décale les courses à
+vendredi » n'avait aucun outil à sa portée. Un nouvel outil,
+`suggest_task_list_due_date`, et une nouvelle nature de suggestion,
+`update_task_list_due_date`, suivent exactement le même principe que le
+reste — une proposition en attente, jamais une écriture directe (§12.1). Il
+n'est offert que si le fil a déjà produit au moins une liste, et jamais deux
+fois de suite pour la même reprogrammation en attente, comme
+`suggest_task_list_items`. La consigne système porte désormais l'échéance
+actuelle de chaque liste du fil, pas seulement son contenu : sans elle,
+« décale-la de 3 jours » n'aurait rien à décaler *depuis*. Même filet
+déterministe que la création (`dueAtText`, `parseRelativeDateFr`) pour les
+tournures relatives au jour même.
+
+**Une todoliste proposée par l'assistant ne peut plus tomber dans le
+passé.** Signalé en relecture : rien n'empêchait le modèle de proposer une
+échéance déjà passée, ni à la création ni à la reprogrammation. Le calcul
+d'une date reste faillible (arithmétique de jours de semaine, fuseau), et le
+filet `withCorrectedDueDates` ne couvrait que la mise à minuit, pas la
+question du jour. Une échéance de création qui retombe dans le passé est
+désormais effacée plutôt que gardée — même philosophie qu'une date illisible,
+la liste vaut mieux sans échéance que pas de liste du tout. Une
+reprogrammation dans le passé, elle, n'a rien d'autre à proposer : la
+suggestion entière est abandonnée plutôt que persistée.
+
+**La vue Todo du calendrier retrouve les listes déjà liées à un
+rendez-vous.** Signalé en usage réel : une todoliste dont le créneau avait
+été posé dans l'agenda (proposition « Bloquer le créneau » acceptée)
+disparaissait purement et simplement de l'onglet Todo. En cause,
+`unscheduledLists` exclut à raison les listes déjà représentées par un
+rendez-vous — pour ne pas doubler la même échéance dans les vues Jour/
+Semaine/Mois, qui affichent les deux ensemble. Mais la vue Todo, elle,
+n'affiche aucun rendez-vous : une liste ainsi exclue n'avait donc plus nulle
+part où apparaître. Le calendrier calcule maintenant deux ensembles distincts
+— les listes non représentées par un événement pour les grilles, toutes les
+listes datées pour l'onglet Todo, qui n'a rien avec quoi faire double emploi.
+
+**Sélectionner une todoliste depuis la barre latérale y fait défiler
+l'écran.** La liste visée était déjà mise en avant d'une bordure à
+l'arrivée sur Mes listes, mais rien ne l'amenait à l'écran : sur une liste de
+todolistes assez longue pour déborder, la carte mise en avant restait hors
+champ. `ListsBoard` mesure désormais la carte visée par rapport au
+défilement de l'écran (`measureLayout`, indépendant du nombre de vues
+intermédiaires) et y défile une fois, à l'arrivée.
+
+**Mes listes et la vue Todo du calendrier se resserrent, sur grand écran
+seulement.** Paddings de carte et espacements entre listes diminuent d'un
+cran quand `useBreakpoint()` rend `"expanded"`. Les rangées cochables
+(`TaskRow`, `TaskListEditor`) gardent leur hauteur plancher de 44 pt partout
+— c'est l'invariant tactile du projet (200-app.md), pas un simple choix de
+densité — le resserrement ne touche donc qu'à ce qui les entoure. Sur
+téléphone, l'espacement ne change pas : la marge au doigt reste ce qu'elle
+était.
+
+**Déplacer un rendez-vous lié à une todoliste met à jour son échéance.**
+Signalé en usage réel : « la date d'une todoliste ne se met pas à jour quand
+on la modifie depuis le calendrier ». Le circuit direct
+(`TaskListDetailDialog` → « Modifier » → `TaskListDialog`) a été relu de bout
+en bout sans y trouver de défaut — le geste en cause était en réalité la
+fiche du *rendez-vous* d'une liste déjà pourvue d'un créneau (« Bloquer le
+créneau » accepté, cf. point précédent) : `domain/calendar` ne touchait
+jamais `task_lists`, les deux dates vivaient donc de façon indépendante dès
+qu'on déplaçait l'une des deux depuis sa propre fiche. `CalendarService`
+reçoit désormais aussi `ITaskRepository` — geste délibérément signalé plutôt
+que tranché seul, c'est le seul endroit du projet où un service `domain/` en
+consulte directement un autre plutôt que de passer par `feature/`, la
+composition résidant normalement là. `update()` retrouve, après avoir écrit
+le rendez-vous, la todoliste dont `event_id` le désigne (`findByEventId`,
+au plus une par rendez-vous) et lui applique la même date — silencieusement
+quand aucune liste n'y est rattachée, ce qui couvre l'immense majorité des
+événements. Reste délibérément hors périmètre : le sens inverse (modifier la
+liste déplacerait le rendez-vous) n'a pas été demandé et n'est pas construit
+ici ; la suppression d'un rendez-vous lié, elle, ne détache pas encore
+`task_lists.event_id`, dette préexistante et distincte de ce point.
+
+Dernière mise à jour : **7 septembre 2026** — un message peut désormais se
+dicter dans la conversation, les réponses de l'assistant peuvent s'écouter à
+voix haute, une todoliste datée pose désormais un créneau journée entière
+plutôt qu'un rendez-vous à heure fixe, pastille de non-lu sur les
+conversations, réglage « bandeau uni », section « Discussions et tâches »
+dans la barre latérale, trois ajustements du calendrier (clic sur un jour,
+détail d'un événement, détail d'une todoliste), et les issues #17, #18 et
+#20 qui se referment.
+
+**Un message peut désormais se dicter dans la conversation, au même titre
+qu'un message tapé.** Second étage de l'issue #25 (§12.3, A.12), après la
+lecture à voix haute des réponses. Un bouton micro dans `Composer` démarre
+une reconnaissance vocale (`expo-speech-recognition`, service natif du
+téléphone ou du navigateur — choix provisoire, l'arbitrage formel avec
+Antonin reste ouvert) et complète le brouillon au fil de ce qui est reconnu,
+sans effacer ce qui était déjà tapé. `inputMode` — jusqu'ici figé à `"text"`
+dans `use-conversation-thread.ts` — porte enfin l'origine réelle du message
+envoyé, jusqu'en base ; un caractère retapé au clavier y ramène aussitôt, un
+message qu'on a soi-même corrigé n'étant plus fidèlement ce qui a été dit.
+Le geste est disponible partout où `Composer` l'est déjà, canal permanent et
+onboarding compris — c'est la même saisie (§12.3, « une porte d'entrée, pas
+un mode »). Reste hors de portée : le tout premier message envoyé depuis
+l'écran d'accueil (avant l'ouverture du fil) part toujours en `"text"`,
+faute de faire voyager `inputMode` jusqu'à la conversation qui naît avec lui.
+
+**Les réponses de l'assistant peuvent désormais s'écouter à voix haute.**
+Premier étage de l'issue #25 (§12.3, A.12) : un bouton « Écouter » apparaît au
+survol de chaque réponse dans `MessageRow`, à côté de Copier — le geste manuel
+plutôt qu'une lecture automatique, pour rester sur le périmètre le plus simple
+avant d'attaquer la dictée. `useSpeech` (`features/conversation/hooks`) pilote
+`expo-speech` : un seul message se lit à la fois, démarrer une lecture coupe la
+précédente au lieu de l'empiler en file. Le Markdown est aplati en texte
+continu avant d'être donné à la synthèse (`markdownToSpeech`, dans
+`shared/lib/markdown.ts`) — lu tel quel, il ferait prononcer les astérisques
+d'un gras et l'URL entière d'un lien. Reste la dictée (STT) : le service
+(natif ou tiers) n'est pas tranché avec Antonin, et le natif sert de défaut
+pour ne pas bloquer la suite.
+
 Dernière mise à jour : **7 septembre 2026** — une todoliste datée pose
 désormais un créneau journée entière plutôt qu'un rendez-vous à heure fixe,
 pastille de non-lu sur les conversations, réglage « bandeau uni », section
@@ -781,7 +1120,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 | Réf. | Exigence                                               | Statut | Note                                                                                                                                                                                                                                                                                                                                                                                      |
 | ---- | ------------------------------------------------------ | :----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| §5.1 | Moteur IA Claude en V1                                 |   ✅   | `anthropic/claude-opus-5` via Vercel AI Gateway                                                                                                                                                                                                                                                                                                                                           |
+| §5.1 | Moteur IA Claude en V1                                 |   ✅   | Défaut serveur ramené à `mistral/mistral-medium-3.5` (8 sept.) : `anthropic/claude-opus-5`, hors catalogue utilisateur, laissait le sélecteur des réglages sans rien coché tant que rien n'était choisi. Claude reste joignable via `LLM_MODEL`, hors défaut                                                                                                                            |
 | §5.1 | Abstraction multi-modèle                               |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code                                                                                                                                                                                                                                                                                   |
 | §5.1 | Timeouts, quotas et erreurs                            |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés                                                                                                                                                                                                                                                                                               |
 | §5.1 | Choix du modèle par l'utilisateur                      |   ✅   | Catalogue de trois modèles dans `@jc/domain`, choisi dans les réglages et porté par `profiles.llm_model`. `LLM_MODEL` devient le repli, servi tant que rien n'est choisi                                                                                                                                                                                                                  |
@@ -791,6 +1130,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | §4.1 | Design responsive, priorité mobile                     |   🟡   | Fil de conversation borné en largeur, cibles tactiles 44 pt, thèmes clair et sombre — ce dernier désormais choisi par l'utilisateur. Réponses du modèle rendues en Markdown (titres, listes, tableaux, liens) ; barre latérale redimensionnable au geste ; calendrier divergent par point de rupture, pastilles et liste du jour en `compact`, barre d'outils sur deux lignes sous 768 pt |
 | §4.4 | React Native                                           |   ✅   | Expo SDK 57, Expo Router, React 19                                                                                                                                                                                                                                                                                                                                                        |
 | §8   | Postgres portable, migration UE possible               |   ✅   | Aucune extension propriétaire                                                                                                                                                                                                                                                                                                                                                             |
+| §8 / §13.4.6 | Droit à l'effacement — suppression de son propre compte | ✅ | `DELETE /api/me`, confirmation dans les réglages. `admin.auth.admin.deleteUser` sur `auth.users` ; la cascade SQL déjà en place efface profil, dossiers, conversations, messages, todolistes, calendrier, suggestions et feedback. Immédiat, sans délai de grâce |
 | §8   | **Créer le projet Supabase en région UE**              |   ⬜   | **À faire avant tout remplissage de données**                                                                                                                                                                                                                                                                                                                                             |
 | §10  | Repo structuré et documenté                            |   ✅   | `README.md`, `docs/ARCHITECTURE.md`, ce fichier                                                                                                                                                                                                                                                                                                                                           |
 
@@ -804,7 +1144,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | §6.1        | Règles de validation partagées                   |   ✅   | `packages/domain/src/auth/auth.schema.ts`, 14 tests. Plus aucune règle de saisie dans l'écran                                                                                                      |
 | §6.1        | Gabarit d'e-mail à pousser sur le projet hébergé |   ⬜   | `npx supabase config push` — **tant que ce n'est pas fait, le projet hébergé envoie un lien et non un code**                                                                                       |
 | §6.2        | 2FA par SMS                                      |   ⬜   | Étape 2. Si non fait dans le sprint → priorité immédiate du backlog restant                                                                                                                        |
-| §6.3 / A.13 | Onboarding conversationnel                       |   🟡   | Accueil mené dans le canal permanent au premier accès : questions ouvertes ou à réponses proposées (`ask_question`), mémoire écrite par `finish_onboarding`, lien « Passer ». Reste le vocal → #25 |
+| §6.3 / A.13 | Onboarding conversationnel                       |   🟡   | Accueil mené dans le canal permanent au premier accès : questions ouvertes ou à réponses proposées (`ask_question`), mémoire écrite par `finish_onboarding`, lien « Passer ». Vocal compris, même `Composer` que le reste (#25) ; reste à arbitrer le service de dictée avec Antonin. |
 
 ---
 
@@ -824,8 +1164,8 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                                                                                                                                                                                                                     |
 | A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule hors périmètre proposée puis validée par l'utilisateur (et retirée du contexte une fois faite), et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages. Le canal reçoit l'agenda des 7 jours et les dossiers existants — il peut enfin répondre sur le premier de ses trois sujets ; délivrance des rappels → #26 |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                                                                                                                                                                                                                           |
-| A.12 | Interaction vocale bout en bout                       |   ⬜   | `expo-speech` en dépendance ; STT à arbitrer avec Antonin (§12.3)                                                                                                                                                                                                                                                                                                                                                           |
-| A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte, vocal renvoyé à #25                                                                                                                                                                                                                                                                                                                                                                              |
+| A.12 | Interaction vocale bout en bout                       |   🟡   | Lecture à voix haute des réponses et dictée d'un message, toutes deux sur `expo-speech` / `expo-speech-recognition` (natif). Reste l'arbitrage du service avec Antonin — choix provisoire pour ne pas bloquer le sprint.                                                                                                                                                                                                                  |
+| A.13 | Onboarding conversationnel                            |   🟡   | Voir §6.3 — fait en texte et en vocal, le même `Composer` que le reste de la conversation                                                                                                                                                                                                                                                                                                                                       |
 
 ---
 
@@ -848,7 +1188,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Sujet                                             | Réf.  | Interlocuteur                                                  |
 | ------------------------------------------------- | ----- | -------------------------------------------------------------- |
 | Région d'hébergement Supabase (UE recommandé)     | §8    | Antonin                                                        |
-| Service de reconnaissance vocale (natif ou tiers) | §12.3 | Antonin — budget / latence                                     |
+| Service de reconnaissance vocale (natif ou tiers) | §12.3 | Antonin — choix provisoire du natif en attendant, budget / latence à trancher |
 | Date réelle du rendez-vous de cadrage             | §0    | Yann — le document signale l'incohérence du « 31 septembre »   |
 | **Profondeur d'arborescence portée de 2 à 5**     | §3    | Yann — écart assumé au cahier des charges, à valider           |
 | Jeu d'icônes de la navigation                     | §4.2  | — lucide-react-native en place (défaut react-native-reusables) |

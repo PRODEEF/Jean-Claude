@@ -5,6 +5,8 @@ import type { TaskListWithTasks } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { formatFullDay, formatTime, isSameDay } from "@/shared/lib/dates";
 import { openTaskCount } from "@/shared/lib/tasks";
+import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { TaskRow } from "@/features/todo/TaskRow";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { momentsOfDay } from "./lib/task-week";
@@ -18,16 +20,20 @@ export type DueListsBoardProps = {
 /**
  * Todolistes échues, un bloc par jour découpé en moments (A.2).
  *
- * En lecture seule, comme `DayAgenda` : le calendrier dit ce que porte chaque
- * jour, il n'est pas un second endroit où gérer les mêmes listes — on les
- * coche dans Mes listes, qui en reste l'écran. L'appui sur une liste y
- * conduit directement.
+ * Cochable directement : le calendrier dit ce que porte chaque jour, et rayer
+ * ce qui est fait ne doit pas obliger à changer d'onglet. Seul le titre de la
+ * liste conduit vers Mes listes, pour l'édition complète — renommer, ajouter
+ * une tâche.
  */
 export function DueListsBoard({ days, lists }: DueListsBoardProps) {
   const today = new Date();
+  // Resserré sur grand écran seulement : un mois entier de listes tient mal
+  // sur téléphone où l'espace généreux protège du doigt, mais gagne à se
+  // resserrer sur un écran large où plusieurs semaines sont visibles à la fois.
+  const desktop = useBreakpoint() === "expanded";
 
   return (
-    <View className="gap-3">
+    <View className={desktop ? "gap-2" : "gap-3"}>
       {days.map((day) => {
         const groups = momentsOfDay(lists, day);
         const remaining = groups.reduce(
@@ -39,7 +45,7 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
         return (
           <View
             key={day.toISOString()}
-            className={`gap-2 rounded-xl border p-3 ${
+            className={`gap-2 rounded-xl border ${desktop ? "p-2" : "p-3"} ${
               isToday ? "border-primary" : "border-border"
             }`}
           >
@@ -60,12 +66,12 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
               <Text className="text-muted-foreground text-sm">Rien de prévu ce jour-là.</Text>
             ) : (
               groups.map((group) => (
-                <View key={group.moment.key} className="gap-2">
+                <View key={group.moment.key} className={desktop ? "gap-1" : "gap-2"}>
                   <Text className="text-muted-foreground text-[11px] font-medium uppercase">
                     {group.moment.label}
                   </Text>
                   {group.lists.map((list) => (
-                    <DueList key={list.id} list={list} />
+                    <DueList key={list.id} list={list} desktop={desktop} />
                   ))}
                 </View>
               ))
@@ -81,22 +87,25 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
  * Une liste échue ce jour-là, avec ce qu'elle contient.
  *
  * Le contenu est montré et non résumé : « Courses » sans ses lignes n'apprend
- * rien de ce qu'il reste à faire. Les lignes ne se cochent pas ici — l'appui
- * ouvre la liste dans Mes listes, où l'écriture comme le pointage ont lieu.
+ * rien de ce qu'il reste à faire. Seul l'en-tête (icône, titre, heure) ouvre
+ * la liste dans Mes listes — les tâches elles-mêmes se cochent ici, via
+ * `TaskRow`, sans changer d'onglet.
  */
-function DueList({ list }: { list: TaskListWithTasks }) {
+function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean }) {
   const router = useRouter();
   const shopping = list.kind === "shopping";
 
   return (
-    <Pressable
-      onPress={() => router.push(`/todo?list=${list.id}` as never)}
-      accessibilityRole="button"
-      accessibilityLabel={`Ouvrir la liste ${list.title}`}
-      style={{ minHeight: MIN_TOUCH_TARGET }}
-      className="border-border gap-0.5 rounded-lg border border-dashed p-2"
+    <View
+      className={`border-border gap-0.5 rounded-lg border border-dashed ${desktop ? "p-1.5" : "p-2"}`}
     >
-      <View className="flex-row items-center gap-2">
+      <Pressable
+        onPress={() => router.push(`/todo?list=${list.id}` as never)}
+        accessibilityRole="button"
+        accessibilityLabel={`Ouvrir la liste ${list.title}`}
+        style={{ minHeight: MIN_TOUCH_TARGET }}
+        className="flex-row items-center gap-2"
+      >
         <Icon
           as={shopping ? ShoppingBasket : ListChecks}
           size={14}
@@ -108,24 +117,14 @@ function DueList({ list }: { list: TaskListWithTasks }) {
         {timeLabel(list.dueAt) ? (
           <Text className="text-muted-foreground text-xs">{timeLabel(list.dueAt)}</Text>
         ) : null}
-      </View>
+      </Pressable>
 
       {list.tasks.length === 0 ? (
         <Text className="text-muted-foreground text-xs">Liste vide.</Text>
       ) : (
-        list.tasks.map((task) => (
-          <Text
-            key={task.id}
-            numberOfLines={1}
-            className={`text-sm ${
-              task.done ? "text-muted-foreground line-through" : "text-foreground"
-            }`}
-          >
-            {task.title}
-          </Text>
-        ))
+        list.tasks.map((task) => <TaskRow key={task.id} task={task} />)
       )}
-    </Pressable>
+    </View>
   );
 }
 

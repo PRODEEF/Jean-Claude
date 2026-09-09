@@ -61,6 +61,14 @@ export interface ITaskRepository {
   findById(id: string, accessToken: string): Promise<TaskListWithTasks | null>;
   /** Listes nées d'une conversation donnée — celles que l'assistant peut compléter. */
   findByConversation(conversationId: string, accessToken: string): Promise<TaskListWithTasks[]>;
+  /**
+   * La liste rattachée au créneau donné, s'il en existe une (A.3).
+   *
+   * Un événement ne représente jamais plus d'une liste : sert à répercuter le
+   * déplacement d'un rendez-vous sur l'échéance de la todoliste qui s'y
+   * rattache, depuis `domain/calendar`.
+   */
+  findByEventId(eventId: string, accessToken: string): Promise<TaskList | null>;
   createList(
     userId: string,
     input: CreateTaskList & TaskListOrigin,

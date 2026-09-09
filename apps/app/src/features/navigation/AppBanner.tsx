@@ -76,13 +76,13 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
         </Button>
       </View>
 
-      {/* Le titre ouvre le canal permanent : c'est la destination que la
-          signature désigne, et l'atteindre depuis n'importe quel écran évite
-          d'aller la chercher dans une barre latérale repliée. */}
+      {/* Le titre ramène à l'accueil des conversations, comme le ferait un
+          logo — le canal permanent, lui, reste à un geste dans la barre
+          latérale, pastille de non-lu à l'appui (A.10). */}
       <Pressable
-        onPress={() => router.push("/assistant")}
+        onPress={() => router.push("/chat")}
         accessibilityRole="button"
-        accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+        accessibilityLabel="Revenir à l'accueil des conversations — version bêta"
         // La ligne de titre ne fait qu'une vingtaine de points de haut : le
         // débord lui rend la cible tactile de 44 pt sans épaissir la bannière.
         hitSlop={12}
@@ -92,12 +92,19 @@ export function AppBanner({ onToggleSidebar }: AppBannerProps) {
         // faut `flex-basis: 0` — comme sur les deux zones latérales — pour
         // que l'espace disponible soit réparti avant que le texte ne s'y
         // borne et tronque.
-        className="min-w-0 flex-1"
+        className="min-w-0 flex-1 flex-row items-center justify-center gap-2"
       >
-        <Text className={cn("text-center text-sm", fg)} numberOfLines={1}>
+        <Text className={cn("min-w-0 shrink text-sm", fg)} numberOfLines={1}>
           <Text className={cn("text-sm font-bold uppercase", fg)}>{assistantName}</Text>
           , ton assistant perso
         </Text>
+
+        {/* Blanc et noir littéraux, jamais des jetons de palette : le badge
+            doit rester lisible quels que soient le thème et la couleur
+            d'assistant choisie, qui peignent le fond de ce bandeau. */}
+        <View className="shrink-0 items-center justify-center rounded-full bg-white px-2.5 py-0.5">
+          <Text className="text-xs font-bold text-black">BETA</Text>
+        </View>
       </Pressable>
 
       <View className="min-w-0 flex-1 flex-row items-center justify-end">

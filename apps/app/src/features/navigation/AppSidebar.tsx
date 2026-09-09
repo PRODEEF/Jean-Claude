@@ -116,18 +116,6 @@ export function AppSidebar({
   };
 
   /**
-   * Capture sans friction (§13.4.1) : la conversation naît sans qu'on demande
-   * où la ranger. Le classement vient après, jamais avant.
-   */
-  const create = useMutation({
-    mutationFn: (folderIds: string[]) => api.conversations.create({ folderIds }),
-    onSuccess: async (conversation) => {
-      await queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      go(`/chat/${conversation.id}`);
-    },
-  });
-
-  /**
    * Conversion à la demande (A.2, #17) : la carte de proposition se lit dans
    * le fil de la conversation visée, comme n'importe quelle autre suggestion
    * — l'assistant propose, il n'exécute pas (§12.1).
@@ -202,13 +190,12 @@ export function AppSidebar({
           <View className="size-8 items-center justify-center rounded-md bg-destructive">
             <Icon as={MessageCircle} size={16} className="text-white" />
           </View>
-          <Text className="text-sm font-semibold text-foreground">PROBLÈME</Text>
+          <Text className="text-sm font-semibold text-foreground">SIGNALER UN PROBLÈME</Text>
         </Button>
 
         <Button
           variant="outline"
-          onPress={() => create.mutate([])}
-          disabled={create.isPending}
+          onPress={() => go("/chat")}
           accessibilityLabel="Démarrer une nouvelle conversation"
           className="justify-start gap-2"
         >
@@ -262,7 +249,7 @@ export function AppSidebar({
             onOpen={go}
             onMenu={setMenuTarget}
             onCloseNaming={() => setNaming(null)}
-            onNewConversation={(folderId) => create.mutate([folderId])}
+            onNewConversation={(folderId) => go(`/chat?folderId=${folderId}`)}
             onConversationMenu={setConversationMenu}
             onCloseRenaming={() => setRenaming(null)}
             onDropConversation={dropOnFolder}
@@ -455,6 +442,11 @@ function ResizeHandle({ width, onResize }: { width: number; onResize: (width: nu
         );
         latest.current.onResize(next);
       },
+      // Sans ce refus, un mouvement rapide qui passe par-dessus la liste des
+      // conversations ou le contenu du fil peut céder le geste à leur propre
+      // responder (défilement, glisser-déposer) : la poignée n'a que 12 pt de
+      // large, le curseur en sort facilement pendant un glissement rapide.
+      onPanResponderTerminationRequest: () => false,
     }),
   ).current;
 

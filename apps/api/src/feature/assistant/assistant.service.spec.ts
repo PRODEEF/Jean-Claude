@@ -34,7 +34,10 @@ import { AssistantService } from "./assistant.service.js";
 const TOKEN = "access-token";
 const USER = "user-1";
 const NOW = "2026-09-01T08:00:00.000Z";
+/** 11h à Paris (fuseau par défaut) : une échéance qui porte une heure. */
 const DESHERBAGE = "2026-09-07T09:00:00.000Z";
+/** Minuit pile à Paris le même jour que DESHERBAGE : aucune heure donnée. */
+const MINUIT_PARIS = "2026-09-06T22:00:00.000Z";
 
 /**
  * Identifiants fabriqués au format UUID : la charge utile des créneaux les
@@ -193,6 +196,7 @@ const IDLE_USERS: IUserRepository = {
   findById: jest.fn(),
   update: jest.fn(),
   completeOnboarding: jest.fn(),
+  deleteAccount: jest.fn(),
 };
 
 const IDLE_ATTACHMENTS: IAttachmentRepository = {
@@ -224,6 +228,11 @@ function makeTaskRepository(): ITaskRepository {
           [...lists.values()].filter((list) => list.conversationId === conversationId),
         ),
       ),
+    findByEventId: jest
+      .fn()
+      .mockImplementation((eventId: string) =>
+        Promise.resolve([...lists.values()].find((list) => list.eventId === eventId) ?? null),
+      ),
     createList: jest
       .fn()
       .mockImplementation((_userId: string, input: CreateTaskList & TaskListOrigin) => {
@@ -248,6 +257,7 @@ function makeTaskRepository(): ITaskRepository {
       const list = lists.get(id);
       if (!list) return Promise.reject(new Error("Liste introuvable"));
       if (patch.eventId !== undefined) list.eventId = patch.eventId;
+      if (patch.dueAt !== undefined) list.dueAt = patch.dueAt;
       return Promise.resolve(list);
     }),
     deleteList: jest.fn(),
@@ -318,11 +328,12 @@ function makeService(
   conversations: IConversationRepository = makeConversationRepository(),
   tasks: ITaskRepository = makeTaskRepository(),
   events: ICalendarRepository = makeCalendarRepository(),
+  users: IUserRepository = IDLE_USERS,
 ): AssistantService {
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
-  const calendarService = new CalendarService(events);
-  const taskService = new TaskService(tasks);
+  const calendarService = new CalendarService(events, tasks);
+  const taskService = new TaskService(tasks, events, users);
 
   return new AssistantService(
     suggestionService,
@@ -332,13 +343,14 @@ function makeService(
       IDLE_LLM,
       suggestionService,
       folderService,
-      IDLE_USERS,
+      users,
       calendarService,
       taskService,
       IDLE_ATTACHMENTS,
     ),
     taskService,
     calendarService,
+    users,
   );
 }
 
@@ -389,6 +401,23 @@ function makeJardinSuggestion(): Suggestion {
       ],
     },
   });
+}
+
+/** Crée la liste du jardin, puis rend l'identifiant de la liste de tâches. */
+async function withTravauxList() {
+  const tasks = makeTaskRepository();
+  await makeService(
+    makeSuggestionStore(makeJardinSuggestion()),
+    makeFolderRepository(),
+    makeConversationRepository(),
+    tasks,
+  ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+  const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+    (list) => list.title === "Travaux jardin",
+  );
+  if (!travaux) throw new Error("La liste de travaux devrait exister");
+  return { tasks, listId: travaux.id };
 }
 
 /** Listes créées, dans l'ordre, avec ce que le serveur y a posé. */
@@ -1095,23 +1124,6 @@ describe("AssistantService", () => {
   });
 
   describe("acceptation d'une complétion de liste (§12.1, A.2)", () => {
-    /** Crée la liste du jardin, puis rend l'identifiant de la liste de tâches. */
-    async function withTravauxList() {
-      const tasks = makeTaskRepository();
-      await makeService(
-        makeSuggestionStore(makeJardinSuggestion()),
-        makeFolderRepository(),
-        makeConversationRepository(),
-        tasks,
-      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
-
-      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
-        (list) => list.title === "Travaux jardin",
-      );
-      if (!travaux) throw new Error("La liste de travaux devrait exister");
-      return { tasks, listId: travaux.id };
-    }
-
     it("ajoute les lignes proposées à la liste existante, sans en créer une seconde", async () => {
       const { tasks, listId } = await withTravauxList();
       const before = (tasks.createList as jest.Mock).mock.calls.length;
@@ -1185,13 +1197,79 @@ describe("AssistantService", () => {
     });
   });
 
+  describe("acceptation d'une reprogrammation de liste (§12.1, A.2)", () => {
+    it("déplace l'échéance de la liste existante", async () => {
+      const { tasks, listId } = await withTravauxList();
+      const nouvelleEcheance = "2026-09-12T00:00:00.000Z";
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "update_task_list_due_date",
+            message: "Je décale Travaux jardin à samedi ?",
+            payload: { listId, dueAt: nouvelleEcheance },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
+      expect(travaux?.dueAt).toBe(nouvelleEcheance);
+    });
+
+    it("refuse une reprogrammation dont la liste visée n'existe plus", async () => {
+      const tasks = makeTaskRepository();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_task_list_due_date",
+              message: "Je décale Travaux jardin ?",
+              payload: {
+                listId: "11111111-1111-4111-8111-111111111111",
+                dueAt: "2026-09-12T00:00:00.000Z",
+              },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+
+    it("refuse une reprogrammation dont la charge utile est illisible", async () => {
+      const tasks = makeTaskRepository();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_task_list_due_date",
+              message: "Je décale la liste ?",
+              payload: { listId: "11111111-1111-4111-8111-111111111111" },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
   describe("acceptation des créneaux (A.3)", () => {
     /** Joue les deux temps : les listes d'abord, leurs créneaux ensuite. */
-    async function acceptBothCards() {
+    async function acceptBothCards(suggestion: Suggestion = makeJardinSuggestion()) {
       const tasks = makeTaskRepository();
       const events = makeCalendarRepository();
       const service = makeService(
-        makeSuggestionStore(makeJardinSuggestion()),
+        makeSuggestionStore(suggestion),
         makeFolderRepository(),
         makeConversationRepository(),
         tasks,
@@ -1205,19 +1283,49 @@ describe("AssistantService", () => {
       return { second, tasks, events };
     }
 
-    it("pose un créneau journée entière par liste datée, jamais un horaire précis", async () => {
+    it("pose un rendez-vous à heure fixe quand l'échéance porte une heure précise", async () => {
       const { second, events } = await acceptBothCards();
 
       // Un seul créneau pour les deux tâches du jardin : c'est la liste qui
       // porte l'échéance, pas chacune de ses lignes.
       expect(second.events).toHaveLength(1);
-      // Une todoliste ne porte jamais d'horaire, seulement un jour : le
-      // créneau posé est une journée entière, pas un rendez-vous à heure fixe.
+      // DESHERBAGE porte 11h à Paris (fuseau par défaut, profil illisible en
+      // test) : une heure donnée vaut un rendez-vous, pas une journée entière.
       expect(events.create).toHaveBeenCalledWith(
         USER,
         {
           title: "Travaux jardin",
           startsAt: DESHERBAGE,
+          endsAt: "2026-09-07T10:00:00.000Z",
+          allDay: false,
+        },
+        TOKEN,
+      );
+    });
+
+    it("pose un créneau journée entière quand l'échéance ne porte aucune heure", async () => {
+      const sansHeure = makeSuggestion({
+        kind: "create_task_list",
+        message: "Je te la pose dans ton agenda ?",
+        payload: {
+          lists: [
+            {
+              title: "Travaux jardin",
+              kind: "todo",
+              dueAt: MINUIT_PARIS,
+              items: [{ title: "Désherber" }],
+            },
+          ],
+        },
+      });
+
+      const { events } = await acceptBothCards(sansHeure);
+
+      expect(events.create).toHaveBeenCalledWith(
+        USER,
+        {
+          title: "Travaux jardin",
+          startsAt: MINUIT_PARIS,
           endsAt: null,
           allDay: true,
         },

@@ -54,6 +54,7 @@ import {
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
   SUGGEST_TASK_LIST,
+  SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_TASK_LIST_ITEMS,
 } from "../../core/llm/llm.tools.js";
 import type { CalendarService } from "../calendar/calendar.service.js";
@@ -270,6 +271,11 @@ export class ConversationService {
         },
         accessToken,
       );
+      // `channel` a été capturé avant ce message : il porte encore le
+      // `unreadCount` d'un fil vide. Le relire fait remonter celui que le
+      // trigger vient de poser, sans quoi la pastille resterait éteinte à la
+      // toute première connexion malgré la question qui attend une réponse.
+      return this.getById(channel.id, accessToken);
     }
 
     return channel;
@@ -514,7 +520,11 @@ export class ConversationService {
       if (chunk.type === "tool_call") toolCalls.push(chunk.toolCall);
     }
 
-    const call = toolCalls.find((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name);
+    // Le modèle peut fragmenter la proposition en plusieurs appels séparés au
+    // lieu d'un seul portant plusieurs entrées dans `lists`, comme la
+    // consigne le demande : les regrouper évite d'en perdre au-delà du
+    // premier.
+    const call = mergeTaskListCalls(toolCalls);
     // Même filet que le tour de dialogue ordinaire : sans lui, une échéance
     // extraite ici échapperait à la correction de date (A.3, #18).
     const corrected = call ? withCorrectedDueDates(call, now, context.timezone) : null;
@@ -672,6 +682,10 @@ export class ConversationService {
     let provider: string | null = null;
     let model: string | null = null;
     const toolCalls: LlmToolCall[] = [];
+    let assistantMessage: Message | null = null;
+    // Une suggestion capturée est déjà une carte à l'écran : ça compte comme
+    // une réponse du tour, même sans le moindre mot de texte.
+    let suggestionCaptured = false;
 
     // Entretien du fil : résolu avant l'appel au modèle, parce qu'il décide des
     // outils qu'on lui expose — et il se lit à partir du profil.
@@ -725,7 +739,7 @@ export class ConversationService {
           ? text
           : (asked?.question ?? "");
 
-      const assistantMessage =
+      assistantMessage =
         content.length > 0
           ? await this.conversations.appendMessage(
               conversationId,
@@ -758,12 +772,30 @@ export class ConversationService {
           logger.warn(SCOPE, `Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
-        const corrected = withCorrectedDueDates(
-          withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
-          now,
-          context.timezone,
-        );
-        await this.suggestions.capture(userId, conversationId, corrected, accessToken);
+        try {
+          const corrected = withCorrectedRescheduleDueDate(
+            withCorrectedDueDates(
+              withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+              now,
+              context.timezone,
+            ),
+            now,
+            context.timezone,
+          );
+          await this.suggestions.capture(userId, conversationId, corrected, accessToken);
+          suggestionCaptured = true;
+        } catch (error) {
+          // Une capture ne doit jamais faire perdre les suivantes : sans cet
+          // isolement, l'échec d'un seul appel d'outil (ex. une nature de
+          // suggestion que la contrainte de la table ne reconnaît pas encore)
+          // coupait la boucle et emportait avec lui les propositions du même
+          // tour qui restaient à capturer.
+          logger.error(
+            SCOPE,
+            `Capture de suggestion \`${toolCall.name}\` impossible :`,
+            error instanceof Error ? error.message : error,
+          );
+        }
       }
 
       await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
@@ -771,6 +803,17 @@ export class ConversationService {
       await this.applyOnboardingMemory(userId, toolCalls, accessToken);
 
       if (assistantMessage) yield { type: "done", message: assistantMessage };
+    }
+
+    // Le modèle a pu répondre sans lever d'erreur technique et pourtant ne
+    // rien produire d'exploitable (ex. un moteur qui ne rend aucun appel
+    // d'outil, cf. Sonar) : sans ce garde-fou, le tour se clôt sans un mot ni
+    // une carte, et l'utilisateur ne sait même pas que sa demande a été reçue.
+    if (!assistantMessage && !suggestionCaptured) {
+      throw httpError(
+        502,
+        "Le modèle n'a produit aucune réponse. Réessayez, ou changez de modèle dans Réglages.",
+      );
     }
   }
 
@@ -935,6 +978,13 @@ export class ConversationService {
         !(
           tool === SUGGEST_TASK_LIST_ITEMS &&
           (lists.length === 0 || isPending(decided, "add_task_list_items"))
+        ) &&
+        // Même garde-fou pour la reprogrammation : rien à décaler sans liste
+        // née de ce fil, et une reprogrammation déjà proposée attend une
+        // réponse avant d'en empiler une seconde.
+        !(
+          tool === SUGGEST_TASK_LIST_DUE_DATE &&
+          (lists.length === 0 || isPending(decided, "update_task_list_due_date"))
         ),
     );
 
@@ -1135,19 +1185,96 @@ function verifyNewFolder(
 }
 
 /**
+ * Regroupe en un seul appel les éventuels appels `suggest_task_list` multiples
+ * d'un même tour.
+ *
+ * La consigne demande une entrée par liste dans un unique appel, mais rien
+ * n'empêche le modèle de répondre par plusieurs appels séparés à la place —
+ * ne garder que le premier (`toolCalls.find`) en perdrait alors le reste.
+ */
+function mergeTaskListCalls(toolCalls: LlmToolCall[]): LlmToolCall | null {
+  const calls = toolCalls.filter((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name);
+  const first = calls[0];
+  if (!first) return null;
+  if (calls.length === 1) return first;
+
+  const lists = calls.flatMap((call) => {
+    const entries = call.input["lists"];
+    return Array.isArray(entries) ? entries : [];
+  });
+
+  return { ...first, input: { ...first.input, lists } };
+}
+
+/**
+ * `text` au format `HH:mm` (24 h), vers heure et minute — `null` si le format
+ * ou les bornes ne correspondent pas, ex. une hallucination du modèle.
+ */
+function parseWallTime(text: string): { hours: number; minutes: number } | null {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(text.trim());
+  if (!match || match[1] === undefined || match[2] === undefined) return null;
+  return { hours: Number(match[1]), minutes: Number(match[2]) };
+}
+
+/** Pose une heure murale sur le jour mural que porte `dayIso`. */
+function withWallTime(
+  dayIso: string,
+  time: { hours: number; minutes: number },
+  timeZone: string,
+): string {
+  const wall = toWall(new Date(dayIso), timeZone);
+  const wallMs = Date.UTC(
+    wall.getUTCFullYear(),
+    wall.getUTCMonth(),
+    wall.getUTCDate(),
+    time.hours,
+    time.minutes,
+  );
+  return fromWall(wallMs, timeZone).toISOString();
+}
+
+/**
+ * Échéance à retenir entre le calcul du modèle et les deux filets
+ * déterministes (A.3, #18).
+ *
+ * Le jour vient du filet de date relative quand `dueAtText` est reconnu avec
+ * certitude — plus fiable que l'arithmétique du modèle sur les jours de la
+ * semaine —, sinon du calcul du modèle tel quel. L'heure, elle, ne vient
+ * jamais d'une lecture de `dueAt` : un modèle qui se trompe de fuseau y pose
+ * parfois une heure qui n'est ni minuit ni une heure demandée, et la prendre
+ * pour une heure volontaire créerait de faux rendez-vous. Elle ne vient donc
+ * que de `dueTime`, rempli uniquement quand l'utilisateur en a donné une
+ * (« à 10h ») — absent, l'échéance reste à minuit, comme avant ce champ.
+ */
+function resolveDueAt(
+  dueAtText: unknown,
+  rawDueAt: unknown,
+  dueTime: unknown,
+  now: Date,
+  timezone: string,
+): string | null {
+  const parsedDate =
+    typeof dueAtText === "string" ? parseRelativeDateFr(dueAtText, now, timezone) : null;
+  const day = parsedDate ?? (typeof rawDueAt === "string" ? rawDueAt : null);
+  if (day === null) return null;
+
+  const time = typeof dueTime === "string" ? parseWallTime(dueTime) : null;
+  return time !== null ? withWallTime(day, time, timezone) : truncateToMidnight(day, timezone);
+}
+
+/**
  * Corrige les échéances d'un `suggest_task_list` avant capture (A.3, #18).
  *
  * Le modèle calcule déjà `dueAt` lui-même, mais se trompe parfois dans
  * l'arithmétique des jours de la semaine. Quand il a aussi recopié
  * l'expression source (`dueAtText`) et qu'elle est reconnue avec certitude,
- * le calcul déterministe du serveur remplace le sien.
+ * le calcul déterministe du serveur remplace le sien (`resolveDueAt`).
  *
- * Dans tous les cas, l'heure est ensuite ramenée à minuit dans le fuseau du
- * profil : une todoliste date un jour, jamais un horaire — laissé à sa propre
- * arithmétique, un LLM retombe souvent sur une convention de « fin de
- * journée » (23h59) plutôt que sur minuit, ce qui posait un événement à la
- * mauvaise heure une fois `schedule_task` accepté au lieu d'un créneau
- * journée entière.
+ * Une échéance qui retombe malgré tout dans le passé est effacée plutôt que
+ * gardée telle quelle : une todoliste proposée par l'assistant est toujours à
+ * faire, jamais déjà en retard le jour de sa création. Perdre l'échéance
+ * coûte moins cher que perdre la liste entière (§12.1) — c'est déjà la
+ * philosophie retenue pour une date illisible.
  */
 function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: string): LlmToolCall {
   if (toolCall.name !== SUGGEST_TASK_LIST.name) return toolCall;
@@ -1158,19 +1285,84 @@ function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: strin
   const corrected = lists.map((entry) => {
     if (typeof entry !== "object" || entry === null) return entry;
 
-    const dueAtText = (entry as Record<string, unknown>)["dueAtText"];
-    const parsed =
-      typeof dueAtText === "string" ? parseRelativeDateFr(dueAtText, now, timezone) : null;
-    if (parsed) return { ...entry, dueAt: parsed };
+    const record = entry as Record<string, unknown>;
+    const dueAt = resolveDueAt(
+      record["dueAtText"],
+      record["dueAt"],
+      record["dueTime"],
+      now,
+      timezone,
+    );
+    if (dueAt === null) return entry;
 
-    const dueAt = (entry as Record<string, unknown>)["dueAt"];
-    if (typeof dueAt !== "string") return entry;
+    if (isPastDay(dueAt, now, timezone)) {
+      logger.warn(SCOPE, "Échéance de todoliste proposée dans le passé, effacée.");
+      return { ...entry, dueAt: null };
+    }
 
-    const midnight = truncateToMidnight(dueAt, timezone);
-    return midnight ? { ...entry, dueAt: midnight } : entry;
+    return { ...entry, dueAt };
   });
 
   return { ...toolCall, input: { ...toolCall.input, lists: corrected } };
+}
+
+/**
+ * Corrige l'échéance d'un `suggest_task_list_due_date` avant capture (A.2).
+ *
+ * Même filet que pour la création (`resolveDueAt`) — expression relative
+ * fiabilisée, heure reprise de `dueTime` quand l'utilisateur en a donné une —
+ * mais une échéance dans le passé n'y est pas effaçable : contrairement à la
+ * création d'une liste, l'outil n'a rien à proposer d'autre qu'une nouvelle
+ * date. Le champ est retiré, ce qui fait échouer la validation du schéma en
+ * aval et abandonne la proposition entière plutôt que de reprogrammer une
+ * liste dans le passé (§12.1).
+ */
+function withCorrectedRescheduleDueDate(
+  toolCall: LlmToolCall,
+  now: Date,
+  timezone: string,
+): LlmToolCall {
+  if (toolCall.name !== SUGGEST_TASK_LIST_DUE_DATE.name) return toolCall;
+
+  const dueAt = resolveDueAt(
+    toolCall.input["dueAtText"],
+    toolCall.input["dueAt"],
+    toolCall.input["dueTime"],
+    now,
+    timezone,
+  );
+
+  const input = { ...toolCall.input };
+  if (dueAt === null || isPastDay(dueAt, now, timezone)) {
+    if (dueAt !== null) {
+      logger.warn(SCOPE, "Reprogrammation de todoliste dans le passé, proposition abandonnée.");
+    }
+    delete input["dueAt"];
+  } else {
+    input["dueAt"] = dueAt;
+  }
+
+  return { ...toolCall, input };
+}
+
+/**
+ * Le jour porté par `iso` (dans le fuseau du profil) est-il déjà passé ?
+ *
+ * Comparaison de jours calendaires, pas d'instants : aujourd'hui reste
+ * valide même une fois son heure courante dépassée — une todoliste ne porte
+ * jamais d'horaire, seulement un jour (§12.1).
+ */
+function isPastDay(iso: string, now: Date, timeZone: string): boolean {
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) return false;
+
+  const today = toWall(now, timeZone);
+  const todayMs = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+
+  const wall = toWall(instant, timeZone);
+  const targetMs = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate());
+
+  return targetMs < todayMs;
 }
 
 /**
@@ -1412,19 +1604,34 @@ function buildSystemPrompt(
   }
 
   // Exposer l'outil ne suffit pas : sa description est lue au moment de choisir,
-  // pas au moment de décider s'il y a lieu de choisir. Les deux gestes
-  // d'entretien du fil sont donc demandés explicitement ici.
-  // Le modèle ne peut compléter que ce qu'il connaît : sans le contenu des
-  // listes, « complète la liste » n'a rien à désigner et il en propose une
-  // seconde, homonyme et vide.
+  // pas au moment de décider s'il y a lieu de choisir. Les gestes d'entretien
+  // du fil sont donc demandés explicitement ici.
+  // Le modèle ne peut agir que sur ce qu'il connaît : sans le contenu ni
+  // l'échéance des listes, « complète la liste » ou « décale-la » n'ont rien à
+  // désigner, et le modèle inventerait un identifiant ou une seconde liste.
+  if (todo.tools.includes(SUGGEST_TASK_LIST_ITEMS) || todo.tools.includes(SUGGEST_TASK_LIST_DUE_DATE)) {
+    lines.push("", "Todolistes déjà nées de cette conversation.", ...describeTaskLists(todo.lists));
+  }
+
   if (todo.tools.includes(SUGGEST_TASK_LIST_ITEMS)) {
     lines.push(
       "",
-      "Todolistes déjà nées de cette conversation. Pour en compléter une, appelle",
-      "`suggest_task_list_items` avec son identifiant recopié caractère pour",
-      "caractère. N'ouvre jamais une seconde liste pour un sujet que l'une d'elles",
-      "couvre déjà, et n'y propose que des lignes qui n'y figurent pas.",
-      ...describeTaskLists(todo.lists),
+      "Pour compléter une liste ci-dessus, appelle `suggest_task_list_items` avec",
+      "son identifiant recopié caractère pour caractère. N'ouvre jamais une seconde",
+      "liste pour un sujet que l'une d'elles couvre déjà, et n'y propose que des",
+      "lignes qui n'y figurent pas.",
+    );
+  }
+
+  if (todo.tools.includes(SUGGEST_TASK_LIST_DUE_DATE)) {
+    lines.push(
+      "",
+      "Pour décaler l'échéance d'une liste ci-dessus — l'utilisateur la reporte,",
+      "l'avance, ou en fixe une pour la première fois — appelle",
+      "`suggest_task_list_due_date` avec son identifiant recopié caractère pour",
+      "caractère et la nouvelle date. N'appelle cet outil que sur demande",
+      "explicite : ne reprogramme jamais une liste de ta propre initiative, et la",
+      "nouvelle échéance doit toujours tomber aujourd'hui ou après.",
     );
   }
 
@@ -1614,10 +1821,14 @@ function describeDecisions(suggestions: Suggestion[]): string[] {
  * Le contenu est repris ligne à ligne, pas résumé : c'est ce qui lui permet de
  * ne pas proposer une deuxième fois ce qui est déjà dans la liste. Le retrait
  * marque les sous-tâches, comme dans l'éditeur.
+ *
+ * L'échéance actuelle est incluse pour que « décale-la de 3 jours » se calcule
+ * depuis la date de la liste, pas depuis aujourd'hui.
  */
 function describeTaskLists(lists: TaskListWithTasks[]): string[] {
   return lists.map((list) => {
     const nature = list.kind === "shopping" ? "achats" : "tâches";
+    const due = list.dueAt === null ? "sans échéance" : `échéance ${list.dueAt}`;
     const content =
       list.tasks.length === 0
         ? "vide"
@@ -1625,7 +1836,7 @@ function describeTaskLists(lists: TaskListWithTasks[]): string[] {
             .map((task) => (task.parentId === null ? task.title : `> ${task.title}`))
             .join(", ");
 
-    return `- « ${list.title} » (identifiant ${list.id}, ${nature}) : ${content}`;
+    return `- « ${list.title} » (identifiant ${list.id}, ${nature}, ${due}) : ${content}`;
   });
 }
 

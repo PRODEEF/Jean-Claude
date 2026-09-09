@@ -35,8 +35,8 @@ const service = new ConversationService(
   new SuggestionService(suggestionRepository),
   new FolderService(folderRepository),
   userRepository,
-  new CalendarService(calendarRepository),
-  new TaskService(taskRepository),
+  new CalendarService(calendarRepository, taskRepository),
+  new TaskService(taskRepository, calendarRepository, userRepository),
   attachmentRepository,
 );
 
