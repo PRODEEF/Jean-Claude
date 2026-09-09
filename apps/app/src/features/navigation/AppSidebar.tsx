@@ -56,8 +56,8 @@ export const SIDEBAR_DEFAULT_WIDTH = 256;
  * l'arborescence devient illisible ; au-delà de 420 pt, la barre mange la
  * colonne de lecture du fil sur un écran d'ordinateur portable.
  */
-const SIDEBAR_MIN_WIDTH = 200;
-const SIDEBAR_MAX_WIDTH = 420;
+export const SIDEBAR_MIN_WIDTH = 200;
+export const SIDEBAR_MAX_WIDTH = 420;
 
 export type AppSidebarProps = {
   /** Referme le tiroir après navigation — sans effet quand la barre est fixe. */
@@ -285,8 +285,10 @@ export function AppSidebar({
             <Text className="font-normal text-muted-foreground"> - Canal permanent</Text>
           </Text>
           <UnreadBadge
-            count={channel?.unreadCount ?? 0}
-            pendingQuestion={channel?.hasPendingQuestion ?? false}
+            count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
+            pendingQuestion={
+              pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
+            }
           />
         </Button>
 
@@ -961,8 +963,8 @@ function ConversationRow({
       </Button>
 
       <UnreadBadge
-        count={conversation.unreadCount}
-        pendingQuestion={conversation.hasPendingQuestion}
+        count={active ? 0 : conversation.unreadCount}
+        pendingQuestion={active ? false : conversation.hasPendingQuestion}
       />
 
       <RowMenuButton

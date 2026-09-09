@@ -39,9 +39,9 @@ const TOKEN = "access-token";
 const USER = "user-1";
 const NOW = "2026-09-01T08:00:00.000Z";
 /** 11h à Paris (fuseau par défaut) : une échéance qui porte une heure. */
-const DESHERBAGE = "2026-09-07T09:00:00.000Z";
+const DESHERBAGE = "2026-09-12T09:00:00.000Z";
 /** Minuit pile à Paris le même jour que DESHERBAGE : aucune heure donnée. */
-const MINUIT_PARIS = "2026-09-06T22:00:00.000Z";
+const MINUIT_PARIS = "2026-09-11T22:00:00.000Z";
 
 /**
  * Identifiants fabriqués au format UUID : la charge utile des créneaux les
@@ -290,6 +290,8 @@ function makeTaskRepository(): ITaskRepository {
       const task = lists.get(listId)?.tasks.find((candidate) => candidate.id === taskId);
       if (!task) return Promise.reject(new Error("Tâche introuvable"));
       if (patch.title !== undefined) task.title = patch.title;
+      if (patch.done !== undefined) task.done = patch.done;
+      if (patch.completedAt !== undefined) task.completedAt = patch.completedAt;
       return Promise.resolve(task);
     }),
     deleteTask: jest.fn(),
@@ -438,7 +440,11 @@ function makeFilingSuggestion(payload: Record<string, unknown>): Suggestion {
 }
 
 function makeReportBugSuggestion(payload: Record<string, unknown>): Suggestion {
-  return makeSuggestion({ kind: "report_bug", message: "On dirait un bug, je le signale ?", payload });
+  return makeSuggestion({
+    kind: "report_bug",
+    message: "On dirait un bug, je le signale ?",
+    payload,
+  });
 }
 
 function makeFeedbackRepository(overrides: Partial<IFeedbackRepository> = {}): IFeedbackRepository {
@@ -772,7 +778,10 @@ describe("AssistantService", () => {
         findById: jest
           .fn()
           .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolders: [{ name: "Assurances" }] }),
+            makeFilingSuggestion({
+              existingFolderIds: [SANTE],
+              newFolders: [{ name: "Assurances" }],
+            }),
           ),
       });
       const folders = makeFolderRepository([makeFolder({ id: SANTE, name: "Santé" })]);
@@ -829,9 +838,7 @@ describe("AssistantService", () => {
       const suggestions = makeSuggestionRepository({
         findById: jest
           .fn()
-          .mockResolvedValue(
-            makeFilingSuggestion({ existingFolderIds: [SANTE], newFolders: [] }),
-          ),
+          .mockResolvedValue(makeFilingSuggestion({ existingFolderIds: [SANTE], newFolders: [] })),
       });
       const conversations = makeConversationRepository();
 
@@ -1138,7 +1145,12 @@ describe("AssistantService", () => {
         TOKEN,
         expect.objectContaining({
           lists: [
-            { title: "Courses de printemps", kind: "shopping", dueAt: null, items: [{ title: "Terreau" }] },
+            {
+              title: "Courses de printemps",
+              kind: "shopping",
+              dueAt: null,
+              items: [{ title: "Terreau" }],
+            },
           ],
         }),
       );
@@ -1216,6 +1228,83 @@ describe("AssistantService", () => {
           tasks,
         ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
       ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  describe("acceptation d'une modification de lignes (§12.1, A.2)", () => {
+    it("coche et renomme les lignes désignées, sans créer de liste", async () => {
+      const { tasks, listId } = await withTravauxList();
+      const before = (tasks.createList as jest.Mock).mock.calls.length;
+      const travaux = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
+      const desherber = travaux?.tasks.find((task) => task.title === "Désherber");
+      const tondre = travaux?.tasks.find((task) => task.title === "Tondre");
+      if (!desherber || !tondre) throw new Error("Les lignes de travaux devraient exister");
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "update_task_list_items",
+            message: "Je coche Désherber et je renomme Tondre ?",
+            payload: {
+              listId,
+              items: [
+                { taskId: desherber.id, done: true },
+                { taskId: tondre.id, title: "Tondre la pelouse" },
+              ],
+            },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const updated = (await tasks.findAll(TOKEN, { limit: 100 })).items.find(
+        (list) => list.title === "Travaux jardin",
+      );
+      expect(updated?.tasks.find((task) => task.id === desherber.id)?.done).toBe(true);
+      expect(updated?.tasks.find((task) => task.id === tondre.id)?.title).toBe("Tondre la pelouse");
+      expect((tasks.createList as jest.Mock).mock.calls.length).toBe(before);
+    });
+
+    it("refuse une modification dont la charge utile est illisible", async () => {
+      const tasks = makeTaskRepository();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_task_list_items",
+              message: "Je coche quelque chose ?",
+              payload: { items: [{ taskId: uuid(1), done: true }] },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+
+    it("refuse une ligne qui n'existe plus", async () => {
+      const { tasks, listId } = await withTravauxList();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_task_list_items",
+              message: "Je coche Désherber ?",
+              payload: { listId, items: [{ taskId: uuid(99), done: true }] },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 404 });
     });
   });
 
@@ -1318,7 +1407,7 @@ describe("AssistantService", () => {
         {
           title: "Travaux jardin",
           startsAt: DESHERBAGE,
-          endsAt: "2026-09-07T10:00:00.000Z",
+          endsAt: "2026-09-12T10:00:00.000Z",
           allDay: false,
         },
         TOKEN,
@@ -1394,7 +1483,12 @@ describe("AssistantService", () => {
 
       expect(feedback.createGeneral).toHaveBeenCalledWith(
         USER,
-        { category: "bug", content: "Le bouton reste grisé.", platform: "web", screen: "/assistant" },
+        {
+          category: "bug",
+          content: "Le bouton reste grisé.",
+          platform: "web",
+          screen: "/assistant",
+        },
         TOKEN,
       );
     });

@@ -5,6 +5,7 @@ import {
   createTaskListsPayloadSchema,
   reportBugPayloadSchema,
   updateTaskListDueDatePayloadSchema,
+  updateTaskListItemsPayloadSchema,
   uuidSchema,
   type Suggestion,
   type SuggestionKind,
@@ -20,6 +21,7 @@ import {
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_TASK_LIST_ITEMS,
+  SUGGEST_UPDATE_TASK_ITEMS,
 } from "../../core/llm/llm.tools.js";
 import type { ISuggestionRepository } from "./suggestion.repository.interface.js";
 
@@ -153,6 +155,9 @@ function translate(
   } else if (toolCall.name === SUGGEST_TASK_LIST_DUE_DATE.name) {
     const payload = updateTaskListDueDatePayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "update_task_list_due_date", payload: payload.data };
+  } else if (toolCall.name === SUGGEST_UPDATE_TASK_ITEMS.name) {
+    const payload = updateTaskListItemsPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "update_task_list_items", payload: payload.data };
   } else if (toolCall.name === REPORT_BUG.name) {
     const payload = reportBugPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "report_bug", payload: payload.data };

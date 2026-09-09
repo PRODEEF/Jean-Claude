@@ -12,6 +12,8 @@ export type TimeGridProps = {
   /** Todolistes échues, en bandeau au-dessus de la grille : elles chargent le jour. */
   lists: TaskListWithTasks[];
   onOpenEvent: (event: CalendarEvent) => void;
+  /** Ouvre le détail cochable d'une liste posée dans le bandeau ou la grille. */
+  onOpenList: (list: TaskListWithTasks) => void;
   /** Appui sur un créneau libre — la minute est celle visée dans la colonne. */
   onCreateAt: (day: Date, minute: number) => void;
 };
@@ -42,6 +44,7 @@ export function TimeGrid({
   events,
   lists,
   onOpenEvent,
+  onOpenList,
   onCreateAt,
 }: TimeGridProps) {
   const today = new Date();
@@ -125,11 +128,17 @@ export function TimeGrid({
               className="border-border min-h-8 flex-1 gap-0.5 border-l p-0.5"
             >
               {column.lists.slice(0, MAX_TASKS_PER_COLUMN).map((list) => (
-                <View key={list.id} className="bg-muted rounded px-1 py-0.5">
+                <Pressable
+                  key={list.id}
+                  onPress={() => onOpenList(list)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Ouvrir la liste ${list.title}`}
+                  className="bg-muted rounded px-1 py-0.5"
+                >
                   <Text numberOfLines={1} className="text-muted-foreground text-[11px] leading-4">
                     {list.title}
                   </Text>
-                </View>
+                </Pressable>
               ))}
               {column.lists.length > MAX_TASKS_PER_COLUMN ? (
                 <Text className="text-muted-foreground px-1 text-[10px]">
@@ -172,10 +181,14 @@ export function TimeGrid({
             />
 
             {/* Todolistes échues à heure précise : même placement que les
-                événements, mais sans appui — on les coche dans Mes listes. */}
+                événements. L'appui ouvre le détail cochable, comme Google
+                Calendar ouvre la fiche d'un rendez-vous (§4.2). */}
             {column.timedLists.map((box) => (
-              <View
+              <Pressable
                 key={box.list.id}
+                onPress={() => onOpenList(box.list)}
+                accessibilityRole="button"
+                accessibilityLabel={`Ouvrir la liste ${box.list.title}`}
                 className="bg-muted absolute overflow-hidden rounded px-1 py-0.5"
                 style={{
                   top: (box.startMinute / 60) * HOUR_HEIGHT,
@@ -190,7 +203,7 @@ export function TimeGrid({
                 <Text numberOfLines={1} className="text-muted-foreground text-[11px] leading-4">
                   {box.list.title}
                 </Text>
-              </View>
+              </Pressable>
             ))}
 
             {column.timed.map((box) => (

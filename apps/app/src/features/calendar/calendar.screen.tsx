@@ -5,7 +5,7 @@ import { ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEvent, TaskList, TaskListWithTasks } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
-import { datedLists, listsOfDay, unscheduledLists } from "@/shared/lib/tasks";
+import { datedLists, listsOfDay, listsWithoutVisibleEvent } from "@/shared/lib/tasks";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
@@ -22,7 +22,7 @@ import { MonthGrid } from "./MonthGrid";
 import { TimeGrid } from "./TimeGrid";
 import { YearGrid } from "./YearGrid";
 import { useCalendarEvents } from "./hooks/use-calendar-events";
-import { rangeOf } from "./lib/calendar-dates";
+import { rangeOf, eventsWithListSchedule } from "./lib/calendar-dates";
 import {
   addDays,
   addMonths,
@@ -71,22 +71,29 @@ export function CalendarScreen() {
   const days = useMemo(() => visibleDays(view, anchor), [view, anchor]);
   const range = useMemo(() => rangeOf(days), [days]);
   const { data, isPending, isError } = useCalendarEvents(range);
-  const events = data ?? [];
+  const rawEvents = data ?? [];
+  const { data: allLists } = useTaskLists();
+  const events = useMemo(
+    () => eventsWithListSchedule(rawEvents, allLists ?? []),
+    [rawEvents, allLists],
+  );
 
   // Les todolistes échues se lisent dans le calendrier au même titre que les
   // rendez-vous : une journée chargée de todos est une journée chargée, et
   // devoir ouvrir un autre onglet pour s'en apercevoir ferait planifier à
-  // l'aveugle. Elles restent en lecture seule ici — on les coche dans
-  // l'onglet Mes listes, qui est leur écran.
-  const { data: lists } = useTaskLists();
-  // Vues Jour/Semaine/Mois : elles affichent déjà le rendez-vous d'une liste
-  // qui en porte un, donc on l'exclut d'ici pour ne pas doubler la même
-  // échéance sur la même journée (A.3).
-  const dueLists = useMemo(() => unscheduledLists(lists ?? []), [lists]);
+  // l'aveugle.
+  // Vues Jour/Semaine/Mois : une liste dont le rendez-vous est déjà dans la
+  // fenêtre n'est pas redessinée (A.3). Si le lien existe mais que
+  // l'événement n'est pas chargé, la liste reste visible — sinon elle
+  // disparaissait des deux lectures.
+  const dueLists = useMemo(
+    () => listsWithoutVisibleEvent(allLists ?? [], new Set(events.map((event) => event.id))),
+    [allLists, events],
+  );
   // Vue Todo : elle ne montre aucun rendez-vous, seulement les listes — une
   // liste dont le créneau a été posé n'a donc nulle part ailleurs où
   // apparaître ici, contrairement aux autres vues.
-  const allDatedLists = useMemo(() => datedLists(lists ?? []), [lists]);
+  const allDatedLists = useMemo(() => datedLists(allLists ?? []), [allLists]);
 
   /** Masque par défaut : sur un mois entier, tout afficher noierait les jours qui comptent. */
   const [hideEmptyDays, setHideEmptyDays] = useState(true);
@@ -132,7 +139,7 @@ export function CalendarScreen() {
   // le détail de la liste — cochable — et non un détail de rendez-vous générique
   // qui ne montrerait rien de ce qu'il y a à faire.
   const openEvent = (event: CalendarEvent) => {
-    const linkedList = lists?.find((list) => list.eventId === event.id);
+    const linkedList = allLists?.find((list) => list.eventId === event.id);
     if (linkedList) {
       setListDetail(linkedList);
       return;
@@ -267,6 +274,7 @@ export function CalendarScreen() {
           events={events}
           lists={dueLists}
           onOpenEvent={openEvent}
+          onOpenList={setListDetail}
           onCreateAt={createAt}
         />
       ) : null}

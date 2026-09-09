@@ -39,7 +39,7 @@ const CAPABILITIES: { key: keyof AssistantScope; label: string; hint: string }[]
   {
     key: "morningReminders",
     label: "Rappels du matin",
-    hint: "Ce qui compte aujourd'hui, et le point du lundi sur la semaine.",
+    hint: "Bientôt : ce qui compte aujourd'hui, et le point du lundi. Pas encore envoyé.",
   },
   {
     key: "folderOrganization",

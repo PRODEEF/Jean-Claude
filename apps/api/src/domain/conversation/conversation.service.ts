@@ -56,6 +56,7 @@ import {
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_TASK_LIST_ITEMS,
+  SUGGEST_UPDATE_TASK_ITEMS,
 } from "../../core/llm/llm.tools.js";
 import type { CalendarService } from "../calendar/calendar.service.js";
 import type { FolderService } from "../folder/folder.service.js";
@@ -706,16 +707,33 @@ export class ConversationService {
       ...(context.model ? { model: context.model } : {}),
     };
 
+    // Certains modèles (surtout OpenAI) recopient `name_conversation` en JSON
+    // au début du texte. On ne filtre que tant que l'outil est réellement
+    // proposé : une fois le fil nommé, `{"title":...}` peut être une réponse
+    // légitime.
+    const titleLeak = todo.tools.includes(NAME_CONVERSATION) ? createTitleLeakFilter() : null;
+
     try {
       for await (const chunk of this.llm.stream(request)) {
         if (chunk.type === "text") {
-          text += chunk.text;
-          yield { type: "text", text: chunk.text };
+          const visible = titleLeak ? titleLeak.push(chunk.text) : chunk.text;
+          if (visible.length > 0) {
+            text += visible;
+            yield { type: "text", text: visible };
+          }
         } else if (chunk.type === "tool_call") {
           toolCalls.push(chunk.toolCall);
         } else if (chunk.type === "done") {
           provider = chunk.response.provider;
           model = chunk.response.model;
+        }
+      }
+
+      if (titleLeak) {
+        const tail = titleLeak.flush();
+        if (tail.length > 0) {
+          text += tail;
+          yield { type: "text", text: tail };
         }
       }
 
@@ -733,6 +751,7 @@ export class ConversationService {
       // pleine génération, le texte déjà produit est déjà facturé. Le perdre
       // priverait l'utilisateur d'une réponse qu'il retrouverait de toute façon
       // au rechargement.
+      if (titleLeak) text += titleLeak.flush();
       // Résolu avant l'écriture : les réponses proposées voyagent sur le
       // message qui porte la question, pas dans une seconde requête.
       const asked = readQuestion(toolCalls);
@@ -804,7 +823,12 @@ export class ConversationService {
         }
       }
 
-      await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
+      await this.applyRequestedTitle(
+        conversationId,
+        toolCalls,
+        accessToken,
+        titleLeak?.leakedTitle() ?? null,
+      );
 
       await this.applyOnboardingMemory(userId, toolCalls, accessToken);
 
@@ -874,7 +898,10 @@ export class ConversationService {
     const profile = await this.users.findById(userId, accessToken);
 
     if (!profile) {
-      logger.warn(SCOPE, "Profil introuvable au moment de borner l'assistant : réglages par défaut.");
+      logger.warn(
+        SCOPE,
+        "Profil introuvable au moment de borner l'assistant : réglages par défaut.",
+      );
       return {
         name: DEFAULT_ASSISTANT_NAME,
         displayName: null,
@@ -991,6 +1018,15 @@ export class ConversationService {
         !(
           tool === SUGGEST_TASK_LIST_DUE_DATE &&
           (lists.length === 0 || isPending(decided, "update_task_list_due_date"))
+        ) &&
+        // Cocher ou renommer suppose des lignes à désigner : une liste
+        // vide n'a pas d'identifiant de tâche, et le modèle en inventerait
+        // un. Une modification déjà proposée attend un geste avant d'en
+        // empiler une seconde.
+        !(
+          tool === SUGGEST_UPDATE_TASK_ITEMS &&
+          (lists.every((list) => list.tasks.length === 0) ||
+            isPending(decided, "update_task_list_items"))
         ),
     );
 
@@ -1023,17 +1059,20 @@ export class ConversationService {
     conversationId: string,
     toolCalls: LlmToolCall[],
     accessToken: string,
+    leakedTitle: string | null,
   ): Promise<void> {
     const call = toolCalls.find((toolCall) => toolCall.name === NAME_CONVERSATION.name);
-    if (!call) return;
+    const fromTool = call ? labelSchema.safeParse(call.input["title"]) : null;
+    const title = fromTool?.success ? fromTool.data : leakedTitle;
 
-    const title = labelSchema.safeParse(call.input["title"]);
-    if (!title.success) {
-      logger.warn(SCOPE, "Appel `name_conversation` sans titre exploitable : renommage ignoré.");
+    if (!title) {
+      if (call) {
+        logger.warn(SCOPE, "Appel `name_conversation` sans titre exploitable : renommage ignoré.");
+      }
       return;
     }
 
-    await this.conversations.update(conversationId, { title: title.data }, accessToken);
+    await this.conversations.update(conversationId, { title }, accessToken);
   }
 
   /**
@@ -1082,6 +1121,136 @@ export class ConversationService {
  * Sans titre exploitable, on reste dans le canal : proposer d'ouvrir un fil
  * « Nouvelle conversation » vide serait plus déroutant que de ne rien faire.
  */
+/**
+ * Certains modèles (OpenAI surtout) recopient `name_conversation` en JSON au
+ * début du texte au lieu de n'utiliser que l'outil. On retient le début du
+ * flux jusqu'à savoir si c'est cette fuite — assez court pour ne pas retarder
+ * une vraie réponse, assez long pour un titre de 120 caractères.
+ */
+const MAX_TITLE_LEAK_PREFIX = 240;
+
+type TitleLeakFilter = {
+  push: (chunk: string) => string;
+  flush: () => string;
+  leakedTitle: () => string | null;
+};
+
+function createTitleLeakFilter(): TitleLeakFilter {
+  let buffer = "";
+  let released = false;
+  let title: string | null = null;
+
+  const consume = (atEnd: boolean): string => {
+    if (released) {
+      const out = buffer;
+      buffer = "";
+      return out;
+    }
+
+    const verdict = inspectTitleLeak(buffer, atEnd);
+    if (verdict.kind === "hold") return "";
+
+    released = true;
+    buffer = "";
+    if (verdict.kind === "stripped") {
+      title = verdict.title;
+      return verdict.rest;
+    }
+    return verdict.text;
+  };
+
+  return {
+    push(chunk) {
+      if (released) return chunk;
+      buffer += chunk;
+      return consume(false);
+    },
+    flush: () => consume(true),
+    leakedTitle: () => title,
+  };
+}
+
+type TitleLeakVerdict =
+  | { kind: "hold" }
+  | { kind: "passthrough"; text: string }
+  | { kind: "stripped"; title: string | null; rest: string };
+
+function inspectTitleLeak(buffer: string, atEnd: boolean): TitleLeakVerdict {
+  const start = buffer.search(/\S/);
+  if (start === -1) return atEnd ? { kind: "passthrough", text: buffer } : { kind: "hold" };
+  if (buffer[start] !== "{") return { kind: "passthrough", text: buffer };
+
+  const taken = takeJsonObject(buffer, start);
+  if (taken === "incomplete") {
+    if (atEnd) {
+      // Un JSON de titre coupé n'a jamais été montré : le laisser tomber
+      // plutôt que de persister `{"title":"Avi` au rechargement.
+      return /^\s*\{\s*"title"/.test(buffer)
+        ? { kind: "stripped", title: null, rest: "" }
+        : { kind: "passthrough", text: buffer };
+    }
+    if (buffer.length > MAX_TITLE_LEAK_PREFIX) return { kind: "passthrough", text: buffer };
+    return { kind: "hold" };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(buffer.slice(start, taken));
+  } catch {
+    return { kind: "passthrough", text: buffer };
+  }
+
+  const leaked = readSoleTitle(parsed);
+  if (leaked === null) return { kind: "passthrough", text: buffer };
+
+  const title = labelSchema.safeParse(leaked);
+  return {
+    kind: "stripped",
+    title: title.success ? title.data : null,
+    rest: buffer.slice(taken).replace(/^\s+/, ""),
+  };
+}
+
+function readSoleTitle(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (!("title" in value)) return null;
+  if (Object.keys(value).length !== 1) return null;
+  const title = value.title;
+  return typeof title === "string" ? title : null;
+}
+
+function takeJsonObject(text: string, start: number): number | "incomplete" {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (c === undefined) break;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (c === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === "{") depth += 1;
+    else if (c === "}") {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return "incomplete";
+}
+
 function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[]): string | null {
   if (kind !== "assistant") return null;
 
@@ -1402,10 +1571,7 @@ function flattenWithPath(
 ): { id: string; name: string; path: string }[] {
   return tree.flatMap((folder) => {
     const path = parent ? `${parent} > ${folder.name}` : folder.name;
-    return [
-      { id: folder.id, name: folder.name, path },
-      ...flattenWithPath(folder.children, path),
-    ];
+    return [{ id: folder.id, name: folder.name, path }, ...flattenWithPath(folder.children, path)];
   });
 }
 
@@ -1534,7 +1700,8 @@ function buildSystemPrompt(
       "",
       "Quand tu poses une question dont quelques réponses couvrent l'essentiel des",
       "cas, pose-la avec `ask_question` : l'utilisateur répond d'un appui plutôt",
-      "que d'écrire. Réserve-la à ces questions-là.",
+      "que d'écrire. Réserve-la à ces questions-là. Propose toujours au moins deux",
+      "réponses distinctes, et transmets-les toutes.",
       ...TOOL_ANSWER_RULE,
       "Seule exception : `open_new_conversation`, après lequel tu n'écris rien.",
       ...FORMAT_RULES,
@@ -1580,6 +1747,8 @@ function buildSystemPrompt(
     "Quand tu poses une question dont quelques réponses couvrent l'essentiel des cas,",
     "pose-la avec `ask_question` : l'utilisateur répond d'un appui plutôt que d'écrire.",
     "Réserve-la à ces questions-là — une question ouverte se pose à l'écrit.",
+    "Propose toujours au moins deux réponses distinctes, et transmets-les toutes :",
+    "n'en garder qu'une fait échouer l'outil.",
     ...TOOL_ANSWER_RULE,
     ...FORMAT_RULES,
     ...describeMemory(context.memory),
@@ -1592,8 +1761,8 @@ function buildSystemPrompt(
     lines.push(
       "",
       "Au fil de l'échange, repère si la conversation produit quelque chose",
-      "d'actionnable : une liste de tâches, une liste d'achats, une échéance,",
-      "un rendez-vous récurrent. Le cas échéant, appelle l'outil correspondant",
+      "d'actionnable : une liste de tâches, une liste d'achats, une échéance.",
+      "Le cas échéant, appelle l'outil correspondant",
       "pour le proposer — sans interrompre le fil de la conversation, et sans",
       "jamais présenter la chose comme déjà faite : c'est une proposition.",
       "",
@@ -1621,7 +1790,11 @@ function buildSystemPrompt(
   // Le modèle ne peut agir que sur ce qu'il connaît : sans le contenu ni
   // l'échéance des listes, « complète la liste » ou « décale-la » n'ont rien à
   // désigner, et le modèle inventerait un identifiant ou une seconde liste.
-  if (todo.tools.includes(SUGGEST_TASK_LIST_ITEMS) || todo.tools.includes(SUGGEST_TASK_LIST_DUE_DATE)) {
+  if (
+    todo.tools.includes(SUGGEST_TASK_LIST_ITEMS) ||
+    todo.tools.includes(SUGGEST_TASK_LIST_DUE_DATE) ||
+    todo.tools.includes(SUGGEST_UPDATE_TASK_ITEMS)
+  ) {
     lines.push("", "Todolistes déjà nées de cette conversation.", ...describeTaskLists(todo.lists));
   }
 
@@ -1647,6 +1820,17 @@ function buildSystemPrompt(
     );
   }
 
+  if (todo.tools.includes(SUGGEST_UPDATE_TASK_ITEMS)) {
+    lines.push(
+      "",
+      "Pour cocher, décocher ou renommer une ligne d'une liste ci-dessus, appelle",
+      "`suggest_update_task_items` avec l'identifiant de la liste ET celui de la",
+      "ligne, recopiés caractère pour caractère. N'ouvre jamais une seconde liste",
+      "pour marquer une ligne faite, et n'ajoute pas une ligne pour en remplacer",
+      "une qui existe déjà.",
+    );
+  }
+
   if (todo.tools.includes(NAME_CONVERSATION)) {
     lines.push(
       "",
@@ -1654,7 +1838,8 @@ function buildSystemPrompt(
       "dès ce tour-ci, sur la foi du premier message : un titre approximatif vaut",
       "mieux qu'une liste de « Nouvelle conversation » indiscernables dans la barre",
       "latérale, et l'utilisateur peut le corriger. N'attends pas qu'on te le",
-      "demande et n'en parle pas : le titre s'applique seul.",
+      "demande et n'en parle pas : le titre s'applique seul. N'écris jamais",
+      'le titre dans ta réponse, ni en JSON (`{"title":...}`) ni en clair.',
     );
   }
 
@@ -1692,13 +1877,13 @@ function buildSystemPrompt(
       "",
       todo.filing.folders.length > 0
         ? "Dossiers existants. Pour en réutiliser un, recopie son identifiant ET son nom" +
-          " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas." +
-          " Un nouveau dossier peut aussi naître comme sous-dossier de l'un d'eux — reprends-le" +
-          " alors en `parent`, de la même façon —, mais seulement s'il en est un vrai thème" +
-          " parent. Ce lien s'apprécie au sujet, jamais au nombre de dossiers disponibles :" +
-          " si le seul dossier existant est « Courses » et que tu ranges un CV, il ne devient" +
-          " pas pour autant le parent du nouveau dossier « Candidatures » — celui-ci naît à la" +
-          " racine, sans `parent`, et « Courses » ne figure dans aucune des deux listes."
+            " tels quels : le serveur écarte la ligne si les deux ne se correspondent pas." +
+            " Un nouveau dossier peut aussi naître comme sous-dossier de l'un d'eux — reprends-le" +
+            " alors en `parent`, de la même façon —, mais seulement s'il en est un vrai thème" +
+            " parent. Ce lien s'apprécie au sujet, jamais au nombre de dossiers disponibles :" +
+            " si le seul dossier existant est « Courses » et que tu ranges un CV, il ne devient" +
+            " pas pour autant le parent du nouveau dossier « Candidatures » — celui-ci naît à la" +
+            " racine, sans `parent`, et « Courses » ne figure dans aucune des deux listes."
         : "L'utilisateur n'a encore aucun dossier : propose-en un nouveau, sobrement nommé.",
       ...describeFolders(todo.filing.folders),
     );
@@ -1849,8 +2034,12 @@ function describeTaskLists(lists: TaskListWithTasks[]): string[] {
       list.tasks.length === 0
         ? "vide"
         : list.tasks
-            .map((task) => (task.parentId === null ? task.title : `> ${task.title}`))
-            .join(", ");
+            .map((task) => {
+              const state = task.done ? "faite" : "à faire";
+              const nested = task.parentId === null ? "" : "> ";
+              return `${nested}identifiant ${task.id} : ${task.title} (${state})`;
+            })
+            .join(" ; ");
 
     return `- « ${list.title} » (identifiant ${list.id}, ${nature}, ${due}) : ${content}`;
   });

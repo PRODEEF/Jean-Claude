@@ -9,6 +9,8 @@ import {
   Text,
   TextInput,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -30,6 +32,9 @@ import { QuestionCard } from "./QuestionCard";
 import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
 import { SwitchAsideCard } from "./SwitchAsideCard";
 import { ThinkingIndicator } from "./ThinkingIndicator";
+
+/** Distance au bas du fil en deçà de laquelle on reste collé pendant le stream. */
+const STICK_THRESHOLD = 64;
 
 export type ConversationThreadProps = {
   conversationId: string;
@@ -71,6 +76,13 @@ export function ConversationThread({
   const [draft, setDraft] = useState("");
   const listRef = useRef<FlatList<ThreadItem>>(null);
   const inputRef = useRef<TextInput>(null);
+  /**
+   * Collé en bas tant que l'utilisateur n'a pas remonté le fil : un jeton
+   * qui arrive, ou une carte qui s'ouvre, ne doit pas l'arracher à ce qu'il
+   * relit. ChatGPT, Claude et Perplexity font de même (§4.2). Renvoyer un
+   * message recolle — c'est le geste qui dit « je veux voir la suite ».
+   */
+  const stickToBottom = useRef(true);
   const attachments = useComposerAttachments();
   const picker = useAttachmentPicker(attachments.add, inputRef);
   // Question écartée d'un « Passer », retenue par identifiant de message : le
@@ -152,7 +164,21 @@ export function ConversationThread({
   // dernier message reste masquée par la saisie — surtout sensible sur le
   // tout dernier jeton d'une réponse, celui qui referme souvent une liste.
   const scrollToEndSoon = useCallback(() => {
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
+    if (!stickToBottom.current) return;
+    const scroll = () => listRef.current?.scrollToEnd({ animated: false });
+    requestAnimationFrame(() => {
+      scroll();
+      // Web : le Markdown se met en page après la première frame. Sans une
+      // seconde, le défilement atterrit sur la hauteur d'avant et le dernier
+      // jeton reste masqué par la saisie.
+      if (Platform.OS === "web") requestAnimationFrame(scroll);
+    });
+  }, []);
+
+  const onThreadScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    stickToBottom.current =
+      contentSize.height - layoutMeasurement.height - contentOffset.y <= STICK_THRESHOLD;
   }, []);
 
   // Suivre `streamingText` recale la liste à chaque arrivée de texte : le
@@ -169,6 +195,7 @@ export function ConversationThread({
       const attachmentIds = attachments.readyIds;
       if ((!content && attachmentIds.length === 0) || send.isPending || attachments.uploading)
         return;
+      stickToBottom.current = true;
       setDraft("");
       attachments.reset();
       submit(content, inputMode, attachmentIds);
@@ -244,6 +271,8 @@ export function ConversationThread({
           renderItem={renderItem}
           contentContainerStyle={[styles.list, column]}
           onContentSizeChange={scrollToEndSoon}
+          onScroll={onThreadScroll}
+          scrollEventThrottle={16}
           // Par défaut, `FlatList` ne rend que 10 éléments au montage, en
           // partant du début — les plus anciens messages, la liste étant triée
           // par date croissante. Le premier `scrollToEnd` n'atteignait alors
@@ -264,7 +293,7 @@ export function ConversationThread({
           // malgré tout dans l'espacement de la liste.
           ListFooterComponent={
             streamingText === null && pending.length === 0 && pendingUserText === null ? null : (
-              <View style={styles.footer}>
+              <View style={styles.footer} onLayout={scrollToEndSoon}>
                 {/* Le message tel qu'il vient d'être tapé, en attendant que le
                     serveur renvoie sa version enregistrée. Même apparence que
                     les autres : rien ne doit signaler à l'utilisateur qu'il

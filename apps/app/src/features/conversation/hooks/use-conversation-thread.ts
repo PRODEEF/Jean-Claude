@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type {
   Conversation,
   Message,
@@ -9,6 +9,7 @@ import type {
 } from "@jc/domain";
 import { api } from "@/shared/lib/api";
 import { PROFILE_KEY } from "@/shared/hooks/use-profile";
+import { ASSISTANT_CHANNEL_KEY } from "@/features/navigation/use-sidebar-data";
 
 /**
  * Nombre de messages chargés à l'ouverture du fil.
@@ -99,6 +100,9 @@ export function useConversationThread(
    */
   const markRead = useMutation({
     mutationFn: () => api.conversations.markRead(conversationId),
+    // La pastille disparaît tout de suite : le trigger SQL peut encore
+    // remonter l'ancien compteur le temps que `invalidateQueries` revienne.
+    onMutate: () => clearUnread(queryClient, conversationId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["conversations"] }),
   });
   useEffect(() => {
@@ -206,6 +210,7 @@ export function useConversationThread(
       // les yeux — `markRead` n'est sinon rejoué qu'à l'ouverture du fil, pas
       // après chacun de ses tours suivants.
       await api.conversations.markRead(conversationId);
+      clearUnread(queryClient, conversationId);
       // Le tri de la liste des conversations dépend de `lastMessageAt`, que
       // ce tour vient de déplacer.
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -319,5 +324,26 @@ function turnEvents(
     conversationId,
     { content: turn.content, inputMode: turn.inputMode, attachmentIds: turn.attachmentIds },
     signal,
+  );
+}
+
+/**
+ * Éteint la pastille dans les caches déjà tenus, sans attendre le serveur.
+ *
+ * Couvre la liste de la barre et le canal permanent, qui partagent le même
+ * compteur mais pas le même objet.
+ */
+function clearUnread(queryClient: QueryClient, conversationId: string): void {
+  queryClient.setQueryData<Paginated<Conversation>>(["conversations"], (current) => {
+    if (!current) return current;
+    return {
+      ...current,
+      items: current.items.map((item) =>
+        item.id === conversationId ? { ...item, unreadCount: 0 } : item,
+      ),
+    };
+  });
+  queryClient.setQueryData<Conversation>(ASSISTANT_CHANNEL_KEY, (current) =>
+    current?.id === conversationId ? { ...current, unreadCount: 0 } : current,
   );
 }

@@ -2,8 +2,13 @@ import { useState } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { Slot } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  AppSidebar,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+} from "@/features/navigation/AppSidebar";
+import { useAssistantChannel } from "@/features/navigation/use-sidebar-data";
 import { AppBanner } from "@/features/navigation/AppBanner";
-import { AppSidebar } from "@/features/navigation/AppSidebar";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 
 /**
@@ -21,16 +26,24 @@ export default function AppLayout() {
   const expanded = breakpoint === "expanded";
   const { width: windowWidth } = useWindowDimensions();
 
+  // Le canal se crée ici, pas seulement quand la barre est montée : en
+  // `compact` le tiroir est démonté tant qu'il est fermé, et sans cet appel
+  // la pastille d'accueil restait éteinte à la première connexion.
+  useAssistantChannel();
+
   // `null` = l'utilisateur n'a pas encore tranché : la barre suit alors la
   // taille d'écran, ouverte sur desktop et fermée sur téléphone.
   const [preference, setPreference] = useState<boolean | null>(null);
   const visible = preference ?? expanded;
 
   // La largeur vit ici et non dans la barre : celle-ci est démontée à chaque
-  // repli, et l'ajustement de l'utilisateur serait perdu au passage. 20% de la
-  // fenêtre au chargement, sans autre borne ; l'utilisateur reprend la main
-  // ensuite via la poignée.
-  const [sidebarWidth, setSidebarWidth] = useState(Math.round(windowWidth * 0.2));
+  // repli, et l'ajustement de l'utilisateur serait perdu au passage. 20 % de
+  // la fenêtre au chargement, borné aux mêmes limites que la poignée — sans
+  // ça, un écran étroit ouvrait la barre sous 200 pt et le geste de resize
+  // rentrait en conflit avec l'état initial.
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(windowWidth * 0.2))),
+  );
 
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>

@@ -12,7 +12,10 @@ import type {
   UserPreferences,
 } from "@jc/domain";
 import type { LlmCompletionRequest, LlmProvider, LlmToolCall } from "../../core/llm/llm.port.js";
-import type { AttachmentRecord, IAttachmentRepository } from "../attachment/attachment.repository.interface.js";
+import type {
+  AttachmentRecord,
+  IAttachmentRepository,
+} from "../attachment/attachment.repository.interface.js";
 import type { ICalendarRepository } from "../calendar/calendar.repository.interface.js";
 import { CalendarService } from "../calendar/calendar.service.js";
 import type { IFolderRepository } from "../folder/folder.repository.interface.js";
@@ -925,7 +928,11 @@ describe("ConversationService", () => {
           makeFolderRepository(),
           makeUserRepository({}, { onboardingCompletedAt: null }),
         ),
-        { content: "Je refais tout mon jardin ce printemps.", inputMode: "text", attachmentIds: [] },
+        {
+          content: "Je refais tout mon jardin ce printemps.",
+          inputMode: "text",
+          attachmentIds: [],
+        },
       );
 
       expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_project_folders");
@@ -1001,7 +1008,11 @@ describe("ConversationService", () => {
           }),
           llm,
         ),
-        { content: "Qu'est-ce qui est important aujourd'hui ?", inputMode: "text", attachmentIds: [] },
+        {
+          content: "Qu'est-ce qui est important aujourd'hui ?",
+          inputMode: "text",
+          attachmentIds: [],
+        },
       );
 
       expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("finish_onboarding");
@@ -1173,6 +1184,7 @@ describe("ConversationService", () => {
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).toContain("suggest_task_list");
       expect(tools).not.toContain("suggest_task_list_items");
+      expect(tools).not.toContain("suggest_update_task_items");
     });
 
     it("donne au modèle de quoi compléter une liste déjà née du fil", async () => {
@@ -1199,28 +1211,27 @@ describe("ConversationService", () => {
 
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).toContain("suggest_task_list_items");
+      expect(tools).toContain("suggest_update_task_items");
 
       // Sans le contenu ni l'identifiant, « complète la liste » n'a rien à
       // désigner : le modèle rappelle l'outil de création et propose une
       // seconde liste homonyme.
       const system = lastRequest(llm).system ?? "";
       expect(system).toContain(list.id);
-      expect(system).toContain("Pain");
-      expect(system).toContain("> Lait");
+      expect(system).toContain("identifiant task-1 : Pain");
+      expect(system).toContain("> identifiant task-2 : Lait");
     });
 
     it("rappelle au modèle de ne pas reproposer ce qui a déjà été accepté", async () => {
       const llm = makeLlm();
       const suggestions = makeSuggestionRepository({
-        listForConversation: jest
-          .fn()
-          .mockResolvedValue([
-            makeSuggestion({
-              kind: "create_task_list",
-              status: "accepted",
-              message: "Je te l'organise ?",
-            }),
-          ]),
+        listForConversation: jest.fn().mockResolvedValue([
+          makeSuggestion({
+            kind: "create_task_list",
+            status: "accepted",
+            message: "Je te l'organise ?",
+          }),
+        ]),
       });
 
       await drain(makeService(makeRepository(), llm, suggestions), {
@@ -1574,7 +1585,9 @@ describe("ConversationService", () => {
 
       it("refuse une pièce jointe introuvable", async () => {
         const repo = makeRepository();
-        const attachments = makeAttachmentRepository({ findByIds: jest.fn().mockResolvedValue([]) });
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([]),
+        });
 
         await expect(
           drain(withAttachments(attachments, repo), {
@@ -1735,7 +1748,12 @@ describe("ConversationService", () => {
         expect(lastRequest(llm).messages).toEqual([
           {
             role: "user",
-            content: [{ type: "text", text: "Voici mon bail.\n\n--- contrat.pdf ---\nPréavis de deux mois." }],
+            content: [
+              {
+                type: "text",
+                text: "Voici mon bail.\n\n--- contrat.pdf ---\nPréavis de deux mois.",
+              },
+            ],
           },
         ]);
       });
@@ -1835,7 +1853,10 @@ describe("ConversationService", () => {
           {
             role: "user",
             content: [
-              { type: "text", text: "Voici mes notes.\n\n--- notes.txt ---\nListe de courses : pain, lait." },
+              {
+                type: "text",
+                text: "Voici mes notes.\n\n--- notes.txt ---\nListe de courses : pain, lait.",
+              },
             ],
           },
         ]);
@@ -2199,6 +2220,66 @@ describe("ConversationService", () => {
       // Le titre est le libellé du fil, pas une donnée créée pour l'utilisateur :
       // il ne relève pas du §12.1.
       expect(suggestions.create).not.toHaveBeenCalled();
+    });
+
+    it("retire un JSON de titre collé en tête de la réponse (fuite de certains modèles)", async () => {
+      const repo = untitled();
+      const llm = makeLlm([
+        '{"title":"Avis sur le CV de Clarisse"}',
+        "Franchement, il est déjà solide.",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: "Franchement, il est déjà solide." },
+      ]);
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          role: "assistant",
+          content: "Franchement, il est déjà solide.",
+        }),
+        TOKEN,
+      );
+      expect(repo.update).toHaveBeenCalledWith(
+        "conv-1",
+        { title: "Avis sur le CV de Clarisse" },
+        TOKEN,
+      );
+    });
+
+    it("attend que l'objet JSON soit complet avant d'émettre, même à cheval sur deux fragments", async () => {
+      const repo = untitled();
+      const llm = makeLlm([
+        '{"title":"Avis sur le CV',
+        ' de Clarisse"}Franchement, il est déjà solide.',
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: "Franchement, il est déjà solide." },
+      ]);
+      expect(repo.update).toHaveBeenCalledWith(
+        "conv-1",
+        { title: "Avis sur le CV de Clarisse" },
+        TOKEN,
+      );
+    });
+
+    it("laisse passer un JSON qui n'est pas un titre de conversation", async () => {
+      const repo = untitled();
+      const llm = makeLlm(['{"ok":true} voici la suite']);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: '{"ok":true} voici la suite' },
+      ]);
+      expect(repo.update).not.toHaveBeenCalled();
     });
 
     it("donne au modèle les dossiers existants quand le fil n'est rangé nulle part", async () => {
@@ -2619,8 +2700,10 @@ describe("ConversationService", () => {
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).not.toContain("suggest_task_list");
       // Les autres capacités restent actives : le réglage est par capacité,
-      // pas un interrupteur général.
-      expect(tools).toContain("suggest_recurring_event");
+      // pas un interrupteur général. `suggest_recurring_event` n'est plus
+      // dans le jeu (A.11 non branché) : `suggest_folders` en tient lieu.
+      expect(tools).toContain("suggest_folders");
+      expect(tools).not.toContain("suggest_recurring_event");
     });
 
     it("cesse de réclamer dans la consigne un outil qu'on ne remet plus", async () => {
@@ -2798,17 +2881,22 @@ describe("ConversationService", () => {
         kind: "create_task_list",
         payload: { lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }] },
       });
-      const suggestions = makeSuggestionRepository({ create: jest.fn().mockResolvedValue(created) });
-      const llm = makeLlm([], [
-        {
-          id: "call-1",
-          name: "suggest_task_list",
-          input: {
-            message: "Je t'organise ça ?",
-            lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }],
+      const suggestions = makeSuggestionRepository({
+        create: jest.fn().mockResolvedValue(created),
+      });
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [{ title: "Courses", kind: "shopping", items: [{ title: "Terreau" }] }],
+            },
           },
-        },
-      ]);
+        ],
+      );
 
       const suggestion = await makeService(repo, llm, suggestions).extractTaskList(
         "conv-1",
@@ -2830,26 +2918,29 @@ describe("ConversationService", () => {
     it("ramène aussi l'échéance à minuit local ici (A.3, #18)", async () => {
       const repo = makeRepository();
       const suggestions = makeSuggestionRepository();
-      const llm = makeLlm([], [
-        {
-          id: "call-1",
-          name: "suggest_task_list",
-          input: {
-            message: "Je t'organise ça ?",
-            lists: [
-              {
-                title: "Courses",
-                kind: "shopping",
-                // Convention de « fin de journée » qu'un LLM produit souvent :
-                // sans ce même filet qu'au fil du dialogue ordinaire, cette
-                // échéance extraite ici y échapperait.
-                dueAt: "2026-09-10T23:59:00.000+02:00",
-                items: [{ title: "Terreau" }],
-              },
-            ],
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je t'organise ça ?",
+              lists: [
+                {
+                  title: "Courses",
+                  kind: "shopping",
+                  // Convention de « fin de journée » qu'un LLM produit souvent :
+                  // sans ce même filet qu'au fil du dialogue ordinaire, cette
+                  // échéance extraite ici y échapperait.
+                  dueAt: "2026-09-10T23:59:00.000+02:00",
+                  items: [{ title: "Terreau" }],
+                },
+              ],
+            },
           },
-        },
-      ]);
+        ],
+      );
 
       await makeService(repo, llm, suggestions).extractTaskList("conv-1", USER, TOKEN);
 
@@ -2925,9 +3016,9 @@ describe("ConversationService", () => {
         findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
       });
 
-      await expect(
-        makeService(repo).extractTaskList("conv-1", USER, TOKEN),
-      ).rejects.toMatchObject({ status: 422 });
+      await expect(makeService(repo).extractTaskList("conv-1", USER, TOKEN)).rejects.toMatchObject({
+        status: 422,
+      });
     });
 
     it("refuse quand la détection de todolistes est désactivée dans les réglages (A.10)", async () => {
@@ -2947,9 +3038,9 @@ describe("ConversationService", () => {
     it("refuse une conversation sans historique exploitable", async () => {
       const repo = makeRepository({ listMessages: emptyThread() });
 
-      await expect(
-        makeService(repo).extractTaskList("conv-1", USER, TOKEN),
-      ).rejects.toMatchObject({ status: 422 });
+      await expect(makeService(repo).extractTaskList("conv-1", USER, TOKEN)).rejects.toMatchObject({
+        status: 422,
+      });
     });
   });
 
@@ -2991,7 +3082,9 @@ describe("ConversationService", () => {
         USER,
         expect.objectContaining({
           payload: expect.objectContaining({
-            lists: [expect.objectContaining({ title: "Courses", dueAt: "2026-09-03T22:00:00.000Z" })],
+            lists: [
+              expect.objectContaining({ title: "Courses", dueAt: "2026-09-03T22:00:00.000Z" }),
+            ],
           }),
         }),
         TOKEN,
@@ -3036,7 +3129,9 @@ describe("ConversationService", () => {
         USER,
         expect.objectContaining({
           payload: expect.objectContaining({
-            lists: [expect.objectContaining({ title: "Courses", dueAt: "2026-09-05T08:00:00.000Z" })],
+            lists: [
+              expect.objectContaining({ title: "Courses", dueAt: "2026-09-05T08:00:00.000Z" }),
+            ],
           }),
         }),
         TOKEN,
@@ -3375,7 +3470,11 @@ describe("ConversationService", () => {
           makeCalendarRepository(),
           tasks,
         ),
-        { content: "Décale les travaux du jardin à vendredi.", inputMode: "text", attachmentIds: [] },
+        {
+          content: "Décale les travaux du jardin à vendredi.",
+          inputMode: "text",
+          attachmentIds: [],
+        },
       );
 
       // Vendredi 4 septembre, minuit à Paris.
@@ -3469,6 +3568,62 @@ describe("ConversationService", () => {
       );
 
       expect(suggestions.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("modification des lignes d'une todoliste existante (§12.1, A.2)", () => {
+    const EXISTING_LIST = makeTaskList({
+      id: "11111111-1111-4111-8111-111111111111",
+      title: "Courses",
+      kind: "shopping",
+      conversationId: "conv-1",
+      tasks: [makeTaskListItem({ id: "22222222-2222-4222-8222-222222222222", title: "Pain" })],
+    });
+
+    it("expose l'outil dès qu'une liste du fil porte des lignes", async () => {
+      const llm = makeLlm();
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([EXISTING_LIST]),
+        ),
+      );
+
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_update_task_items");
+      expect(lastRequest(llm).system ?? "").toContain("suggest_update_task_items");
+    });
+
+    it("ne propose pas de modifier des lignes quand les listes du fil sont vides", async () => {
+      const llm = makeLlm();
+      const empty = makeTaskList({
+        id: "11111111-1111-4111-8111-111111111111",
+        title: "Courses",
+        kind: "shopping",
+        conversationId: "conv-1",
+        tasks: [],
+      });
+
+      await drain(
+        makeService(
+          makeRepository(),
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([empty]),
+        ),
+      );
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).not.toContain("suggest_update_task_items");
+      expect(tools).toContain("suggest_task_list_items");
     });
   });
 });

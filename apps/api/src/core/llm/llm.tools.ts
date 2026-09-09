@@ -206,6 +206,66 @@ export const SUGGEST_TASK_LIST_DUE_DATE: LlmTool = {
   },
 };
 
+/**
+ * Cocher, décocher ou renommer des lignes d'une liste qui existe déjà (§12.1, A.2).
+ *
+ * Distinct de `suggest_task_list_items` (qui ajoute) et de `suggest_task_list`
+ * (qui ouvre une liste). Sans lui, « coche le pain » n'avait qu'un outil à
+ * sa portée — celui qui crée — et le modèle reproduisait la liste.
+ */
+export const SUGGEST_UPDATE_TASK_ITEMS: LlmTool = {
+  name: "suggest_update_task_items",
+  description:
+    "À appeler pour modifier des lignes d'une todoliste qui existe déjà : cocher " +
+    "ou décocher une tâche, en changer le titre. Les listes et leurs lignes sont " +
+    "données dans la consigne avec leurs identifiants : recopie-les caractère pour " +
+    "caractère. N'ouvre jamais une seconde liste pour marquer une ligne faite, et " +
+    "n'appelle pas `suggest_task_list_items` pour renommer.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question, nommant ce qui change — ex. « Je coche le pain et je renomme " +
+          "les œufs en œufs bio ? ». Ne jamais présenter le changement comme déjà " +
+          "fait. 500 caractères maximum.",
+      },
+      listId: {
+        type: "string",
+        description:
+          "Identifiant de la liste, recopié caractère pour caractère depuis la consigne.",
+      },
+      items: {
+        type: "array",
+        minItems: 1,
+        maxItems: 30,
+        items: {
+          type: "object",
+          properties: {
+            taskId: {
+              type: "string",
+              description:
+                "Identifiant de la ligne, recopié caractère pour caractère depuis la consigne.",
+            },
+            title: {
+              type: "string",
+              description: "Nouveau titre, uniquement si on le change.",
+            },
+            done: {
+              type: "boolean",
+              description: "true pour cocher, false pour décocher. Omettre si l'état ne change pas.",
+            },
+          },
+          required: ["taskId"],
+        },
+      },
+    },
+    required: ["message", "listId", "items"],
+  },
+};
+
 export const SUGGEST_FOLDERS: LlmTool = {
   name: "suggest_folders",
   description:
@@ -314,7 +374,8 @@ export const NAME_CONVERSATION: LlmTool = {
     "À appeler une fois, dès le premier tour de dialogue, pour nommer la conversation. " +
     "Contrairement aux autres outils, celui-ci ne demande rien à l'utilisateur : le titre " +
     "s'applique aussitôt, et l'utilisateur pourra le corriger. " +
-    "Ne pas y répondre en langage naturel, ne pas annoncer le renommage.",
+    "Ne pas y répondre en langage naturel, ne pas annoncer le renommage, et ne jamais " +
+    'écrire le titre dans le texte — ni en JSON (`{"title":...}`) ni en clair.',
   inputSchema: {
     type: "object",
     properties: {
@@ -329,6 +390,12 @@ export const NAME_CONVERSATION: LlmTool = {
   },
 };
 
+/**
+ * Rendez-vous récurrent (A.11). Défini ici, volontairement absent de
+ * `CHAT_TOOLS` : `translate()` n'en fait aucune suggestion, donc l'exposer
+ * invitait le modèle à un appel sans carte. À réintégrer le jour où
+ * `create_recurring_event` est branché de bout en bout.
+ */
 export const SUGGEST_RECURRING_EVENT: LlmTool = {
   name: "suggest_recurring_event",
   description:
@@ -514,6 +581,9 @@ export const ASK_QUESTION: LlmTool = {
     "Ne pas l'appeler pour une question ouverte, dont la réponse tient dans le récit " +
     "de l'utilisateur (« raconte-moi ce qui t'occupe ») : lui présenter quatre boutons " +
     "reviendrait à lui souffler sa réponse. Une seule question à la fois. " +
+    "Toujours au moins deux réponses distinctes, et les transmettre toutes : n'en " +
+    "garder qu'une fait échouer l'outil, et n'envoyer que le premier choix d'une " +
+    "liste plus longue prive l'utilisateur des autres. " +
     "Comme `name_conversation`, cet outil ne demande rien : les réponses proposées " +
     "s'affichent aussitôt sous la question. Ne pas les énumérer une seconde fois dans " +
     "le texte de la réponse.",
@@ -549,8 +619,8 @@ export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_ITEMS,
   SUGGEST_TASK_LIST_DUE_DATE,
+  SUGGEST_UPDATE_TASK_ITEMS,
   SUGGEST_FOLDERS,
-  SUGGEST_RECURRING_EVENT,
   ASK_QUESTION,
 ];
 
@@ -584,6 +654,7 @@ const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",
   [SUGGEST_TASK_LIST_ITEMS.name]: "proactiveTaskDetection",
   [SUGGEST_TASK_LIST_DUE_DATE.name]: "proactiveTaskDetection",
+  [SUGGEST_UPDATE_TASK_ITEMS.name]: "proactiveTaskDetection",
   [SUGGEST_RECURRING_EVENT.name]: "proactiveScheduling",
   [SUGGEST_FOLDERS.name]: "folderOrganization",
   [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",

@@ -23,6 +23,24 @@ export function unscheduledLists(lists: TaskListWithTasks[]): TaskListWithTasks[
   return datedLists(lists).filter((list) => list.eventId === null);
 }
 
+/**
+ * Todolistes datées que le calendrier doit encore afficher comme listes.
+ *
+ * Une liste liée à un rendez-vous déjà chargé est représentée par ce
+ * rendez-vous (A.3). Si le lien existe mais que l'événement n'est pas dans la
+ * fenêtre — cache incomplet, rendez-vous hors période — la liste resterait
+ * invisible partout : on la montre alors comme n'importe quelle liste non
+ * planifiée.
+ */
+export function listsWithoutVisibleEvent(
+  lists: TaskListWithTasks[],
+  eventIds: ReadonlySet<string>,
+): TaskListWithTasks[] {
+  return datedLists(lists).filter(
+    (list) => list.eventId === null || !eventIds.has(list.eventId),
+  );
+}
+
 export function listsOfDay(lists: TaskListWithTasks[], day: Date): TaskListWithTasks[] {
   const start = startOfDay(day).getTime();
   const end = addDays(startOfDay(day), 1).getTime();

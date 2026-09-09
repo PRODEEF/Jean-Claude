@@ -49,6 +49,8 @@ export const suggestionKindSchema = z.enum([
   "create_recurring_event",
   /** « Je décale Courses à vendredi ? » (§12.1, A.2) */
   "update_task_list_due_date",
+  /** « Je coche le pain et je renomme les œufs ? » (§12.1, A.2) */
+  "update_task_list_items",
   /** « On dirait un bug, je le signale ? » (A.10) */
   "report_bug",
 ]);
@@ -270,6 +272,38 @@ export const updateTaskListDueDatePayloadSchema = z.object({
 });
 
 export type UpdateTaskListDueDatePayload = z.infer<typeof updateTaskListDueDatePayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `update_task_list_items` (§12.1, A.2).
+ *
+ * Cocher, décocher ou renommer des lignes qui existent déjà — le geste que
+ * `add_task_list_items` ne couvre pas. Sans lui, « coche le pain » n'avait
+ * qu'un outil à sa portée, celui qui crée, et le modèle ouvrait une seconde
+ * liste. Chaque ligne est désignée par son identifiant, repris de la consigne.
+ *
+ * Au moins un des deux champs `title` / `done` : une ligne sans rien à
+ * changer n'a pas de proposition à porter.
+ */
+export const updateTaskListItemsPayloadSchema = z.object({
+  listId: uuidSchema,
+  items: z
+    .array(
+      z
+        .object({
+          taskId: uuidSchema,
+          title: labelSchema.optional(),
+          done: z.boolean().optional(),
+        })
+        .refine(
+          (item) => item.title !== undefined || item.done !== undefined,
+          "Une ligne à modifier doit au moins changer de titre ou d'état.",
+        ),
+    )
+    .min(1)
+    .max(30),
+});
+
+export type UpdateTaskListItemsPayload = z.infer<typeof updateTaskListItemsPayloadSchema>;
 
 /**
  * Charge utile d'une suggestion `report_bug` (A.10).

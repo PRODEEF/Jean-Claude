@@ -102,8 +102,8 @@ describe("SuggestionService", () => {
     it("ignore un appel d'outil qui ne correspond à aucune suggestion", async () => {
       const repo = makeRepository();
 
-      // `suggest_recurring_event` est exposé au modèle mais n'a pas encore de
-      // suggestion correspondante (A.11).
+      // `suggest_recurring_event` n'est plus remis au modèle (A.11 non
+      // branché). S'il arrive malgré tout, il n'a toujours pas de suggestion.
       const suggestion = await new SuggestionService(repo).capture(
         USER,
         CONVERSATION,
@@ -287,6 +287,35 @@ describe("SuggestionService", () => {
         expect.objectContaining({
           kind: "update_task_list_due_date",
           payload: { listId, dueAt: NOW },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("traduit une modification de lignes en proposition update_task_list_items", async () => {
+      const repo = makeRepository();
+      const listId = "11111111-1111-4111-8111-111111111111";
+      const taskId = "22222222-2222-4222-8222-222222222222";
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je coche le pain ?",
+            listId,
+            items: [{ taskId, done: true }],
+          },
+          "suggest_update_task_items",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_task_list_items",
+          payload: { listId, items: [{ taskId, done: true }] },
         }),
         TOKEN,
       );

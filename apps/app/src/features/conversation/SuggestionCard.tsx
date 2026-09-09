@@ -10,6 +10,7 @@ import {
   reportBugPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
+  updateTaskListItemsPayloadSchema,
   type AssignFoldersPayload,
   type CreateTaskListsPayload,
   type FeedbackPlatform,
@@ -493,6 +494,8 @@ function outcomeLabel(suggestion: Suggestion): string {
       return "Créneaux posés";
     case "update_task_list_due_date":
       return "Échéance déplacée";
+    case "update_task_list_items":
+      return "Liste mise à jour";
     case "report_bug":
       return "Bug signalé, merci pour le retour !";
     default:
@@ -603,6 +606,23 @@ function useSuggestionPreview(suggestion: Suggestion): {
     };
   }
 
+  // Cocher ou renommer : la liste est déjà nommée dans la phrase, l'aperçu
+  // ne montre que ce qui change sur chaque ligne.
+  if (suggestion.kind === "update_task_list_items") {
+    const proposed = updateTaskListItemsPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Mettre à jour la liste",
+      lines: proposed.success
+        ? proposed.data.items.map((item) => ({
+            key: item.taskId,
+            label: updateItemLabel(item),
+            nested: false,
+          }))
+        : [],
+    };
+  }
+
   // La liste visée est déjà nommée dans la phrase de l'assistant (« Je décale
   // Courses à vendredi ? ») : l'aperçu se limite à la nouvelle date.
   if (suggestion.kind === "update_task_list_due_date") {
@@ -659,6 +679,21 @@ function useSuggestionPreview(suggestion: Suggestion): {
       })),
     ],
   };
+}
+
+/**
+ * Ce que la carte dit d'une ligne à modifier : le nouveau titre s'il y en a
+ * un, sinon le seul changement d'état — on n'a pas l'ancien titre sous la
+ * main, la phrase de l'assistant le porte déjà.
+ */
+function updateItemLabel(item: { title?: string; done?: boolean }): string {
+  const state =
+    item.done === true ? "faite" : item.done === false ? "à faire" : null;
+  if (item.title !== undefined && state !== null) return `${item.title} (${state})`;
+  if (item.title !== undefined) return item.title;
+  if (state === "faite") return "Marquer comme faite";
+  if (state === "à faire") return "Remettre à faire";
+  return "Modifier";
 }
 
 /**

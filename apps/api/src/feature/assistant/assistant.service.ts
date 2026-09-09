@@ -6,6 +6,7 @@ import {
   createTaskListsPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
+  updateTaskListItemsPayloadSchema,
   userPreferencesSchema,
   type AssignFoldersPayload,
   type CalendarEvent,
@@ -160,6 +161,10 @@ export class AssistantService {
       const taskLists = await this.rescheduleTaskList(userId, suggestion, accessToken);
       return { ...nothingApplied(), taskLists };
     }
+    if (suggestion.kind === "update_task_list_items") {
+      const taskLists = await this.updateTaskListItems(userId, suggestion, accessToken);
+      return { ...nothingApplied(), taskLists };
+    }
     if (suggestion.kind === "report_bug") {
       await this.reportBug(userId, suggestion, accessToken);
       return nothingApplied();
@@ -303,6 +308,36 @@ export class AssistantService {
     );
 
     return [updated];
+  }
+
+  /**
+   * Coche, décoche ou renomme des lignes d'une liste qui existe déjà (§12.1, A.2).
+   *
+   * Une ligne à la fois plutôt qu'en parallèle : `updateTask` relit la liste
+   * à chaque passe, et deux écritures concurrentes se marcheraient dessus.
+   * Une ligne disparue entre la proposition et l'acceptation rend un 404
+   * plutôt que d'écrire dans le vide.
+   */
+  private async updateTaskListItems(
+    _userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<TaskList[]> {
+    const payload = updateTaskListItemsPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de modification de lignes illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    for (const item of payload.data.items) {
+      const patch: { title?: string; done?: boolean } = {};
+      if (item.title !== undefined) patch.title = item.title;
+      if (item.done !== undefined) patch.done = item.done;
+      await this.tasks.updateTask(payload.data.listId, item.taskId, patch, accessToken);
+    }
+
+    return [];
   }
 
   /**
