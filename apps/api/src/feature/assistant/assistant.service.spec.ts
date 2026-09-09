@@ -320,7 +320,7 @@ function makeService(
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
   const calendarService = new CalendarService(events, tasks);
-  const taskService = new TaskService(tasks);
+  const taskService = new TaskService(tasks, events, IDLE_USERS);
 
   return new AssistantService(
     suggestionService,

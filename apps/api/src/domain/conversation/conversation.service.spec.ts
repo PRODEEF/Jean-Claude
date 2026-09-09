@@ -407,7 +407,7 @@ function makeService(
     new FolderService(folders),
     users,
     new CalendarService(calendar, tasks),
-    new TaskService(tasks),
+    new TaskService(tasks, calendar, users),
   );
 }
 

@@ -7,6 +7,41 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **9 septembre 2026** — modifier l'échéance d'une
+todoliste déjà liée à un rendez-vous répercute désormais l'heure sur ce
+rendez-vous, et le pied d'action d'une fenêtre modale ne se retrouve plus
+rogné sur le web.
+
+**Modifier l'échéance d'une todoliste déjà liée à un rendez-vous répercute
+désormais l'heure sur ce rendez-vous (A.3).** Signalé en usage réel,
+prolongement direct du point d'hier sur le calendrier Jour/Semaine : une
+todoliste dont le créneau avait déjà été posé (« Bloquer le créneau »
+accepté) restait affichée toute la journée dans le calendrier même après
+avoir précisé une heure sur la liste, la modification ne portant que sur
+`task_lists.due_at`. `CalendarService.syncLinkedTaskList` faisait déjà ce
+travail dans l'autre sens (déplacer le rendez-vous met à jour la liste) ;
+`TaskService.updateList` fait maintenant de même vers le rendez-vous quand
+`eventId` est renseigné, `allDay` étant dérivé de l'heure murale du profil —
+minuit vaut « dans la journée », comme partout ailleurs dans le produit.
+`TaskService` reçoit à cette occasion `ICalendarRepository` et
+`IUserRepository` en plus de son Repository propre, symétriquement à
+`CalendarService`, qui consultait déjà `ITaskRepository` — deuxième et non
+plus seul endroit du projet où un service `domain/` en consulte un autre
+directement plutôt que de passer par `feature/`.
+
+**Le pied d'action d'une fenêtre modale ne se retrouve plus rogné sur le
+web.** Signalé en usage réel, urgent, sur la confirmation de suppression de
+compte — mais affectait potentiellement toute `Modal` dont le contenu
+dépassait une certaine hauteur. En cause, `@rn-primitives/dialog` insère sur
+le web un `<div>` intermédiaire (le `Dialog.Content` de Radix) sans hauteur
+explicitement posée : `max-h-[85%]`/`max-h-[88%]` n'avait alors plus de bloc
+englobant défini pour se résoudre, et Chromium le calculait contre la
+hauteur intrinsèque du dialogue lui-même — toujours plus petite que son
+contenu réel, d'où la troncature silencieuse par `overflow-hidden`. Remplacé
+par `max-h-[85vh]`/`max-h-[88vh]` sur le web uniquement (`Platform.select`),
+qui se résout contre la fenêtre sans dépendre de cette chaîne ; le natif
+n'était pas concerné.
+
 Dernière mise à jour : **8 septembre 2026** — une todoliste à heure précise
 s'affiche enfin à son heure dans la grille Jour/Semaine du calendrier, une
 suggestion de l'assistant ne peut plus en faire disparaître une autre du même
