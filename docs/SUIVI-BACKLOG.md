@@ -9,8 +9,8 @@ schéma prêts, comportement à écrire)
 
 Dernière mise à jour : **9 septembre 2026** — modifier l'échéance d'une
 todoliste déjà liée à un rendez-vous répercute désormais l'heure sur ce
-rendez-vous, et le pied d'action d'une fenêtre modale ne se retrouve plus
-rogné sur le web.
+rendez-vous, le pied d'action d'une fenêtre modale ne se retrouve plus
+rogné sur le web, et la fenêtre d'avis général est plus simple à remplir.
 
 **Modifier l'échéance d'une todoliste déjà liée à un rendez-vous répercute
 désormais l'heure sur ce rendez-vous (A.3).** Signalé en usage réel,
@@ -41,6 +41,25 @@ contenu réel, d'où la troncature silencieuse par `overflow-hidden`. Remplacé
 par `max-h-[85vh]`/`max-h-[88vh]` sur le web uniquement (`Platform.select`),
 qui se résout contre la fenêtre sans dépendre de cette chaîne ; le natif
 n'était pas concerné.
+
+**Le corps défilant d'une fenêtre modale reçoit `min-h-0`, en renfort du
+correctif précédent.** Un enfant flex garde par défaut pour hauteur minimale
+celle de son contenu (`min-height: auto`) et refuse de s'y réduire — sur
+certains moteurs de rendu, cela suffit à repousser le pied hors de
+`max-h-[85vh]`/`[88vh]` même une fois la cause initiale ci-dessus corrigée.
+Repéré en creusant un nouveau signalement sur la fenêtre d'avis général, sans
+qu'aucune combinaison de taille de fenêtre ne le reproduise ici (testé sur
+Chromium jusqu'à 480 px de haut, fix précédent inclus ou non) : traité par
+prudence plutôt que laissé en l'état, faute de pouvoir tester tous les
+moteurs de rendu depuis cet environnement.
+
+**La fenêtre d'avis général (bug, idée, autre) gagne trois détails
+d'ergonomie.** Le champ de texte affiche une piste selon la catégorie choisie
+plutôt qu'un seul texte générique (« Que s'est-il passé ? Qu'attendiez-vous à
+la place ? » pour un bug, par exemple) ; il reçoit le focus dès l'ouverture,
+comme les autres formulaires courts de l'app ; et l'envoi affiche désormais
+une confirmation avant de se refermer — jusque-là la fenêtre se contentait de
+disparaître, sans rien dire de l'issue de l'envoi.
 
 Dernière mise à jour : **8 septembre 2026** — une todoliste à heure précise
 s'affiche enfin à son heure dans la grille Jour/Semaine du calendrier, une
