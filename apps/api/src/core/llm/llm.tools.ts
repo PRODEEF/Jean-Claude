@@ -398,14 +398,17 @@ export const NAME_CONVERSATION: LlmTool = {
 export const SUGGEST_RECURRING_EVENT: LlmTool = {
   name: "suggest_recurring_event",
   description:
-    "À appeler quand l'utilisateur mentionne un rendez-vous daté — « Zumba vendredi " +
-    "soir à 18h30 » comme « j'ai kiné tous les mardis à 18h ». " +
+    "À appeler quand l'utilisateur mentionne un rendez-vous ou une activité daté — " +
+    "« Zumba vendredi soir à 18h30 » comme « j'ai kiné tous les mardis à 18h » — y " +
+    "compris quand il demande de le noter, de s'en rappeler ou de le retenir : ce " +
+    "n'est pas un simple accusé de réception, c'est une proposition à valider. " +
     "Omettre `rrule` pour un rendez-vous qui n'a lieu qu'une fois : rien dans le texte " +
     "n'indique qu'il se répète, donc ne pas demander à quel rythme. " +
     "Renseigner `rrule` avec une règle RRULE (RFC 5545) seulement quand l'utilisateur dit " +
     "que ça se répète (« tous les... », « chaque... », « toutes les semaines »), pour que " +
     "la série n'ait pas à être ressaisie. " +
-    "Ne jamais présenter le rendez-vous comme déjà posé : c'est une proposition.",
+    "Ne jamais écrire « c'est noté » ni présenter le rendez-vous comme déjà posé : " +
+    "c'est une proposition.",
   inputSchema: {
     type: "object",
     properties: {
@@ -414,7 +417,7 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
         description:
           "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
           "de question — ex. « J'ai noté Zumba vendredi à 18h30, je pose le rendez-vous ? » " +
-          "ou « J'ai noté kiné tous les mardis à 18h, je pose le rappel ? ». " +
+          "ou « Je te pose kiné tous les mardis à 18h ? ». " +
           "Ne jamais présenter le rendez-vous comme déjà créé. 500 caractères maximum.",
       },
       title: { type: "string", description: "Titre court du rendez-vous" },
