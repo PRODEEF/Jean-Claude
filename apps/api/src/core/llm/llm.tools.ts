@@ -45,8 +45,8 @@ export const SUGGEST_TASK_LIST: LlmTool = {
                 "une ou la rend déductible (« lundi prochain », « avant le week-end »), " +
                 "sinon omettre. La date vaut pour toute la liste, pas pour une de ses " +
                 "lignes : « les courses avant samedi » date la liste, pas la farine. " +
-                "Sans heure précise, viser minuit — c'est ce qui signifie « dans la " +
-                "journée » plutôt qu'un créneau décidé.",
+                "Viser minuit pour l'heure, qu'une heure précise ait été donnée ou non — " +
+                "elle se règle séparément avec `dueTime`, jamais ici.",
             },
             dueAtText: {
               type: "string",
@@ -54,10 +54,20 @@ export const SUGGEST_TASK_LIST: LlmTool = {
                 "Si `dueAt` est renseigné à partir d'une expression relative (« lundi » " +
                 "« vendredi prochain », « dans deux semaines », « demain », « ce week-end », " +
                 "« avant le week-end »), recopier cette expression telle quelle — quelques " +
-                "mots, pas la phrase entière. Le serveur la relit pour fiabiliser le calcul " +
-                "de date, qu'un modèle de langage fait parfois mal (confondre le jour de " +
-                "cette semaine avec celui de la prochaine). Omettre si l'échéance vient " +
-                "d'une date absolue (« le 15 septembre ») ou d'une heure précise.",
+                "mots, pas la phrase entière, et sans l'heure qui peut l'accompagner " +
+                "(« samedi à 10h » → « samedi »). Le serveur la relit pour fiabiliser le " +
+                "calcul de date, qu'un modèle de langage fait parfois mal (confondre le " +
+                "jour de cette semaine avec celui de la prochaine). Omettre si l'échéance " +
+                "vient d'une date absolue (« le 15 septembre »).",
+            },
+            dueTime: {
+              type: "string",
+              description:
+                "Heure précise de l'échéance, au format HH:mm (24 h) — « 10:00 » pour " +
+                "« à 10h », « 14:30 » pour « à 14h30 ». Uniquement si l'utilisateur en a " +
+                "donné une explicitement ; omettre dans tous les autres cas, y compris " +
+                "quand `dueAt` en calcule une par convention. Sans elle, la liste reste " +
+                "« dans la journée », sans créneau réservé.",
             },
             items: {
               type: "array",
@@ -168,17 +178,28 @@ export const SUGGEST_TASK_LIST_DUE_DATE: LlmTool = {
       dueAt: {
         type: "string",
         description:
-          "Nouvelle échéance ISO 8601 de la liste entière. Sans heure précise, viser " +
-          "minuit — comme pour la création d'une liste (§12.1).",
+          "Nouvelle échéance ISO 8601 de la liste entière. Viser minuit pour l'heure, " +
+          "qu'une heure précise ait été donnée ou non — comme pour la création d'une " +
+          "liste, elle se règle séparément avec `dueTime`, jamais ici.",
       },
       dueAtText: {
         type: "string",
         description:
           "Si `dueAt` est calculé à partir d'une expression relative au jour même " +
           "(« demain », « vendredi », « dans une semaine », « ce week-end »), recopier " +
-          "cette expression telle quelle : le serveur la relit pour fiabiliser le calcul. " +
+          "cette expression telle quelle, sans l'heure qui peut l'accompagner (« vendredi " +
+          "à 10h » → « vendredi ») : le serveur la relit pour fiabiliser le calcul. " +
           "Omettre pour une expression relative à l'échéance actuelle de la liste " +
           "(« décale-la de 3 jours ») ou une date absolue (« le 15 septembre »).",
+      },
+      dueTime: {
+        type: "string",
+        description:
+          "Heure précise de la nouvelle échéance, au format HH:mm (24 h) — comme pour " +
+          "la création d'une liste. Uniquement si l'utilisateur en donne une " +
+          "explicitement dans cette demande de reprogrammation, y compris pour redonner " +
+          "l'heure que la liste portait déjà si elle doit rester la même. Omise, la " +
+          "nouvelle échéance revient à minuit même si l'ancienne portait une heure.",
       },
     },
     required: ["message", "listId", "dueAt"],

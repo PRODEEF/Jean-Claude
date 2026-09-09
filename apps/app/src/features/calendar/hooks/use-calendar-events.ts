@@ -24,6 +24,15 @@ export function useCalendarActions() {
   // dans une autre, et les deux sont en cache.
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["calendar"] });
 
+  // Déplacer ou supprimer un rendez-vous peut aussi changer une todoliste
+  // liée (A.3) : le serveur répercute déjà la date ou détache le lien, mais
+  // Mes listes, la barre latérale et la vue Todo du calendrier partagent la
+  // même clé de cache que le calendrier, qui doit être invalidée avec elle.
+  const refreshWithLinkedTaskLists = () => {
+    refresh();
+    queryClient.invalidateQueries({ queryKey: ["taskLists"] });
+  };
+
   const create = useMutation({
     mutationFn: (input: CreateCalendarEvent) => api.calendar.create(input),
     onSuccess: refresh,
@@ -32,12 +41,12 @@ export function useCalendarActions() {
   const update = useMutation({
     mutationFn: (variables: { id: string; patch: UpdateCalendarEvent }) =>
       api.calendar.update(variables.id, variables.patch),
-    onSuccess: refresh,
+    onSuccess: refreshWithLinkedTaskLists,
   });
 
   const remove = useMutation({
     mutationFn: (id: string) => api.calendar.remove(id),
-    onSuccess: refresh,
+    onSuccess: refreshWithLinkedTaskLists,
   });
 
   return { create, update, remove };

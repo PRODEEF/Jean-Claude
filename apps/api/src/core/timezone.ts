@@ -41,3 +41,14 @@ export function fromWall(wallMs: number, timeZone: string): Date {
 export function shiftDays(wallMs: number, days: number): number {
   return wallMs + days * 86_400_000;
 }
+
+/**
+ * `iso` porte-t-il une heure murale précise dans `timezone`, ou tombe-t-il
+ * pile à minuit — la convention en usage côté client (`momentOf`,
+ * `TaskListDialog`) comme côté serveur pour dire « dans la journée, sans
+ * créneau » ?
+ */
+export function hasWallTime(iso: string, timezone: string): boolean {
+  const wall = toWall(new Date(iso), timezone);
+  return wall.getUTCHours() !== 0 || wall.getUTCMinutes() !== 0;
+}
