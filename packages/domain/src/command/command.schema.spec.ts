@@ -21,13 +21,6 @@ describe("parseSlashCommand", () => {
     expect(parseSlashCommand("/aide")).toEqual({ name: "aide", args: "" });
   });
 
-  it("reconnaît une commande accentuée comme /événement", () => {
-    expect(parseSlashCommand("/événement kiné tous les mardis à 18h")).toEqual({
-      name: "événement",
-      args: "kiné tous les mardis à 18h",
-    });
-  });
-
   it("ignore les espaces superflus autour du nom et des arguments", () => {
     expect(parseSlashCommand("  /todo   courses samedi  ")).toEqual({
       name: "todo",

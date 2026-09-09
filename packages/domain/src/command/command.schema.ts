@@ -15,7 +15,7 @@
  * force juste sa prise en compte immédiate plutôt que d'attendre que le
  * modèle la déduise seul de la conversation.
  */
-export const SLASH_COMMAND_NAMES = ["todo", "aide", "ranger", "événement", "bug"] as const;
+export const SLASH_COMMAND_NAMES = ["todo", "aide", "ranger", "planifier", "bug"] as const;
 export type SlashCommandName = (typeof SLASH_COMMAND_NAMES)[number];
 
 export type SlashCommandDefinition = {
@@ -38,8 +38,8 @@ export const SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
     description: "Range cette conversation dans un dossier",
   },
   {
-    name: "événement",
-    usage: "/événement <titre> <récurrence>",
+    name: "planifier",
+    usage: "/planifier <titre> <récurrence>",
     description: "Pose un rendez-vous qui se répète",
   },
   {

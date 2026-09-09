@@ -1601,7 +1601,7 @@ describe("ConversationService", () => {
           { content: string },
           string,
         ];
-        expect(call[2].content).toContain("Commandes : /todo, /ranger, /événement, /bug, /aide.");
+        expect(call[2].content).toContain("Commandes : /todo, /ranger, /planifier, /bug, /aide.");
       });
     });
 
@@ -1692,46 +1692,40 @@ describe("ConversationService", () => {
       });
     });
 
-    describe("commande /événement", () => {
-      /**
-       * `suggest_recurring_event` est hors de tout jeu d'outils pour l'instant
-       * (cf. sa définition dans llm.tools.ts) : `translate()` ne sait pas encore
-       * le traduire en suggestion. La note ne peut donc s'ajouter nulle part
-       * tant que ce câblage n'existe pas — ces deux tests le confirment plutôt
-       * que de laisser la commande injecter une consigne pour un outil que le
-       * modèle ne peut pas appeler.
-       */
-      it("ne l'ajoute pas dans une conversation classique, faute d'outil exposé", async () => {
+    describe("commande /planifier", () => {
+      it("ajoute à la consigne une note qui reconnaît la commande, sans en inventer la récurrence", async () => {
         const llm = makeLlm();
 
-        await drain(makeService(withLastUserMessage("/événement kiné tous les mardis à 18h"), llm), {
-          content: "/événement kiné tous les mardis à 18h",
+        await drain(makeService(withLastUserMessage("/planifier kiné tous les mardis à 18h"), llm), {
+          content: "/planifier kiné tous les mardis à 18h",
           inputMode: "text",
           attachmentIds: [],
         });
 
-        expect(lastRequest(llm).system ?? "").not.toContain("Commande /événement");
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Commande /planifier");
+        expect(system).toContain("« kiné tous les mardis à 18h »");
       });
 
-      it("ne l'ajoute pas non plus dans le canal permanent, faute d'outil exposé", async () => {
+      it("ne l'ajoute pas dans le canal permanent, où les rendez-vous récurrents sont hors périmètre (A.10)", async () => {
         const llm = makeLlm();
         const repo = makeRepository({
           findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
           listMessages: jest.fn().mockResolvedValue({
             items: [
-              makeMessage({ id: "m1", role: "user", content: "/événement kiné tous les mardis à 18h" }),
+              makeMessage({ id: "m1", role: "user", content: "/planifier kiné tous les mardis à 18h" }),
             ],
             nextCursor: null,
           }),
         });
 
         await drain(makeService(repo, llm), {
-          content: "/événement kiné tous les mardis à 18h",
+          content: "/planifier kiné tous les mardis à 18h",
           inputMode: "text",
           attachmentIds: [],
         });
 
-        expect(lastRequest(llm).system ?? "").not.toContain("Commande /événement");
+        expect(lastRequest(llm).system ?? "").not.toContain("Commande /planifier");
       });
     });
 

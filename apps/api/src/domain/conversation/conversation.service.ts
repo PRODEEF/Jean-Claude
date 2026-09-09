@@ -142,7 +142,7 @@ const AIDE_MESSAGE = [
   "- Je te propose un rangement pour chaque conversation ; corrige-le à tout moment avec /ranger, une même conversation peut appartenir à plusieurs dossiers.",
   "- Décris-moi un problème technique depuis ce canal, je transmets un rapport — ou tape /bug <description> pour aller plus vite.",
   "",
-  "Commandes : /todo, /ranger, /événement, /bug, /aide.",
+  "Commandes : /todo, /ranger, /planifier, /bug, /aide.",
 ].join("\n");
 
 /**
@@ -732,11 +732,9 @@ export class ConversationService {
 
     const baseSystem = buildSystemPrompt(conversation.kind, todo, context, now);
     // Chaque commande n'a de sens que là où son outil est exposé — jamais
-    // dans le canal permanent pour /ranger et /événement, jamais dans une
+    // dans le canal permanent pour /ranger et /planifier, jamais dans une
     // conversation classique pour /bug (A.10) : la note serait sinon une
-    // consigne pour un outil que le modèle ne peut pas appeler. /événement
-    // n'a d'ailleurs de note nulle part tant que `suggest_recurring_event`
-    // reste hors de tout jeu d'outils (cf. sa définition dans llm.tools.ts).
+    // consigne pour un outil que le modèle ne peut pas appeler.
     // `command.name` exclut déjà "aide" ici : le premier `if` de la méthode
     // court-circuite ce cas avant d'atteindre ce point.
     const activeCommand = command ? { note: COMMAND_NOTES[command.name], args: command.args } : null;
@@ -1780,15 +1778,15 @@ function describeRangerCommand(args: string): string[] {
 }
 
 /**
- * Note ajoutée à la consigne quand l'utilisateur déclenche /événement : le
+ * Note ajoutée à la consigne quand l'utilisateur déclenche /planifier : le
  * texte qui suit porte le titre et la récurrence, jamais une heure ou un
  * jour inventés pour compléter ce qui manque.
  */
-function describeEvenementCommand(args: string): string[] {
+function describePlanifierCommand(args: string): string[] {
   const description = args.length > 0 ? `« ${args} »` : "sans rien après elle";
 
   return [
-    `Commande /événement : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
+    `Commande /planifier : l'utilisateur vient d'utiliser ce raccourci, ${description}.`,
     "C'est une demande explicite de poser un rendez-vous récurrent — pas une",
     "faute de frappe. S'il manque le jour ou l'heure pour construire une RRULE",
     "fiable, ne l'appelle pas encore : demande-le d'abord. Dès que la récurrence",
@@ -1826,7 +1824,7 @@ const COMMAND_NOTES: Record<
 > = {
   todo: { tool: SUGGEST_TASK_LIST, describe: describeTodoCommand },
   ranger: { tool: SUGGEST_FOLDERS, describe: describeRangerCommand },
-  "événement": { tool: SUGGEST_RECURRING_EVENT, describe: describeEvenementCommand },
+  planifier: { tool: SUGGEST_RECURRING_EVENT, describe: describePlanifierCommand },
   bug: { tool: REPORT_BUG, describe: describeBugCommand },
 };
 
