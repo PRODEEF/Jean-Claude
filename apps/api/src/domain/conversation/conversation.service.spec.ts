@@ -3707,6 +3707,45 @@ describe("ConversationService", () => {
     });
   });
 
+  describe("création d'un rendez-vous récurrent (A.11)", () => {
+    it("capture la suggestion même quand le modèle omet les secondes et le fuseau de `startsAt`", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_recurring_event",
+            input: {
+              message: "J'ai noté kiné tous les mardis à 18h, je pose le rappel ?",
+              title: "Kiné",
+              // Un LLM laissé libre omet souvent les secondes et le fuseau,
+              // ce que `isoDateTimeSchema` rejette sans cette correction —
+              // la proposition disparaissait alors silencieusement.
+              startsAt: "2026-09-08T18:00",
+              rrule: "FREQ=WEEKLY;BYDAY=TU",
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "J'ai kiné tous les mardis à 18h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "create_recurring_event",
+          payload: expect.objectContaining({ startsAt: "2026-09-08T18:00:00.000Z" }),
+        }),
+        TOKEN,
+      );
+    });
+  });
+
   describe("reprogrammation d'une todoliste existante (§12.1, A.2)", () => {
     const EXISTING_LIST = makeTaskList({
       id: "11111111-1111-4111-8111-111111111111",
