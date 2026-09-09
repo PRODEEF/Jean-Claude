@@ -452,7 +452,11 @@ export class ConversationService {
       if (chunk.type === "tool_call") toolCalls.push(chunk.toolCall);
     }
 
-    const call = toolCalls.find((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name);
+    // Le modèle peut fragmenter la proposition en plusieurs appels séparés au
+    // lieu d'un seul portant plusieurs entrées dans `lists`, comme la
+    // consigne le demande : les regrouper évite d'en perdre au-delà du
+    // premier.
+    const call = mergeTaskListCalls(toolCalls);
     // Même filet que le tour de dialogue ordinaire : sans lui, une échéance
     // extraite ici échapperait à la correction de date (A.3, #18).
     const corrected = call ? withCorrectedDueDates(call, now, context.timezone) : null;
@@ -645,16 +649,29 @@ export class ConversationService {
           logger.warn(SCOPE, `Appel d'outil hors du périmètre autorisé, ignoré : ${toolCall.name}`);
           continue;
         }
-        const corrected = withCorrectedRescheduleDueDate(
-          withCorrectedDueDates(
-            withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+        try {
+          const corrected = withCorrectedRescheduleDueDate(
+            withCorrectedDueDates(
+              withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+              now,
+              context.timezone,
+            ),
             now,
             context.timezone,
-          ),
-          now,
-          context.timezone,
-        );
-        await this.suggestions.capture(userId, conversationId, corrected, accessToken);
+          );
+          await this.suggestions.capture(userId, conversationId, corrected, accessToken);
+        } catch (error) {
+          // Une capture ne doit jamais faire perdre les suivantes : sans cet
+          // isolement, l'échec d'un seul appel d'outil (ex. une nature de
+          // suggestion que la contrainte de la table ne reconnaît pas encore)
+          // coupait la boucle et emportait avec lui les propositions du même
+          // tour qui restaient à capturer.
+          logger.error(
+            SCOPE,
+            `Capture de suggestion \`${toolCall.name}\` impossible :`,
+            error instanceof Error ? error.message : error,
+          );
+        }
       }
 
       await this.applyRequestedTitle(conversationId, toolCalls, accessToken);
@@ -1030,6 +1047,28 @@ function verifyNewFolder(
 
   const folder = matchProposedFolder(parent, known);
   return [folder ? { name, parentId: folder.id } : { name }];
+}
+
+/**
+ * Regroupe en un seul appel les éventuels appels `suggest_task_list` multiples
+ * d'un même tour.
+ *
+ * La consigne demande une entrée par liste dans un unique appel, mais rien
+ * n'empêche le modèle de répondre par plusieurs appels séparés à la place —
+ * ne garder que le premier (`toolCalls.find`) en perdrait alors le reste.
+ */
+function mergeTaskListCalls(toolCalls: LlmToolCall[]): LlmToolCall | null {
+  const calls = toolCalls.filter((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name);
+  const first = calls[0];
+  if (!first) return null;
+  if (calls.length === 1) return first;
+
+  const lists = calls.flatMap((call) => {
+    const entries = call.input["lists"];
+    return Array.isArray(entries) ? entries : [];
+  });
+
+  return { ...first, input: { ...first.input, lists } };
 }
 
 /**

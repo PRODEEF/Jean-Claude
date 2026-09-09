@@ -97,7 +97,7 @@ function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean 
 
   return (
     <View
-      className={`border-border gap-1 rounded-lg border border-dashed ${desktop ? "p-1.5" : "p-2"}`}
+      className={`border-border gap-0.5 rounded-lg border border-dashed ${desktop ? "p-1.5" : "p-2"}`}
     >
       <Pressable
         onPress={() => router.push(`/todo?list=${list.id}` as never)}

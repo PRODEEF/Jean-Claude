@@ -9,10 +9,9 @@ import {
 } from "react-native";
 import { Check, ChevronsLeft, ChevronsRight, NotebookPen } from "lucide-react-native";
 import type { Task, TaskListWithTasks } from "@jc/domain";
-import { MIN_TOUCH_TARGET } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
-import { TASK_INDENT, titleMatchesQuery } from "@/shared/lib/tasks";
+import { TASK_CHECKBOX_SIZE, TASK_INDENT, TASK_ROW_HEIGHT, titleMatchesQuery } from "@/shared/lib/tasks";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
@@ -297,7 +296,7 @@ export const TaskListEditor = memo(function TaskListEditor({
         return (
           <View
             key={row.key}
-            style={{ paddingLeft: row.depth * TASK_INDENT, minHeight: MIN_TOUCH_TARGET }}
+            style={{ paddingLeft: row.depth * TASK_INDENT, minHeight: TASK_ROW_HEIGHT }}
             className={`flex-row items-center gap-2 rounded-md ${matched ? "bg-accent-soft" : ""}`}
           >
             <Pressable
@@ -307,16 +306,17 @@ export const TaskListEditor = memo(function TaskListEditor({
               accessibilityState={{ checked: row.done, disabled: !row.id }}
               accessibilityLabel={row.done ? `Décocher ${row.title}` : `Cocher ${row.title}`}
               hitSlop={8}
-              style={{ minWidth: MIN_TOUCH_TARGET / 2, minHeight: MIN_TOUCH_TARGET }}
+              style={{ minWidth: TASK_ROW_HEIGHT / 2, minHeight: TASK_ROW_HEIGHT }}
               className="items-center justify-center"
             >
               <View
-                className={`size-5 items-center justify-center rounded border ${
+                style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
+                className={`items-center justify-center rounded border ${
                   row.done ? "border-primary bg-primary" : "border-border"
                 } ${row.id ? "" : "opacity-40"}`}
               >
                 {row.done ? (
-                  <Icon as={Check} size={14} className="text-primary-foreground" />
+                  <Icon as={Check} size={11} className="text-primary-foreground" />
                 ) : null}
               </View>
             </Pressable>

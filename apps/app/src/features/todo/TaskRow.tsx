@@ -1,11 +1,10 @@
 import { Pressable, View } from "react-native";
 import { Check } from "lucide-react-native";
 import type { Task } from "@jc/domain";
-import { MIN_TOUCH_TARGET } from "@jc/design";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
-import { TASK_INDENT } from "@/shared/lib/tasks";
+import { TASK_CHECKBOX_SIZE, TASK_INDENT, TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
 
 export type TaskRowProps = {
   task: Task;
@@ -43,15 +42,16 @@ export function TaskRow({ task, meta }: TaskRowProps) {
         accessibilityState={{ checked: task.done }}
         accessibilityLabel={task.done ? `Décocher ${task.title}` : `Cocher ${task.title}`}
         hitSlop={8}
-        style={{ minWidth: MIN_TOUCH_TARGET / 2, minHeight: MIN_TOUCH_TARGET }}
+        style={{ minWidth: TASK_ROW_HEIGHT / 2, minHeight: TASK_ROW_HEIGHT }}
         className="items-center justify-center"
       >
         <View
-          className={`size-5 items-center justify-center rounded border ${
+          style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
+          className={`items-center justify-center rounded border ${
             task.done ? "border-primary bg-primary" : "border-border"
           }`}
         >
-          {task.done ? <Icon as={Check} size={14} className="text-primary-foreground" /> : null}
+          {task.done ? <Icon as={Check} size={11} className="text-primary-foreground" /> : null}
         </View>
       </Pressable>
 
@@ -59,7 +59,7 @@ export function TaskRow({ task, meta }: TaskRowProps) {
         onPress={toggle}
         accessibilityRole="button"
         accessibilityLabel={task.title}
-        style={{ minHeight: MIN_TOUCH_TARGET }}
+        style={{ minHeight: TASK_ROW_HEIGHT }}
         className="flex-1 justify-center"
       >
         <Text
