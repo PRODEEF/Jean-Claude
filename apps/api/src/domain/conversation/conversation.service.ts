@@ -2236,11 +2236,17 @@ function buildSystemPrompt(
       "Quand l'utilisateur mentionne un ou plusieurs rendez-vous ponctuels — sans",
       "règle de répétition — à noter dans l'agenda, appelle `suggest_events` avec",
       "une entrée par rendez-vous dans un seul appel, jamais un appel par",
-      "rendez-vous. S'il demande de le noter, de s'en souvenir ou de le retenir,",
-      "appelle l'outil tout de suite : un « C'est noté » ou « Je note » en texte",
-      "ne crée rien et viole la règle du §12.1. Utilise `suggest_recurring_event`",
-      "à la place dès que la demande porte sur une répétition. Ne présente jamais",
-      "les rendez-vous comme déjà posés.",
+      "rendez-vous. Avant d'appeler l'outil, compte le nombre de rendez-vous",
+      "distincts mentionnés dans le message et vérifie que `events` en contient",
+      "exactement autant — un rendez-vous oublié dans le tableau est une",
+      "proposition incomplète. Exemple : « pose-moi le dentiste jeudi 15h et le",
+      "coiffeur vendredi 10h » appelle `suggest_events` une seule fois avec DEUX",
+      "entrées dans `events`, une par rendez-vous. S'il demande de le noter, de",
+      "s'en souvenir ou de le retenir, appelle l'outil tout de suite : un",
+      "« C'est noté » ou « Je note » en texte ne crée rien et viole la règle du",
+      "§12.1. Utilise `suggest_recurring_event` à la place dès que la demande",
+      "porte sur une répétition. Ne présente jamais les rendez-vous comme déjà",
+      "posés.",
     );
   }
 
