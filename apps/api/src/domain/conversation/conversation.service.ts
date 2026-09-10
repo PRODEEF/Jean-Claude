@@ -119,9 +119,20 @@ const TOOL_ANSWER_RULE = [
 ];
 
 /**
- * Outils que le serveur applique lui-même, et qui ne deviennent donc pas des
- * propositions à valider. Ils ne touchent pas aux données de l'utilisateur :
- * l'un nomme la conversation, l'autre choisit où la réponse sera donnée.
+ * Outils que le serveur applique lui-même, sans passer par une proposition en
+ * attente dans `assistant_suggestions`.
+ *
+ * `OPEN_NEW_CONVERSATION` et `ASK_QUESTION` ne touchent à aucune donnée de
+ * l'utilisateur : l'un choisit où la réponse sera donnée, l'autre n'est qu'une
+ * question posée dans le tour courant.
+ *
+ * **Exception documentée et isolée** à la règle produit §12.1 (« l'assistant
+ * propose, il n'exécute pas ») pour `NAME_CONVERSATION` et
+ * `FINISH_ONBOARDING` : ces deux-là écrivent directement en base — titre de
+ * la conversation, mémoire du profil — sans passer par une suggestion.
+ * Justifié au cas par cas dans `applyRequestedTitle` et
+ * `applyOnboardingMemory` ci-dessous : ni l'un ni l'autre n'est une donnée que
+ * l'utilisateur aurait créée ou qu'il devrait valider une seconde fois.
  */
 const APPLIED_DIRECTLY = new Set([
   NAME_CONVERSATION.name,

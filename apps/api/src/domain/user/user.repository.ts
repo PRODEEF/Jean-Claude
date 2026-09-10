@@ -91,11 +91,18 @@ export const userRepository: IUserRepository = {
   },
 
   /**
-   * `admin` et non `forUser` : GoTrue n'expose la suppression d'un compte que
-   * via l'API Admin (clé service_role), et `auth.users` n'a pas de policy RLS
-   * à respecter. Pas de fuite entre utilisateurs pour autant — `userId` est
-   * toujours `owner.id`, posé par le middleware depuis le token vérifié,
-   * jamais un `:id` de route (voir user.routes.ts).
+   * **Exception documentée** à la règle 100-api / `core/supabase/supabase.ts`
+   * (« `admin` contourne les RLS, réservé aux traitements système, jamais
+   * dans un chemin déclenché par une requête HTTP ») : GoTrue n'expose la
+   * suppression d'un compte que via l'API Admin (clé service_role), et
+   * `auth.users` n'a pas de policy RLS à respecter — `forUser` n'a ici aucune
+   * prise possible, il n'existe pas d'alternative respectant la règle à la
+   * lettre.
+   *
+   * Isolée à cette seule méthode plutôt que laissée comme un simple
+   * commentaire : `userId` est toujours `owner.id`, posé par le middleware
+   * depuis le token vérifié, jamais un `:id` de route (voir user.routes.ts) —
+   * pas de fuite possible entre comptes malgré le contournement des RLS.
    *
    * Rien d'autre à supprimer ici : la cascade du schéma SQL sur
    * `auth.users(id) on delete cascade` efface profil, dossiers,
