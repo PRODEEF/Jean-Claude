@@ -34,6 +34,20 @@ const COPIED_FEEDBACK_MS = 1500;
  */
 const HOVER_GRACE_MS = 150;
 
+/**
+ * Revient à l'état neutre après l'échec d'une notation optimiste.
+ *
+ * Ne revient en arrière que si le pouce affiché est encore celui de la
+ * notation qui a échoué : un second appui pendant que le premier échouait
+ * encore ne doit pas effacer ce second choix.
+ */
+function rollback(
+  current: MessageRatingValue | null,
+  attempted: MessageRatingValue,
+): MessageRatingValue | null {
+  return current === attempted ? null : current;
+}
+
 export type MessageRowProps = {
   message: Message;
   /**
@@ -266,7 +280,10 @@ export const MessageRow = memo(function MessageRow({
                       reveal();
                       setRating("up");
                       setCommentDraft(null);
-                      rateMessage.mutate({ messageId: message.id, rating: "up", ...feedbackContext });
+                      rateMessage.mutate(
+                        { messageId: message.id, rating: "up", ...feedbackContext },
+                        { onError: () => setRating((current) => rollback(current, "up")) },
+                      );
                     }}
                   />
                   <IconAction
@@ -282,11 +299,10 @@ export const MessageRow = memo(function MessageRow({
                       // Révèle un champ de commentaire facultatif — jamais côté
                       // pouce haut, ça n'a de sens que pour dire ce qui a manqué.
                       setCommentDraft("");
-                      rateMessage.mutate({
-                        messageId: message.id,
-                        rating: "down",
-                        ...feedbackContext,
-                      });
+                      rateMessage.mutate(
+                        { messageId: message.id, rating: "down", ...feedbackContext },
+                        { onError: () => setRating((current) => rollback(current, "down")) },
+                      );
                     }}
                   />
                 </>
@@ -304,12 +320,15 @@ export const MessageRow = memo(function MessageRow({
             onCancel={() => setCommentDraft(null)}
             onSubmit={() => {
               const comment = commentDraft.trim();
-              rateMessage.mutate({
-                messageId: message.id,
-                rating: "down",
-                comment: comment.length > 0 ? comment : null,
-                ...feedbackContext,
-              });
+              rateMessage.mutate(
+                {
+                  messageId: message.id,
+                  rating: "down",
+                  comment: comment.length > 0 ? comment : null,
+                  ...feedbackContext,
+                },
+                { onError: () => setRating((current) => rollback(current, "down")) },
+              );
               setCommentDraft(null);
             }}
           />

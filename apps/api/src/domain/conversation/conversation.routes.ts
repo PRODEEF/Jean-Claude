@@ -7,6 +7,7 @@ import {
   createConversationSchema,
   cursorPaginationSchema,
   editMessageSchema,
+  listConversationsQuerySchema,
   sendMessageSchema,
   updateConversationSchema,
   uuidSchema,
@@ -43,19 +44,15 @@ const service = new ConversationService(
 const idParam = validate("param", z.object({ id: uuidSchema }));
 const messageParam = validate("param", z.object({ id: uuidSchema, messageId: uuidSchema }));
 const pagination = validate("query", cursorPaginationSchema);
+const listQuery = validate("query", listConversationsQuerySchema);
 
 export const conversationRoutes = new Hono<AuthEnv>()
   .use(auth)
 
-  .get("/", pagination, async (c) =>
-    c.json(
-      await service.list(
-        c.get("user").accessToken,
-        c.req.valid("query"),
-        c.req.query("includeArchived") === "true",
-      ),
-    ),
-  )
+  .get("/", listQuery, async (c) => {
+    const query = c.req.valid("query");
+    return c.json(await service.list(c.get("user").accessToken, query, query.includeArchived));
+  })
 
   /** Déclaré avant `/:id`, qui capterait sinon `assistant` comme identifiant. */
   .get("/assistant", async (c) => {

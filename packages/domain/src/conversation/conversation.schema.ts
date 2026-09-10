@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
+import { cursorPaginationSchema, isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 
 /**
  * Registre d'une conversation (A.10).
@@ -57,6 +57,24 @@ export const createConversationSchema = z.object({
 });
 
 export type CreateConversation = z.infer<typeof createConversationSchema>;
+
+/**
+ * Même chose, telle qu'elle transite dans la chaîne de requête (`GET /conversations`).
+ *
+ * `includeArchived` s'écrit en toutes lettres dans une URL : la conversion est
+ * faite ici plutôt que dans la route, même convention que `searchQuerySchema`.
+ * Sans ce schéma, la route lisait `includeArchived` directement depuis
+ * `c.req.query()`, hors de toute validation — une valeur malformée retombait
+ * silencieusement à `false` plutôt que de rendre le 400 attendu.
+ */
+export const listConversationsQuerySchema = cursorPaginationSchema.extend({
+  includeArchived: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+});
+
+export type ListConversationsQuery = z.infer<typeof listConversationsQuerySchema>;
 
 export const updateConversationSchema = z.object({
   title: labelSchema.optional(),

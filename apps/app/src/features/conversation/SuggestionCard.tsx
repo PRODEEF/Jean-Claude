@@ -488,6 +488,8 @@ function outcomeLabel(suggestion: Suggestion): string {
   switch (suggestion.kind) {
     case "assign_folders":
       return "Conversation rangée";
+    case "create_project_folders":
+      return "Dossiers créés";
     case "create_task_list":
       return "Todolistes créées";
     case "add_task_list_items":
@@ -504,8 +506,13 @@ function outcomeLabel(suggestion: Suggestion): string {
       return "Liste mise à jour";
     case "report_bug":
       return "Bug signalé, merci pour le retour !";
-    default:
-      return "Dossiers créés";
+    default: {
+      // Exhaustivité vérifiée à la compilation : un `kind` ajouté à
+      // `suggestionKindSchema` sans mise à jour de ce switch fait échouer le
+      // typecheck plutôt que d'afficher ici un libellé faux.
+      const exhaustive: never = suggestion.kind;
+      return exhaustive;
+    }
   }
 }
 

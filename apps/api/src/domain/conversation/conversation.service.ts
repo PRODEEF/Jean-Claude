@@ -119,9 +119,20 @@ const TOOL_ANSWER_RULE = [
 ];
 
 /**
- * Outils que le serveur applique lui-même, et qui ne deviennent donc pas des
- * propositions à valider. Ils ne touchent pas aux données de l'utilisateur :
- * l'un nomme la conversation, l'autre choisit où la réponse sera donnée.
+ * Outils que le serveur applique lui-même, sans passer par une proposition en
+ * attente dans `assistant_suggestions`.
+ *
+ * `OPEN_NEW_CONVERSATION` et `ASK_QUESTION` ne touchent à aucune donnée de
+ * l'utilisateur : l'un choisit où la réponse sera donnée, l'autre n'est qu'une
+ * question posée dans le tour courant.
+ *
+ * **Exception documentée et isolée** à la règle produit §12.1 (« l'assistant
+ * propose, il n'exécute pas ») pour `NAME_CONVERSATION` et
+ * `FINISH_ONBOARDING` : ces deux-là écrivent directement en base — titre de
+ * la conversation, mémoire du profil — sans passer par une suggestion.
+ * Justifié au cas par cas dans `applyRequestedTitle` et
+ * `applyOnboardingMemory` ci-dessous : ni l'un ni l'autre n'est une donnée que
+ * l'utilisateur aurait créée ou qu'il devrait valider une seconde fois.
  */
 const APPLIED_DIRECTLY = new Set([
   NAME_CONVERSATION.name,
@@ -2225,11 +2236,17 @@ function buildSystemPrompt(
       "Quand l'utilisateur mentionne un ou plusieurs rendez-vous ponctuels — sans",
       "règle de répétition — à noter dans l'agenda, appelle `suggest_events` avec",
       "une entrée par rendez-vous dans un seul appel, jamais un appel par",
-      "rendez-vous. S'il demande de le noter, de s'en souvenir ou de le retenir,",
-      "appelle l'outil tout de suite : un « C'est noté » ou « Je note » en texte",
-      "ne crée rien et viole la règle du §12.1. Utilise `suggest_recurring_event`",
-      "à la place dès que la demande porte sur une répétition. Ne présente jamais",
-      "les rendez-vous comme déjà posés.",
+      "rendez-vous. Avant d'appeler l'outil, compte le nombre de rendez-vous",
+      "distincts mentionnés dans le message et vérifie que `events` en contient",
+      "exactement autant — un rendez-vous oublié dans le tableau est une",
+      "proposition incomplète. Exemple : « pose-moi le dentiste jeudi 15h et le",
+      "coiffeur vendredi 10h » appelle `suggest_events` une seule fois avec DEUX",
+      "entrées dans `events`, une par rendez-vous. S'il demande de le noter, de",
+      "s'en souvenir ou de le retenir, appelle l'outil tout de suite : un",
+      "« C'est noté » ou « Je note » en texte ne crée rien et viole la règle du",
+      "§12.1. Utilise `suggest_recurring_event` à la place dès que la demande",
+      "porte sur une répétition. Ne présente jamais les rendez-vous comme déjà",
+      "posés.",
     );
   }
 

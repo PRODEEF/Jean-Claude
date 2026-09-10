@@ -38,6 +38,10 @@ export function AttachmentThumbnail({ uri, status, onPress, onRemove }: Attachme
 
         {status === "uploading" ? (
           <View style={styles.overlay}>
+            {/* Blanc fixe et non un jeton de palette : le voile qui le porte
+                (`styles.overlay`) est lui-même noir fixe, comme celui de
+                `SearchDialog` — il ne s'inverse pas avec le thème, et
+                `palette.text` y serait illisible en thème clair. */}
             <ActivityIndicator color="#FFFFFF" size="small" />
           </View>
         ) : null}
