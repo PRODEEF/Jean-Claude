@@ -60,10 +60,7 @@ export class HttpClient {
 
     if (response.status === 204) return undefined as T;
 
-    const payload: unknown = await response.json().catch(() => null);
-    if (!response.ok) throw toApiError(response.status, payload);
-
-    return payload as T;
+    return parseJsonBody<T>(response);
   }
 
   /**
@@ -80,10 +77,7 @@ export class HttpClient {
   ): Promise<T> {
     const response = await this.send(path, "application/json", { method: "POST", body: formData, ...init });
 
-    const payload: unknown = await response.json().catch(() => null);
-    if (!response.ok) throw toApiError(response.status, payload);
-
-    return payload as T;
+    return parseJsonBody<T>(response);
   }
 
   /**
@@ -176,7 +170,9 @@ export class HttpClient {
       // renouvelle et on rejoue une fois. Le serveur n'a rien traité, rejouer
       // ne peut donc rien dupliquer.
       if (!renewed && this.options.refreshAccessToken) {
-        const token = await this.options.refreshAccessToken();
+        // Un renouvellement qui lève (réseau, timeout) doit valoir un échec,
+        // pas une exception brute hors du contrat `ApiError` de ce client.
+        const token = await this.options.refreshAccessToken().catch(() => null);
         if (token) return this.send(path, accept, init, true);
       }
 
@@ -191,4 +187,26 @@ export class HttpClient {
 function toApiError(status: number, payload: unknown): ApiError {
   const details = (payload ?? {}) as { message?: string; errors?: Record<string, string[]> };
   return new ApiError(status, details.message ?? "La requête a échoué.", details.errors);
+}
+
+/**
+ * Corps JSON d'une réponse, pour `request` et `upload`.
+ *
+ * Un corps illisible sur une réponse en erreur reste toléré — `toApiError`
+ * sait déjà rendre un message par défaut à partir de `null`. Sur une réponse
+ * `2xx`, en revanche, un corps illisible ne doit plus se glisser en `T` sous
+ * la forme d'un `null` masqué : mieux vaut un `ApiError` explicite qu'un
+ * appelant qui plante plus loin sur une propriété d'un objet qui n'existe pas.
+ */
+async function parseJsonBody<T>(response: Response): Promise<T> {
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    if (!response.ok) throw toApiError(response.status, null);
+    throw new ApiError(response.status, "Réponse du serveur illisible.");
+  }
+
+  if (!response.ok) throw toApiError(response.status, payload);
+  return payload as T;
 }

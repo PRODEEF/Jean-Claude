@@ -86,9 +86,9 @@ export default function AssistantScreen() {
         <View style={styles.centered}>
           {channel.error ? (
             <Text style={[styles.error, { color: palette.danger }]}>
-              {channel.error instanceof Error
-                ? channel.error.message
-                : "Canal indisponible pour le moment."}
+              {/* Message fixe, et non `error.message` : une erreur remontée du
+                  serveur peut porter des fragments de requête. */}
+              Canal indisponible pour le moment.
             </Text>
           ) : (
             <ActivityIndicator color={palette.accent} />

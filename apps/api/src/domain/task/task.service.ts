@@ -92,6 +92,19 @@ export class TaskService {
   ): Promise<TaskList> {
     const existing = await this.requireList(id, accessToken);
     await this.assertDueNotPast(userId, patch.dueAt, accessToken, existing.dueAt);
+
+    // Un rendez-vous n'a pas de date nulle (`startsAt` n'est pas optionnel) :
+    // effacer l'échéance d'une liste qui en représente un ne peut donc pas se
+    // répercuter sur lui. Sans ce refus, la liste perdait son échéance pendant
+    // que la fiche du rendez-vous gardait la sienne — la divergence silencieuse
+    // que cette méthode existe justement pour éviter.
+    if (patch.dueAt === null && existing.eventId !== null) {
+      throw httpError(
+        400,
+        "Cette liste représente un rendez-vous : modifiez ou supprimez le rendez-vous pour changer son échéance.",
+      );
+    }
+
     const updated = await this.lists.updateList(id, patch, accessToken);
 
     if (patch.dueAt !== undefined && patch.dueAt !== null && existing.eventId !== null) {

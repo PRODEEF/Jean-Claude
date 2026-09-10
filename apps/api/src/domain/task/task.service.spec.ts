@@ -428,6 +428,19 @@ describe("TaskService", () => {
       expect(events.update).not.toHaveBeenCalled();
     });
 
+    it("refuse d'effacer l'échéance d'une liste qui représente un rendez-vous", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+      });
+      const events = makeCalendarRepository();
+
+      await expect(
+        makeService(repo, events).updateList(USER, LIST, { dueAt: null }, TOKEN),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.updateList).not.toHaveBeenCalled();
+      expect(events.update).not.toHaveBeenCalled();
+    });
+
     it("garde la nouvelle échéance de la liste même si le rendez-vous lié a disparu entre-temps", async () => {
       jest.spyOn(console, "warn").mockImplementation(() => undefined);
       const repo = makeRepository({

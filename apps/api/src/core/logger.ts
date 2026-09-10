@@ -7,6 +7,11 @@
  * volume réel atteint.
  */
 export const logger = {
+  info(scope: string, message: string, detail?: unknown): void {
+    if (detail !== undefined) console.log(`[${scope}] ${message}`, detail);
+    else console.log(`[${scope}] ${message}`);
+  },
+
   warn(scope: string, message: string, detail?: unknown): void {
     if (detail !== undefined) console.warn(`[${scope}] ${message}`, detail);
     else console.warn(`[${scope}] ${message}`);

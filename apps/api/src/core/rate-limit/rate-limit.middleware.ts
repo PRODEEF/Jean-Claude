@@ -40,7 +40,7 @@ async function safeEvaluate(
     const current = await rateLimitRepository.find(userId, accessToken);
     const decision = evaluateRateLimit(current, new Date());
 
-    if (decision.allowed) await rateLimitRepository.save(userId, decision.next, accessToken);
+    if (decision.allowed) await rateLimitRepository.save(userId, decision.next);
     return decision;
   } catch (error) {
     logger.error(
