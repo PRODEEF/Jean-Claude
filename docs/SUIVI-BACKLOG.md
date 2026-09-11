@@ -7,6 +7,45 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **11 septembre 2026** — un message dicté puis envoyé
+revenait se poser dans le champ suivant ; deux autres correctifs sur la dictée.
+
+**Enchaîner deux messages dictés reposait le premier dans le champ.** Relecture
+de la dictée, dans la foulée de celle de la lecture à voix haute. `sendDraft`
+vide le brouillon (`ConversationThread.tsx`) sans que `useDictation` en sache
+rien : `committed` gardait le texte envoyé et la reconnaissance continuait
+d'écouter, `continuous` ne s'arrêtant jamais d'elle-même. Dicter « Bonjour »,
+envoyer, puis continuer à parler produisait donc « Bonjour la suite » dans un
+champ censé être vide. Le hook expose désormais une clôture de session,
+appelée à l'envoi depuis `handleSubmit`. `abort` et non `stop` : `stop`
+réclame un dernier résultat définitif, qui serait arrivé après coup et aurait
+reposé le même texte — remettre `committed` à zéro n'aurait pas suffi. Comme
+cet `abort` survient maintenant à chaque message envoyé, le code `aborted`
+n'est plus journalisé : il signalait une panne à chaque dictée réussie.
+
+**Le bouton s'annonçait en écoute avant que le micro soit autorisé.** `start`
+passait `listening` à vrai avant d'appeler `requestPermissionsAsync` : à la
+toute première dictée — le moment qui compte — le bouton pulsait et se disait
+« Arrêter la dictée » pendant que l'utilisateur lisait la demande
+d'autorisation du système, sans que rien soit enregistré. L'état d'écoute
+n'est plus posé qu'une fois la permission obtenue.
+
+**Les messages de panne parlaient de « navigateur » sur iOS et Android.** « La
+dictée n'est pas disponible sur ce navigateur » et « Autorisez le microphone
+pour ce site dans les réglages de votre navigateur » sont justes sur le web et
+faux partout ailleurs, où l'autorisation se donne dans les réglages du
+système : un utilisateur d'iPhone envoyé chercher les réglages de son
+navigateur ne trouve rien (§13.4.4). Les deux messages sont désormais formulés
+selon la plateforme.
+
+Relevés sans être traités, faute d'avoir été reproduits ou jugés prioritaires :
+taper au clavier pendant une dictée est écrasé par le fragment suivant,
+`committed` étant figé au démarrage ; et `useSpeechRecognitionEvent` écoute le
+module globalement, si bien que deux `Composer` montés en même temps —
+plausible si Expo Router garde `/chat` sous `/chat/[id]`, non vérifié à
+l'exécution — recevraient les mêmes résultats, le démontage de l'un coupant la
+dictée de l'autre.
+
 Dernière mise à jour : **11 septembre 2026** — trois correctifs sur la lecture
 à voix haute, et le retrait d'un réglage qui ne pilotait rien.
 

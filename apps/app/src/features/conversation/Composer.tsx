@@ -194,9 +194,14 @@ export function Composer({
   }));
 
   const handleSubmit = useCallback(() => {
+    // Le brouillon part et l'appelant vide le champ : la session de dictée qui
+    // l'a produit n'a plus rien à compléter. Sans cette clôture, elle continue
+    // d'écouter — `continuous` ne s'arrête jamais seule — et le fragment
+    // suivant reposait le message déjà envoyé dans le champ tout juste vidé.
+    dictation.cancel();
     onSubmit(inputMode);
     setInputMode("text");
-  }, [onSubmit, inputMode]);
+  }, [onSubmit, inputMode, dictation.cancel]);
 
   // L'appelant garde la main sur le champ — le fil y rend le focus après un
   // envoi — sans que le composant perde la référence dont il a besoin ici.
