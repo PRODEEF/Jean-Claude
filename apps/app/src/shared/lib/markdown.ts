@@ -314,7 +314,11 @@ function blockToSpeech(block: MarkdownBlock): string {
         )
         .join(". ");
     case "codeBlock":
-      return block.value;
+      // Énoncé ligne à ligne, un bloc de code est illisible à l'oreille —
+      // ponctuation, indentation et noms coupés en syllabes. Sa présence est
+      // annoncée plutôt que passée sous silence : une réponse qui ne contient
+      // qu'un bloc resterait sinon muette, sans qu'on sache pourquoi.
+      return "Bloc de code";
     case "quote":
       return block.blocks.map(blockToSpeech).join(". ");
     case "table":
