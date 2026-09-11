@@ -31,6 +31,7 @@ function makeList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithTasks
     title: "Jardin",
     kind: "todo",
     dueAt: null,
+    dueAllDay: null,
     eventId: null,
     conversationId: null,
     folderId: null,
@@ -43,7 +44,7 @@ function makeList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithTasks
 }
 
 function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskRepository {
-  return {
+  const repository: ITaskRepository = {
     findAll: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
     findById: jest.fn().mockResolvedValue(makeList()),
     findByConversation: jest.fn().mockResolvedValue([]),
@@ -51,7 +52,7 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
     createList: jest
       .fn()
       .mockImplementation((_userId, input: TaskList) => Promise.resolve(makeList(input))),
-    updateList: jest.fn().mockResolvedValue(makeList()),
+    updateList: jest.fn(),
     deleteList: jest.fn().mockResolvedValue(undefined),
     createTask: jest
       .fn()
@@ -62,11 +63,25 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
     deleteTask: jest.fn().mockResolvedValue(undefined),
     replaceTasks: jest
       .fn()
-      .mockImplementation((_userId, listId: string, rows: TaskRowInput[]) =>
-        Promise.resolve(rows.map((row) => makeTask({ ...row, listId }))),
+      .mockImplementation((_userId, listId: string, content: { rows: TaskRowInput[] }) =>
+        Promise.resolve(content.rows.map((row) => makeTask({ ...row, listId }))),
       ),
     ...overrides,
   };
+
+  // L'écriture rend la liste **entière** telle qu'elle sera en base — le patch
+  // posé sur l'existante, pas sur une liste vierge. Le service s'appuie sur ce
+  // qu'elle contient pour reprojeter le créneau lié : une double qui n'en
+  // renverrait que le patch lui ferait croire à une liste sans échéance, et
+  // donc supprimer un créneau que rien ne menaçait.
+  if (!overrides.updateList) {
+    repository.updateList = jest.fn().mockImplementation(async (id: string, patch: object) => {
+      const current = await repository.findById(id, TOKEN);
+      return makeList({ ...(current ?? {}), ...patch });
+    });
+  }
+
+  return repository;
 }
 
 function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
@@ -202,6 +217,64 @@ describe("TaskService", () => {
       expect(created.dueAt).toBe("2026-09-12T00:00:00.000Z");
     });
 
+    it("retient l'intention de saisie plutôt que de la relire dans l'heure", async () => {
+      const repo = makeRepository();
+
+      // Minuit heure de Paris, mais l'utilisateur a bien tapé une heure — un
+      // appareil hors d'Europe/Paris produit couramment ce cas. Redéduire le
+      // moment de l'horodatage le contredirait.
+      await makeService(repo).createList(
+        USER,
+        {
+          title: "Courses",
+          kind: "shopping",
+          dueAt: "2026-09-11T22:00:00.000Z",
+          dueAllDay: false,
+        },
+        TOKEN,
+      );
+
+      expect(repo.createList).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ dueAllDay: false }),
+        TOKEN,
+      );
+    });
+
+    it("déduit le moment de l'heure murale du profil quand l'appelant se tait", async () => {
+      const repo = makeRepository();
+
+      // 9h heure de Paris (UTC+2 en septembre) : l'assistant ne produit qu'un
+      // instant, c'est au serveur de dire s'il vise un créneau.
+      await makeService(repo).createList(
+        USER,
+        { title: "Courses", kind: "shopping", dueAt: "2026-09-12T07:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(repo.createList).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ dueAllDay: false }),
+        TOKEN,
+      );
+    });
+
+    it("tient pour la journée entière une échéance à minuit dans le fuseau du profil", async () => {
+      const repo = makeRepository();
+
+      await makeService(repo).createList(
+        USER,
+        { title: "Courses", kind: "shopping", dueAt: "2026-09-11T22:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(repo.createList).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ dueAllDay: true }),
+        TOKEN,
+      );
+    });
+
     it("refuse une échéance dont le jour civil est déjà révolu", async () => {
       const repo = makeRepository();
 
@@ -249,6 +322,11 @@ describe("TaskService", () => {
   });
 
   describe("replaceTasks", () => {
+    /** Ce que le service a demandé d'écrire, tel que le Repository le reçoit. */
+    function written(repo: ITaskRepository): { rows: TaskRowInput[]; removed: string[] } {
+      return (repo.replaceTasks as jest.Mock).mock.calls[0][2];
+    }
+
     it("range une ligne indentée sous la dernière ligne de premier niveau", async () => {
       const repo = makeRepository({
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
@@ -267,7 +345,7 @@ describe("TaskService", () => {
         TOKEN,
       );
 
-      const rows = (repo.replaceTasks as jest.Mock).mock.calls[0][2] as TaskRowInput[];
+      const { rows } = written(repo);
       expect(rows[0]).toMatchObject({ id: "task-1", parentId: null, position: 0 });
       expect(rows[1]).toMatchObject({ parentId: "task-1", position: 1 });
       expect(rows[2]).toMatchObject({ parentId: "task-1", position: 2 });
@@ -283,7 +361,7 @@ describe("TaskService", () => {
         TOKEN,
       );
 
-      const rows = (repo.replaceTasks as jest.Mock).mock.calls[0][2] as TaskRowInput[];
+      const { rows } = written(repo);
       expect(rows[0]?.parentId).toBeNull();
     });
 
@@ -299,7 +377,7 @@ describe("TaskService", () => {
         TOKEN,
       );
 
-      const rows = (repo.replaceTasks as jest.Mock).mock.calls[0][2] as TaskRowInput[];
+      const { rows } = written(repo);
       expect(rows[0]?.id).not.toBe("00000000-0000-4000-8000-000000000099");
     });
 
@@ -310,7 +388,80 @@ describe("TaskService", () => {
 
       await makeService(repo).replaceTasks(USER, LIST, { items: [] }, TOKEN);
 
-      expect(repo.replaceTasks).toHaveBeenCalledWith(USER, LIST, [], TOKEN);
+      expect(repo.replaceTasks).toHaveBeenCalledWith(
+        USER,
+        LIST,
+        { rows: [], removed: ["task-1"] },
+        TOKEN,
+      );
+    });
+
+    it("conserve la complétion et les notes d'une ligne que l'éditeur renvoie", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({
+            tasks: [
+              makeTask({
+                done: true,
+                completedAt: "2026-09-02T09:00:00.000Z",
+                notes: "Au rayon jardinage",
+              }),
+            ],
+          }),
+        ),
+      });
+
+      await makeService(repo).replaceTasks(
+        USER,
+        LIST,
+        { items: [{ id: "task-1", title: "Acheter du terreau universel", depth: 0 }] },
+        TOKEN,
+      );
+
+      // L'éditeur ne transporte que le texte et l'indentation : renommer une
+      // ligne ne doit ni la décocher ni lui faire perdre ses notes.
+      expect(written(repo).rows[0]).toMatchObject({
+        title: "Acheter du terreau universel",
+        done: true,
+        completedAt: "2026-09-02T09:00:00.000Z",
+        notes: "Au rayon jardinage",
+      });
+    });
+
+    it("laisse une ligne neuve à faire, sans notes ni date de complétion", async () => {
+      const repo = makeRepository();
+
+      await makeService(repo).replaceTasks(
+        USER,
+        LIST,
+        { items: [{ title: "Semer", depth: 0 }] },
+        TOKEN,
+      );
+
+      expect(written(repo).rows[0]).toMatchObject({
+        done: false,
+        completedAt: null,
+        notes: null,
+      });
+    });
+
+    it("désigne comme retirées les seules lignes que l'éditeur ne renvoie plus", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({
+            tasks: [makeTask(), makeTask({ id: "task-2", title: "Poncer", position: 1 })],
+          }),
+        ),
+      });
+
+      await makeService(repo).replaceTasks(
+        USER,
+        LIST,
+        { items: [{ id: "task-2", title: "Poncer", depth: 0 }] },
+        TOKEN,
+      );
+
+      expect(written(repo).removed).toEqual(["task-1"]);
     });
 
     it("refuse de réécrire une liste introuvable", async () => {
@@ -390,7 +541,12 @@ describe("TaskService", () => {
 
       expect(events.update).toHaveBeenCalledWith(
         EVENT,
-        { startsAt: "2026-09-12T07:00:00.000Z", allDay: false },
+        {
+          title: "Jardin",
+          startsAt: "2026-09-12T07:00:00.000Z",
+          endsAt: "2026-09-12T08:00:00.000Z",
+          allDay: false,
+        },
         TOKEN,
       );
     });
@@ -411,7 +567,12 @@ describe("TaskService", () => {
 
       expect(events.update).toHaveBeenCalledWith(
         EVENT,
-        { startsAt: "2026-09-11T22:00:00.000Z", allDay: true },
+        {
+          title: "Jardin",
+          startsAt: "2026-09-11T22:00:00.000Z",
+          endsAt: null,
+          allDay: true,
+        },
         TOKEN,
       );
     });
@@ -427,16 +588,54 @@ describe("TaskService", () => {
       expect(events.update).not.toHaveBeenCalled();
     });
 
-    it("refuse d'effacer l'échéance d'une liste qui représente un rendez-vous", async () => {
+    it("efface le moment avec l'échéance", async () => {
       const repo = makeRepository({
-        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+        findById: jest.fn().mockResolvedValue(makeList({ dueAt: "2026-09-12T07:00:00.000Z" })),
+      });
+
+      // Les deux colonnes vont ensemble : une liste sans échéance n'a pas de
+      // moment, et la base refuse le couple dépareillé.
+      await makeService(repo).updateList(USER, LIST, { dueAt: null }, TOKEN);
+
+      expect(repo.updateList).toHaveBeenCalledWith(
+        LIST,
+        expect.objectContaining({ dueAt: null, dueAllDay: null }),
+        TOKEN,
+      );
+    });
+
+    it("reprojette le nouveau titre sur le créneau déjà posé", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({ eventId: EVENT, dueAt: "2026-09-12T07:00:00.000Z", dueAllDay: false }),
+        ),
       });
       const events = makeCalendarRepository();
 
-      await expect(
-        makeService(repo, events).updateList(USER, LIST, { dueAt: null }, TOKEN),
-      ).rejects.toMatchObject({ status: 400 });
-      expect(repo.updateList).not.toHaveBeenCalled();
+      // Le créneau porte le nom de la liste : renommer celle-ci laissait
+      // jusqu'ici l'agenda annoncer l'ancien.
+      await makeService(repo, events).updateList(USER, LIST, { title: "Potager" }, TOKEN);
+
+      expect(events.update).toHaveBeenCalledWith(
+        EVENT,
+        expect.objectContaining({ title: "Potager" }),
+        TOKEN,
+      );
+    });
+
+    it("libère le créneau quand on efface l'échéance de la liste", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({ eventId: EVENT, dueAt: "2026-09-12T07:00:00.000Z", dueAllDay: false }),
+        ),
+      });
+      const events = makeCalendarRepository();
+
+      await makeService(repo, events).updateList(USER, LIST, { dueAt: null }, TOKEN);
+
+      // Une liste sans date n'a rien à bloquer dans l'agenda. Ce geste était
+      // refusé faute de savoir quoi faire du créneau.
+      expect(events.delete).toHaveBeenCalledWith(EVENT, TOKEN);
       expect(events.update).not.toHaveBeenCalled();
     });
 
@@ -458,6 +657,52 @@ describe("TaskService", () => {
 
       expect(updated).toBeDefined();
       jest.restoreAllMocks();
+    });
+  });
+
+  describe("deleteList", () => {
+    it("libère le créneau que la liste occupait dans l'agenda", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+      });
+      const events = makeCalendarRepository();
+
+      await makeService(repo, events).deleteList(LIST, TOKEN);
+
+      // La clé étrangère ne joue que dans l'autre sens : sans ce geste,
+      // l'agenda gardait un rendez-vous dont plus rien ne disait le contenu.
+      expect(repo.deleteList).toHaveBeenCalledWith(LIST, TOKEN);
+      expect(events.delete).toHaveBeenCalledWith(EVENT, TOKEN);
+    });
+
+    it("ne touche à aucun rendez-vous quand la liste n'en occupait pas", async () => {
+      const repo = makeRepository();
+      const events = makeCalendarRepository();
+
+      await makeService(repo, events).deleteList(LIST, TOKEN);
+
+      expect(events.delete).not.toHaveBeenCalled();
+    });
+
+    it("supprime quand même la liste si son créneau a disparu entre-temps", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+      });
+      const events = makeCalendarRepository({
+        delete: jest.fn().mockRejectedValue(new Error("introuvable")),
+      });
+
+      await expect(makeService(repo, events).deleteList(LIST, TOKEN)).resolves.toBeUndefined();
+      expect(repo.deleteList).toHaveBeenCalled();
+    });
+
+    it("refuse de supprimer une liste introuvable", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
+
+      await expect(makeService(repo).deleteList(LIST, TOKEN)).rejects.toMatchObject({
+        status: 404,
+      });
+      expect(repo.deleteList).not.toHaveBeenCalled();
     });
   });
 

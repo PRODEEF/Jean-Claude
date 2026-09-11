@@ -7,6 +7,24 @@ import {
   userPreferencesSchema,
 } from "./preferences.schema";
 
+describe("fuseau horaire", () => {
+  it("accepte un fuseau IANA que Intl sait manipuler", () => {
+    expect(updateUserProfileSchema.safeParse({ timezone: "America/Montreal" }).success).toBe(true);
+    expect(updateUserProfileSchema.safeParse({ timezone: "Europe/Paris" }).success).toBe(true);
+  });
+
+  it("refuse un fuseau inconnu, qui ferait lever chaque datation du serveur", () => {
+    expect(updateUserProfileSchema.safeParse({ timezone: "Mars/Olympus" }).success).toBe(false);
+    expect(updateUserProfileSchema.safeParse({ timezone: "" }).success).toBe(false);
+  });
+
+  it("reste permissif en lecture : un fuseau écrit avant ne rend pas le profil illisible", () => {
+    expect(userPreferencesSchema.parse({ scope: {}, timezone: "Mars/Olympus" }).timezone).toBe(
+      "Mars/Olympus",
+    );
+  });
+});
+
 describe("catalogue des modèles", () => {
   it("dit de chaque modèle proposé à quoi il sert, sans jargon", () => {
     for (const model of ASSISTANT_MODELS) {

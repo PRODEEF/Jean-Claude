@@ -27,10 +27,22 @@ export const taskListSchema = z.object({
    * Échéance de la liste entière.
    *
    * Portée par la liste et non par ses lignes : « les courses avant samedi »
-   * date la liste, pas le paquet de farine. À minuit pile, l'échéance ne vise
-   * qu'un jour — c'est ce qui distingue « samedi » de « samedi à 14h ».
+   * date la liste, pas le paquet de farine.
    */
   dueAt: isoDateTimeSchema.nullable(),
+  /**
+   * L'échéance vise-t-elle la journée, ou un créneau ?
+   *
+   * Enregistré plutôt que redéduit de l'heure de `dueAt`. La règle « minuit
+   * pile vaut dans la journée » suppose de savoir dans quelle horloge on lit
+   * cette heure, et l'API comme les quatre plateformes n'ont pas la même : le
+   * serveur date dans le fuseau du profil, l'appareil dans le sien. Hors
+   * d'Europe/Paris, « samedi sans heure » redevenait « samedi à 2h ».
+   *
+   * `null` quand la liste n'a pas d'échéance — les deux champs vont ensemble,
+   * et la base le vérifie (`task_lists_due_all_day_pairing`).
+   */
+  dueAllDay: z.boolean().nullable(),
   /** Créneau posé dans l'agenda pour cette liste, le cas échéant (A.3, A.8). */
   eventId: uuidSchema.nullable(),
   /** Conversation d'origine, quand la liste vient d'une conversion (A.2). */
@@ -114,12 +126,18 @@ export type TaskListWithTasks = TaskList & { tasks: Task[] };
  * `dueAt`, lui, est bien de la saisie initiale : une liste ouverte depuis le
  * calendrier naît sur le jour affiché, et l'assistant date la liste qu'il
  * propose quand la conversation dit quand.
+ *
+ * `dueAllDay` accompagne `dueAt` sans être obligatoire : un appelant qui
+ * connaît l'intention de saisie la dit — le formulaire sait si l'utilisateur a
+ * tapé une heure — et le serveur la déduit de l'heure murale du profil pour
+ * les autres, l'assistant au premier chef.
  */
 export const createTaskListSchema = z.object({
   title: labelSchema,
   kind: taskListKindSchema.default("todo"),
   folderId: uuidSchema.nullable().optional(),
   dueAt: isoDateTimeSchema.nullable().optional(),
+  dueAllDay: z.boolean().optional(),
 });
 
 export type CreateTaskList = z.infer<typeof createTaskListSchema>;

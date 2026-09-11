@@ -135,7 +135,7 @@ function ListCard({
   }, [highlighted, scrollRef]);
 
   const shopping = list.kind === "shopping";
-  const due = dueLabel(list.dueAt);
+  const due = dueLabel(list);
 
   const items: ContextMenuItem[] = [
     {
@@ -241,11 +241,17 @@ function ListCard({
   );
 }
 
-/** Ex. « jeudi 4 septembre · 14h30 », ou rien quand la liste n'a pas d'échéance. */
-export function dueLabel(dueAt: string | null): string | undefined {
-  if (dueAt === null) return undefined;
+/**
+ * Ex. « jeudi 4 septembre · 14h30 », ou rien quand la liste n'a pas d'échéance.
+ *
+ * L'heure ne s'affiche que si l'échéance en vise une : `dueAllDay` le dit,
+ * plutôt que de le relire dans l'horloge de l'appareil.
+ */
+export function dueLabel(list: Pick<TaskList, "dueAt" | "dueAllDay">): string | undefined {
+  if (list.dueAt === null) return undefined;
 
-  const due = new Date(dueAt);
-  const timed = due.getHours() !== 0 || due.getMinutes() !== 0;
-  return timed ? `${formatFullDay(due)} · ${formatTime(dueAt)}` : formatFullDay(due);
+  const due = new Date(list.dueAt);
+  return list.dueAllDay === false
+    ? `${formatFullDay(due)} · ${formatTime(list.dueAt)}`
+    : formatFullDay(due);
 }

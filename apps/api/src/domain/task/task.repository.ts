@@ -1,9 +1,9 @@
-import type { CreateTask, CreateTaskList, Task, TaskList, TaskListWithTasks } from "@jc/domain";
+import type { CreateTask, Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { forUser } from "../../core/supabase/supabase.js";
 import type {
   ITaskRepository,
-  TaskListOrigin,
+  TaskListCreate,
   TaskListPatch,
   TaskPatch,
   TaskRowInput,
@@ -15,6 +15,7 @@ type TaskListRow = {
   title: string;
   kind: string;
   due_at: string | null;
+  due_all_day: boolean | null;
   event_id: string | null;
   conversation_id: string | null;
   folder_id: string | null;
@@ -42,6 +43,7 @@ function toList(row: TaskListRow): TaskList {
     title: row.title,
     kind: row.kind as TaskList["kind"],
     dueAt: row.due_at,
+    dueAllDay: row.due_all_day,
     eventId: row.event_id,
     conversationId: row.conversation_id,
     folderId: row.folder_id,
@@ -79,7 +81,7 @@ function toListWithTasks(row: TaskListRow & { tasks: TaskRow[] }): TaskListWithT
 }
 
 const LIST_COLUMNS =
-  "id, title, kind, due_at, event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
+  "id, title, kind, due_at, due_all_day, event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
 const TASK_COLUMNS =
   "id, list_id, title, notes, done, completed_at, parent_id, position, created_at, updated_at";
 const LIST_WITH_TASKS_COLUMNS = `${LIST_COLUMNS}, tasks(${TASK_COLUMNS})`;
@@ -142,7 +144,7 @@ export const taskRepository: ITaskRepository = {
     return data ? toList(data as unknown as TaskListRow) : null;
   },
 
-  async createList(userId, input: CreateTaskList & TaskListOrigin, accessToken) {
+  async createList(userId, input: TaskListCreate, accessToken) {
     const { data, error } = await forUser(accessToken)
       .from("task_lists")
       .insert({
@@ -150,6 +152,7 @@ export const taskRepository: ITaskRepository = {
         title: input.title,
         kind: input.kind,
         due_at: input.dueAt ?? null,
+        due_all_day: input.dueAllDay ?? null,
         folder_id: input.folderId ?? null,
         conversation_id: input.conversationId ?? null,
         created_by_assistant: input.createdByAssistant ?? false,
@@ -169,6 +172,7 @@ export const taskRepository: ITaskRepository = {
     if (patch.kind !== undefined) payload["kind"] = patch.kind;
     if (patch.folderId !== undefined) payload["folder_id"] = patch.folderId;
     if (patch.dueAt !== undefined) payload["due_at"] = patch.dueAt;
+    if (patch.dueAllDay !== undefined) payload["due_all_day"] = patch.dueAllDay;
     if (patch.eventId !== undefined) payload["event_id"] = patch.eventId;
 
     const { data, error } = await forUser(accessToken)
@@ -247,61 +251,44 @@ export const taskRepository: ITaskRepository = {
    * niveau — elle est dans `rows`, mais son ancien parent, lui, n'y est plus.
    * L'`upsert` la détache avant que la cascade puisse l'atteindre.
    *
-   * L'`upsert` reprend `done`, `notes` et `completed_at` de l'état courant :
-   * l'éditeur ne transporte que le texte et l'indentation, et laisser Postgres
-   * appliquer ses valeurs par défaut décocherait toute la liste à chaque
-   * frappe.
+   * Deux requêtes et non quatre : ce qui était à conserver et ce qui était à
+   * effacer se lisait ici dans une liste que le service venait déjà de charger,
+   * et l'`upsert` rend les lignes écrites — il n'y a pas à les relire.
    */
-  async replaceTasks(userId, listId, rows: TaskRowInput[], accessToken) {
+  async replaceTasks(userId, listId, content, accessToken) {
     const client = forUser(accessToken);
+    const written: Task[] = [];
 
-    const { data: current, error: readError } = await client
-      .from("tasks")
-      .select(TASK_COLUMNS)
-      .eq("list_id", listId);
+    if (content.rows.length > 0) {
+      const payload = content.rows.map((row: TaskRowInput) => ({
+        id: row.id,
+        user_id: userId,
+        list_id: listId,
+        title: row.title,
+        parent_id: row.parentId,
+        position: row.position,
+        notes: row.notes,
+        done: row.done,
+        completed_at: row.completedAt,
+      }));
 
-    if (readError) throw new Error(readError.message);
-
-    const existing = new Map(
-      (current as unknown as TaskRow[]).map((row) => [row.id, row] as const),
-    );
-
-    if (rows.length > 0) {
-      const payload = rows.map((row) => {
-        const previous = existing.get(row.id);
-        return {
-          id: row.id,
-          user_id: userId,
-          list_id: listId,
-          title: row.title,
-          parent_id: row.parentId,
-          position: row.position,
-          notes: previous?.notes ?? null,
-          done: previous?.done ?? false,
-          completed_at: previous?.completed_at ?? null,
-        };
-      });
-
-      const { error } = await client.from("tasks").upsert(payload);
+      const { data, error } = await client.from("tasks").upsert(payload).select(TASK_COLUMNS);
       if (error) throw new Error(error.message);
+      written.push(...(data as unknown as TaskRow[]).map(toTask));
     }
 
-    const kept = new Set(rows.map((row) => row.id));
-    const removed = [...existing.keys()].filter((id) => !kept.has(id));
-
-    if (removed.length > 0) {
-      const { error } = await client.from("tasks").delete().eq("list_id", listId).in("id", removed);
+    if (content.removed.length > 0) {
+      const { error } = await client
+        .from("tasks")
+        .delete()
+        .eq("list_id", listId)
+        .in("id", content.removed);
 
       if (error) throw new Error(error.message);
     }
 
-    const { data, error } = await client
-      .from("tasks")
-      .select(TASK_COLUMNS)
-      .eq("list_id", listId)
-      .order("position", { ascending: true });
-
-    if (error) throw new Error(error.message);
-    return (data as unknown as TaskRow[]).map(toTask);
+    // PostgREST ne garantit pas de rendre les lignes dans l'ordre où elles lui
+    // sont envoyées, et l'ordre d'une liste est ce qui la rend lisible.
+    return written.sort((a, b) => a.position - b.position);
   },
 };

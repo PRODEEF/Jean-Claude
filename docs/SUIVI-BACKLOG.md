@@ -7,8 +7,163 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **11 septembre 2026** — un message dicté puis envoyé
-revenait se poser dans le champ suivant ; deux autres correctifs sur la dictée.
+Dernière mise à jour : **11 septembre 2026** — relecture complète des domaines
+Todo et Calendrier, puis traitement de ses trois causes racines : trois pertes
+de données de l'éditeur de todoliste, quatre autres points corrigés dans la
+foulée, et le lien todoliste ↔ rendez-vous refondu. Plus tôt dans la journée,
+un message dicté puis envoyé revenait se poser dans le champ suivant, et deux
+autres correctifs sur la dictée.
+
+Les **trois causes racines** que cette relecture désignait sont traitées — les
+sept correctifs ci-dessous n'en étaient que les symptômes.
+
+**Le créneau d'agenda est devenu la projection de sa todoliste (cause n°1).**
+Le lien `task_lists.event_id` était tenu par deux répercussions partielles qui
+ne se parlaient pas : la modification d'une liste ne poussait que sa date,
+celle d'un rendez-vous ne remontait que la sienne, le titre n'était jamais
+projeté, et supprimer une liste laissait son créneau orphelin dans l'agenda.
+D'où trois correctifs successifs en quatre jours, tous sur des symptômes —
+et une rustine côté application qui recomposait les rendez-vous à l'affichage,
+masquant la divergence au lieu de la corriger (en cassant au passage la hauteur
+de ceux dont elle réécrivait le début sans toucher à la fin). La règle est
+désormais posée une fois, dans `slotForList` (`packages/domain`, testée) : la
+liste est la source, le rendez-vous en est la projection, et les trois chemins
+qui posent ou déplacent un créneau s'en servent. Ce que la liste ne dit pas —
+notes, rappel — reste au rendez-vous. Effacer l'échéance libère le créneau au
+lieu d'être refusé ; supprimer la liste l'emporte ; renommer ou déplacer le
+rendez-vous renomme et déplace la liste. Une migration remet en accord les
+créneaux déjà écrits.
+
+**L'intention de l'échéance est enregistrée, plus devinée (cause n°2).** La
+convention « minuit pile = dans la journée » était redérivée à six endroits,
+dans deux horloges : le serveur date dans le fuseau du profil, l'application
+dans celui de l'appareil. Hors d'Europe/Paris, « samedi sans heure » redevenait
+« samedi à 2h » à la traversée, et le créneau posé pour cette liste naissait à
+heure fixe. `task_lists.due_all_day` retient l'intention : le formulaire la dit
+— il sait si l'utilisateur a tapé une heure —, le serveur la déduit pour les
+appelants qui ne produisent qu'un instant, l'assistant au premier chef. Le
+fuseau lui-même valait « Europe/Paris » pour tout le monde faute d'écran pour
+le régler, et il n'en faut pas (§13.4.4) : l'appareil l'envoie désormais au
+profil à l'ouverture. **Reste volontairement en place** : la carte de
+suggestion lit encore l'heure pour décider d'afficher un horaire. Elle formate
+un instant que le modèle vient de produire, avant tout enregistrement — il n'y
+a pas encore d'intention à lire, et les deux horloges concordent maintenant.
+
+**Les règles qui placent dans le temps ont rejoint `@jc/domain` (cause n°3).**
+Quel jour porte quoi, ce qui reste à faire, quelle todoliste le calendrier
+redessine, comment deux créneaux simultanés se partagent une colonne :
+ces règles décidaient depuis `apps/app`, donc hors de l'obligation de test de
+la rule 300 (« écran : non testé ») — et c'est là que se logeaient les défauts
+remontés en usage réel. Elles vivent dans `packages/domain/src/planning`, avec
+26 tests. Le placement en colonnes borne au passage la fin d'un créneau à son
+début. `features/calendar/lib/` disparaît.
+
+**Les quatre migrations ont été rejouées** sur un Postgres 16 vierge — les 27
+dans l'ordre — puis sur une base ensemencée, qui est le chemin réel : le
+rattrapage de `due_all_day` suit bien le fuseau de chaque profil (minuit à
+Montréal reste « dans la journée », 9h à Paris reste un créneau), le
+réalignement corrige titre, horaire et fin d'un créneau divergent, la
+contrainte de solidarité refuse un couple dépareillé, et la nouvelle policy
+refuse le dossier d'autrui tout en acceptant le sien, sur les deux tables.
+Elles ne sont pas appliquées : **elles doivent l'être avant le déploiement du
+code**, qui lit `due_all_day` et échouerait sur toute lecture de todoliste.
+
+Au passage, une incertitude levée : le garde-fou `tasks_depth_guard` ne voit
+pas les états intermédiaires d'un `upsert` multi-lignes. Échanger une tâche et
+sa sous-tâche en une passe — ce que `replaceTasks` peut produire — passe donc
+sans erreur, et le garde-fou continue de refuser un vrai 3ᵉ niveau.
+
+**Le parcours a été joué de bout en bout**, sur une stack Supabase locale
+complète (GoTrue, PostgREST, Postgres 17), API et web lancés, navigateur piloté
+et réglé sur `America/Montreal` pendant que le profil naissait sur
+`Europe/Paris` — le décalage exact que la cause n°2 devait corriger. Dix
+vérifications, toutes passantes : le profil prend le fuseau de l'appareil ;
+une échéance saisie sans heure s'enregistre « dans la journée » et tombe bien
+à minuit heure de Montréal ; la carte n'affiche aucun horaire ; un créneau
+volontairement désaccordé reprend le titre, la date et le caractère « journée
+entière » de sa liste dès que celle-ci est renommée ; supprimer la liste
+emporte le créneau, sans orphelin.
+
+**Reste ouvert, par choix :** l'écriture et la suppression de `replaceTasks`
+sont toujours deux instructions (atomicité : demanderait une fonction SQL, que
+le skill `supabase-migration` écarte) et le curseur de pagination des listes ne
+départage pas deux `updated_at` identiques — cas non atteignable aujourd'hui,
+chaque insertion ayant sa propre transaction, et le corriger toucherait la
+pagination des conversations.
+
+**Réécrire une ligne de todoliste pouvait la perdre en route.** Relevé à la
+relecture du domaine. L'éditeur envoie la liste entière et le serveur efface ce
+qui n'y figure plus : une ligne vidée pour être retapée disparaissait donc dès
+que l'enregistrement automatique tombait dans l'intervalle — 700 ms de pause
+suffisaient. En finissant de taper, l'utilisateur ne retrouvait pas sa ligne
+mais une ligne neuve, sans ses notes ni sa complétion. Une ligne déjà
+enregistrée qu'on vient de vider est désormais lue comme une ligne en cours de
+réécriture, et l'enregistrement automatique attend le caractère suivant. Seul
+l'enregistrement automatique attend : sortir du champ tranche comme avant, une
+ligne laissée vide restant bien une ligne supprimée.
+
+**Deux enregistrements d'une même todoliste pouvaient se croiser.** Même
+relecture. Rien ne sérialisait `replaceTasks` : une frappe enregistrée
+automatiquement et une sortie de champ partaient ensemble, et la seconde
+ignorait les identifiants que la première était en train d'attribuer. Le
+serveur recréait alors les lignes concernées au lieu de les modifier, en
+perdant leur complétion et leurs notes — et leur case à cocher restait inerte,
+faute d'identifiant. La mutation porte maintenant une portée par liste
+(`useReplaceTasks`), ce qui interdit deux réécritures simultanées de la même
+liste, et la reprise des identifiants se fait par clé de ligne plutôt que par
+identité du tableau : elle aboutit même quand l'utilisateur a continué d'écrire
+pendant l'aller-retour, ce que l'ancienne version abandonnait.
+
+**Une case cochée dont l'enregistrement échoue ne reste plus cochée.**
+`TaskListEditor` cochait la case localement sans rien prévoir en cas d'échec, et
+la signature qui décide de se resynchroniser sur le serveur ne comparait que le
+texte et l'indentation, jamais la complétion : rien ne venait donc corriger une
+case cochée à tort, et une tâche cochée depuis le calendrier restait affichée
+dans son état d'avant. Deux signatures distinctes désormais — ce que l'éditeur
+transporte, et ce que porte le serveur — et un retour en arrière si le serveur
+refuse. Dans `TaskRow`, où l'affichage suit le cache et ne ment donc jamais, un
+échec passe la bordure de la case en rouge : sans ce signal, rien ne
+distinguait « ça n'a pas marché » de « je n'ai pas appuyé au bon endroit ».
+
+**Réécrire une todoliste ne demande plus quatre requêtes mais deux.** Le
+Repository relisait la liste pour savoir ce qu'il devait conserver et ce qu'il
+devait effacer, alors que le service venait de la charger pour résoudre la
+filiation, puis la relisait une troisième fois pour rendre le résultat — à
+chaque pause de frappe. Ce qui est conservé quand une ligne est renommée (la
+complétion, les notes) est une règle métier et remonte donc dans le service,
+avec la liste des lignes retirées ; le Repository écrit ce qu'on lui donne et
+efface ce qu'on lui désigne. Trois tests de service ajoutés sur cette règle,
+qui n'en avait aucun tant qu'elle vivait dans le Repository. **Reste non
+traité** : l'écriture et la suppression sont toujours deux instructions, une
+suppression qui échoue après une écriture réussie laisse donc des lignes
+fantômes jusqu'à la modification suivante. Les rendre atomiques demanderait une
+fonction SQL, que le skill `supabase-migration` écarte — à arbitrer.
+
+**Une journée chargée débordait de sa cellule dans la grille du mois.** La
+cellule fait trois lignes de haut et pouvait en afficher cinq : trois
+rendez-vous, un « +N » qui ne se comptait pas lui-même, et la pastille de
+tâches ajoutée en tête sans entrer dans le budget. Les trois occupants
+partagent désormais le même décompte, et le « +N » dit ce qui est réellement
+masqué.
+
+**Le lien todoliste → rendez-vous est indexé.** `findByEventId` s'exécute à
+chaque modification d'un rendez-vous, pour lui répercuter sa date sur la
+todoliste qu'il représente (A.3) : sans index, chaque déplacement balayait
+toutes les listes du compte, le plus souvent pour conclure qu'aucune n'est
+liée. Index partiel — la colonne est nulle pour toutes les listes dont le
+créneau n'a pas été posé.
+
+**Une todoliste et un rendez-vous ne se rangent plus que dans un dossier à
+soi.** `conversation_folders` vérifie déjà la possession des deux côtés, mais
+`task_lists` et `calendar_events` portent un `folder_id` renseigné directement
+par le client sans que rien ne le vérifie : leur policy ne regarde que
+`user_id`, et la contrainte de clé étrangère s'applique hors RLS. Un appel
+forgé pouvait ranger sa propre liste dans le dossier d'un tiers — le contenu du
+dossier restait hors de portée, mais la donnée devenait incohérente et
+l'existence d'un identifiant de dossier, éprouvable. Vérification en
+`with check` seulement : en `using`, une ligne déjà écrite avec un dossier
+étranger deviendrait invisible à son propre propriétaire, donc impossible à
+corriger ; la migration la détache plutôt.
 
 **Enchaîner deux messages dictés reposait le premier dans le champ.** Relecture
 de la dictée, dans la foulée de celle de la lecture à voix haute. `sendDraft`

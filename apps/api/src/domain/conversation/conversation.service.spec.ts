@@ -411,6 +411,7 @@ function makeTaskList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithT
     title: "Courses de samedi",
     kind: "shopping",
     dueAt: null,
+    dueAllDay: null,
     eventId: null,
     conversationId: "conv-1",
     folderId: null,

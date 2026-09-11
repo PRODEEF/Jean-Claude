@@ -246,6 +246,7 @@ function makeTaskRepository(): ITaskRepository {
           title: input.title,
           kind: input.kind,
           dueAt: input.dueAt ?? null,
+          dueAllDay: input.dueAllDay ?? null,
           eventId: null,
           conversationId: input.conversationId ?? null,
           folderId: input.folderId ?? null,

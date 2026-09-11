@@ -18,6 +18,7 @@ import {
   type FolderTreeNode,
   type ResolveSuggestion,
   type ScheduleListsPayload,
+  slotForList,
   type Suggestion,
   type TaskList,
   type TaskListKind,
@@ -422,17 +423,19 @@ export class AssistantService {
     const events: CalendarEvent[] = [];
 
     for (const entry of payload.data.lists) {
-      const timed = hasWallTime(entry.dueAt, timezone);
-      const event = await this.calendar.create(
-        userId,
-        {
-          title: entry.title,
-          startsAt: entry.dueAt,
-          endsAt: timed ? oneHourAfter(entry.dueAt) : null,
-          allDay: !timed,
-        },
-        accessToken,
-      );
+      // Le modèle ne produit qu'un instant : c'est ici, dans le fuseau du
+      // profil, que se décide s'il vise un créneau ou la journée. La forme du
+      // créneau, elle, vient de `slotForList` — la même que lorsque la liste
+      // est modifiée depuis Mes listes ou depuis l'agenda.
+      const slot = slotForList({
+        title: entry.title,
+        dueAt: entry.dueAt,
+        dueAllDay: !hasWallTime(entry.dueAt, timezone),
+      });
+      // La charge utile exige une date : ce repli n'est là que pour le type.
+      if (slot === null) continue;
+
+      const event = await this.calendar.create(userId, slot, accessToken);
 
       try {
         await this.tasks.linkEvent(entry.listId, event.id, accessToken);

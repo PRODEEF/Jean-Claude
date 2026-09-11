@@ -10,7 +10,14 @@
  * Les horodatages de l'API sont en UTC ; toutes les fonctions d'ici rendent
  * des dates dans le fuseau de l'appareil, parce que c'est celui dans lequel
  * l'utilisateur lit son agenda et sa semaine.
+ *
+ * Les bornes de journée, elles, vivent dans `@jc/domain` : elles décident de
+ * ce qui tombe quel jour, et c'est une règle, pas un libellé. Réexportées ici
+ * pour que les écrans n'aient qu'un seul endroit où chercher une date.
  */
+import { addDays, isSameDay, startOfDay } from "@jc/domain";
+
+export { addDays, isSameDay, startOfDay };
 
 /** Lundi en tête : convention française, et celle de la maquette web. */
 export const WEEKDAY_LABELS = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."] as const;
@@ -40,18 +47,6 @@ const MONTH_NAMES = [
   "Décembre",
 ] as const;
 
-export function startOfDay(date: Date): Date {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-export function addDays(date: Date, days: number): Date {
-  const copy = new Date(date);
-  copy.setDate(copy.getDate() + days);
-  return copy;
-}
-
 export function addYears(date: Date, years: number): Date {
   return new Date(date.getFullYear() + years, 0, 1);
 }
@@ -67,14 +62,6 @@ export function startOfWeek(date: Date): Date {
   const day = startOfDay(date);
   const offset = (day.getDay() + 6) % 7;
   return addDays(day, -offset);
-}
-
-export function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
 }
 
 /**

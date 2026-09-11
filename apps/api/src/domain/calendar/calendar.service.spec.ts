@@ -42,6 +42,7 @@ function makeTaskList(overrides: Partial<TaskList> = {}): TaskList {
     title: "Travaux jardin",
     kind: "todo",
     dueAt: "2026-09-08T00:00:00.000Z",
+    dueAllDay: true,
     eventId: "evt-1",
     conversationId: null,
     folderId: null,
@@ -182,7 +183,43 @@ describe("CalendarService", () => {
       expect(tasks.findByEventId).toHaveBeenCalledWith("evt-1", TOKEN);
       expect(tasks.updateList).toHaveBeenCalledWith(
         "list-1",
-        { dueAt: nouvelleDate },
+        { title: "Kiné", dueAt: nouvelleDate, dueAllDay: false },
+        TOKEN,
+      );
+    });
+
+    it("répercute aussi l'intitulé : les deux fiches nomment la même chose", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeEvent()),
+        update: jest.fn().mockResolvedValue(makeEvent({ title: "Kiné (reporté)" })),
+      });
+      const tasks = makeTaskRepository({
+        findByEventId: jest.fn().mockResolvedValue(makeTaskList()),
+      });
+
+      await makeService(repo, tasks).update("evt-1", { title: "Kiné (reporté)" }, TOKEN);
+
+      expect(tasks.updateList).toHaveBeenCalledWith(
+        "list-1",
+        expect.objectContaining({ title: "Kiné (reporté)" }),
+        TOKEN,
+      );
+    });
+
+    it("répercute le passage en journée entière sur le moment de l'échéance", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeEvent()),
+        update: jest.fn().mockResolvedValue(makeEvent({ allDay: true, endsAt: null })),
+      });
+      const tasks = makeTaskRepository({
+        findByEventId: jest.fn().mockResolvedValue(makeTaskList({ dueAllDay: false })),
+      });
+
+      await makeService(repo, tasks).update("evt-1", { allDay: true }, TOKEN);
+
+      expect(tasks.updateList).toHaveBeenCalledWith(
+        "list-1",
+        expect.objectContaining({ dueAllDay: true }),
         TOKEN,
       );
     });
@@ -202,11 +239,13 @@ describe("CalendarService", () => {
       expect(tasks.updateList).not.toHaveBeenCalled();
     });
 
-    it("ne cherche pas de todoliste rattachée quand la date ne change pas", async () => {
+    it("ne cherche pas de todoliste rattachée quand rien de projeté ne change", async () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeEvent()) });
       const tasks = makeTaskRepository();
 
-      await makeService(repo, tasks).update("evt-1", { title: "Kiné (reporté)" }, TOKEN);
+      // Les notes et le rappel appartiennent au rendez-vous seul : la liste
+      // n'en dit rien, il n'y a donc rien à lui répercuter.
+      await makeService(repo, tasks).update("evt-1", { notes: "Salle 2" }, TOKEN);
 
       expect(tasks.findByEventId).not.toHaveBeenCalled();
       expect(tasks.updateList).not.toHaveBeenCalled();

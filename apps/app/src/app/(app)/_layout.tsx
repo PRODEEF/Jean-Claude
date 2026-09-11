@@ -10,6 +10,7 @@ import {
 import { useAssistantChannel } from "@/features/navigation/use-sidebar-data";
 import { AppBanner } from "@/features/navigation/AppBanner";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useSyncDeviceTimezone } from "@/shared/hooks/use-profile";
 
 /**
  * Coquille de l'application authentifiée.
@@ -30,6 +31,10 @@ export default function AppLayout() {
   // `compact` le tiroir est démonté tant qu'il est fermé, et sans cet appel
   // la pastille d'accueil restait éteinte à la première connexion.
   useAssistantChannel();
+
+  // Posé ici plutôt que dans un écran : le fuseau sert à dater côté serveur,
+  // bien avant qu'on ouvre les réglages ou le calendrier.
+  useSyncDeviceTimezone();
 
   // `null` = l'utilisateur n'a pas encore tranché : la barre suit alors la
   // taille d'écran, ouverte sur desktop et fermée sur téléphone.
