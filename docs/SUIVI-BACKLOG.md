@@ -7,10 +7,18 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **11 septembre 2026** — trois pertes de données de
-l'éditeur de todoliste, relevées à la relecture du domaine Todo ; plus tôt dans
-la journée, un message dicté puis envoyé revenait se poser dans le champ
-suivant, et deux autres correctifs sur la dictée.
+Dernière mise à jour : **11 septembre 2026** — relecture complète des domaines
+Todo et Calendrier : trois pertes de données de l'éditeur de todoliste, quatre
+autres points corrigés dans la foulée ; plus tôt dans la journée, un message
+dicté puis envoyé revenait se poser dans le champ suivant, et deux autres
+correctifs sur la dictée.
+
+Le compte rendu de cette relecture désigne trois causes racines qui restent
+ouvertes, et dont ces sept correctifs ne sont que les symptômes : le lien
+todoliste ↔ rendez-vous tenu par deux patchs à sens unique, la convention
+« minuit = dans la journée » évaluée dans deux fuseaux horaires différents, et
+les règles pures logées dans `apps/app`, donc hors obligation de test. À
+arbitrer avant de continuer à traiter les symptômes un par un.
 
 **Réécrire une ligne de todoliste pouvait la perdre en route.** Relevé à la
 relecture du domaine. L'éditeur envoie la liste entière et le serveur efface ce
@@ -45,6 +53,46 @@ transporte, et ce que porte le serveur — et un retour en arrière si le serveu
 refuse. Dans `TaskRow`, où l'affichage suit le cache et ne ment donc jamais, un
 échec passe la bordure de la case en rouge : sans ce signal, rien ne
 distinguait « ça n'a pas marché » de « je n'ai pas appuyé au bon endroit ».
+
+**Réécrire une todoliste ne demande plus quatre requêtes mais deux.** Le
+Repository relisait la liste pour savoir ce qu'il devait conserver et ce qu'il
+devait effacer, alors que le service venait de la charger pour résoudre la
+filiation, puis la relisait une troisième fois pour rendre le résultat — à
+chaque pause de frappe. Ce qui est conservé quand une ligne est renommée (la
+complétion, les notes) est une règle métier et remonte donc dans le service,
+avec la liste des lignes retirées ; le Repository écrit ce qu'on lui donne et
+efface ce qu'on lui désigne. Trois tests de service ajoutés sur cette règle,
+qui n'en avait aucun tant qu'elle vivait dans le Repository. **Reste non
+traité** : l'écriture et la suppression sont toujours deux instructions, une
+suppression qui échoue après une écriture réussie laisse donc des lignes
+fantômes jusqu'à la modification suivante. Les rendre atomiques demanderait une
+fonction SQL, que le skill `supabase-migration` écarte — à arbitrer.
+
+**Une journée chargée débordait de sa cellule dans la grille du mois.** La
+cellule fait trois lignes de haut et pouvait en afficher cinq : trois
+rendez-vous, un « +N » qui ne se comptait pas lui-même, et la pastille de
+tâches ajoutée en tête sans entrer dans le budget. Les trois occupants
+partagent désormais le même décompte, et le « +N » dit ce qui est réellement
+masqué.
+
+**Le lien todoliste → rendez-vous est indexé.** `findByEventId` s'exécute à
+chaque modification d'un rendez-vous, pour lui répercuter sa date sur la
+todoliste qu'il représente (A.3) : sans index, chaque déplacement balayait
+toutes les listes du compte, le plus souvent pour conclure qu'aucune n'est
+liée. Index partiel — la colonne est nulle pour toutes les listes dont le
+créneau n'a pas été posé.
+
+**Une todoliste et un rendez-vous ne se rangent plus que dans un dossier à
+soi.** `conversation_folders` vérifie déjà la possession des deux côtés, mais
+`task_lists` et `calendar_events` portent un `folder_id` renseigné directement
+par le client sans que rien ne le vérifie : leur policy ne regarde que
+`user_id`, et la contrainte de clé étrangère s'applique hors RLS. Un appel
+forgé pouvait ranger sa propre liste dans le dossier d'un tiers — le contenu du
+dossier restait hors de portée, mais la donnée devenait incohérente et
+l'existence d'un identifiant de dossier, éprouvable. Vérification en
+`with check` seulement : en `using`, une ligne déjà écrite avec un dossier
+étranger deviendrait invisible à son propre propriétaire, donc impossible à
+corriger ; la migration la détache plutôt.
 
 **Enchaîner deux messages dictés reposait le premier dans le champ.** Relecture
 de la dictée, dans la foulée de celle de la lecture à voix haute. `sendDraft`
