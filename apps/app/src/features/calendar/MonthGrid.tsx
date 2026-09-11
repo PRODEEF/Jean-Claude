@@ -22,8 +22,8 @@ export type MonthGridProps = {
   compact: boolean;
 };
 
-/** Au-delà, la cellule déborde : le reste se lit dans la liste du jour. */
-const MAX_PILLS_PER_CELL = 3;
+/** Ce qu'une cellule tient sous son numéro de jour : au-delà, elle déborde. */
+const MAX_LINES_PER_CELL = 3;
 
 /**
  * Grille mensuelle.
@@ -67,6 +67,7 @@ export function MonthGrid({
             (count, list) => count + openTaskCount(list),
             0,
           );
+          const { shown, hidden } = fitEvents(dayEvents, dayTasks > 0);
 
           return (
             <View
@@ -106,7 +107,7 @@ export function MonthGrid({
                   className="flex-row flex-wrap items-center gap-0.5"
                   style={{ pointerEvents: "none" }}
                 >
-                  {dayEvents.slice(0, MAX_PILLS_PER_CELL).map((event) => (
+                  {dayEvents.slice(0, MAX_LINES_PER_CELL).map((event) => (
                     <View key={event.id} className="bg-primary h-1.5 w-1.5 rounded-full" />
                   ))}
                   {dayTasks > 0 ? <TaskBadge count={dayTasks} compact /> : null}
@@ -119,7 +120,7 @@ export function MonthGrid({
                   {/* Avant les rendez-vous : au-delà de trois lignes la cellule
                       déborde, et la charge de la journée doit rester visible. */}
                   {dayTasks > 0 ? <TaskBadge count={dayTasks} /> : null}
-                  {dayEvents.slice(0, MAX_PILLS_PER_CELL).map((event) => (
+                  {shown.map((event) => (
                     <Pressable
                       key={event.id}
                       onPress={() => onOpenEvent(event)}
@@ -137,11 +138,9 @@ export function MonthGrid({
                       </Text>
                     </Pressable>
                   ))}
-                  {dayEvents.length > MAX_PILLS_PER_CELL ? (
+                  {hidden > 0 ? (
                     <View style={{ pointerEvents: "none" }}>
-                      <Text className="text-muted-foreground px-1 text-[11px]">
-                        +{dayEvents.length - MAX_PILLS_PER_CELL}
-                      </Text>
+                      <Text className="text-muted-foreground px-1 text-[11px]">+{hidden}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -152,6 +151,24 @@ export function MonthGrid({
       </View>
     </View>
   );
+}
+
+/**
+ * Ce qu'une cellule montre de ses rendez-vous, et ce qu'elle en tait.
+ *
+ * La pastille de tâches occupe une ligne au même titre qu'un rendez-vous, et le
+ * « +N » aussi : les compter dans le même budget est ce qui empêche une journée
+ * chargée de déborder. La cellule affichait jusqu'ici trois rendez-vous, plus
+ * un « +N », plus la pastille — cinq lignes dans une hauteur qui en tient
+ * trois. Le reste se lit dans la liste du jour, en dessous.
+ */
+function fitEvents(
+  events: CalendarEvent[],
+  hasTaskBadge: boolean,
+): { shown: CalendarEvent[]; hidden: number } {
+  const room = MAX_LINES_PER_CELL - (hasTaskBadge ? 1 : 0);
+  const shown = events.length <= room ? events : events.slice(0, Math.max(room - 1, 0));
+  return { shown, hidden: events.length - shown.length };
 }
 
 /**
