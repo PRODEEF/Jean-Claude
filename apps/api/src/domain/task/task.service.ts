@@ -215,6 +215,10 @@ export class TaskService {
    *
    * Les identifiants des lignes nouvelles sont posés ici et non par Postgres :
    * une sous-tâche doit pouvoir désigner un parent créé dans la même passe.
+   *
+   * L'éditeur ne transporte que le texte et l'indentation : la complétion et
+   * les notes sont reprises de la liste déjà chargée ici. Cocher et écrire sont
+   * deux gestes distincts, et taper une ligne ne doit pas décocher la voisine.
    */
   async replaceTasks(
     userId: string,
@@ -223,22 +227,35 @@ export class TaskService {
     accessToken: string,
   ): Promise<Task[]> {
     const list = await this.requireList(listId, accessToken);
-    const known = new Set(list.tasks.map((task) => task.id));
+    const known = new Map(list.tasks.map((task) => [task.id, task] as const));
 
     const rows: TaskRowInput[] = [];
     let parentId: string | null = null;
 
     input.items.forEach((item, position) => {
       // Un identifiant venu d'une autre liste rattacherait une tâche étrangère
-      // à celle-ci : il est traité comme une ligne nouvelle.
-      const id = item.id && known.has(item.id) ? item.id : randomUUID();
+      // à celle-ci : il est traité comme une ligne nouvelle, donc sans rien à
+      // reprendre.
+      const previous = item.id === undefined ? undefined : known.get(item.id);
       const nested = item.depth > 0 && parentId !== null;
+      const id = previous?.id ?? randomUUID();
 
-      rows.push({ id, title: item.title, parentId: nested ? parentId : null, position });
+      rows.push({
+        id,
+        title: item.title,
+        parentId: nested ? parentId : null,
+        position,
+        notes: previous?.notes ?? null,
+        done: previous?.done ?? false,
+        completedAt: previous?.completedAt ?? null,
+      });
       if (!nested) parentId = id;
     });
 
-    return this.lists.replaceTasks(userId, listId, rows, accessToken);
+    const kept = new Set(rows.map((row) => row.id));
+    const removed = list.tasks.map((task) => task.id).filter((id) => !kept.has(id));
+
+    return this.lists.replaceTasks(userId, listId, { rows, removed }, accessToken);
   }
 
   async deleteTask(listId: string, taskId: string, accessToken: string): Promise<void> {

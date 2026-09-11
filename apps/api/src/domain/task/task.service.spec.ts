@@ -62,8 +62,8 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
     deleteTask: jest.fn().mockResolvedValue(undefined),
     replaceTasks: jest
       .fn()
-      .mockImplementation((_userId, listId: string, rows: TaskRowInput[]) =>
-        Promise.resolve(rows.map((row) => makeTask({ ...row, listId }))),
+      .mockImplementation((_userId, listId: string, content: { rows: TaskRowInput[] }) =>
+        Promise.resolve(content.rows.map((row) => makeTask({ ...row, listId }))),
       ),
     ...overrides,
   };
@@ -249,6 +249,11 @@ describe("TaskService", () => {
   });
 
   describe("replaceTasks", () => {
+    /** Ce que le service a demandé d'écrire, tel que le Repository le reçoit. */
+    function written(repo: ITaskRepository): { rows: TaskRowInput[]; removed: string[] } {
+      return (repo.replaceTasks as jest.Mock).mock.calls[0][2];
+    }
+
     it("range une ligne indentée sous la dernière ligne de premier niveau", async () => {
       const repo = makeRepository({
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
@@ -267,7 +272,7 @@ describe("TaskService", () => {
         TOKEN,
       );
 
-      const rows = (repo.replaceTasks as jest.Mock).mock.calls[0][2] as TaskRowInput[];
+      const { rows } = written(repo);
       expect(rows[0]).toMatchObject({ id: "task-1", parentId: null, position: 0 });
       expect(rows[1]).toMatchObject({ parentId: "task-1", position: 1 });
       expect(rows[2]).toMatchObject({ parentId: "task-1", position: 2 });
@@ -283,7 +288,7 @@ describe("TaskService", () => {
         TOKEN,
       );
 
-      const rows = (repo.replaceTasks as jest.Mock).mock.calls[0][2] as TaskRowInput[];
+      const { rows } = written(repo);
       expect(rows[0]?.parentId).toBeNull();
     });
 
@@ -299,7 +304,7 @@ describe("TaskService", () => {
         TOKEN,
       );
 
-      const rows = (repo.replaceTasks as jest.Mock).mock.calls[0][2] as TaskRowInput[];
+      const { rows } = written(repo);
       expect(rows[0]?.id).not.toBe("00000000-0000-4000-8000-000000000099");
     });
 
@@ -310,7 +315,80 @@ describe("TaskService", () => {
 
       await makeService(repo).replaceTasks(USER, LIST, { items: [] }, TOKEN);
 
-      expect(repo.replaceTasks).toHaveBeenCalledWith(USER, LIST, [], TOKEN);
+      expect(repo.replaceTasks).toHaveBeenCalledWith(
+        USER,
+        LIST,
+        { rows: [], removed: ["task-1"] },
+        TOKEN,
+      );
+    });
+
+    it("conserve la complétion et les notes d'une ligne que l'éditeur renvoie", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({
+            tasks: [
+              makeTask({
+                done: true,
+                completedAt: "2026-09-02T09:00:00.000Z",
+                notes: "Au rayon jardinage",
+              }),
+            ],
+          }),
+        ),
+      });
+
+      await makeService(repo).replaceTasks(
+        USER,
+        LIST,
+        { items: [{ id: "task-1", title: "Acheter du terreau universel", depth: 0 }] },
+        TOKEN,
+      );
+
+      // L'éditeur ne transporte que le texte et l'indentation : renommer une
+      // ligne ne doit ni la décocher ni lui faire perdre ses notes.
+      expect(written(repo).rows[0]).toMatchObject({
+        title: "Acheter du terreau universel",
+        done: true,
+        completedAt: "2026-09-02T09:00:00.000Z",
+        notes: "Au rayon jardinage",
+      });
+    });
+
+    it("laisse une ligne neuve à faire, sans notes ni date de complétion", async () => {
+      const repo = makeRepository();
+
+      await makeService(repo).replaceTasks(
+        USER,
+        LIST,
+        { items: [{ title: "Semer", depth: 0 }] },
+        TOKEN,
+      );
+
+      expect(written(repo).rows[0]).toMatchObject({
+        done: false,
+        completedAt: null,
+        notes: null,
+      });
+    });
+
+    it("désigne comme retirées les seules lignes que l'éditeur ne renvoie plus", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({
+            tasks: [makeTask(), makeTask({ id: "task-2", title: "Poncer", position: 1 })],
+          }),
+        ),
+      });
+
+      await makeService(repo).replaceTasks(
+        USER,
+        LIST,
+        { items: [{ id: "task-2", title: "Poncer", depth: 0 }] },
+        TOKEN,
+      );
+
+      expect(written(repo).removed).toEqual(["task-1"]);
     });
 
     it("refuse de réécrire une liste introuvable", async () => {

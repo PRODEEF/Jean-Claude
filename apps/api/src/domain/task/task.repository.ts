@@ -247,61 +247,44 @@ export const taskRepository: ITaskRepository = {
    * niveau — elle est dans `rows`, mais son ancien parent, lui, n'y est plus.
    * L'`upsert` la détache avant que la cascade puisse l'atteindre.
    *
-   * L'`upsert` reprend `done`, `notes` et `completed_at` de l'état courant :
-   * l'éditeur ne transporte que le texte et l'indentation, et laisser Postgres
-   * appliquer ses valeurs par défaut décocherait toute la liste à chaque
-   * frappe.
+   * Deux requêtes et non quatre : ce qui était à conserver et ce qui était à
+   * effacer se lisait ici dans une liste que le service venait déjà de charger,
+   * et l'`upsert` rend les lignes écrites — il n'y a pas à les relire.
    */
-  async replaceTasks(userId, listId, rows: TaskRowInput[], accessToken) {
+  async replaceTasks(userId, listId, content, accessToken) {
     const client = forUser(accessToken);
+    const written: Task[] = [];
 
-    const { data: current, error: readError } = await client
-      .from("tasks")
-      .select(TASK_COLUMNS)
-      .eq("list_id", listId);
+    if (content.rows.length > 0) {
+      const payload = content.rows.map((row: TaskRowInput) => ({
+        id: row.id,
+        user_id: userId,
+        list_id: listId,
+        title: row.title,
+        parent_id: row.parentId,
+        position: row.position,
+        notes: row.notes,
+        done: row.done,
+        completed_at: row.completedAt,
+      }));
 
-    if (readError) throw new Error(readError.message);
-
-    const existing = new Map(
-      (current as unknown as TaskRow[]).map((row) => [row.id, row] as const),
-    );
-
-    if (rows.length > 0) {
-      const payload = rows.map((row) => {
-        const previous = existing.get(row.id);
-        return {
-          id: row.id,
-          user_id: userId,
-          list_id: listId,
-          title: row.title,
-          parent_id: row.parentId,
-          position: row.position,
-          notes: previous?.notes ?? null,
-          done: previous?.done ?? false,
-          completed_at: previous?.completed_at ?? null,
-        };
-      });
-
-      const { error } = await client.from("tasks").upsert(payload);
+      const { data, error } = await client.from("tasks").upsert(payload).select(TASK_COLUMNS);
       if (error) throw new Error(error.message);
+      written.push(...(data as unknown as TaskRow[]).map(toTask));
     }
 
-    const kept = new Set(rows.map((row) => row.id));
-    const removed = [...existing.keys()].filter((id) => !kept.has(id));
-
-    if (removed.length > 0) {
-      const { error } = await client.from("tasks").delete().eq("list_id", listId).in("id", removed);
+    if (content.removed.length > 0) {
+      const { error } = await client
+        .from("tasks")
+        .delete()
+        .eq("list_id", listId)
+        .in("id", content.removed);
 
       if (error) throw new Error(error.message);
     }
 
-    const { data, error } = await client
-      .from("tasks")
-      .select(TASK_COLUMNS)
-      .eq("list_id", listId)
-      .order("position", { ascending: true });
-
-    if (error) throw new Error(error.message);
-    return (data as unknown as TaskRow[]).map(toTask);
+    // PostgREST ne garantit pas de rendre les lignes dans l'ordre où elles lui
+    // sont envoyées, et l'ordre d'une liste est ce qui la rend lisible.
+    return written.sort((a, b) => a.position - b.position);
   },
 };

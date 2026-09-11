@@ -30,12 +30,20 @@ export type TaskListPatch = UpdateTaskList & { eventId?: string | null };
  *
  * La filiation y est déjà résolue : le service traduit la profondeur envoyée
  * par l'éditeur en `parentId`, le Repository ne fait plus qu'écrire.
+ *
+ * La complétion et les notes y figurent alors que l'éditeur ne les transporte
+ * pas : les conserver est une règle métier — cocher et écrire sont deux gestes
+ * distincts, et taper une ligne ne doit pas décocher la voisine — donc elle est
+ * tranchée par le service, à partir de la liste qu'il a déjà en main.
  */
 export type TaskRowInput = {
   id: string;
   title: string;
   parentId: string | null;
   position: number;
+  notes: string | null;
+  done: boolean;
+  completedAt: string | null;
 };
 
 /**
@@ -87,17 +95,16 @@ export interface ITaskRepository {
   updateTask(listId: string, taskId: string, patch: TaskPatch, accessToken: string): Promise<Task>;
   deleteTask(listId: string, taskId: string, accessToken: string): Promise<void>;
   /**
-   * Réécrit le contenu d'une liste en un appel.
+   * Réécrit le contenu d'une liste.
    *
-   * Les lignes absentes de `rows` disparaissent ; les autres sont écrites
-   * telles quelles. Ce que l'éditeur ne transporte pas — `done`, `notes`,
-   * l'horodatage de complétion — est conservé : cocher et écrire sont deux
-   * gestes distincts, et taper une ligne ne doit pas décocher la voisine.
+   * `rows` est écrit tel quel, `removed` disparaît. Les deux sont calculés par
+   * le service, qui tient déjà la liste : le Repository n'a donc pas à la
+   * relire pour savoir ce qu'il efface.
    */
   replaceTasks(
     userId: string,
     listId: string,
-    rows: TaskRowInput[],
+    content: { rows: TaskRowInput[]; removed: string[] },
     accessToken: string,
   ): Promise<Task[]>;
 }
