@@ -112,7 +112,6 @@ function makeProfile(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       theme: "system",
       flatBanner: false,
       timezone: "Europe/Paris",
-      speakResponses: false,
       llmModel: null,
       scope: {
         morningReminders: true,

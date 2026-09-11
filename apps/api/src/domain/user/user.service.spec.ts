@@ -19,7 +19,6 @@ function makeRecord(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       assistantColor: "#6366F1",
       theme: "system",
       timezone: "Europe/Paris",
-      speakResponses: false,
       llmModel: null,
       flatBanner: false,
       scope: {

@@ -13,7 +13,6 @@ type ProfileRow = {
   assistant_color: string;
   theme: string;
   timezone: string;
-  speak_responses: boolean;
   llm_model: string | null;
   assistant_scope: AssistantScope;
   flat_banner: boolean;
@@ -39,7 +38,6 @@ function toEntity(row: ProfileRow): ProfileRecord {
       assistantColor: row.assistant_color,
       theme: row.theme as Theme,
       timezone: row.timezone,
-      speakResponses: row.speak_responses,
       // Un modèle retiré du catalogue depuis le choix de l'utilisateur est relu
       // comme « celui du serveur », plutôt que de rendre le profil illisible.
       llmModel: toAssistantModel(row.llm_model),
@@ -50,7 +48,7 @@ function toEntity(row: ProfileRow): ProfileRecord {
 }
 
 const COLUMNS =
-  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, speak_responses, llm_model, assistant_scope, flat_banner, created_at";
+  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, created_at";
 
 export const userRepository: IUserRepository = {
   async findById(userId, accessToken) {
