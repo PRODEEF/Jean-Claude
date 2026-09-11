@@ -7,8 +7,44 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **11 septembre 2026** — un message dicté puis envoyé
-revenait se poser dans le champ suivant ; deux autres correctifs sur la dictée.
+Dernière mise à jour : **11 septembre 2026** — trois pertes de données de
+l'éditeur de todoliste, relevées à la relecture du domaine Todo ; plus tôt dans
+la journée, un message dicté puis envoyé revenait se poser dans le champ
+suivant, et deux autres correctifs sur la dictée.
+
+**Réécrire une ligne de todoliste pouvait la perdre en route.** Relevé à la
+relecture du domaine. L'éditeur envoie la liste entière et le serveur efface ce
+qui n'y figure plus : une ligne vidée pour être retapée disparaissait donc dès
+que l'enregistrement automatique tombait dans l'intervalle — 700 ms de pause
+suffisaient. En finissant de taper, l'utilisateur ne retrouvait pas sa ligne
+mais une ligne neuve, sans ses notes ni sa complétion. Une ligne déjà
+enregistrée qu'on vient de vider est désormais lue comme une ligne en cours de
+réécriture, et l'enregistrement automatique attend le caractère suivant. Seul
+l'enregistrement automatique attend : sortir du champ tranche comme avant, une
+ligne laissée vide restant bien une ligne supprimée.
+
+**Deux enregistrements d'une même todoliste pouvaient se croiser.** Même
+relecture. Rien ne sérialisait `replaceTasks` : une frappe enregistrée
+automatiquement et une sortie de champ partaient ensemble, et la seconde
+ignorait les identifiants que la première était en train d'attribuer. Le
+serveur recréait alors les lignes concernées au lieu de les modifier, en
+perdant leur complétion et leurs notes — et leur case à cocher restait inerte,
+faute d'identifiant. La mutation porte maintenant une portée par liste
+(`useReplaceTasks`), ce qui interdit deux réécritures simultanées de la même
+liste, et la reprise des identifiants se fait par clé de ligne plutôt que par
+identité du tableau : elle aboutit même quand l'utilisateur a continué d'écrire
+pendant l'aller-retour, ce que l'ancienne version abandonnait.
+
+**Une case cochée dont l'enregistrement échoue ne reste plus cochée.**
+`TaskListEditor` cochait la case localement sans rien prévoir en cas d'échec, et
+la signature qui décide de se resynchroniser sur le serveur ne comparait que le
+texte et l'indentation, jamais la complétion : rien ne venait donc corriger une
+case cochée à tort, et une tâche cochée depuis le calendrier restait affichée
+dans son état d'avant. Deux signatures distinctes désormais — ce que l'éditeur
+transporte, et ce que porte le serveur — et un retour en arrière si le serveur
+refuse. Dans `TaskRow`, où l'affichage suit le cache et ne ment donc jamais, un
+échec passe la bordure de la case en rouge : sans ce signal, rien ne
+distinguait « ça n'a pas marché » de « je n'ai pas appuyé au bon endroit ».
 
 **Enchaîner deux messages dictés reposait le premier dans le champ.** Relecture
 de la dictée, dans la foulée de celle de la lecture à voix haute. `sendDraft`
