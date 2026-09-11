@@ -1,9 +1,8 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
+import { eventsOfDay, layoutDayEvents, layoutDayLists, listsOfDay } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
-import { eventsOfDay, layoutDayEvents, layoutDayLists } from "./lib/calendar-dates";
 import { formatDayLabel, formatTime, isSameDay } from "@/shared/lib/dates";
-import { listsOfDay } from "@/shared/lib/tasks";
 
 export type TimeGridProps = {
   /** Les jours à mettre en colonnes : un seul en vue jour, sept en vue semaine. */

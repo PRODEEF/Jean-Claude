@@ -3,12 +3,12 @@ import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { Pencil, Trash2 } from "lucide-react-native";
 import type { TaskList, TaskListWithTasks } from "@jc/domain";
+import { openTaskCount } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Modal } from "@/shared/ui/modal";
 import { Text } from "@/shared/ui/text";
 import { TaskRow } from "@/features/todo/TaskRow";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
-import { openTaskCount } from "@/shared/lib/tasks";
 import { remainingLabel } from "./DayAgenda";
 
 export type TaskListDetailDialogProps = {

@@ -2,14 +2,13 @@ import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ListChecks, ShoppingBasket } from "lucide-react-native";
 import type { TaskListWithTasks } from "@jc/domain";
+import { momentsOfDay, openTaskCount } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { formatFullDay, formatTime, isSameDay } from "@/shared/lib/dates";
-import { openTaskCount } from "@/shared/lib/tasks";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { TaskRow } from "@/features/todo/TaskRow";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
-import { momentsOfDay } from "./lib/task-week";
 
 export type DueListsBoardProps = {
   /** Les jours à afficher, dans l'ordre — une semaine ou un mois selon l'appelant. */

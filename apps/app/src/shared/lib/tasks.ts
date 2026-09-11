@@ -1,75 +1,14 @@
 import type { TaskListWithTasks } from "@jc/domain";
-import { addDays, startOfDay } from "./dates";
 
 /**
- * Listes portant une échéance, tous dossiers confondus.
+ * Ce que les écrans de todolistes filtrent, cherchent et mesurent.
  *
- * L'échéance appartient à la liste et non à ses lignes : « les courses avant
- * samedi » date la liste, pas la farine. La semaine et le calendrier lisent
- * donc des listes replacées dans le temps, pas des tâches éparpillées.
+ * Ce qui place une liste dans le temps — quel jour la porte, ce qui reste à y
+ * faire, quelle liste le calendrier redessine — vit dans `@jc/domain` : ces
+ * règles décident, et les quatre plateformes doivent en donner la même
+ * réponse. Ne restent ici que le rangement par dossier, la recherche et les
+ * mesures propres au rendu.
  */
-export function datedLists(lists: TaskListWithTasks[]): TaskListWithTasks[] {
-  return lists.filter((list) => list.dueAt !== null);
-}
-
-/**
- * Ce que le calendrier montre des todolistes.
- *
- * Les listes à qui un créneau a été posé en sont exclues : leur événement les
- * représente déjà, et les garder ferait apparaître la même échéance deux fois
- * le même jour (A.3).
- */
-export function unscheduledLists(lists: TaskListWithTasks[]): TaskListWithTasks[] {
-  return datedLists(lists).filter((list) => list.eventId === null);
-}
-
-/**
- * Todolistes datées que le calendrier doit encore afficher comme listes.
- *
- * Une liste liée à un rendez-vous déjà chargé est représentée par ce
- * rendez-vous (A.3). Si le lien existe mais que l'événement n'est pas dans la
- * fenêtre — cache incomplet, rendez-vous hors période — la liste resterait
- * invisible partout : on la montre alors comme n'importe quelle liste non
- * planifiée.
- */
-export function listsWithoutVisibleEvent(
-  lists: TaskListWithTasks[],
-  eventIds: ReadonlySet<string>,
-): TaskListWithTasks[] {
-  return datedLists(lists).filter(
-    (list) => list.eventId === null || !eventIds.has(list.eventId),
-  );
-}
-
-export function listsOfDay(lists: TaskListWithTasks[], day: Date): TaskListWithTasks[] {
-  const start = startOfDay(day).getTime();
-  const end = addDays(startOfDay(day), 1).getTime();
-
-  return lists.filter((list) => {
-    const due = list.dueAt === null ? null : new Date(list.dueAt).getTime();
-    return due !== null && due >= start && due < end;
-  });
-}
-
-/**
- * Tâches restant à faire dans une liste.
- *
- * Ce qui est coché ne charge plus la journée : c'est ce décompte-là que le
- * calendrier affiche pour dire qu'un jour est chargé.
- */
-export function openTaskCount(list: TaskListWithTasks): number {
-  return list.tasks.filter((task) => !task.done).length;
-}
-
-/**
- * Ordre d'affichage d'une journée : les plus tôt d'abord.
- *
- * Comparaison de chaînes et non de dates : deux horodatages ISO du même fuseau
- * s'ordonnent déjà lexicographiquement, et l'API les rend tous en UTC.
- */
-export function byDueDate(a: TaskListWithTasks, b: TaskListWithTasks): number {
-  return (a.dueAt ?? "").localeCompare(b.dueAt ?? "");
-}
 
 /** Listes d'un même dossier. `folderId` à `null` : listes rangées nulle part. */
 export type FolderListGroup = { folderId: string | null; lists: TaskListWithTasks[] };

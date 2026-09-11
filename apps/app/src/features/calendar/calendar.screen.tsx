@@ -2,10 +2,10 @@ import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { ListPlus, Plus } from "lucide-react-native";
-import type { CalendarEvent, TaskList, TaskListWithTasks } from "@jc/domain";
+import type { CalendarEvent, CalendarRange, TaskList, TaskListWithTasks } from "@jc/domain";
+import { datedLists, listsOfDay, listsWithoutVisibleEvent } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
-import { datedLists, listsOfDay, listsWithoutVisibleEvent } from "@/shared/lib/tasks";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
@@ -22,7 +22,6 @@ import { MonthGrid } from "./MonthGrid";
 import { TimeGrid } from "./TimeGrid";
 import { YearGrid } from "./YearGrid";
 import { useCalendarEvents } from "./hooks/use-calendar-events";
-import { rangeOf } from "./lib/calendar-dates";
 import {
   addDays,
   addMonths,
@@ -39,6 +38,16 @@ import {
 
 /** Heure par défaut d'un événement créé sans viser de créneau. */
 const DEFAULT_CREATE_MINUTE = 9 * 60;
+
+/** Fenêtre à demander à l'API pour afficher `days`, bornes locales en UTC. */
+function rangeOf(days: Date[]): CalendarRange {
+  const first = days[0] ?? new Date();
+  const last = days[days.length - 1] ?? first;
+  return {
+    from: startOfDay(first).toISOString(),
+    to: addDays(startOfDay(last), 1).toISOString(),
+  };
+}
 
 /**
  * Calendrier — vues jour, semaine, mois et année (§3, Phase B), plus Todo.

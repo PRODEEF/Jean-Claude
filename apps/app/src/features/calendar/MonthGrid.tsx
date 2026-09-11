@@ -1,11 +1,10 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import { ListChecks } from "lucide-react-native";
 import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
+import { eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
-import { eventsOfDay } from "./lib/calendar-dates";
 import { formatTime, isSameDay, WEEKDAY_LABELS } from "@/shared/lib/dates";
-import { listsOfDay, openTaskCount } from "@/shared/lib/tasks";
 
 export type MonthGridProps = {
   /** Les 42 jours de la grille, lundi en tête. */

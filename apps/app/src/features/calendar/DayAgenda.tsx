@@ -1,14 +1,14 @@
 import { Pressable, View } from "react-native";
 import { ListChecks } from "lucide-react-native";
 import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
+import { byDueDate, eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { TaskRow } from "@/features/todo/TaskRow";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
-import { eventsOfDay } from "./lib/calendar-dates";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
-import { byDueDate, groupByFolder, listsOfDay, openTaskCount } from "@/shared/lib/tasks";
+import { groupByFolder } from "@/shared/lib/tasks";
 
 export type DayAgendaProps = {
   day: Date;
