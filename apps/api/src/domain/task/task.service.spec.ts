@@ -31,6 +31,7 @@ function makeList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithTasks
     title: "Jardin",
     kind: "todo",
     dueAt: null,
+    dueAllDay: null,
     eventId: null,
     conversationId: null,
     folderId: null,
@@ -51,7 +52,12 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
     createList: jest
       .fn()
       .mockImplementation((_userId, input: TaskList) => Promise.resolve(makeList(input))),
-    updateList: jest.fn().mockResolvedValue(makeList()),
+    // Renvoie la liste telle qu'elle sera en base : le service s'appuie
+    // désormais sur ce que l'écriture a réellement produit pour décider s'il
+    // doit répercuter quoi que ce soit sur le rendez-vous lié.
+    updateList: jest
+      .fn()
+      .mockImplementation((_id, patch: Partial<TaskList>) => Promise.resolve(makeList(patch))),
     deleteList: jest.fn().mockResolvedValue(undefined),
     createTask: jest
       .fn()
@@ -200,6 +206,64 @@ describe("TaskService", () => {
       );
 
       expect(created.dueAt).toBe("2026-09-12T00:00:00.000Z");
+    });
+
+    it("retient l'intention de saisie plutôt que de la relire dans l'heure", async () => {
+      const repo = makeRepository();
+
+      // Minuit heure de Paris, mais l'utilisateur a bien tapé une heure — un
+      // appareil hors d'Europe/Paris produit couramment ce cas. Redéduire le
+      // moment de l'horodatage le contredirait.
+      await makeService(repo).createList(
+        USER,
+        {
+          title: "Courses",
+          kind: "shopping",
+          dueAt: "2026-09-11T22:00:00.000Z",
+          dueAllDay: false,
+        },
+        TOKEN,
+      );
+
+      expect(repo.createList).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ dueAllDay: false }),
+        TOKEN,
+      );
+    });
+
+    it("déduit le moment de l'heure murale du profil quand l'appelant se tait", async () => {
+      const repo = makeRepository();
+
+      // 9h heure de Paris (UTC+2 en septembre) : l'assistant ne produit qu'un
+      // instant, c'est au serveur de dire s'il vise un créneau.
+      await makeService(repo).createList(
+        USER,
+        { title: "Courses", kind: "shopping", dueAt: "2026-09-12T07:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(repo.createList).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ dueAllDay: false }),
+        TOKEN,
+      );
+    });
+
+    it("tient pour la journée entière une échéance à minuit dans le fuseau du profil", async () => {
+      const repo = makeRepository();
+
+      await makeService(repo).createList(
+        USER,
+        { title: "Courses", kind: "shopping", dueAt: "2026-09-11T22:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(repo.createList).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ dueAllDay: true }),
+        TOKEN,
+      );
     });
 
     it("refuse une échéance dont le jour civil est déjà révolu", async () => {
@@ -503,6 +567,22 @@ describe("TaskService", () => {
       await makeService(repo, events).updateList(USER, LIST, { title: "Potager" }, TOKEN);
 
       expect(events.update).not.toHaveBeenCalled();
+    });
+
+    it("efface le moment avec l'échéance", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ dueAt: "2026-09-12T07:00:00.000Z" })),
+      });
+
+      // Les deux colonnes vont ensemble : une liste sans échéance n'a pas de
+      // moment, et la base refuse le couple dépareillé.
+      await makeService(repo).updateList(USER, LIST, { dueAt: null }, TOKEN);
+
+      expect(repo.updateList).toHaveBeenCalledWith(
+        LIST,
+        expect.objectContaining({ dueAt: null, dueAllDay: null }),
+        TOKEN,
+      );
     });
 
     it("refuse d'effacer l'échéance d'une liste qui représente un rendez-vous", async () => {

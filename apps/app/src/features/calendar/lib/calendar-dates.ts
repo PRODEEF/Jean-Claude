@@ -152,7 +152,7 @@ export function layoutDayLists(
   const untimed: TaskListWithTasks[] = [];
 
   const boxes = lists.flatMap((list) => {
-    if (list.dueAt === null || momentOf(list.dueAt) === "anytime") {
+    if (list.dueAt === null || momentOf(list) === "anytime") {
       untimed.push(list);
       return [];
     }
@@ -198,7 +198,7 @@ export function eventsWithListSchedule(
   return events.map((event) => {
     const list = byEvent.get(event.id);
     if (!list?.dueAt) return event;
-    if (momentOf(list.dueAt) === "anytime") return { ...event, allDay: true };
+    if (momentOf(list) === "anytime") return { ...event, allDay: true };
     return { ...event, allDay: false, startsAt: list.dueAt };
   });
 }

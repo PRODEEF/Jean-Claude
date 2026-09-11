@@ -66,14 +66,44 @@ export class TaskService {
     return this.lists.findByConversation(conversationId, accessToken);
   }
 
-  createList(
+  async createList(
     userId: string,
     input: CreateTaskList & TaskListOrigin,
     accessToken: string,
   ): Promise<TaskList> {
-    return this.assertDueNotPast(userId, input.dueAt, accessToken).then(() =>
-      this.lists.createList(userId, input, accessToken),
-    );
+    await this.assertDueNotPast(userId, input.dueAt, accessToken);
+    const due = await this.resolveDue(userId, input, accessToken);
+    return this.lists.createList(userId, { ...input, ...due }, accessToken);
+  }
+
+  /**
+   * Solidarise l'échéance et son moment avant écriture.
+   *
+   * Les deux vont ensemble : sans échéance, il n'y a pas de moment à
+   * enregistrer, et la base le vérifie. Quand l'appelant ne dit pas l'intention
+   * — l'assistant, qui ne produit qu'un instant —, elle se déduit de l'heure
+   * murale du profil : c'est la seule horloge dont le serveur dispose, et
+   * c'est celle dans laquelle l'utilisateur a parlé.
+   *
+   * Un moment envoyé sans échéance est ignoré : il n'accompagne jamais rien.
+   */
+  private async resolveDue(
+    userId: string,
+    patch: { dueAt?: string | null | undefined; dueAllDay?: boolean | undefined },
+    accessToken: string,
+  ): Promise<{ dueAt?: string | null; dueAllDay?: boolean | null }> {
+    if (patch.dueAt === undefined) return {};
+    if (patch.dueAt === null) return { dueAt: null, dueAllDay: null };
+    if (patch.dueAllDay !== undefined) return { dueAt: patch.dueAt, dueAllDay: patch.dueAllDay };
+
+    const timezone = await this.timezoneOf(userId, accessToken);
+    return { dueAt: patch.dueAt, dueAllDay: !hasWallTime(patch.dueAt, timezone) };
+  }
+
+  /** Fuseau du profil, ou celui du schéma partagé quand le profil est illisible. */
+  private async timezoneOf(userId: string, accessToken: string): Promise<string> {
+    const profile = await this.users.findById(userId, accessToken);
+    return profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
   }
 
   /**
@@ -105,34 +135,26 @@ export class TaskService {
       );
     }
 
-    const updated = await this.lists.updateList(id, patch, accessToken);
+    const due = await this.resolveDue(userId, patch, accessToken);
+    const updated = await this.lists.updateList(id, { ...patch, ...due }, accessToken);
 
-    if (patch.dueAt !== undefined && patch.dueAt !== null && existing.eventId !== null) {
-      await this.syncLinkedEvent(userId, existing.eventId, patch.dueAt, accessToken);
+    if (updated.dueAt !== null && existing.eventId !== null) {
+      await this.syncLinkedEvent(existing.eventId, updated, accessToken);
     }
 
     return updated;
   }
 
-  /**
-   * Répercute la nouvelle échéance d'une liste sur son rendez-vous lié.
-   *
-   * `allDay` est dérivé de l'heure murale du profil — minuit vaut « dans la
-   * journée », une heure précise vaut un rendez-vous à heure fixe — même
-   * convention que côté client (`momentOf`, `TaskListDialog`).
-   */
+  /** Répercute l'échéance d'une liste sur le rendez-vous qui la représente. */
   private async syncLinkedEvent(
-    userId: string,
     eventId: string,
-    dueAt: string,
+    list: TaskList,
     accessToken: string,
   ): Promise<void> {
     try {
-      const profile = await this.users.findById(userId, accessToken);
-      const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
       await this.events.update(
         eventId,
-        { startsAt: dueAt, allDay: !hasWallTime(dueAt, timezone) },
+        { startsAt: list.dueAt ?? undefined, allDay: list.dueAllDay ?? undefined },
         accessToken,
       );
     } catch (error) {
@@ -292,8 +314,7 @@ export class TaskService {
   ): Promise<void> {
     if (dueAt === null || dueAt === undefined) return;
 
-    const profile = await this.users.findById(userId, accessToken);
-    const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
+    const timezone = await this.timezoneOf(userId, accessToken);
     if (!isPastCalendarDay(dueAt, timezone)) return;
     if (currentDueAt && isSameCalendarDay(dueAt, currentDueAt, timezone)) return;
 

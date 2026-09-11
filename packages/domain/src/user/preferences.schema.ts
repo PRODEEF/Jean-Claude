@@ -159,13 +159,45 @@ export function toAssistantModel(value: unknown): AssistantModel | null {
  * Préférences du panneau de paramètres de la maquette : nom et couleur de
  * l'assistant, thème, périmètre du mode assistant.
  */
+/**
+ * Fuseau que `Intl` sait manipuler.
+ *
+ * Une valeur inconnue ferait lever chaque datation côté serveur et emporterait
+ * le tour de dialogue avec elle : on la refuse à l'écriture plutôt que de la
+ * rattraper à chaque lecture.
+ */
+export const timezoneSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(isKnownTimezone, "Fuseau horaire inconnu.");
+
+function isKnownTimezone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: value });
+    return true;
+  } catch {
+    // Fuseau inconnu, ou moteur sans `Intl` — Hermes n'embarque pas toujours
+    // le catalogue complet. Seul le premier cas est une erreur de saisie ; le
+    // second n'a simplement rien à vérifier.
+    return typeof Intl === "undefined";
+  }
+}
+
 export const userPreferencesSchema = z.object({
   /** L'assistant est renommable — « Jean-Claude » n'est que la valeur par défaut. */
   assistantName: z.string().trim().min(1).max(40).default(DEFAULT_ASSISTANT_NAME),
   assistantColor: hexColorSchema.default("#107FEA"),
   theme: themeSchema.default("system"),
   scope: assistantScopeSchema,
-  /** Fuseau IANA — indispensable au calcul des rappels du matin (A.10). */
+  /**
+   * Fuseau IANA — indispensable au calcul des rappels du matin (A.10), et à
+   * toute datation côté serveur : c'est dans cette horloge qu'il décide si une
+   * échéance est déjà passée, et qu'il rend les dates au modèle.
+   *
+   * Permissif en lecture, contrairement à `updateUserProfileSchema` : un fuseau
+   * écrit par une version antérieure ne doit pas rendre le profil illisible.
+   */
   timezone: z.string().default("Europe/Paris"),
   /**
    * Modèle choisi par l'utilisateur (§5.1). `null` — le cas au premier
@@ -218,6 +250,14 @@ export type UserProfile = z.infer<typeof userProfileSchema>;
 export const updateUserProfileSchema = z
   .object({
     displayName: z.string().trim().min(1).max(80),
+    /**
+     * Envoyé par l'appareil, pas saisi (§13.4.4 : rien à régler ici).
+     *
+     * Le serveur datait tout le monde en Europe/Paris faute de mieux ; un
+     * appareil ailleurs voyait donc ses échéances basculer de jour et ses
+     * listes « sans heure » devenir des rendez-vous nocturnes.
+     */
+    timezone: timezoneSchema,
     theme: themeSchema,
     assistantName: userPreferencesSchema.shape.assistantName,
     assistantColor: hexColorSchema,

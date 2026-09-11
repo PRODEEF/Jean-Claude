@@ -114,8 +114,8 @@ function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean 
         <Text className="flex-1 text-sm font-medium" numberOfLines={1}>
           {list.title}
         </Text>
-        {timeLabel(list.dueAt) ? (
-          <Text className="text-muted-foreground text-xs">{timeLabel(list.dueAt)}</Text>
+        {timeLabel(list) ? (
+          <Text className="text-muted-foreground text-xs">{timeLabel(list)}</Text>
         ) : null}
       </Pressable>
 
@@ -129,13 +129,13 @@ function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean 
 }
 
 /**
- * Heure de l'échéance, quand elle en porte une.
+ * Heure de l'échéance, quand elle en vise une.
  *
- * Minuit signifie « dans la journée » — c'est déjà ce que dit l'intitulé du
- * moment — et l'écrire « 0h » ferait croire à une échéance nocturne.
+ * Une échéance « dans la journée » n'en affiche pas — c'est déjà ce que dit
+ * l'intitulé du moment, et l'écrire « 0h » ferait croire à une échéance
+ * nocturne.
  */
-function timeLabel(dueAt: string | null): string | undefined {
-  if (dueAt === null) return undefined;
-  const due = new Date(dueAt);
-  return due.getHours() === 0 && due.getMinutes() === 0 ? undefined : formatTime(dueAt);
+function timeLabel(list: TaskListWithTasks): string | undefined {
+  if (list.dueAt === null || list.dueAllDay !== false) return undefined;
+  return formatTime(list.dueAt);
 }

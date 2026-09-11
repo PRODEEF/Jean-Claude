@@ -42,6 +42,7 @@ function makeTaskList(overrides: Partial<TaskList> = {}): TaskList {
     title: "Travaux jardin",
     kind: "todo",
     dueAt: "2026-09-08T00:00:00.000Z",
+    dueAllDay: true,
     eventId: "evt-1",
     conversationId: null,
     folderId: null,

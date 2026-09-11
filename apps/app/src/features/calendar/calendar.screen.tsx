@@ -174,7 +174,9 @@ export function CalendarScreen() {
           <Button
             size="sm"
             variant="outline"
-            onPress={() => setListTarget({ mode: "create", folderId: null, dueAt: dueDay() })}
+            onPress={() =>
+              setListTarget({ mode: "create", folderId: null, dueAt: dueDay(), dueAllDay: true })
+            }
             accessibilityRole="button"
             accessibilityLabel="Nouvelle liste de tâches"
           >

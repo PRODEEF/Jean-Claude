@@ -1,9 +1,9 @@
-import type { CreateTask, CreateTaskList, Task, TaskList, TaskListWithTasks } from "@jc/domain";
+import type { CreateTask, Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { forUser } from "../../core/supabase/supabase.js";
 import type {
   ITaskRepository,
-  TaskListOrigin,
+  TaskListCreate,
   TaskListPatch,
   TaskPatch,
   TaskRowInput,
@@ -15,6 +15,7 @@ type TaskListRow = {
   title: string;
   kind: string;
   due_at: string | null;
+  due_all_day: boolean | null;
   event_id: string | null;
   conversation_id: string | null;
   folder_id: string | null;
@@ -42,6 +43,7 @@ function toList(row: TaskListRow): TaskList {
     title: row.title,
     kind: row.kind as TaskList["kind"],
     dueAt: row.due_at,
+    dueAllDay: row.due_all_day,
     eventId: row.event_id,
     conversationId: row.conversation_id,
     folderId: row.folder_id,
@@ -79,7 +81,7 @@ function toListWithTasks(row: TaskListRow & { tasks: TaskRow[] }): TaskListWithT
 }
 
 const LIST_COLUMNS =
-  "id, title, kind, due_at, event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
+  "id, title, kind, due_at, due_all_day, event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
 const TASK_COLUMNS =
   "id, list_id, title, notes, done, completed_at, parent_id, position, created_at, updated_at";
 const LIST_WITH_TASKS_COLUMNS = `${LIST_COLUMNS}, tasks(${TASK_COLUMNS})`;
@@ -142,7 +144,7 @@ export const taskRepository: ITaskRepository = {
     return data ? toList(data as unknown as TaskListRow) : null;
   },
 
-  async createList(userId, input: CreateTaskList & TaskListOrigin, accessToken) {
+  async createList(userId, input: TaskListCreate, accessToken) {
     const { data, error } = await forUser(accessToken)
       .from("task_lists")
       .insert({
@@ -150,6 +152,7 @@ export const taskRepository: ITaskRepository = {
         title: input.title,
         kind: input.kind,
         due_at: input.dueAt ?? null,
+        due_all_day: input.dueAllDay ?? null,
         folder_id: input.folderId ?? null,
         conversation_id: input.conversationId ?? null,
         created_by_assistant: input.createdByAssistant ?? false,
@@ -169,6 +172,7 @@ export const taskRepository: ITaskRepository = {
     if (patch.kind !== undefined) payload["kind"] = patch.kind;
     if (patch.folderId !== undefined) payload["folder_id"] = patch.folderId;
     if (patch.dueAt !== undefined) payload["due_at"] = patch.dueAt;
+    if (patch.dueAllDay !== undefined) payload["due_all_day"] = patch.dueAllDay;
     if (patch.eventId !== undefined) payload["event_id"] = patch.eventId;
 
     const { data, error } = await forUser(accessToken)

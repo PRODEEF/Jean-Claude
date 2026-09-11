@@ -30,15 +30,20 @@ const NIGHT_FROM = 22;
 /**
  * Moment d'une échéance.
  *
- * Minuit pile vaut « dans la journée » et non « matin » : c'est l'heure que
- * porte une liste datée sans heure précise, et l'annoncer à 0h laisserait
- * croire à un rendez-vous nocturne.
+ * `dueAllDay` est lu, jamais redéduit de l'heure. La règle « minuit pile vaut
+ * dans la journée » suppose de savoir dans quelle horloge on lit cette heure :
+ * l'appareil et le serveur n'ont pas la même, et une liste datée « samedi »
+ * depuis un fuseau lointain se serait annoncée « samedi à 2h ». L'intention
+ * est désormais enregistrée à la saisie.
+ *
+ * L'heure sert encore à trancher entre matin, après-midi et soirée — et là,
+ * c'est bien l'horloge de l'appareil qui a raison : c'est celle dans laquelle
+ * l'utilisateur lit sa journée.
  */
-export function momentOf(dueAt: string): MomentKey {
-  const date = new Date(dueAt);
-  const hours = date.getHours();
+export function momentOf(list: Pick<TaskListWithTasks, "dueAt" | "dueAllDay">): MomentKey {
+  if (list.dueAt === null || list.dueAllDay !== false) return "anytime";
 
-  if (hours === 0 && date.getMinutes() === 0) return "anytime";
+  const hours = new Date(list.dueAt).getHours();
   if (hours >= NIGHT_FROM) return "night";
   if (hours >= EVENING_FROM) return "evening";
   if (hours >= AFTERNOON_FROM) return "afternoon";
@@ -58,6 +63,6 @@ export function momentsOfDay(lists: TaskListWithTasks[], day: Date): MomentGroup
 
   return MOMENTS.map((moment) => ({
     moment,
-    lists: ofDay.filter((list) => list.dueAt !== null && momentOf(list.dueAt) === moment.key),
+    lists: ofDay.filter((list) => momentOf(list) === moment.key),
   })).filter((group) => group.lists.length > 0);
 }

@@ -22,8 +22,24 @@ export type TaskPatch = UpdateTask & { completedAt?: string | null };
  *
  * `eventId` s'ajoute à ce que le client peut envoyer : le lien vers le créneau
  * de l'agenda naît d'une proposition acceptée (A.3), jamais d'un appel direct.
+ *
+ * `dueAllDay` y est élargi à `null` : le client ne sait dire que « la journée »
+ * ou « un créneau », alors que l'absence d'échéance doit aussi effacer son
+ * moment — les deux colonnes vont ensemble, et la base le vérifie.
  */
-export type TaskListPatch = UpdateTaskList & { eventId?: string | null };
+export type TaskListPatch = Omit<UpdateTaskList, "dueAllDay"> & {
+  eventId?: string | null;
+  dueAllDay?: boolean | null | undefined;
+};
+
+/**
+ * Création d'une liste telle qu'elle atteint la base.
+ *
+ * Même élargissement de `dueAllDay` que pour la modification, et pour la même
+ * raison : une liste sans échéance n'a pas de moment.
+ */
+export type TaskListCreate = Omit<CreateTaskList, "dueAllDay"> &
+  TaskListOrigin & { dueAllDay?: boolean | null | undefined };
 
 /**
  * Une ligne de l'éditeur, prête pour la base.
@@ -77,11 +93,7 @@ export interface ITaskRepository {
    * rattache, depuis `domain/calendar`.
    */
   findByEventId(eventId: string, accessToken: string): Promise<TaskList | null>;
-  createList(
-    userId: string,
-    input: CreateTaskList & TaskListOrigin,
-    accessToken: string,
-  ): Promise<TaskList>;
+  createList(userId: string, input: TaskListCreate, accessToken: string): Promise<TaskList>;
   updateList(id: string, patch: TaskListPatch, accessToken: string): Promise<TaskList>;
   deleteList(id: string, accessToken: string): Promise<void>;
   createTask(

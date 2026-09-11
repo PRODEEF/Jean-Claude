@@ -27,6 +27,8 @@ export type TaskListTarget =
       folderId: string | null;
       /** Échéance déjà connue — le jour affiché, quand on ouvre depuis le calendrier. */
       dueAt?: string | null;
+      /** Cette échéance vise-t-elle la journée ? Un jour ouvert au calendrier, oui. */
+      dueAllDay?: boolean | null;
     }
   | { mode: "edit"; list: TaskList };
 
@@ -82,12 +84,13 @@ function ListForm({
     editing ? target.list.folderId : target.folderId,
   );
   const initialDue = editing ? target.list.dueAt : (target.dueAt ?? null);
+  const initialAllDay = editing ? target.list.dueAllDay : (target.dueAllDay ?? null);
   /** `JJ/MM/AAAA`, vide quand la liste n'a pas d'échéance. */
   const [date, setDate] = useState(() =>
     initialDue === null ? "" : formatDateInput(new Date(initialDue)),
   );
   /** `HH:MM`, vide quand l'échéance ne vise pas d'heure précise. */
-  const [time, setTime] = useState(() => timeOf(initialDue));
+  const [time, setTime] = useState(() => timeOf(initialDue, initialAllDay));
   const [error, setError] = useState<string | null>(null);
   // Supprimer une liste emporte ses tâches : le second appui est ce qui
   // distingue le geste voulu du bouton frôlé.
@@ -111,8 +114,18 @@ function ListForm({
 
     const onError = (cause: Error) => setError(toMessage(cause));
 
+    // `dueAllDay` n'accompagne l'échéance que lorsqu'il y en a une : sans date,
+    // il n'y a pas de moment, et le serveur efface les deux ensemble.
+    const moment = due.allDay === null ? {} : { dueAllDay: due.allDay };
+
     if (target.mode === "edit") {
-      const patch: UpdateTaskList = { title: trimmed, kind, folderId, dueAt: due.value };
+      const patch: UpdateTaskList = {
+        title: trimmed,
+        kind,
+        folderId,
+        dueAt: due.value,
+        ...moment,
+      };
       updateList.mutate({ id: target.list.id, patch }, { onSuccess: onClose, onError });
       return;
     }
@@ -121,6 +134,7 @@ function ListForm({
       title: trimmed,
       kind,
       dueAt: due.value,
+      ...moment,
       ...(folderId ? { folderId } : {}),
     };
     createList.mutate(input, {
@@ -263,14 +277,19 @@ function ListForm({
   );
 }
 
-/** Heure de l'échéance à la saisie, vide quand elle vise minuit — donc la journée. */
-function timeOf(dueAt: string | null): string {
-  if (dueAt === null) return "";
-  const due = new Date(dueAt);
-  return due.getHours() === 0 && due.getMinutes() === 0 ? "" : formatTimeInput(due);
+/** Heure de l'échéance à la saisie, vide quand elle vise la journée entière. */
+function timeOf(dueAt: string | null, allDay: boolean | null): string {
+  if (dueAt === null || allDay !== false) return "";
+  return formatTimeInput(new Date(dueAt));
 }
 
-type DueResult = { ok: true; value: string | null } | { ok: false; message: string };
+/**
+ * `allDay` à `null` quand il n'y a pas d'échéance : le moment ne vit pas sans
+ * elle, et c'est le champ d'heure laissé vide qui vaut « dans la journée ».
+ */
+type DueResult =
+  | { ok: true; value: string | null; allDay: boolean | null }
+  | { ok: false; message: string };
 
 /**
  * Échéance saisie, ou son effacement.
@@ -281,7 +300,7 @@ type DueResult = { ok: true; value: string | null } | { ok: false; message: stri
 function parseDue(date: string, time: string, originalDueAt: string | null): DueResult {
   if (date.trim().length === 0) {
     if (time.trim().length > 0) return { ok: false, message: "Indiquez une date avant une heure." };
-    return { ok: true, value: null };
+    return { ok: true, value: null, allDay: null };
   }
 
   const day = parseDateInput(date);
@@ -299,12 +318,12 @@ function parseDue(date: string, time: string, originalDueAt: string | null): Due
     }
   }
 
-  if (time.trim().length === 0) return { ok: true, value: day.toISOString() };
+  if (time.trim().length === 0) return { ok: true, value: day.toISOString(), allDay: true };
 
   const parsed = parseTimeInput(time);
   if (!parsed) return { ok: false, message: "Heure attendue au format HH:MM." };
 
-  return { ok: true, value: withTime(day, parsed) };
+  return { ok: true, value: withTime(day, parsed), allDay: false };
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
