@@ -8,17 +8,62 @@ Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (s
 schéma prêts, comportement à écrire)
 
 Dernière mise à jour : **11 septembre 2026** — relecture complète des domaines
-Todo et Calendrier : trois pertes de données de l'éditeur de todoliste, quatre
-autres points corrigés dans la foulée ; plus tôt dans la journée, un message
-dicté puis envoyé revenait se poser dans le champ suivant, et deux autres
-correctifs sur la dictée.
+Todo et Calendrier, puis traitement de ses trois causes racines : trois pertes
+de données de l'éditeur de todoliste, quatre autres points corrigés dans la
+foulée, et le lien todoliste ↔ rendez-vous refondu. Plus tôt dans la journée,
+un message dicté puis envoyé revenait se poser dans le champ suivant, et deux
+autres correctifs sur la dictée.
 
-Le compte rendu de cette relecture désigne trois causes racines qui restent
-ouvertes, et dont ces sept correctifs ne sont que les symptômes : le lien
-todoliste ↔ rendez-vous tenu par deux patchs à sens unique, la convention
-« minuit = dans la journée » évaluée dans deux fuseaux horaires différents, et
-les règles pures logées dans `apps/app`, donc hors obligation de test. À
-arbitrer avant de continuer à traiter les symptômes un par un.
+Les **trois causes racines** que cette relecture désignait sont traitées — les
+sept correctifs ci-dessous n'en étaient que les symptômes.
+
+**Le créneau d'agenda est devenu la projection de sa todoliste (cause n°1).**
+Le lien `task_lists.event_id` était tenu par deux répercussions partielles qui
+ne se parlaient pas : la modification d'une liste ne poussait que sa date,
+celle d'un rendez-vous ne remontait que la sienne, le titre n'était jamais
+projeté, et supprimer une liste laissait son créneau orphelin dans l'agenda.
+D'où trois correctifs successifs en quatre jours, tous sur des symptômes —
+et une rustine côté application qui recomposait les rendez-vous à l'affichage,
+masquant la divergence au lieu de la corriger (en cassant au passage la hauteur
+de ceux dont elle réécrivait le début sans toucher à la fin). La règle est
+désormais posée une fois, dans `slotForList` (`packages/domain`, testée) : la
+liste est la source, le rendez-vous en est la projection, et les trois chemins
+qui posent ou déplacent un créneau s'en servent. Ce que la liste ne dit pas —
+notes, rappel — reste au rendez-vous. Effacer l'échéance libère le créneau au
+lieu d'être refusé ; supprimer la liste l'emporte ; renommer ou déplacer le
+rendez-vous renomme et déplace la liste. Une migration remet en accord les
+créneaux déjà écrits.
+
+**L'intention de l'échéance est enregistrée, plus devinée (cause n°2).** La
+convention « minuit pile = dans la journée » était redérivée à six endroits,
+dans deux horloges : le serveur date dans le fuseau du profil, l'application
+dans celui de l'appareil. Hors d'Europe/Paris, « samedi sans heure » redevenait
+« samedi à 2h » à la traversée, et le créneau posé pour cette liste naissait à
+heure fixe. `task_lists.due_all_day` retient l'intention : le formulaire la dit
+— il sait si l'utilisateur a tapé une heure —, le serveur la déduit pour les
+appelants qui ne produisent qu'un instant, l'assistant au premier chef. Le
+fuseau lui-même valait « Europe/Paris » pour tout le monde faute d'écran pour
+le régler, et il n'en faut pas (§13.4.4) : l'appareil l'envoie désormais au
+profil à l'ouverture. **Reste volontairement en place** : la carte de
+suggestion lit encore l'heure pour décider d'afficher un horaire. Elle formate
+un instant que le modèle vient de produire, avant tout enregistrement — il n'y
+a pas encore d'intention à lire, et les deux horloges concordent maintenant.
+
+**Les règles qui placent dans le temps ont rejoint `@jc/domain` (cause n°3).**
+Quel jour porte quoi, ce qui reste à faire, quelle todoliste le calendrier
+redessine, comment deux créneaux simultanés se partagent une colonne :
+ces règles décidaient depuis `apps/app`, donc hors de l'obligation de test de
+la rule 300 (« écran : non testé ») — et c'est là que se logeaient les défauts
+remontés en usage réel. Elles vivent dans `packages/domain/src/planning`, avec
+26 tests. Le placement en colonnes borne au passage la fin d'un créneau à son
+début. `features/calendar/lib/` disparaît.
+
+**Reste ouvert, par choix :** l'écriture et la suppression de `replaceTasks`
+sont toujours deux instructions (atomicité : demanderait une fonction SQL, que
+le skill `supabase-migration` écarte) et le curseur de pagination des listes ne
+départage pas deux `updated_at` identiques — cas non atteignable aujourd'hui,
+chaque insertion ayant sa propre transaction, et le corriger toucherait la
+pagination des conversations.
 
 **Réécrire une ligne de todoliste pouvait la perdre en route.** Relevé à la
 relecture du domaine. L'éditeur envoie la liste entière et le serveur efface ce
