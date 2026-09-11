@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_ASSISTANT_NAME, type UpdateUserProfile, type UserProfile } from "@jc/domain";
 import { api } from "@/shared/lib/api";
@@ -32,6 +33,45 @@ export function useUpdateProfile() {
     // applique le thème sans attendre l'aller-retour d'une invalidation.
     onSuccess: (profile: UserProfile) => queryClient.setQueryData(PROFILE_KEY, profile),
   });
+}
+
+/**
+ * Aligne le fuseau enregistré sur celui de l'appareil.
+ *
+ * Le serveur date dans le fuseau du profil : c'est là qu'il décide si une
+ * échéance est déjà passée, et c'est dans cette horloge qu'il rend les dates au
+ * modèle. Faute d'écran pour le régler — et il n'en faut pas, §13.4.4 —, il
+ * valait « Europe/Paris » pour tout le monde, et un appareil ailleurs voyait
+ * ses journées glisser d'un cran.
+ *
+ * Une seule tentative par session : un serveur qui refuse la valeur ne doit pas
+ * être rappelé à chaque rendu.
+ */
+export function useSyncDeviceTimezone(): void {
+  const { data: profile } = useProfile();
+  const updateProfile = useUpdateProfile();
+  const attempted = useRef(false);
+
+  const stored = profile?.preferences.timezone;
+
+  useEffect(() => {
+    if (stored === undefined || attempted.current) return;
+    attempted.current = true;
+
+    const device = deviceTimezone();
+    if (device === null || device === stored) return;
+
+    updateProfile.mutate({ timezone: device });
+  }, [stored, updateProfile]);
+}
+
+/** `null` quand le moteur n'expose pas `Intl` — Hermes n'en embarque pas toujours. */
+function deviceTimezone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
 }
 
 /** Passe la conversation d'accueil (§6.3, A.13). */

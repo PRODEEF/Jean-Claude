@@ -12,7 +12,7 @@ import type { Task, TaskListWithTasks } from "@jc/domain";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
 import { TASK_CHECKBOX_SIZE, TASK_INDENT, TASK_ROW_HEIGHT, titleMatchesQuery } from "@/shared/lib/tasks";
-import { useTaskActions } from "@/shared/hooks/use-task-lists";
+import { useReplaceTasks, useTaskActions } from "@/shared/hooks/use-task-lists";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -61,7 +61,8 @@ export const TaskListEditor = memo(function TaskListEditor({
   onOpenTask,
 }: TaskListEditorProps) {
   const { palette } = useTheme();
-  const { replaceTasks, updateTask } = useTaskActions();
+  const { updateTask } = useTaskActions();
+  const replaceTasks = useReplaceTasks(list.id);
 
   const [rows, setRows] = useState<Row[]>(() => seed(list));
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -78,9 +79,9 @@ export const TaskListEditor = memo(function TaskListEditor({
   const dirty = useRef(false);
   const focused = useRef(false);
   /** Dernier contenu enregistré, pour ne pas réécrire une liste inchangée. */
-  const saved = useRef(signature(list.tasks));
-  /** Dernier état du serveur déjà repris dans l'éditeur. */
-  const seeded = useRef(signature(list.tasks));
+  const saved = useRef(contentSignature(list.tasks));
+  /** Dernier état du serveur déjà repris dans l'éditeur, complétion comprise. */
+  const seeded = useRef(stateSignature(list.tasks));
 
   const makeKey = () => `local-${nextKey.current++}`;
 
@@ -97,13 +98,12 @@ export const TaskListEditor = memo(function TaskListEditor({
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
 
-      const items = current
-        .filter((row) => row.title.trim().length > 0)
-        .map((row) => ({
-          ...(row.id ? { id: row.id } : {}),
-          title: row.title.trim(),
-          depth: row.depth,
-        }));
+      const written = current.filter((row) => row.title.trim().length > 0);
+      const items = written.map((row) => ({
+        ...(row.id ? { id: row.id } : {}),
+        title: row.title.trim(),
+        depth: row.depth,
+      }));
 
       const sent = items.map((item) => `${item.title}#${item.depth}`).join("|");
       if (sent === saved.current) {
@@ -113,16 +113,13 @@ export const TaskListEditor = memo(function TaskListEditor({
 
       dirty.current = false;
       replaceTasks.mutate(
-        { listId: list.id, input: { items } },
+        { items },
         {
           onSuccess: (tasks) => {
             saved.current = sent;
-            seeded.current = sent;
+            seeded.current = stateSignature(tasks);
             setFailed(false);
-            // L'identité du tableau dit si l'utilisateur a écrit entre-temps :
-            // dans ce cas les lignes ont bougé et l'ordre rendu ne leur
-            // correspond plus.
-            setRows((now) => (now === current ? adopt(current, tasks) : now));
+            setRows((now) => adopt(now, written, tasks));
           },
           onError: () => {
             dirty.current = true;
@@ -131,7 +128,7 @@ export const TaskListEditor = memo(function TaskListEditor({
         },
       );
     },
-    [list.id, replaceTasks],
+    [replaceTasks],
   );
 
   // Les frappes sont regroupées : une sauvegarde par pause, pas une par
@@ -142,18 +139,31 @@ export const TaskListEditor = memo(function TaskListEditor({
     dirty.current = true;
 
     if (timer.current) clearTimeout(timer.current);
-    if (immediate) flush(next);
-    else timer.current = setTimeout(() => flush(next), AUTOSAVE_DELAY);
+    timer.current = null;
+
+    if (immediate) {
+      flush(next);
+      return;
+    }
+
+    // Une ligne déjà enregistrée qu'on vient de vider est en cours de
+    // réécriture, pas de suppression — celle-ci se demande par Retour arrière.
+    // L'enregistrer derrière le dos de qui tape l'effacerait du serveur avec sa
+    // complétion et ses notes, et la retaper en créerait une neuve. Seul
+    // l'enregistrement automatique attend : sortir du champ, lui, tranche.
+    if (isBeingRewritten(next)) return;
+
+    timer.current = setTimeout(() => flush(next), AUTOSAVE_DELAY);
   };
 
   // Rien n'est réécrit tant que l'utilisateur tape ou garde le curseur dans la
   // liste : le rechargement qui suit une sauvegarde lui reprendrait sa ligne
   // en cours de route.
-  const serverSignature = signature(list.tasks);
+  const serverSignature = stateSignature(list.tasks);
   useEffect(() => {
     if (dirty.current || focused.current || seeded.current === serverSignature) return;
     seeded.current = serverSignature;
-    saved.current = serverSignature;
+    saved.current = contentSignature(list.tasks);
     setRows(seed(list));
   }, [list, serverSignature]);
 
@@ -251,10 +261,19 @@ export const TaskListEditor = memo(function TaskListEditor({
     const row = rows[index];
     if (!row?.id) return;
 
-    const next = [...rows];
-    next[index] = { ...row, done: !row.done };
-    setRows(next);
-    updateTask.mutate({ listId: list.id, taskId: row.id, patch: { done: !row.done } });
+    const { key: toggled, id } = row;
+    const done = !row.done;
+    setRows((now) => withDone(now, toggled, done));
+
+    updateTask.mutate(
+      { listId: list.id, taskId: id, patch: { done } },
+      {
+        // Sans ce retour en arrière, une case cochée dont l'enregistrement
+        // échoue le reste à l'écran : le rechargement ne la corrigerait pas
+        // non plus, l'éditeur ayant déjà pris sa nouvelle valeur pour acquise.
+        onError: () => setRows((now) => withDone(now, toggled, !done)),
+      },
+    );
   };
 
   const key = (event: KeyPressEvent, index: number) => {
@@ -407,16 +426,52 @@ export const TaskListEditor = memo(function TaskListEditor({
  * Identifiants rendus par le serveur, replacés sur les lignes qui les ont
  * produits.
  *
- * L'ordre suffit à les apparier : la charge utile a été construite en
- * parcourant les lignes non vides, et le serveur les rend triées par position.
+ * L'ordre suffit à apparier ce qui est parti et ce qui revient : la charge
+ * utile a été construite en parcourant les lignes non vides, et le serveur les
+ * rend triées par position. Le report sur l'état courant, lui, se fait par clé
+ * de ligne : l'utilisateur a pu écrire pendant l'aller-retour, et une ligne
+ * laissée sans identifiant repartirait comme neuve à la sauvegarde suivante —
+ * le serveur la recréerait, en perdant sa complétion et ses notes, et sa case
+ * à cocher resterait inerte jusque-là.
  */
-function adopt(rows: Row[], tasks: Task[]): Row[] {
-  let index = 0;
-  return rows.map((row) => {
-    if (row.title.trim().length === 0) return row;
-    const task = tasks[index++];
-    return task ? { ...row, id: task.id } : row;
+function adopt(rows: Row[], written: Row[], tasks: Task[]): Row[] {
+  const assigned = new Map<string, string>();
+  written.forEach((row, index) => {
+    const task = tasks[index];
+    if (task) assigned.set(row.key, task.id);
   });
+
+  let changed = false;
+  const next = rows.map((row) => {
+    const id = assigned.get(row.key);
+    // Jamais sur une ligne vide : la ligne vierge du bas porte toujours la clé
+    // `draft`, et un réamorçage pendant l'aller-retour lui ferait adopter
+    // l'identifiant de celle qui l'a précédée — donc écraser une autre tâche à
+    // la frappe suivante.
+    if (id === undefined || row.id === id || row.title.trim().length === 0) return row;
+    changed = true;
+    return { ...row, id };
+  });
+
+  // Rendre le tableau inchangé plutôt qu'une copie : une sauvegarde qui
+  // n'attribue aucun identifiant ne doit pas redessiner les champs de saisie
+  // sous le curseur de qui est en train d'écrire.
+  return changed ? next : rows;
+}
+
+/**
+ * Une ligne déjà enregistrée est-elle momentanément vide ?
+ *
+ * C'est le signe qu'on la réécrit, pas qu'on la supprime : la suppression se
+ * demande par Retour arrière.
+ */
+function isBeingRewritten(rows: Row[]): boolean {
+  return rows.some((row) => row.id !== undefined && row.title.trim().length === 0);
+}
+
+/** Complétion d'une ligne, désignée par sa clé — l'index bouge, pas elle. */
+function withDone(rows: Row[], key: string, done: boolean): Row[] {
+  return rows.map((row) => (row.key === key ? { ...row, done } : row));
 }
 
 function RowButton({
@@ -485,9 +540,29 @@ function seed(list: TaskListWithTasks): Row[] {
   return [...rows, { key: "draft", title: "", depth: 0, done: false }];
 }
 
-/** Ce que porte la liste côté serveur, à comparer à ce que l'éditeur tient. */
-function signature(tasks: Task[]): string {
+/**
+ * Ce que l'éditeur transporte : le texte et l'indentation, rien d'autre.
+ *
+ * Même forme que la charge utile de `flush` — c'est ce qui permet de ne pas
+ * réécrire une liste inchangée.
+ */
+function contentSignature(tasks: Task[]): string {
   return tasks.map((task) => `${task.title}#${task.parentId === null ? 0 : 1}`).join("|");
+}
+
+/**
+ * Ce que porte la liste côté serveur, complétion comprise.
+ *
+ * La complétion entre ici mais pas dans `contentSignature` : l'éditeur ne
+ * l'envoie pas, mais elle change bien ce qu'il doit afficher. Sans elle, une
+ * tâche cochée ailleurs — depuis le calendrier, ou sur un autre appareil —
+ * restait affichée dans son état d'avant, l'éditeur ne voyant aucune raison de
+ * se resynchroniser.
+ */
+function stateSignature(tasks: Task[]): string {
+  return tasks
+    .map((task) => `${task.title}#${task.parentId === null ? 0 : 1}#${task.done ? 1 : 0}`)
+    .join("|");
 }
 
 function placeholder(kind: TaskListWithTasks["kind"]): string {

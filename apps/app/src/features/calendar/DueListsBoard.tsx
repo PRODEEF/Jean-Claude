@@ -2,14 +2,13 @@ import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ListChecks, ShoppingBasket } from "lucide-react-native";
 import type { TaskListWithTasks } from "@jc/domain";
+import { momentsOfDay, openTaskCount } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { formatFullDay, formatTime, isSameDay } from "@/shared/lib/dates";
-import { openTaskCount } from "@/shared/lib/tasks";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { TaskRow } from "@/features/todo/TaskRow";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
-import { momentsOfDay } from "./lib/task-week";
 
 export type DueListsBoardProps = {
   /** Les jours à afficher, dans l'ordre — une semaine ou un mois selon l'appelant. */
@@ -114,8 +113,8 @@ function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean 
         <Text className="flex-1 text-sm font-medium" numberOfLines={1}>
           {list.title}
         </Text>
-        {timeLabel(list.dueAt) ? (
-          <Text className="text-muted-foreground text-xs">{timeLabel(list.dueAt)}</Text>
+        {timeLabel(list) ? (
+          <Text className="text-muted-foreground text-xs">{timeLabel(list)}</Text>
         ) : null}
       </Pressable>
 
@@ -129,13 +128,13 @@ function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean 
 }
 
 /**
- * Heure de l'échéance, quand elle en porte une.
+ * Heure de l'échéance, quand elle en vise une.
  *
- * Minuit signifie « dans la journée » — c'est déjà ce que dit l'intitulé du
- * moment — et l'écrire « 0h » ferait croire à une échéance nocturne.
+ * Une échéance « dans la journée » n'en affiche pas — c'est déjà ce que dit
+ * l'intitulé du moment, et l'écrire « 0h » ferait croire à une échéance
+ * nocturne.
  */
-function timeLabel(dueAt: string | null): string | undefined {
-  if (dueAt === null) return undefined;
-  const due = new Date(dueAt);
-  return due.getHours() === 0 && due.getMinutes() === 0 ? undefined : formatTime(dueAt);
+function timeLabel(list: TaskListWithTasks): string | undefined {
+  if (list.dueAt === null || list.dueAllDay !== false) return undefined;
+  return formatTime(list.dueAt);
 }

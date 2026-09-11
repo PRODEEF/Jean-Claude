@@ -70,6 +70,7 @@ export const userRepository: IUserRepository = {
     if (patch.theme !== undefined) payload["theme"] = patch.theme;
     if (patch.assistantName !== undefined) payload["assistant_name"] = patch.assistantName;
     if (patch.assistantColor !== undefined) payload["assistant_color"] = patch.assistantColor;
+    if (patch.timezone !== undefined) payload["timezone"] = patch.timezone;
     // `null` est ici une valeur choisie — « rends la main au serveur » — et non
     // l'absence de réglage : elle doit donc bien être écrite.
     if (patch.llmModel !== undefined) payload["llm_model"] = patch.llmModel;

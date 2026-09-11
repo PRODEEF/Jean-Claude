@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type {
   CreateTask,
   CreateTaskList,
@@ -49,15 +49,21 @@ async function fetchAllLists(): Promise<TaskListWithTasks[]> {
   return lists;
 }
 
+/**
+ * Recharge ce que les todolistes alimentent.
+ *
+ * Le calendrier est invalidé avec elles : une échéance posée, déplacée ou
+ * retirée synchronise l'événement lié côté serveur (A.3), et sans cela
+ * l'agenda reste sur l'ancienne date jusqu'au rechargement de la page.
+ */
+function refreshTaskLists(queryClient: QueryClient): void {
+  queryClient.invalidateQueries({ queryKey: ["taskLists"] });
+  queryClient.invalidateQueries({ queryKey: ["calendar"] });
+}
+
 export function useTaskActions() {
   const queryClient = useQueryClient();
-  const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["taskLists"] });
-    // Une échéance posée, déplacée ou retirée synchronise l'événement lié
-    // côté serveur (A.3) : sans invalider le calendrier, l'agenda reste sur
-    // l'ancienne date jusqu'au rechargement de la page.
-    queryClient.invalidateQueries({ queryKey: ["calendar"] });
-  };
+  const refresh = () => refreshTaskLists(queryClient);
 
   const createList = useMutation({
     mutationFn: (input: CreateTaskList) => api.tasks.createList(input),
@@ -93,17 +99,28 @@ export function useTaskActions() {
     onSuccess: refresh,
   });
 
-  /**
-   * Réécriture du contenu d'une liste depuis l'éditeur.
-   *
-   * Le rechargement n'a lieu qu'au succès : l'éditeur tient déjà l'état
-   * affiché, et rafraîchir à chaque frappe lui reprendrait sa ligne en cours.
-   */
-  const replaceTasks = useMutation({
-    mutationFn: (variables: { listId: string; input: ReplaceTasks }) =>
-      api.tasks.replaceTasks(variables.listId, variables.input),
-    onSuccess: refresh,
-  });
+  return { createList, updateList, removeList, addTask, updateTask, removeTask };
+}
 
-  return { createList, updateList, removeList, addTask, updateTask, removeTask, replaceTasks };
+/**
+ * Réécriture du contenu d'une liste depuis l'éditeur.
+ *
+ * Le rechargement n'a lieu qu'au succès : l'éditeur tient déjà l'état affiché,
+ * et rafraîchir à chaque frappe lui reprendrait sa ligne en cours.
+ *
+ * Une portée par liste, et non une mutation partagée : deux réécritures de la
+ * même liste ne partent alors jamais ensemble. Sans cela, un enregistrement
+ * automatique et une sortie de champ pouvaient se croiser — la seconde ignorait
+ * les identifiants que la première était en train d'attribuer, et le serveur
+ * recréait les lignes concernées au lieu de les modifier, emportant leur
+ * complétion et leurs notes.
+ */
+export function useReplaceTasks(listId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    scope: { id: `taskList-${listId}` },
+    mutationFn: (input: ReplaceTasks) => api.tasks.replaceTasks(listId, input),
+    onSuccess: () => refreshTaskLists(queryClient),
+  });
 }

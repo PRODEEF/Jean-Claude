@@ -12,7 +12,7 @@ import type {
   UpdateTaskList,
   UserPreferences,
 } from "@jc/domain";
-import { userPreferencesSchema } from "@jc/domain";
+import { slotForList, userPreferencesSchema } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { logger } from "../../core/logger.js";
 import { hasWallTime, isPastCalendarDay, isSameCalendarDay } from "../../core/timezone.js";
@@ -66,23 +66,54 @@ export class TaskService {
     return this.lists.findByConversation(conversationId, accessToken);
   }
 
-  createList(
+  async createList(
     userId: string,
     input: CreateTaskList & TaskListOrigin,
     accessToken: string,
   ): Promise<TaskList> {
-    return this.assertDueNotPast(userId, input.dueAt, accessToken).then(() =>
-      this.lists.createList(userId, input, accessToken),
-    );
+    await this.assertDueNotPast(userId, input.dueAt, accessToken);
+    const due = await this.resolveDue(userId, input, accessToken);
+    return this.lists.createList(userId, { ...input, ...due }, accessToken);
   }
 
   /**
-   * Modifie une liste, en répercutant l'échéance sur le rendez-vous qu'elle
-   * représente déjà, quand elle en porte un (A.3).
+   * Solidarise l'échéance et son moment avant écriture.
    *
-   * Sens inverse de `CalendarService.syncLinkedTaskList` : sans lui, la fiche
-   * du rendez-vous et l'échéance de la liste divergent en silence dès qu'on
-   * modifie l'une des deux indépendamment de l'autre.
+   * Les deux vont ensemble : sans échéance, il n'y a pas de moment à
+   * enregistrer, et la base le vérifie. Quand l'appelant ne dit pas l'intention
+   * — l'assistant, qui ne produit qu'un instant —, elle se déduit de l'heure
+   * murale du profil : c'est la seule horloge dont le serveur dispose, et
+   * c'est celle dans laquelle l'utilisateur a parlé.
+   *
+   * Un moment envoyé sans échéance est ignoré : il n'accompagne jamais rien.
+   */
+  private async resolveDue(
+    userId: string,
+    patch: { dueAt?: string | null | undefined; dueAllDay?: boolean | undefined },
+    accessToken: string,
+  ): Promise<{ dueAt?: string | null; dueAllDay?: boolean | null }> {
+    if (patch.dueAt === undefined) return {};
+    if (patch.dueAt === null) return { dueAt: null, dueAllDay: null };
+    if (patch.dueAllDay !== undefined) return { dueAt: patch.dueAt, dueAllDay: patch.dueAllDay };
+
+    const timezone = await this.timezoneOf(userId, accessToken);
+    return { dueAt: patch.dueAt, dueAllDay: !hasWallTime(patch.dueAt, timezone) };
+  }
+
+  /** Fuseau du profil, ou celui du schéma partagé quand le profil est illisible. */
+  private async timezoneOf(userId: string, accessToken: string): Promise<string> {
+    const profile = await this.users.findById(userId, accessToken);
+    return profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
+  }
+
+  /**
+   * Modifie une liste, puis reprojette le créneau qui la représente (A.3).
+   *
+   * La liste est la source, le créneau en est la projection : le titre autant
+   * que la date y sont repoussés. Renommer une liste laissait jusqu'ici
+   * l'agenda annoncer l'ancien nom, et lui retirer son échéance était refusé
+   * faute de savoir quoi faire du créneau — il est maintenant supprimé avec
+   * elle, ce qu'une liste sans date appelle naturellement.
    */
   async updateList(
     userId: string,
@@ -93,62 +124,60 @@ export class TaskService {
     const existing = await this.requireList(id, accessToken);
     await this.assertDueNotPast(userId, patch.dueAt, accessToken, existing.dueAt);
 
-    // Un rendez-vous n'a pas de date nulle (`startsAt` n'est pas optionnel) :
-    // effacer l'échéance d'une liste qui en représente un ne peut donc pas se
-    // répercuter sur lui. Sans ce refus, la liste perdait son échéance pendant
-    // que la fiche du rendez-vous gardait la sienne — la divergence silencieuse
-    // que cette méthode existe justement pour éviter.
-    if (patch.dueAt === null && existing.eventId !== null) {
-      throw httpError(
-        400,
-        "Cette liste représente un rendez-vous : modifiez ou supprimez le rendez-vous pour changer son échéance.",
-      );
-    }
+    const due = await this.resolveDue(userId, patch, accessToken);
+    const updated = await this.lists.updateList(id, { ...patch, ...due }, accessToken);
 
-    const updated = await this.lists.updateList(id, patch, accessToken);
-
-    if (patch.dueAt !== undefined && patch.dueAt !== null && existing.eventId !== null) {
-      await this.syncLinkedEvent(userId, existing.eventId, patch.dueAt, accessToken);
+    if (existing.eventId !== null) {
+      await this.projectSlot(existing.eventId, updated, accessToken);
     }
 
     return updated;
   }
 
   /**
-   * Répercute la nouvelle échéance d'une liste sur son rendez-vous lié.
+   * Reprojette la liste sur le créneau de l'agenda qui la représente.
    *
-   * `allDay` est dérivé de l'heure murale du profil — minuit vaut « dans la
-   * journée », une heure précise vaut un rendez-vous à heure fixe — même
-   * convention que côté client (`momentOf`, `TaskListDialog`).
+   * Silencieux en cas d'échec : le rendez-vous a pu disparaître entre-temps,
+   * et la liste garde alors ce qu'on vient d'en écrire — c'est leur seule
+   * synchronisation qui manque, pas la modification demandée.
    */
-  private async syncLinkedEvent(
-    userId: string,
-    eventId: string,
-    dueAt: string,
-    accessToken: string,
-  ): Promise<void> {
+  private async projectSlot(eventId: string, list: TaskList, accessToken: string): Promise<void> {
+    const slot = slotForList(list);
+
     try {
-      const profile = await this.users.findById(userId, accessToken);
-      const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
-      await this.events.update(
-        eventId,
-        { startsAt: dueAt, allDay: !hasWallTime(dueAt, timezone) },
-        accessToken,
-      );
+      if (slot === null) await this.events.delete(eventId, accessToken);
+      else await this.events.update(eventId, slot, accessToken);
     } catch (error) {
-      // Le rendez-vous a pu disparaître entre-temps : la liste garde sa
-      // nouvelle échéance, seule leur synchronisation échoue.
       logger.warn(
         SCOPE,
-        "Synchronisation du rendez-vous lié impossible :",
+        "Projection du créneau lié impossible :",
         error instanceof Error ? error.message : error,
       );
     }
   }
 
+  /**
+   * Supprime une liste, et le créneau qu'elle occupait dans l'agenda.
+   *
+   * La clé étrangère ne joue que dans l'autre sens — supprimer le rendez-vous
+   * détache la liste : sans ce geste, l'agenda gardait un créneau dont plus
+   * rien ne disait ce qu'il y avait à y faire.
+   */
   async deleteList(id: string, accessToken: string): Promise<void> {
-    await this.requireList(id, accessToken);
+    const existing = await this.requireList(id, accessToken);
     await this.lists.deleteList(id, accessToken);
+
+    if (existing.eventId === null) return;
+
+    try {
+      await this.events.delete(existing.eventId, accessToken);
+    } catch (error) {
+      logger.warn(
+        SCOPE,
+        "Suppression du créneau lié impossible :",
+        error instanceof Error ? error.message : error,
+      );
+    }
   }
 
   /**
@@ -215,6 +244,10 @@ export class TaskService {
    *
    * Les identifiants des lignes nouvelles sont posés ici et non par Postgres :
    * une sous-tâche doit pouvoir désigner un parent créé dans la même passe.
+   *
+   * L'éditeur ne transporte que le texte et l'indentation : la complétion et
+   * les notes sont reprises de la liste déjà chargée ici. Cocher et écrire sont
+   * deux gestes distincts, et taper une ligne ne doit pas décocher la voisine.
    */
   async replaceTasks(
     userId: string,
@@ -223,22 +256,35 @@ export class TaskService {
     accessToken: string,
   ): Promise<Task[]> {
     const list = await this.requireList(listId, accessToken);
-    const known = new Set(list.tasks.map((task) => task.id));
+    const known = new Map(list.tasks.map((task) => [task.id, task] as const));
 
     const rows: TaskRowInput[] = [];
     let parentId: string | null = null;
 
     input.items.forEach((item, position) => {
       // Un identifiant venu d'une autre liste rattacherait une tâche étrangère
-      // à celle-ci : il est traité comme une ligne nouvelle.
-      const id = item.id && known.has(item.id) ? item.id : randomUUID();
+      // à celle-ci : il est traité comme une ligne nouvelle, donc sans rien à
+      // reprendre.
+      const previous = item.id === undefined ? undefined : known.get(item.id);
       const nested = item.depth > 0 && parentId !== null;
+      const id = previous?.id ?? randomUUID();
 
-      rows.push({ id, title: item.title, parentId: nested ? parentId : null, position });
+      rows.push({
+        id,
+        title: item.title,
+        parentId: nested ? parentId : null,
+        position,
+        notes: previous?.notes ?? null,
+        done: previous?.done ?? false,
+        completedAt: previous?.completedAt ?? null,
+      });
       if (!nested) parentId = id;
     });
 
-    return this.lists.replaceTasks(userId, listId, rows, accessToken);
+    const kept = new Set(rows.map((row) => row.id));
+    const removed = list.tasks.map((task) => task.id).filter((id) => !kept.has(id));
+
+    return this.lists.replaceTasks(userId, listId, { rows, removed }, accessToken);
   }
 
   async deleteTask(listId: string, taskId: string, accessToken: string): Promise<void> {
@@ -275,8 +321,7 @@ export class TaskService {
   ): Promise<void> {
     if (dueAt === null || dueAt === undefined) return;
 
-    const profile = await this.users.findById(userId, accessToken);
-    const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
+    const timezone = await this.timezoneOf(userId, accessToken);
     if (!isPastCalendarDay(dueAt, timezone)) return;
     if (currentDueAt && isSameCalendarDay(dueAt, currentDueAt, timezone)) return;
 

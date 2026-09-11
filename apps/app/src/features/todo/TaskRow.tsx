@@ -23,6 +23,11 @@ export type TaskRowProps = {
  * font Things 3, Todoist et TickTick (§4.2), où cocher est l'action la plus
  * répétée de la journée. Décocher rétablit l'état précédent, il n'y a donc
  * rien à protéger.
+ *
+ * L'affichage suit le cache et non un état local : un enregistrement qui échoue
+ * laisse donc la case dans son état d'avant, ce qui est exact mais muet. La
+ * bordure passe alors en rouge — sans elle, rien ne distingue « ça n'a pas
+ * marché » de « je n'ai pas appuyé au bon endroit ».
  */
 export function TaskRow({ task, meta }: TaskRowProps) {
   const { updateTask } = useTaskActions();
@@ -47,9 +52,10 @@ export function TaskRow({ task, meta }: TaskRowProps) {
       >
         <View
           style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
-          className={`items-center justify-center rounded border ${
-            task.done ? "border-primary bg-primary" : "border-border"
-          }`}
+          className={`items-center justify-center rounded border ${checkboxBorder(
+            task.done,
+            updateTask.isError,
+          )}`}
         >
           {task.done ? <Icon as={Check} size={11} className="text-primary-foreground" /> : null}
         </View>
@@ -74,4 +80,10 @@ export function TaskRow({ task, meta }: TaskRowProps) {
       </Pressable>
     </View>
   );
+}
+
+/** Bordure de la case : cochée, en échec, ou au repos. */
+function checkboxBorder(done: boolean, failed: boolean): string {
+  if (failed) return "border-destructive";
+  return done ? "border-primary bg-primary" : "border-border";
 }
