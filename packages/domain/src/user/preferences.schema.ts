@@ -167,8 +167,6 @@ export const userPreferencesSchema = z.object({
   scope: assistantScopeSchema,
   /** Fuseau IANA — indispensable au calcul des rappels du matin (A.10). */
   timezone: z.string().default("Europe/Paris"),
-  /** Lecture à voix haute des réponses par défaut (§12.3). */
-  speakResponses: z.boolean().default(false),
   /**
    * Modèle choisi par l'utilisateur (§5.1). `null` — le cas au premier
    * démarrage — laisse répondre celui que le serveur a retenu, ce qui permet
@@ -212,8 +210,7 @@ export type UserProfile = z.infer<typeof userProfileSchema>;
  *
  * Volontairement plus étroit que `userPreferencesSchema` : accepter des champs
  * que le serveur ignorerait ferait croire au client qu'ils ont été enregistrés.
- * `timezone` et `speakResponses` en restent dehors tant qu'aucun écran ne les
- * pilote.
+ * `timezone` en reste dehors tant qu'aucun écran ne le pilote.
  *
  * `memory` et `onboardingCompletedAt` n'y entreront jamais : ils sont écrits
  * par le serveur au terme de la conversation d'accueil (§6.3), pas saisis.
