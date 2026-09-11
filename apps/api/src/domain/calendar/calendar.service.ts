@@ -68,18 +68,18 @@ export class CalendarService {
     const updated = await this.events.update(id, patch, accessToken);
 
     // La liste ne le sait pas tant qu'on ne le lui dit pas : sans ce geste,
-    // la fiche du rendez-vous et l'échéance de la todoliste qu'il représente
-    // divergent en silence dès qu'on déplace l'un des deux depuis l'agenda.
-    if (patch.startsAt !== undefined) {
-      await this.syncLinkedTaskList(id, updated.startsAt, accessToken);
+    // la fiche du rendez-vous et la todoliste qu'il représente divergent en
+    // silence dès qu'on déplace ou renomme l'un des deux depuis l'agenda.
+    if (patch.startsAt !== undefined || patch.allDay !== undefined || patch.title !== undefined) {
+      await this.syncLinkedTaskList(id, updated, accessToken);
     }
 
     return updated;
   }
 
   /**
-   * Répercute la date d'un rendez-vous sur l'échéance de la todoliste qui
-   * s'y rattache, quand il en existe une (A.3).
+   * Répercute sur la todoliste rattachée ce que le rendez-vous vient de dire
+   * d'elle (A.3) : son intitulé, sa date, et si celle-ci vise la journée.
    *
    * Sans effet pour l'immense majorité des événements, qui ne représentent
    * aucune liste — la lecture reste donc silencieuse plutôt que de faire
@@ -87,15 +87,26 @@ export class CalendarService {
    */
   private async syncLinkedTaskList(
     eventId: string,
-    startsAt: string,
+    event: CalendarEvent,
     accessToken: string,
   ): Promise<void> {
     const list = await this.taskLists.findByEventId(eventId, accessToken);
     if (!list) return;
 
-    await this.taskLists.updateList(list.id, { dueAt: startsAt }, accessToken);
+    await this.taskLists.updateList(
+      list.id,
+      { title: event.title, dueAt: event.startsAt, dueAllDay: event.allDay },
+      accessToken,
+    );
   }
 
+  /**
+   * Supprime un rendez-vous.
+   *
+   * La todoliste qu'il représentait, le cas échéant, garde son échéance : la
+   * clé étrangère se contente de la détacher. Libérer le créneau n'annule pas
+   * ce qu'il restait à faire ce jour-là.
+   */
   async delete(id: string, accessToken: string): Promise<void> {
     const existing = await this.events.findById(id, accessToken);
     if (!existing) throw httpError(404, "Événement introuvable.");

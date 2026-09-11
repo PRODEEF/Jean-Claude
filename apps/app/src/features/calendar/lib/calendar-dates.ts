@@ -177,28 +177,3 @@ export function layoutDayLists(
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
-
-/**
- * Réécrit un rendez-vous lié à une todoliste selon l'heure réelle de celle-ci.
- *
- * Le créneau a parfois été posé « journée entière » alors que la liste porte
- * déjà une heure — fuseau, ancienne version, édition depuis Mes listes. Sans
- * ce raccord, le calendrier jour affiche « journée » pour une liste « à 10h ».
- */
-export function eventsWithListSchedule(
-  events: CalendarEvent[],
-  lists: TaskListWithTasks[],
-): CalendarEvent[] {
-  const byEvent = new Map(
-    lists
-      .filter((list) => list.eventId !== null && list.dueAt !== null)
-      .map((list) => [list.eventId as string, list]),
-  );
-
-  return events.map((event) => {
-    const list = byEvent.get(event.id);
-    if (!list?.dueAt) return event;
-    if (momentOf(list) === "anytime") return { ...event, allDay: true };
-    return { ...event, allDay: false, startsAt: list.dueAt };
-  });
-}

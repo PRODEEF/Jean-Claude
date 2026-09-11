@@ -22,7 +22,7 @@ import { MonthGrid } from "./MonthGrid";
 import { TimeGrid } from "./TimeGrid";
 import { YearGrid } from "./YearGrid";
 import { useCalendarEvents } from "./hooks/use-calendar-events";
-import { rangeOf, eventsWithListSchedule } from "./lib/calendar-dates";
+import { rangeOf } from "./lib/calendar-dates";
 import {
   addDays,
   addMonths,
@@ -71,12 +71,11 @@ export function CalendarScreen() {
   const days = useMemo(() => visibleDays(view, anchor), [view, anchor]);
   const range = useMemo(() => rangeOf(days), [days]);
   const { data, isPending, isError } = useCalendarEvents(range);
-  const rawEvents = data ?? [];
   const { data: allLists } = useTaskLists();
-  const events = useMemo(
-    () => eventsWithListSchedule(rawEvents, allLists ?? []),
-    [rawEvents, allLists],
-  );
+  // Rendus tels que le serveur les donne : le créneau d'une todoliste y est
+  // désormais la projection de celle-ci (`slotForList`), et n'a plus à être
+  // recomposé à l'affichage à partir de la liste qu'il représente.
+  const events = useMemo(() => data ?? [], [data]);
 
   // Les todolistes échues se lisent dans le calendrier au même titre que les
   // rendez-vous : une journée chargée de todos est une journée chargée, et

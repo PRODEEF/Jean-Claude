@@ -44,7 +44,7 @@ function makeList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithTasks
 }
 
 function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskRepository {
-  return {
+  const repository: ITaskRepository = {
     findAll: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
     findById: jest.fn().mockResolvedValue(makeList()),
     findByConversation: jest.fn().mockResolvedValue([]),
@@ -52,12 +52,7 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
     createList: jest
       .fn()
       .mockImplementation((_userId, input: TaskList) => Promise.resolve(makeList(input))),
-    // Renvoie la liste telle qu'elle sera en base : le service s'appuie
-    // désormais sur ce que l'écriture a réellement produit pour décider s'il
-    // doit répercuter quoi que ce soit sur le rendez-vous lié.
-    updateList: jest
-      .fn()
-      .mockImplementation((_id, patch: Partial<TaskList>) => Promise.resolve(makeList(patch))),
+    updateList: jest.fn(),
     deleteList: jest.fn().mockResolvedValue(undefined),
     createTask: jest
       .fn()
@@ -73,6 +68,20 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
       ),
     ...overrides,
   };
+
+  // L'écriture rend la liste **entière** telle qu'elle sera en base — le patch
+  // posé sur l'existante, pas sur une liste vierge. Le service s'appuie sur ce
+  // qu'elle contient pour reprojeter le créneau lié : une double qui n'en
+  // renverrait que le patch lui ferait croire à une liste sans échéance, et
+  // donc supprimer un créneau que rien ne menaçait.
+  if (!overrides.updateList) {
+    repository.updateList = jest.fn().mockImplementation(async (id: string, patch: object) => {
+      const current = await repository.findById(id, TOKEN);
+      return makeList({ ...(current ?? {}), ...patch });
+    });
+  }
+
+  return repository;
 }
 
 function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
@@ -532,7 +541,12 @@ describe("TaskService", () => {
 
       expect(events.update).toHaveBeenCalledWith(
         EVENT,
-        { startsAt: "2026-09-12T07:00:00.000Z", allDay: false },
+        {
+          title: "Jardin",
+          startsAt: "2026-09-12T07:00:00.000Z",
+          endsAt: "2026-09-12T08:00:00.000Z",
+          allDay: false,
+        },
         TOKEN,
       );
     });
@@ -553,7 +567,12 @@ describe("TaskService", () => {
 
       expect(events.update).toHaveBeenCalledWith(
         EVENT,
-        { startsAt: "2026-09-11T22:00:00.000Z", allDay: true },
+        {
+          title: "Jardin",
+          startsAt: "2026-09-11T22:00:00.000Z",
+          endsAt: null,
+          allDay: true,
+        },
         TOKEN,
       );
     });
@@ -585,16 +604,38 @@ describe("TaskService", () => {
       );
     });
 
-    it("refuse d'effacer l'échéance d'une liste qui représente un rendez-vous", async () => {
+    it("reprojette le nouveau titre sur le créneau déjà posé", async () => {
       const repo = makeRepository({
-        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+        findById: jest.fn().mockResolvedValue(
+          makeList({ eventId: EVENT, dueAt: "2026-09-12T07:00:00.000Z", dueAllDay: false }),
+        ),
       });
       const events = makeCalendarRepository();
 
-      await expect(
-        makeService(repo, events).updateList(USER, LIST, { dueAt: null }, TOKEN),
-      ).rejects.toMatchObject({ status: 400 });
-      expect(repo.updateList).not.toHaveBeenCalled();
+      // Le créneau porte le nom de la liste : renommer celle-ci laissait
+      // jusqu'ici l'agenda annoncer l'ancien.
+      await makeService(repo, events).updateList(USER, LIST, { title: "Potager" }, TOKEN);
+
+      expect(events.update).toHaveBeenCalledWith(
+        EVENT,
+        expect.objectContaining({ title: "Potager" }),
+        TOKEN,
+      );
+    });
+
+    it("libère le créneau quand on efface l'échéance de la liste", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({ eventId: EVENT, dueAt: "2026-09-12T07:00:00.000Z", dueAllDay: false }),
+        ),
+      });
+      const events = makeCalendarRepository();
+
+      await makeService(repo, events).updateList(USER, LIST, { dueAt: null }, TOKEN);
+
+      // Une liste sans date n'a rien à bloquer dans l'agenda. Ce geste était
+      // refusé faute de savoir quoi faire du créneau.
+      expect(events.delete).toHaveBeenCalledWith(EVENT, TOKEN);
       expect(events.update).not.toHaveBeenCalled();
     });
 
@@ -616,6 +657,52 @@ describe("TaskService", () => {
 
       expect(updated).toBeDefined();
       jest.restoreAllMocks();
+    });
+  });
+
+  describe("deleteList", () => {
+    it("libère le créneau que la liste occupait dans l'agenda", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+      });
+      const events = makeCalendarRepository();
+
+      await makeService(repo, events).deleteList(LIST, TOKEN);
+
+      // La clé étrangère ne joue que dans l'autre sens : sans ce geste,
+      // l'agenda gardait un rendez-vous dont plus rien ne disait le contenu.
+      expect(repo.deleteList).toHaveBeenCalledWith(LIST, TOKEN);
+      expect(events.delete).toHaveBeenCalledWith(EVENT, TOKEN);
+    });
+
+    it("ne touche à aucun rendez-vous quand la liste n'en occupait pas", async () => {
+      const repo = makeRepository();
+      const events = makeCalendarRepository();
+
+      await makeService(repo, events).deleteList(LIST, TOKEN);
+
+      expect(events.delete).not.toHaveBeenCalled();
+    });
+
+    it("supprime quand même la liste si son créneau a disparu entre-temps", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ eventId: EVENT })),
+      });
+      const events = makeCalendarRepository({
+        delete: jest.fn().mockRejectedValue(new Error("introuvable")),
+      });
+
+      await expect(makeService(repo, events).deleteList(LIST, TOKEN)).resolves.toBeUndefined();
+      expect(repo.deleteList).toHaveBeenCalled();
+    });
+
+    it("refuse de supprimer une liste introuvable", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
+
+      await expect(makeService(repo).deleteList(LIST, TOKEN)).rejects.toMatchObject({
+        status: 404,
+      });
+      expect(repo.deleteList).not.toHaveBeenCalled();
     });
   });
 

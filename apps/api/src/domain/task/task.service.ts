@@ -12,7 +12,7 @@ import type {
   UpdateTaskList,
   UserPreferences,
 } from "@jc/domain";
-import { userPreferencesSchema } from "@jc/domain";
+import { slotForList, userPreferencesSchema } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { logger } from "../../core/logger.js";
 import { hasWallTime, isPastCalendarDay, isSameCalendarDay } from "../../core/timezone.js";
@@ -107,12 +107,13 @@ export class TaskService {
   }
 
   /**
-   * Modifie une liste, en répercutant l'échéance sur le rendez-vous qu'elle
-   * représente déjà, quand elle en porte un (A.3).
+   * Modifie une liste, puis reprojette le créneau qui la représente (A.3).
    *
-   * Sens inverse de `CalendarService.syncLinkedTaskList` : sans lui, la fiche
-   * du rendez-vous et l'échéance de la liste divergent en silence dès qu'on
-   * modifie l'une des deux indépendamment de l'autre.
+   * La liste est la source, le créneau en est la projection : le titre autant
+   * que la date y sont repoussés. Renommer une liste laissait jusqu'ici
+   * l'agenda annoncer l'ancien nom, et lui retirer son échéance était refusé
+   * faute de savoir quoi faire du créneau — il est maintenant supprimé avec
+   * elle, ce qu'une liste sans date appelle naturellement.
    */
   async updateList(
     userId: string,
@@ -123,54 +124,60 @@ export class TaskService {
     const existing = await this.requireList(id, accessToken);
     await this.assertDueNotPast(userId, patch.dueAt, accessToken, existing.dueAt);
 
-    // Un rendez-vous n'a pas de date nulle (`startsAt` n'est pas optionnel) :
-    // effacer l'échéance d'une liste qui en représente un ne peut donc pas se
-    // répercuter sur lui. Sans ce refus, la liste perdait son échéance pendant
-    // que la fiche du rendez-vous gardait la sienne — la divergence silencieuse
-    // que cette méthode existe justement pour éviter.
-    if (patch.dueAt === null && existing.eventId !== null) {
-      throw httpError(
-        400,
-        "Cette liste représente un rendez-vous : modifiez ou supprimez le rendez-vous pour changer son échéance.",
-      );
-    }
-
     const due = await this.resolveDue(userId, patch, accessToken);
     const updated = await this.lists.updateList(id, { ...patch, ...due }, accessToken);
 
-    if (updated.dueAt !== null && existing.eventId !== null) {
-      await this.syncLinkedEvent(existing.eventId, updated, accessToken);
+    if (existing.eventId !== null) {
+      await this.projectSlot(existing.eventId, updated, accessToken);
     }
 
     return updated;
   }
 
-  /** Répercute l'échéance d'une liste sur le rendez-vous qui la représente. */
-  private async syncLinkedEvent(
-    eventId: string,
-    list: TaskList,
-    accessToken: string,
-  ): Promise<void> {
+  /**
+   * Reprojette la liste sur le créneau de l'agenda qui la représente.
+   *
+   * Silencieux en cas d'échec : le rendez-vous a pu disparaître entre-temps,
+   * et la liste garde alors ce qu'on vient d'en écrire — c'est leur seule
+   * synchronisation qui manque, pas la modification demandée.
+   */
+  private async projectSlot(eventId: string, list: TaskList, accessToken: string): Promise<void> {
+    const slot = slotForList(list);
+
     try {
-      await this.events.update(
-        eventId,
-        { startsAt: list.dueAt ?? undefined, allDay: list.dueAllDay ?? undefined },
-        accessToken,
-      );
+      if (slot === null) await this.events.delete(eventId, accessToken);
+      else await this.events.update(eventId, slot, accessToken);
     } catch (error) {
-      // Le rendez-vous a pu disparaître entre-temps : la liste garde sa
-      // nouvelle échéance, seule leur synchronisation échoue.
       logger.warn(
         SCOPE,
-        "Synchronisation du rendez-vous lié impossible :",
+        "Projection du créneau lié impossible :",
         error instanceof Error ? error.message : error,
       );
     }
   }
 
+  /**
+   * Supprime une liste, et le créneau qu'elle occupait dans l'agenda.
+   *
+   * La clé étrangère ne joue que dans l'autre sens — supprimer le rendez-vous
+   * détache la liste : sans ce geste, l'agenda gardait un créneau dont plus
+   * rien ne disait ce qu'il y avait à y faire.
+   */
   async deleteList(id: string, accessToken: string): Promise<void> {
-    await this.requireList(id, accessToken);
+    const existing = await this.requireList(id, accessToken);
     await this.lists.deleteList(id, accessToken);
+
+    if (existing.eventId === null) return;
+
+    try {
+      await this.events.delete(existing.eventId, accessToken);
+    } catch (error) {
+      logger.warn(
+        SCOPE,
+        "Suppression du créneau lié impossible :",
+        error instanceof Error ? error.message : error,
+      );
+    }
   }
 
   /**
