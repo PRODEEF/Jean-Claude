@@ -3,9 +3,9 @@ import * as Speech from "expo-speech";
 import { markdownToSpeech } from "@/shared/lib/markdown";
 
 /**
- * Meilleure voix française disponible sur l'appareil, résolue une seule fois
- * et partagée entre tous les appels : `getAvailableVoicesAsync` interroge le
- * système, et la liste ne change pas en cours de session.
+ * Meilleure voix française disponible sur l'appareil, résolue une fois que le
+ * système a répondu puis partagée entre tous les appels : la liste des voix ne
+ * change pas en cours de session.
  *
  * Une voix « Enhanced » — quand le système en propose une, surtout sur iOS —
  * sonne nettement moins robotique que la voix « Default » prise sans
@@ -13,22 +13,56 @@ import { markdownToSpeech } from "@/shared/lib/markdown";
  */
 let frenchVoice: Promise<string | null> | null = null;
 
+/**
+ * Consigne un échec de synthèse.
+ *
+ * Aucun de ces échecs ne vaut d'interrompre l'utilisateur par un message : il
+ * n'a rien demandé d'autre que d'écouter une réponse, et la lecture s'arrête
+ * d'elle-même. Ils ne doivent pas pour autant disparaître sans trace.
+ */
+function warnSpeechFailure(context: string, error: unknown): void {
+  console.warn(`${context} :`, error instanceof Error ? error.message : "raison inconnue");
+}
+
+/** Coupe la lecture en cours. */
+function stopSpeech(): void {
+  Speech.stop().catch((error: unknown) =>
+    warnSpeechFailure("Arrêt de la lecture impossible", error),
+  );
+}
+
 function bestFrenchVoice(): Promise<string | null> {
-  if (!frenchVoice) {
-    frenchVoice = Speech.getAvailableVoicesAsync()
-      .then((voices) => {
-        const french = voices.filter((voice) => voice.language.toLowerCase().startsWith("fr"));
-        if (french.length === 0) return null;
+  if (frenchVoice) return frenchVoice;
 
-        const score = (voice: Speech.Voice) =>
-          (voice.language.toLowerCase() === "fr-fr" ? 2 : 0) +
-          (voice.quality === Speech.VoiceQuality.Enhanced ? 1 : 0);
+  const resolving = Speech.getAvailableVoicesAsync()
+    .then((voices) => {
+      // Sur web, `speechSynthesis.getVoices()` rend une liste vide tant que le
+      // navigateur n'a pas fini de charger ses voix — un état transitoire, pas
+      // une réponse. La retenir condamnerait toute la session à la voix par
+      // défaut du navigateur, souvent anglaise ; on laisse donc le prochain
+      // appel réinterroger le système.
+      if (voices.length === 0) {
+        frenchVoice = null;
+        return null;
+      }
 
-        return [...french].sort((a, b) => score(b) - score(a))[0]?.identifier ?? null;
-      })
-      .catch(() => null);
-  }
-  return frenchVoice;
+      const french = voices.filter((voice) => voice.language.toLowerCase().startsWith("fr"));
+      if (french.length === 0) return null;
+
+      const score = (voice: Speech.Voice) =>
+        (voice.language.toLowerCase() === "fr-fr" ? 2 : 0) +
+        (voice.quality === Speech.VoiceQuality.Enhanced ? 1 : 0);
+
+      return [...french].sort((a, b) => score(b) - score(a))[0]?.identifier ?? null;
+    })
+    .catch((error: unknown) => {
+      warnSpeechFailure("Voix du système illisibles", error);
+      frenchVoice = null;
+      return null;
+    });
+
+  frenchVoice = resolving;
+  return resolving;
 }
 
 /**
@@ -48,19 +82,18 @@ export function useSpeech() {
     // Le fil peut être démonté en cours de lecture (changement de
     // conversation, navigation) : la voix continuerait sinon seule.
     return () => {
-      Speech.stop().catch(() => {});
+      stopSpeech();
     };
   }, []);
 
   const toggle = useCallback((messageId: string, content: string) => {
     if (speakingIdRef.current === messageId) {
       // Peut couper une lecture qui n'a pas encore démarré : `bestFrenchVoice`
-      // ne résout de façon asynchrone qu'au tout premier appel de la session,
-      // et un stop dans cette fenêtre ne doit pas laisser la lecture partir
-      // malgré tout une fois la voix connue.
+      // résout de façon asynchrone, et un stop dans cette fenêtre ne doit pas
+      // laisser la lecture partir malgré tout une fois la voix connue.
       speakingIdRef.current = null;
       setSpeakingId(null);
-      Speech.stop().catch(() => {});
+      stopSpeech();
       return;
     }
 
@@ -73,7 +106,7 @@ export function useSpeech() {
       setSpeakingId(null);
     };
 
-    Speech.stop().catch(() => {});
+    stopSpeech();
     speakingIdRef.current = messageId;
     setSpeakingId(messageId);
 
@@ -86,7 +119,10 @@ export function useSpeech() {
         voice: voice ?? undefined,
         onDone: () => finish(messageId),
         onStopped: () => finish(messageId),
-        onError: () => finish(messageId),
+        onError: (error) => {
+          warnSpeechFailure("Lecture impossible", error);
+          finish(messageId);
+        },
       });
     });
   }, []);

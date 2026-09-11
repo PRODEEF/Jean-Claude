@@ -299,7 +299,6 @@ function makePreferences(
     theme: "system",
     flatBanner: false,
     timezone: "Europe/Paris",
-    speakResponses: false,
     llmModel: null,
     ...overrides,
     scope: {

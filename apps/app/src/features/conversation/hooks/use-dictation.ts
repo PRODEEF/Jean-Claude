@@ -1,12 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 
-/** Message affiché à l'utilisateur pour toute panne qui n'est pas un refus de permission. */
-const GENERIC_UNAVAILABLE = "La dictée n'est pas disponible sur ce navigateur.";
+/**
+ * Message affiché à l'utilisateur pour toute panne qui n'est pas un refus de
+ * permission.
+ *
+ * Formulé selon la plateforme : l'autorisation se donne dans le navigateur sur
+ * le web, dans les réglages du système sur iOS et Android. Parler de
+ * « navigateur » à quelqu'un sur son téléphone l'enverrait chercher un écran
+ * qui n'existe pas.
+ */
+const GENERIC_UNAVAILABLE =
+  Platform.OS === "web"
+    ? "La dictée n'est pas disponible sur ce navigateur."
+    : "La dictée n'est pas disponible sur cet appareil.";
 
 /** Message affiché quand le micro est explicitement refusé, plutôt qu'indisponible. */
 const PERMISSION_DENIED =
-  "Autorisez le microphone pour ce site dans les réglages de votre navigateur.";
+  Platform.OS === "web"
+    ? "Autorisez le microphone pour ce site dans les réglages de votre navigateur."
+    : "Autorisez le microphone dans les réglages de votre appareil.";
 
 /**
  * Dictée d'un message (§12.3, A.12).
@@ -47,34 +61,39 @@ export function useDictation(onTranscript: (text: string) => void) {
   useSpeechRecognitionEvent("end", () => setListening(false));
 
   useSpeechRecognitionEvent("error", (event) => {
+    setListening(false);
+    // Ni l'un ni l'autre n'est une panne à signaler : un silence n'empêche pas
+    // de réessayer de parler, et `aborted` ne vient que de nos propres
+    // `abort()` — clôture de la session à l'envoi, ou démontage du champ. Le
+    // premier survient à chaque message envoyé : le journaliser reviendrait à
+    // signaler une panne à chaque fois qu'une dictée aboutit.
+    if (event.error === "no-speech" || event.error === "aborted") return;
     // `event.error` porte le code (ex. "not-allowed", "network") ;
     // `event.message`, lui, reste vide sur la plupart des navigateurs — le
     // logger sans le code ne dit jamais pourquoi.
     console.warn("Dictée impossible :", event.error, event.message);
-    setListening(false);
-    // Ni l'un ni l'autre n'est une panne à signaler : un silence n'empêche
-    // pas de réessayer de parler, et `aborted` ne vient que de notre propre
-    // `abort()` au démontage, où plus personne n'affiche quoi que ce soit.
-    if (event.error === "no-speech" || event.error === "aborted") return;
     setError(event.error === "not-allowed" ? PERMISSION_DENIED : GENERIC_UNAVAILABLE);
   });
 
   const start = useCallback((currentText: string) => {
     setError(null);
     committed.current = currentText;
-    setListening(true);
     ExpoSpeechRecognitionModule.requestPermissionsAsync()
       .then((permission) => {
         if (!permission.granted) {
-          setListening(false);
           setError(PERMISSION_DENIED);
           return;
         }
+        // Pas plus tôt : à la première dictée, la permission passe par une
+        // boîte de dialogue du système, et le bouton se serait annoncé en
+        // écoute — pulsation et libellé « Arrêter la dictée » — pendant tout
+        // le temps où l'utilisateur la lit, sans que rien soit enregistré.
+        setListening(true);
         // Sans `continuous`, le reconnaisseur s'arrête de lui-même à la
         // première pause de parole détectée : le bouton semblait se
         // désactiver tout seul après une phrase, avant même que
-        // l'utilisateur ait fini de dicter. Il ne s'arrête maintenant que
-        // sur `stop()` — le geste explicite de l'utilisateur.
+        // l'utilisateur ait fini de dicter. Il ne s'arrête maintenant que sur
+        // un geste — `stop()` sur le bouton, `cancel()` à l'envoi du message.
         ExpoSpeechRecognitionModule.start({
           lang: "fr-FR",
           interimResults: true,
@@ -90,6 +109,20 @@ export function useDictation(onTranscript: (text: string) => void) {
 
   const stop = useCallback(() => ExpoSpeechRecognitionModule.stop(), []);
 
+  /**
+   * Clôt la session sans en attendre le moindre résultat, le brouillon qu'elle
+   * alimentait étant parti.
+   *
+   * `abort` et non `stop` : `stop` réclame un dernier résultat définitif, qui
+   * arriverait une fois le champ vidé et y reposerait le message déjà envoyé.
+   * Remettre `committed` à zéro ne suffirait donc pas.
+   */
+  const cancel = useCallback(() => {
+    committed.current = "";
+    setListening(false);
+    ExpoSpeechRecognitionModule.abort();
+  }, []);
+
   useEffect(() => {
     // Le champ peut disparaître en pleine dictée (changement de conversation,
     // navigation) : `abort`, pas `stop` — plus personne n'écoutera le
@@ -98,7 +131,7 @@ export function useDictation(onTranscript: (text: string) => void) {
     return () => ExpoSpeechRecognitionModule.abort();
   }, []);
 
-  return { listening, error, start, stop };
+  return { listening, error, start, stop, cancel };
 }
 
 /**
