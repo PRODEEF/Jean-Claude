@@ -58,6 +58,21 @@ remontés en usage réel. Elles vivent dans `packages/domain/src/planning`, avec
 26 tests. Le placement en colonnes borne au passage la fin d'un créneau à son
 début. `features/calendar/lib/` disparaît.
 
+**Les quatre migrations ont été rejouées** sur un Postgres 16 vierge — les 27
+dans l'ordre — puis sur une base ensemencée, qui est le chemin réel : le
+rattrapage de `due_all_day` suit bien le fuseau de chaque profil (minuit à
+Montréal reste « dans la journée », 9h à Paris reste un créneau), le
+réalignement corrige titre, horaire et fin d'un créneau divergent, la
+contrainte de solidarité refuse un couple dépareillé, et la nouvelle policy
+refuse le dossier d'autrui tout en acceptant le sien, sur les deux tables.
+Elles ne sont pas appliquées : **elles doivent l'être avant le déploiement du
+code**, qui lit `due_all_day` et échouerait sur toute lecture de todoliste.
+
+Au passage, une incertitude levée : le garde-fou `tasks_depth_guard` ne voit
+pas les états intermédiaires d'un `upsert` multi-lignes. Échanger une tâche et
+sa sous-tâche en une passe — ce que `replaceTasks` peut produire — passe donc
+sans erreur, et le garde-fou continue de refuser un vrai 3ᵉ niveau.
+
 **Reste ouvert, par choix :** l'écriture et la suppression de `replaceTasks`
 sont toujours deux instructions (atomicité : demanderait une fonction SQL, que
 le skill `supabase-migration` écarte) et le curseur de pagination des listes ne
