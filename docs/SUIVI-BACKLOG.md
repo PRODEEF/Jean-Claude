@@ -73,6 +73,17 @@ pas les états intermédiaires d'un `upsert` multi-lignes. Échanger une tâche 
 sa sous-tâche en une passe — ce que `replaceTasks` peut produire — passe donc
 sans erreur, et le garde-fou continue de refuser un vrai 3ᵉ niveau.
 
+**Le parcours a été joué de bout en bout**, sur une stack Supabase locale
+complète (GoTrue, PostgREST, Postgres 17), API et web lancés, navigateur piloté
+et réglé sur `America/Montreal` pendant que le profil naissait sur
+`Europe/Paris` — le décalage exact que la cause n°2 devait corriger. Dix
+vérifications, toutes passantes : le profil prend le fuseau de l'appareil ;
+une échéance saisie sans heure s'enregistre « dans la journée » et tombe bien
+à minuit heure de Montréal ; la carte n'affiche aucun horaire ; un créneau
+volontairement désaccordé reprend le titre, la date et le caractère « journée
+entière » de sa liste dès que celle-ci est renommée ; supprimer la liste
+emporte le créneau, sans orphelin.
+
 **Reste ouvert, par choix :** l'écriture et la suppression de `replaceTasks`
 sont toujours deux instructions (atomicité : demanderait une fonction SQL, que
 le skill `supabase-migration` écarte) et le curseur de pagination des listes ne
