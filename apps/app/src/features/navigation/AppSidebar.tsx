@@ -634,7 +634,6 @@ function FolderGroup({
   // Un dossier vide s'ouvre sur la seule mention « Vide » : le déplier par
   // défaut allongerait la barre sans rien apprendre.
   const [open, setOpen] = useState(!isEmpty);
-  const [hovered, setHovered] = useState(false);
   const dragRef = useFolderDragSource(group.folder.id);
   const { ref: dropRef, isOver } = useFolderDropTarget({
     onConversation: (conversationId) => onDropConversation(group.folder, conversationId),
@@ -687,8 +686,6 @@ function FolderGroup({
             <Button
               variant="ghost"
               className="flex-1 justify-start gap-2 px-2"
-              onHoverIn={() => setHovered(true)}
-              onHoverOut={() => setHovered(false)}
               // L'appui long est l'équivalent tactile du clic droit : sans lui,
               // renommer un dossier serait impossible sur téléphone.
               onLongPress={(event) =>
@@ -701,18 +698,19 @@ function FolderGroup({
               }
               {...contextMenuProps((x, y) => onMenu({ folder: group.folder, depth, x, y }))}
             >
-              {/* Le chevron prend la place de l'icône de dossier au survol, il ne
-                s'ajoute pas à côté : deux glyphes pour une même rangée volaient
-                de la largeur au nom, déjà tronqué dès le 3e niveau. C'est le
-                geste de Notion et d'Apple Notes.
-                Sans souris, `onHoverIn` ne se déclenche jamais : l'icône reste
-                celle du dossier, et l'état plié se lit au contenu affiché
-                dessous. */}
-              <Icon
-                as={hovered ? (open ? ChevronDown : ChevronRight) : FolderIcon}
-                size={16}
-                className="text-muted-foreground"
-              />
+              {/* Chevron permanent, devant l'icône de dossier. Il ne
+                s'affichait qu'au survol, à sa place : au doigt, où rien ne
+                survole, on ne voyait jamais qu'un dossier se déplie, et à la
+                souris il fallait le chercher. Signalé en usage réel. La largeur
+                prise au nom est le prix de ce repère toujours visible. */}
+              <View className="flex-row items-center gap-1">
+                <Icon
+                  as={open || drafting ? ChevronDown : ChevronRight}
+                  size={14}
+                  className="text-muted-foreground"
+                />
+                <Icon as={FolderIcon} size={16} className="text-muted-foreground" />
+              </View>
               <Text className={rowLabel(active)} numberOfLines={1}>
                 {group.folder.name}
               </Text>
