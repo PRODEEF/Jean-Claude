@@ -194,7 +194,11 @@ les réponses en liste, ou une section « Outils appelés » décrivant
 « Recherche remorque all road »). Le filtre existant ne regardait que le début
 du flux. La réponse est désormais coupée à la première ligne qui s'ouvre sur le
 nom d'un outil, en flux comme à l'enregistrement, et un bloc `<ask_question>`
-redevient une question à réponses proposées.
+redevient une question à réponses proposées. Complété le même jour : ministral
+écrivait `*ask_question*` en italique, suivi de la question et d'une liste
+numérotée (la réponse sur les impôts), forme que le filtre ne reconnaissait
+pas. Il reconnaît désormais le nom nu, en italique ou en gras, et la liste
+numérotée redevient elle aussi une question à réponses proposées.
 
 **Une réponse semblait écrite par l'utilisateur.** Seules les réponses d'un
 `ask_question` étaient enregistrées ; le texte entier du message tenait lieu de
