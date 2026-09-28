@@ -17,6 +17,7 @@ import {
   type AssignFoldersPayload,
   type CreateTaskListsPayload,
   type FeedbackPlatform,
+  type ResolveSuggestion,
   type Suggestion,
   type TaskListKind,
 } from "@jc/domain";
@@ -26,6 +27,7 @@ import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { SpinningCog, useElapsedSeconds } from "./ThinkingIndicator";
 
 /** Ce qu'accepter transmet en plus de l'action, selon la nature de la proposition. */
 export type SuggestionAcceptInput = {
@@ -52,8 +54,11 @@ export type SuggestionCardProps = {
   suggestion: Suggestion;
   onAccept: (input?: SuggestionAcceptInput) => void;
   onDismiss: () => void;
-  /** Une réponse est en cours d'envoi : les deux gestes sont neutralisés. */
-  isPending: boolean;
+  /**
+   * Geste en cours d'envoi sur cette carte, `null` sinon : les deux gestes sont
+   * neutralisés tant qu'il n'a pas abouti.
+   */
+  pendingAction: ResolveSuggestion["action"] | null;
 };
 
 /**
@@ -67,9 +72,11 @@ export function SuggestionCard({
   suggestion,
   onAccept,
   onDismiss,
-  isPending,
+  pendingAction,
 }: SuggestionCardProps) {
   const { palette } = useTheme();
+  const isPending = pendingAction !== null;
+  const accepting = pendingAction === "accept";
   const preview = useSuggestionPreview(suggestion);
   const editableTaskLists = suggestion.kind === "create_task_list";
   const isBugReport = suggestion.kind === "report_bug";
@@ -170,14 +177,24 @@ export function SuggestionCard({
           disabled={isPending || emptied}
           accessibilityRole="button"
           accessibilityLabel={preview.acceptLabel}
+          accessibilityState={{ busy: accepting }}
           style={[
             styles.action,
-            { backgroundColor: palette.accent, opacity: isPending || emptied ? 0.4 : 1 },
+            {
+              backgroundColor: palette.accent,
+              // Pleinement opaque pendant l'acceptation : c'est lui qui porte
+              // la roue, grisé on ne la verrait plus tourner.
+              opacity: (isPending && !accepting) || emptied ? 0.4 : 1,
+            },
           ]}
         >
-          <Text style={[styles.actionLabel, { color: palette.accentText }]}>
-            {preview.acceptLabel}
-          </Text>
+          {accepting ? (
+            <AcceptingLabel color={palette.accentText} />
+          ) : (
+            <Text style={[styles.actionLabel, { color: palette.accentText }]}>
+              {preview.acceptLabel}
+            </Text>
+          )}
         </Pressable>
 
         <Pressable
@@ -194,6 +211,27 @@ export function SuggestionCard({
           <Text style={[styles.actionLabel, { color: palette.textMuted }]}>Ignorer</Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+/**
+ * Contenu du bouton d'acceptation le temps que le serveur crée ce qui a été
+ * accepté, puis que le fil le relise.
+ *
+ * La carte se contentait de griser : rien ne distinguait une création lente
+ * d'un clic perdu (retour de Yann, sur la création de dossiers). Même roue et
+ * même compteur que l'attente d'une réponse.
+ */
+function AcceptingLabel({ color }: { color: string }) {
+  const seconds = useElapsedSeconds();
+
+  return (
+    <View style={styles.accepting}>
+      <SpinningCog size={14} color={color} />
+      <Text style={[styles.actionLabel, { color }]}>
+        En cours…{seconds > 0 ? ` ${seconds} s` : ""}
+      </Text>
     </View>
   );
 }
@@ -891,5 +929,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   secondary: { borderWidth: 1 },
+  accepting: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   actionLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
 });

@@ -340,7 +340,10 @@ export function ConversationThread({
           // Rendu `null` quand il n'y a rien à montrer : un pied vide compterait
           // malgré tout dans l'espacement de la liste.
           ListFooterComponent={
-            streamingText === null && pending.length === 0 && pendingUserText === null ? null : (
+            streamingText === null &&
+            pending.length === 0 &&
+            pendingUserText === null &&
+            !send.isPending ? null : (
               <View style={styles.footer} onLayout={scrollToEndSoon}>
                 {/* Le message tel qu'il vient d'être tapé, en attendant que le
                     serveur renvoie sa version enregistrée. Même apparence que
@@ -359,18 +362,11 @@ export function ConversationThread({
                   </View>
                 )}
 
-                {streamingText === null ? null : (
+                {streamingText ? (
                   <View style={[styles.bubble, styles.plain]}>
-                    {/* Tant qu'aucun jeton n'est arrivé, le compteur dit que la
-                        demande est partie et depuis combien de temps ; ensuite
-                        le texte parle de lui-même. */}
-                    {streamingText.length === 0 ? (
-                      <ThinkingIndicator />
-                    ) : (
-                      <Markdown>{streamingText}</Markdown>
-                    )}
+                    <Markdown>{streamingText}</Markdown>
                   </View>
-                )}
+                ) : null}
 
                 {/* L'assistant propose, il n'exécute pas : les dossiers ne sont
                     créés que si l'utilisateur touche « Créer » (§12.1). */}
@@ -378,7 +374,11 @@ export function ConversationThread({
                   <SuggestionCard
                     key={suggestion.id}
                     suggestion={suggestion}
-                    isPending={resolve.isPending && resolve.variables?.id === suggestion.id}
+                    pendingAction={
+                      resolve.isPending && resolve.variables?.id === suggestion.id
+                        ? resolve.variables.action
+                        : null
+                    }
                     onAccept={(input) =>
                       resolve.mutate({
                         id: suggestion.id,
@@ -389,6 +389,14 @@ export function ConversationThread({
                     onDismiss={() => resolve.mutate({ id: suggestion.id, action: "dismiss" })}
                   />
                 ))}
+
+                {/* Tout le tour, et pas seulement jusqu'au premier jeton : après
+                    le texte, le serveur prépare encore la proposition et le fil
+                    la relit — un temps mort signalé par Yann. Sous les cartes,
+                    pour que celle qui arrive en fin de tour se pose au-dessus
+                    de la roue au lieu de la pousser. Même emplacement d'un bout
+                    à l'autre du tour : le compteur n'est jamais remis à zéro. */}
+                {send.isPending ? <ThinkingIndicator /> : null}
               </View>
             )
           }
