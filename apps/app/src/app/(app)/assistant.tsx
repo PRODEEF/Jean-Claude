@@ -12,6 +12,16 @@ import { useAssistantName, useCompleteOnboarding, useProfile } from "@/shared/ho
 import { useTheme } from "@/shared/providers/theme-provider";
 
 /**
+ * Les quatre sujets du canal, tels que le serveur les borne (A.10), en mots
+ * de tous les jours. Un testeur n'avait pas compris, sans explication orale,
+ * ce qui le séparait d'une nouvelle conversation.
+ */
+const CHANNEL_INTRO =
+  "Ce fil reste ouvert en permanence pour vos rappels, le rangement de vos dossiers, " +
+  "l'organisation de vos projets et le signalement d'un problème avec l'application. " +
+  "Pour tout autre sujet, ouvrez une nouvelle conversation.";
+
+/**
  * Canal permanent Jean-Claude (A.10).
  *
  * Même fil et même bandeau de tête que les conversations classiques — c'est la
@@ -81,7 +91,7 @@ export default function AssistantScreen() {
       scrolls={false}
     >
       {channel.data ? (
-        <ConversationThread conversationId={channel.data.id} />
+        <ConversationThread conversationId={channel.data.id} intro={CHANNEL_INTRO} />
       ) : (
         <View style={styles.centered}>
           {channel.error ? (
