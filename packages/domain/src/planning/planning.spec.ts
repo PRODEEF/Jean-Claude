@@ -292,6 +292,53 @@ describe("layoutDayEvents", () => {
   });
 });
 
+/**
+ * Ces cas supposent le fuseau Europe/Paris, fixé pour tout le paquet par
+ * `jest.global-setup.js` : une journée UTC n'a jamais 23 ni 25 heures.
+ */
+describe("placement un jour de changement d'heure", () => {
+  it("place sur la ligne de 10h un rendez-vous de 10h le jour du passage à l'heure d'hiver", () => {
+    const [box] = layoutDayEvents(
+      [makeEvent({ startsAt: localIso(2026, 10, 25, 10), endsAt: localIso(2026, 10, 25, 11) })],
+      new Date(2026, 9, 25),
+    );
+
+    expect(box).toMatchObject({ startMinute: 600, endMinute: 660 });
+  });
+
+  it("place sur la ligne de 10h un rendez-vous de 10h le jour du passage à l'heure d'été", () => {
+    const [box] = layoutDayEvents(
+      [makeEvent({ startsAt: localIso(2026, 3, 29, 10), endsAt: localIso(2026, 3, 29, 11) })],
+      new Date(2026, 2, 29),
+    );
+
+    expect(box).toMatchObject({ startMinute: 600, endMinute: 660 });
+  });
+
+  it("garde dans la grille un rendez-vous de fin de soirée le jour de 25 heures", () => {
+    const [box] = layoutDayEvents(
+      [
+        makeEvent({
+          startsAt: localIso(2026, 10, 25, 23),
+          endsAt: localIso(2026, 10, 25, 23, 45),
+        }),
+      ],
+      new Date(2026, 9, 25),
+    );
+
+    expect(box).toMatchObject({ startMinute: 1380, endMinute: 1425 });
+  });
+
+  it("place une todoliste à heure précise sur la ligne de son heure", () => {
+    const { timed } = layoutDayLists(
+      [makeList({ dueAt: localIso(2026, 10, 25, 14), dueAllDay: false })],
+      new Date(2026, 9, 25),
+    );
+
+    expect(timed[0]).toMatchObject({ startMinute: 840, endMinute: 900 });
+  });
+});
+
 describe("layoutDayLists", () => {
   it("place dans la grille la liste qui vise un créneau", () => {
     const { timed, untimed } = layoutDayLists(

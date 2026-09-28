@@ -275,10 +275,24 @@ function layoutBoxes<T>(boxes: TimeBox<T>[]): PositionedBox<T>[] {
   return positioned;
 }
 
+/**
+ * Minute de `instant` sur l'horloge murale de `day`, bornée à la journée.
+ *
+ * Lue sur l'horloge (`getHours`) et non comptée depuis minuit : un jour de
+ * changement d'heure dure 23 ou 25 heures, et le compte écoulé plaçait alors
+ * un rendez-vous de 10h sur la ligne de 11h — ou de 9h au printemps — tandis
+ * que son libellé annonçait bien 10h.
+ */
+function minuteInDay(instant: number, day: Date): number {
+  if (instant <= startOfDay(day).getTime()) return 0;
+  if (instant >= addDays(startOfDay(day), 1).getTime()) return MINUTES_PER_DAY;
+
+  const wall = new Date(instant);
+  return wall.getHours() * 60 + wall.getMinutes();
+}
+
 /** Place les événements horaires d'une journée en colonnes. */
 export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedEvent[] {
-  const dayStart = startOfDay(day).getTime();
-
   const boxes = events
     .filter((event) => !event.allDay)
     .map((event) => {
@@ -286,14 +300,14 @@ export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedE
       const end = event.endsAt
         ? new Date(event.endsAt).getTime()
         : start + IMPLICIT_DURATION_MINUTES * 60_000;
-      const startMinute = clamp(Math.round((start - dayStart) / 60_000), 0, MINUTES_PER_DAY);
+      const startMinute = minuteInDay(start, day);
       return {
         ref: event,
         startMinute,
         // Jamais avant son début : une fin antérieure — donnée incohérente,
         // événement à cheval sur la veille — donnerait une hauteur négative et
         // des colonnes calculées sur un intervalle à l'envers.
-        endMinute: clamp(Math.round((end - dayStart) / 60_000), startMinute, MINUTES_PER_DAY),
+        endMinute: Math.max(minuteInDay(end, day), startMinute),
       };
     });
 
@@ -309,7 +323,6 @@ export function layoutDayLists(
   lists: TaskListWithTasks[],
   day: Date,
 ): { timed: PositionedList[]; untimed: TaskListWithTasks[] } {
-  const dayStart = startOfDay(day).getTime();
   const untimed: TaskListWithTasks[] = [];
 
   const boxes = lists.flatMap((list) => {
@@ -318,8 +331,7 @@ export function layoutDayLists(
       return [];
     }
 
-    const start = new Date(list.dueAt).getTime();
-    const startMinute = clamp(Math.round((start - dayStart) / 60_000), 0, MINUTES_PER_DAY);
+    const startMinute = minuteInDay(new Date(list.dueAt).getTime(), day);
     return [
       {
         ref: list,
