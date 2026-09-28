@@ -179,6 +179,23 @@ export function datedLists(lists: TaskListWithTasks[]): TaskListWithTasks[] {
 }
 
 /**
+ * Jour propre d'une tâche ajoutée à `list` depuis la journée `day` de la vue
+ * Todo, `null` quand elle n'en a pas besoin.
+ *
+ * La liste apparaît aussi aux jours de certaines de ses tâches (`datedLists`) :
+ * une ligne tapée ce jour-là lui appartient, et sans date elle rejoindrait
+ * l'échéance de la liste, loin de l'endroit où on l'a écrite. Le jour même de
+ * l'échéance, la tâche n'a rien à répéter — la liste le porte déjà.
+ *
+ * `list` est la liste enregistrée, pas son entrée recomposée pour un jour de
+ * tâches, dont l'échéance a été remplacée par ce jour.
+ */
+export function dueOnForDay(list: Pick<TaskList, "dueAt">, day: Date): string | null {
+  if (list.dueAt !== null && isSameDay(new Date(list.dueAt), day)) return null;
+  return calendarDayOf(day);
+}
+
+/**
  * Todolistes datées que le calendrier doit encore afficher comme listes.
  *
  * Une liste liée à un rendez-vous déjà chargé est représentée par ce

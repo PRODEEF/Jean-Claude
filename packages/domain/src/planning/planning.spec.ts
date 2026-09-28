@@ -4,6 +4,7 @@ import {
   calendarDayOf,
   dateOfCalendarDay,
   datedLists,
+  dueOnForDay,
   eventsOfDay,
   layoutDayEvents,
   layoutDayLists,
@@ -216,6 +217,24 @@ describe("byDueDate", () => {
     const tard = makeList({ dueAt: localIso(2026, 9, 12, 18) });
 
     expect([tard, tot].sort(byDueDate)[0]).toBe(tot);
+  });
+});
+
+describe("dueOnForDay", () => {
+  it("date la tâche tapée un autre jour que celui de sa liste", () => {
+    const list = makeList({ dueAt: localIso(2026, 9, 12), dueAllDay: true });
+
+    expect(dueOnForDay(list, new Date(2026, 8, 14))).toBe("2026-09-14");
+  });
+
+  it("ne répète pas le jour que la liste porte déjà", () => {
+    const list = makeList({ dueAt: localIso(2026, 9, 12, 9, 30), dueAllDay: false });
+
+    expect(dueOnForDay(list, new Date(2026, 8, 12))).toBeNull();
+  });
+
+  it("date la tâche d'une liste sans échéance, visible par ses seules tâches", () => {
+    expect(dueOnForDay(makeList(), new Date(2026, 8, 14))).toBe("2026-09-14");
   });
 });
 

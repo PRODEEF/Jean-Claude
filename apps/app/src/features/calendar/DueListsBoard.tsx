@@ -3,11 +3,12 @@ import { Pressable, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ListChecks, Plus, ShoppingBasket } from "lucide-react-native";
 import type { TaskListWithTasks } from "@jc/domain";
-import { momentsOfDay, openTaskCount } from "@jc/domain";
+import { dueOnForDay, momentsOfDay, openTaskCount } from "@jc/domain";
+import { ApiError } from "@jc/api-client";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { formatFullDay, formatTime, isSameDay } from "@/shared/lib/dates";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
-import { useTaskActions } from "@/shared/hooks/use-task-lists";
+import { useTaskActions, useTaskLists } from "@/shared/hooks/use-task-lists";
 import { TaskRow } from "@/features/todo/TaskRow";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
@@ -34,6 +35,10 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
   // sur téléphone où l'espace généreux protège du doigt, mais gagne à se
   // resserrer sur un écran large où plusieurs semaines sont visibles à la fois.
   const desktop = useBreakpoint() === "expanded";
+  // Les listes telles qu'enregistrées : une entrée de `lists` peut n'être que
+  // la projection d'une liste sur le jour de certaines de ses tâches, avec une
+  // échéance remplacée par ce jour.
+  const { data: savedLists } = useTaskLists();
 
   return (
     <View className={desktop ? "gap-2" : "gap-3"}>
@@ -79,7 +84,15 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
                   </Text>
                 </View>
                 {group.lists.map((list) => (
-                  <DueList key={list.id} list={list} desktop={desktop} />
+                  <DueList
+                    key={list.id}
+                    list={list}
+                    dueOn={dueOnForDay(
+                      savedLists?.find((saved) => saved.id === list.id) ?? list,
+                      day,
+                    )}
+                    desktop={desktop}
+                  />
                 ))}
               </View>
             ))}
@@ -98,7 +111,16 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
  * liste dans Mes listes ; les tâches se cochent ici, via `TaskRow`, et le
  * « + » en ajoute sans changer d'onglet.
  */
-function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean }) {
+function DueList({
+  list,
+  dueOn,
+  desktop,
+}: {
+  list: TaskListWithTasks;
+  /** Jour à donner aux tâches ajoutées ici — `null` s'il est celui de la liste. */
+  dueOn: string | null;
+  desktop: boolean;
+}) {
   const router = useRouter();
   const shopping = list.kind === "shopping";
   const time = timeLabel(list);
@@ -148,7 +170,7 @@ function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean 
         list.tasks.map((task) => <TaskRow key={task.id} task={task} />)
       )}
 
-      {adding ? <QuickAdd list={list} onClose={() => setAdding(false)} /> : null}
+      {adding ? <QuickAdd list={list} dueOn={dueOn} onClose={() => setAdding(false)} /> : null}
     </View>
   );
 }
@@ -159,12 +181,21 @@ function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean 
  * Une ligne tapée devient une case à cocher, comme partout ailleurs dans les
  * todolistes (choix produit du 28 septembre : pas de puce non cochable). Entrée
  * enregistre et rouvre une ligne vide, pour vider sa tête d'un trait ; quitter
- * le champ vide le referme.
+ * le champ vide le referme. La tâche prend le jour où on l'a tapée
+ * (`dueOnForDay`).
  */
-function QuickAdd({ list, onClose }: { list: TaskListWithTasks; onClose: () => void }) {
+function QuickAdd({
+  list,
+  dueOn,
+  onClose,
+}: {
+  list: TaskListWithTasks;
+  dueOn: string | null;
+  onClose: () => void;
+}) {
   const { addTask } = useTaskActions();
   const [title, setTitle] = useState("");
-  const [failed, setFailed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const input = useRef<TextInput>(null);
 
   const submit = () => {
@@ -178,9 +209,9 @@ function QuickAdd({ list, onClose }: { list: TaskListWithTasks; onClose: () => v
       return;
     }
 
-    setFailed(false);
+    setError(null);
     addTask.mutate(
-      { listId: list.id, input: { title: trimmed } },
+      { listId: list.id, input: { title: trimmed, dueOn } },
       {
         onSuccess: () => {
           setTitle("");
@@ -188,7 +219,7 @@ function QuickAdd({ list, onClose }: { list: TaskListWithTasks; onClose: () => v
         },
         // Le texte reste dans le champ : le perdre sur un échec réseau
         // obligerait à le retaper.
-        onError: () => setFailed(true),
+        onError: (cause) => setError(toMessage(cause)),
       },
     );
   };
@@ -209,11 +240,7 @@ function QuickAdd({ list, onClose }: { list: TaskListWithTasks; onClose: () => v
         placeholder="Nouvelle tâche"
         accessibilityLabel={`Nouvelle tâche dans ${list.title}`}
       />
-      {failed ? (
-        <Text className="text-destructive text-xs">
-          La tâche n'a pas pu être ajoutée. Réessayez dans un instant.
-        </Text>
-      ) : null}
+      {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
     </View>
   );
 }
@@ -228,4 +255,14 @@ function QuickAdd({ list, onClose }: { list: TaskListWithTasks; onClose: () => v
 function timeLabel(list: TaskListWithTasks): string | undefined {
   if (list.dueAt === null || list.dueAllDay !== false) return undefined;
   return formatTime(list.dueAt);
+}
+
+/**
+ * Un 400 vient de nos propres règles et porte un message écrit pour
+ * l'utilisateur — ex. une tâche datée d'un jour déjà passé. Tout le reste est
+ * remplacé : une panne technique peut transporter des fragments de requête.
+ */
+function toMessage(cause: Error): string {
+  if (cause instanceof ApiError && cause.status === 400) return cause.message;
+  return "La tâche n'a pas pu être ajoutée. Réessayez dans un instant.";
 }

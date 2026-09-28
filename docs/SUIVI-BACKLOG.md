@@ -21,7 +21,10 @@ datées sans heure, et seulement s'il en porte. Le mois en cours s'ouvre sur
 aujourd'hui (`todoDays`, `@jc/domain`, testée) ; un autre mois se déroule en
 entier. Les jours sans liste sont affichés par défaut. L'heure d'une liste
 passe avant son titre, en gras. Un « + » par liste ajoute une tâche à cocher
-sans quitter le calendrier — Entrée enregistre et rouvre une ligne. Arbitrage
+sans quitter le calendrier — Entrée enregistre et rouvre une ligne. Sur une
+liste qui n'apparaît ce jour-là que par certaines de ses tâches (jour propre
+d'une tâche, arrivé le même jour sur `dev`), la tâche ajoutée prend ce jour au
+lieu de repartir sur l'échéance de la liste (`dueOnForDay`, testée). Arbitrage
 du jour : **pas de puce non cochable**, une ligne ajoutée est toujours une
 tâche (aucune migration). En bas de la vue, deux boutons changent de mois et
 ramènent en haut de page.
