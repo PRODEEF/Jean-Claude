@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useIsFocused } from "expo-router";
 import type {
   Conversation,
   Message,
@@ -61,6 +62,24 @@ export function useConversationThread(
   const queryClient = useQueryClient();
 
   /**
+   * Le fil est-il à l'écran ?
+   *
+   * Une réponse arrive souvent après qu'on a quitté le fil pour un autre : la
+   * pile garde l'écran monté sous le suivant, ou le démonte, et dans les deux
+   * cas le tour se termine quand même. Relu en fin de tour, ce drapeau évite de
+   * marquer lue une réponse que personne n'a vue — la pastille ne s'allumait
+   * alors jamais.
+   */
+  const focused = useIsFocused();
+  const onScreen = useRef(focused);
+  useEffect(() => {
+    onScreen.current = focused;
+    return () => {
+      onScreen.current = false;
+    };
+  }, [focused]);
+
+  /**
    * Génération en cours, pour pouvoir l'interrompre.
    *
    * Le serveur écrit dans son `finally` le texte déjà produit : couper le flux
@@ -94,9 +113,9 @@ export function useConversationThread(
   });
 
   /**
-   * Marque la conversation comme lue à l'ouverture du fil (pastille de la
-   * barre latérale). Tiré une fois par conversation, sans bloquer l'affichage
-   * du fil si l'appel échoue.
+   * Marque la conversation comme lue quand le fil passe à l'écran (pastille de
+   * la barre latérale) : à l'ouverture, mais aussi au retour sur un fil resté
+   * monté sous un autre. Sans bloquer l'affichage du fil si l'appel échoue.
    */
   const markRead = useMutation({
     mutationFn: () => api.conversations.markRead(conversationId),
@@ -106,8 +125,8 @@ export function useConversationThread(
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["conversations"] }),
   });
   useEffect(() => {
-    markRead.mutate();
-  }, [conversationId, markRead.mutate]);
+    if (focused) markRead.mutate();
+  }, [focused, conversationId, markRead.mutate]);
 
   const send = useMutation({
     mutationFn: async (turn: Turn) => {
@@ -207,10 +226,13 @@ export function useConversationThread(
       // Ce tour vient de répondre dans le fil ouvert : ça compte comme lu.
       // Sans ce geste, le trigger de `unread_count` remonterait la pastille de
       // cette même conversation dans la barre latérale alors qu'elle est sous
-      // les yeux — `markRead` n'est sinon rejoué qu'à l'ouverture du fil, pas
-      // après chacun de ses tours suivants.
-      await api.conversations.markRead(conversationId);
-      clearUnread(queryClient, conversationId);
+      // les yeux — `markRead` n'est sinon rejoué qu'au retour sur le fil, pas
+      // après chacun de ses tours. Seulement s'il est toujours à l'écran : sa
+      // pastille est justement ce qui signale une réponse arrivée ailleurs.
+      if (onScreen.current) {
+        await api.conversations.markRead(conversationId);
+        clearUnread(queryClient, conversationId);
+      }
       // Le tri de la liste des conversations dépend de `lastMessageAt`, que
       // ce tour vient de déplacer.
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
