@@ -177,6 +177,23 @@ export function toAssistantModel(value: unknown): AssistantModel | null {
 }
 
 /**
+ * Entrée du catalogue qui représente un modèle servi, ou `null` si aucun
+ * éditeur ne correspond.
+ *
+ * `LLM_MODEL` peut désigner un modèle hors catalogue — `mistral/ministral-14b`
+ * en production. Les réglages ne cochaient alors rien, comme si aucun modèle
+ * ne répondait. Le catalogue proposant un modèle par éditeur, le modèle servi
+ * est rattaché à celui de son éditeur : c'est bien « Mistral » qui répond.
+ */
+export function toCatalogueModel(model: string): AssistantModel | null {
+  const known = toAssistantModel(model);
+  if (known) return known;
+
+  const creator = model.split("/")[0];
+  return ASSISTANT_MODEL_IDS.find((id) => id.split("/")[0] === creator) ?? null;
+}
+
+/**
  * Préférences du panneau de paramètres de la maquette : nom et couleur de
  * l'assistant, thème, périmètre du mode assistant.
  */
