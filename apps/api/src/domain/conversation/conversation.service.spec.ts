@@ -1,4 +1,4 @@
-import { DEFAULT_CONVERSATION_TITLE } from "@jc/domain";
+import { DEFAULT_CONVERSATION_TITLE, VISION_FALLBACK_MODEL } from "@jc/domain";
 import type {
   AssistantScope,
   CalendarEvent,
@@ -1798,20 +1798,75 @@ describe("ConversationService", () => {
         );
       }
 
-      it("refuse une pièce jointe si le modèle actif ne lit pas les images, avant toute écriture", async () => {
-        const repo = makeRepository();
+      /** Le fil tel que relu après la liaison : la photo est rattachée à la demande. */
+      const illustratedThread = () =>
+        makeRepository({
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({
+                id: "msg-user",
+                role: "user",
+                content: "Regarde cette photo.",
+                attachments: [makeAttachment({ messageId: "msg-user" })],
+              }),
+            ],
+            nextCursor: null,
+          }),
+        });
+
+      it("confie à un modèle qui lit les images le tour que le modèle actif ne saurait pas lire", async () => {
+        // Le modèle du serveur des tests est hors catalogue : rien ne dit qu'il
+        // lit les images. Refuser l'envoi renvoyait l'utilisateur à ses réglages.
+        jest.spyOn(console, "warn").mockImplementation(() => undefined);
+        const repo = illustratedThread();
+        const llm = makeLlm();
         const attachments = makeAttachmentRepository({
           findByIds: jest.fn().mockResolvedValue([makeAttachment()]),
         });
 
-        await expect(
-          drain(withAttachments(attachments, repo), {
-            content: "",
-            inputMode: "text",
-            attachmentIds: ["att-1"],
-          }),
-        ).rejects.toMatchObject({ status: 422 });
-        expect(repo.appendMessage).not.toHaveBeenCalled();
+        await drain(
+          makeService(
+            repo,
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            makeUserRepository(),
+            makeCalendarRepository(),
+            makeTaskRepository(),
+            attachments,
+          ),
+          { content: "Regarde cette photo.", inputMode: "text", attachmentIds: ["att-1"] },
+        );
+
+        expect(lastRequest(llm).model).toBe(VISION_FALLBACK_MODEL);
+        expect(repo.appendMessage).toHaveBeenCalledTimes(2);
+        jest.restoreAllMocks();
+      });
+
+      it("garde le modèle des réglages quand il lit les images", async () => {
+        const llm = makeLlm();
+        const users = makeUserRepository(
+          {},
+          { preferences: makePreferences({ llmModel: "openai/gpt-5.4-mini" }) },
+        );
+
+        await drain(
+          makeService(
+            illustratedThread(),
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            users,
+            makeCalendarRepository(),
+            makeTaskRepository(),
+            makeAttachmentRepository({
+              findByIds: jest.fn().mockResolvedValue([makeAttachment()]),
+            }),
+          ),
+          { content: "Regarde cette photo.", inputMode: "text", attachmentIds: ["att-1"] },
+        );
+
+        expect(lastRequest(llm).model).toBe("openai/gpt-5.4-mini");
       });
 
       it("refuse une pièce jointe introuvable", async () => {
@@ -2477,58 +2532,26 @@ describe("ConversationService", () => {
       ).rejects.toThrow();
     });
 
-    it("refuse de corriger un message dont le modèle actif ne lit plus les images", async () => {
+    it("rejoue un message illustré avec un modèle qui lit les images, même si les réglages ont changé", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
       const question = makeMessage({
         id: "msg-1",
         role: "user",
         content: "Regarde cette photo.",
         createdAt: "2026-09-02T08:00:00.000Z",
-        attachments: [makeAttachment()],
+        attachments: [makeAttachment({ messageId: "msg-1" })],
       });
-      const repo = makeRepository({ findMessage: jest.fn().mockResolvedValue(question) });
-
-      await expect(
-        collect(
-          makeService(
-            repo,
-            makeLlm(),
-            makeSuggestionRepository(),
-            makeFolderRepository(),
-            makeUserRepository(),
-            makeCalendarRepository(),
-            makeTaskRepository(),
-            makeAttachmentRepository(),
-          ).editMessage("conv-1", USER, "msg-1", { content: "Et celle-là ?" }, TOKEN),
-        ),
-      ).rejects.toMatchObject({ status: 422 });
-      expect(repo.updateMessageContent).not.toHaveBeenCalled();
-    });
-
-    it("refuse de rejouer un message dont le modèle actif ne lit plus les images", async () => {
-      const question = makeMessage({
-        id: "msg-1",
-        role: "user",
-        content: "Regarde cette photo.",
-        createdAt: "2026-09-02T08:00:00.000Z",
-        attachments: [makeAttachment()],
+      const repo = makeRepository({
+        findMessage: jest.fn().mockResolvedValue(question),
+        listMessages: jest.fn().mockResolvedValue({ items: [question], nextCursor: null }),
       });
-      const repo = makeRepository({ findMessage: jest.fn().mockResolvedValue(question) });
+      const llm = makeLlm();
 
-      await expect(
-        collect(
-          makeService(
-            repo,
-            makeLlm(),
-            makeSuggestionRepository(),
-            makeFolderRepository(),
-            makeUserRepository(),
-            makeCalendarRepository(),
-            makeTaskRepository(),
-            makeAttachmentRepository(),
-          ).retryMessage("conv-1", USER, "msg-1", TOKEN),
-        ),
-      ).rejects.toMatchObject({ status: 422 });
-      expect(repo.deleteMessagesAfter).not.toHaveBeenCalled();
+      await collect(makeService(repo, llm).retryMessage("conv-1", USER, "msg-1", TOKEN));
+
+      expect(repo.deleteMessagesAfter).toHaveBeenCalled();
+      expect(lastRequest(llm).model).toBe(VISION_FALLBACK_MODEL);
+      jest.restoreAllMocks();
     });
   });
 

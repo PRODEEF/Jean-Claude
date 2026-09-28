@@ -1,11 +1,10 @@
 import {
   assistantScopeSchema,
-  ASSISTANT_MODELS,
   DEFAULT_ASSISTANT_NAME,
   DEFAULT_CONVERSATION_TITLE,
   askedQuestionSchema,
-  isVisionCapableModel,
   labelSchema,
+  modelReadingImages,
   parseSlashCommand,
   userMemorySchema,
   userPreferencesSchema,
@@ -398,9 +397,8 @@ export class ConversationService {
   ): AsyncGenerator<MessageStreamEvent> {
     const conversation = await this.getById(conversationId, accessToken);
 
-    // Résolues avant toute écriture : le refus d'un modèle sans vision doit
-    // précéder la création du message, pas la suivre (§12.1 — le serveur
-    // fait respecter la règle, jamais l'UI seule).
+    // Résolues avant toute écriture : une pièce jointe refusée ne doit pas
+    // laisser derrière elle un message envoyé sans elle.
     let attachments: MessageAttachment[] = [];
     if (input.attachmentIds.length > 0) {
       const resolved = await this.attachments.findByIds(input.attachmentIds, accessToken);
@@ -411,9 +409,6 @@ export class ConversationService {
         throw httpError(409, "Une pièce jointe a déjà été envoyée dans un autre message.");
       }
       attachments = resolved;
-
-      const context = await this.contextFor(userId, accessToken);
-      this.assertVisionCapable(context.model ?? this.llm.model, attachments);
     }
 
     const userMessage = await this.conversations.appendMessage(
@@ -473,13 +468,6 @@ export class ConversationService {
       throw httpError(422, "Seul un message que vous avez écrit peut être corrigé.");
     }
 
-    // Couvre le cas où le modèle a changé dans les réglages depuis l'envoi
-    // initial : la pièce jointe reste dans l'historique rejoué par `generate`.
-    if (message.attachments.length > 0) {
-      const context = await this.contextFor(userId, accessToken);
-      this.assertVisionCapable(context.model ?? this.llm.model, message.attachments);
-    }
-
     await this.conversations.deleteMessagesAfter(conversationId, message.createdAt, accessToken);
     const corrected = await this.conversations.updateMessageContent(
       messageId,
@@ -510,13 +498,6 @@ export class ConversationService {
 
     if (message.role === "system") {
       throw httpError(422, "Ce message ne peut pas être rejoué.");
-    }
-
-    // Un message assistant ne porte jamais de pièce jointe : n'a d'effet que
-    // sur la reprise d'un message utilisateur.
-    if (message.attachments.length > 0) {
-      const context = await this.contextFor(userId, accessToken);
-      this.assertVisionCapable(context.model ?? this.llm.model, message.attachments);
     }
 
     await this.conversations.deleteMessagesAfter(conversationId, message.createdAt, accessToken);
@@ -561,11 +542,12 @@ export class ConversationService {
     }
 
     const now = new Date();
+    const turnModel = this.modelFor(context, dialogue);
     const request: LlmCompletionRequest = {
       system: buildExtractionPrompt(context, now),
       messages: this.toLlmMessages(dialogue),
       tools: [SUGGEST_TASK_LIST],
-      ...(context.model ? { model: context.model } : {}),
+      ...(turnModel ? { model: turnModel } : {}),
     };
 
     const toolCalls: LlmToolCall[] = [];
@@ -666,20 +648,26 @@ export class ConversationService {
   }
 
   /**
-   * Refuse une image que le modèle actif ne peut pas lire (§12.1 — le
-   * serveur fait respecter la règle). Un PDF ou un fichier texte n'entre pas
-   * dans ce compte : son texte extrait se lit avec n'importe quel modèle,
-   * aucun besoin de vision.
+   * Modèle du tour : celui des réglages, sauf quand le fil remis au modèle
+   * porte une image qu'il ne sait pas lire (§13.4.1).
+   *
+   * Le fil entier et non le seul dernier message : une image envoyée plus tôt
+   * repart à chaque tour tant qu'elle reste dans la fenêtre de contexte. Un PDF
+   * ou un fichier texte n'entre pas dans ce compte — son texte extrait se lit
+   * avec n'importe quel modèle.
    */
-  private assertVisionCapable(model: string, attachments: MessageAttachment[]): void {
-    const images = attachments.filter((a) => a.mimeType.startsWith("image/"));
-    if (images.length === 0 || isVisionCapableModel(model)) return;
-
-    const label = ASSISTANT_MODELS.find((m) => m.id === model)?.label ?? model;
-    throw httpError(
-      422,
-      `${label} ne peut pas lire les images. Changez de modèle dans les réglages ou retirez les pièces jointes.`,
+  private modelFor(context: AssistantContext, dialogue: Message[]): string | null {
+    const carriesImages = dialogue.some((m) =>
+      m.attachments.some((a) => a.mimeType.startsWith("image/")),
     );
+    if (!carriesImages) return context.model;
+
+    const chosen = context.model ?? this.llm.model;
+    const model = modelReadingImages(chosen);
+    if (model !== chosen) {
+      logger.warn(SCOPE, `Modèle sans lecture d'image (${chosen}) : tour confié à ${model}.`);
+    }
+    return model;
   }
 
   private async requireMessage(
@@ -770,13 +758,14 @@ export class ConversationService {
         ? [baseSystem, "", ...activeCommand.note.describe(activeCommand.args)].join("\n")
         : baseSystem;
 
+    // Le modèle du profil ne remplace celui du serveur que s'il existe :
+    // `null` veut dire « celui que le serveur a retenu », et non « aucun ».
+    const turnModel = this.modelFor(context, dialogue);
     const request: LlmCompletionRequest = {
       system,
       messages: this.toLlmMessages(dialogue),
       tools: todo.tools,
-      // Le modèle du profil ne remplace celui du serveur que s'il existe :
-      // `null` veut dire « celui que le serveur a retenu », et non « aucun ».
-      ...(context.model ? { model: context.model } : {}),
+      ...(turnModel ? { model: turnModel } : {}),
     };
 
     // Certains modèles recopient les outils en texte — JSON `{"title":...}`
