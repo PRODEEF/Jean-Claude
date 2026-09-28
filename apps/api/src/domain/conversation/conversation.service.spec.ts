@@ -4762,6 +4762,50 @@ describe("ConversationService", () => {
       jest.restoreAllMocks();
     });
 
+    it("rétablit la liste d'un ajout de lignes quand le modèle a recopié l'identifiant d'une ligne", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeRecordingSuggestions([]);
+      const listId = "11111111-1111-4111-8111-111111111111";
+      const legumes = "22222222-2222-4222-8222-222222222222";
+      const existing = makeTaskList({
+        id: listId,
+        title: "Courses",
+        tasks: [makeTaskListItem({ id: legumes, title: "Légumes" })],
+      });
+      // Relevé en usage réel : « ajoute du parmesan » visait la ligne Légumes.
+      const add: LlmToolCall = {
+        id: "call-1",
+        name: "suggest_task_list_items",
+        input: {
+          message: "J'ajoute du parmesan à ta liste de courses ?",
+          listId: legumes,
+          items: [{ title: "Parmesan" }],
+        },
+      };
+
+      await drain(
+        makeService(
+          makeRepository(),
+          makeLlm(["C'est proposé."], [add]),
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([existing]),
+        ),
+      );
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "add_task_list_items",
+          payload: expect.objectContaining({ listId }) as unknown,
+        }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
     it("rétablit l'identifiant de liste d'après les lignes que la modification désigne", async () => {
       jest.spyOn(console, "warn").mockImplementation(() => undefined);
       const suggestions = makeRecordingSuggestions([]);

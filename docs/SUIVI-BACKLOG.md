@@ -287,7 +287,8 @@ Décisions de Clarisse, et ce qui a changé :
 Filets ajoutés après rejeu contre ministral-14b : la relance qui écrit la
 réponse reçoit le contenu exact des listes de la carte (elle en recopiait
 d'autres) ; un identifiant de liste inconnu est rétabli d'après les lignes
-désignées ; une ligne à modifier porte aussi son titre actuel, et un
+désignées, pour l'ajout, la modification et le report d'échéance (« ajoute du
+parmesan » visait la ligne « Légumes », relevé en usage réel) ; une ligne à modifier porte aussi son titre actuel, et un
 identifiant qui ne lui correspond pas est corrigé par le titre (« remplace la
 salade » retirait le beurre) ; une modification de lignes sans phrase reçoit
 « Je mets la liste à jour ? » (omise 2 fois sur 2). Rejoué ensuite : la salade
