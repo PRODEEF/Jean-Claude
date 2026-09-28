@@ -172,7 +172,8 @@ export function CalendarScreen() {
     setEventDetail(null);
     setDialogTarget({ mode: "edit", event });
   };
-  const createAt = (day: Date, minute: number) => setDialogTarget({ mode: "create", day, minute });
+  const createAt = (day: Date, minute = DEFAULT_CREATE_MINUTE) =>
+    setDialogTarget({ mode: "create", day, minute });
   // Un jour cliqué en vue mois propose directement d'y poser un événement : la
   // sélection continue par ailleurs d'alimenter l'agenda du jour, en dessous.
   const selectDay = (day: Date) => {

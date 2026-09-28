@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View, type GestureResponderEvent } from "react-native";
 import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
 import { eventsOfDay, layoutDayEvents, layoutDayLists, listsOfDay } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
@@ -13,8 +13,11 @@ export type TimeGridProps = {
   onOpenEvent: (event: CalendarEvent) => void;
   /** Ouvre le détail cochable d'une liste posée dans le bandeau ou la grille. */
   onOpenList: (list: TaskListWithTasks) => void;
-  /** Appui sur un créneau libre — la minute est celle visée dans la colonne. */
-  onCreateAt: (day: Date, minute: number) => void;
+  /**
+   * Appui sur un créneau libre — la minute est celle visée dans la colonne,
+   * absente quand le geste ne dit pas où il a eu lieu (activation au clavier).
+   */
+  onCreateAt: (day: Date, minute?: number) => void;
 };
 
 const HOUR_HEIGHT = 48;
@@ -174,9 +177,11 @@ export function TimeGrid({
               style={StyleSheet.absoluteFill}
               accessibilityRole="button"
               accessibilityLabel={`Ajouter un événement le ${formatDayLabel(column.day)}`}
-              onPress={(gesture) =>
-                onCreateAt(column.day, Math.floor(gesture.nativeEvent.locationY / HOUR_HEIGHT) * 60)
-              }
+              onPress={(gesture) => {
+                const y = pressOffsetY(gesture);
+                if (y === null) onCreateAt(column.day);
+                else onCreateAt(column.day, clampHour(Math.floor(y / HOUR_HEIGHT)) * 60);
+              }}
             />
 
             {/* Todolistes échues à heure précise : même placement que les
@@ -238,4 +243,29 @@ export function TimeGrid({
       </View>
     </View>
   );
+}
+
+/**
+ * Ordonnée de l'appui dans la colonne, ou `null` si le geste n'en porte pas.
+ *
+ * Sur iOS et Android, `onPress` reçoit un événement tactile qui porte
+ * `locationY`. Sur le web, react-native-web lui passe l'événement `click` du
+ * navigateur, qui n'a pas ce champ mais `offsetY` — relatif à la zone d'appui,
+ * qui couvre toute la colonne. Lire `locationY` seul préremplissait donc le
+ * formulaire à « NaN:00 » sur le web. Un appui au clavier n'a ni l'un ni
+ * l'autre.
+ */
+function pressOffsetY(gesture: GestureResponderEvent): number | null {
+  const native: object = gesture.nativeEvent;
+  if ("locationY" in native && typeof native.locationY === "number" && Number.isFinite(native.locationY)) {
+    return native.locationY;
+  }
+  if ("offsetY" in native && typeof native.offsetY === "number" && Number.isFinite(native.offsetY)) {
+    return native.offsetY;
+  }
+  return null;
+}
+
+function clampHour(hour: number): number {
+  return Math.min(Math.max(hour, 0), HOURS.length - 1);
 }
