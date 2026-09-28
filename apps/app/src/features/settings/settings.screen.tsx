@@ -288,6 +288,26 @@ export function SettingsScreen() {
           </View>
 
           <SettingRow
+            label="Bandeau uni"
+            hint="Le bandeau du haut passe à l'aplat plein de la couleur d'assistant, sans dégradé."
+          >
+            <Switch
+              value={profile?.preferences.flatBanner ?? true}
+              onValueChange={(value) => updateProfile.mutate({ flatBanner: value })}
+              disabled={!profile || updateProfile.isPending}
+              accessibilityLabel="Bandeau uni"
+            />
+          </SettingRow>
+
+          <SettingRow label="Thème">
+            <SegmentedControl
+              options={THEMES}
+              value={theme}
+              onChange={(value) => updateProfile.mutate({ theme: value })}
+            />
+          </SettingRow>
+
+          <SettingRow
             label="Modèle"
             // Le bénéfice du modèle actif, sous le libellé : le menu fermé
             // n'en montre que le nom, qui ne dit rien à qui ne les connaît pas.
@@ -336,28 +356,6 @@ export function SettingsScreen() {
               />
             </SettingRow>
           ))}
-        </Section>
-
-        <Section title="Apparence">
-          <SettingRow label="Thème">
-            <SegmentedControl
-              options={THEMES}
-              value={theme}
-              onChange={(value) => updateProfile.mutate({ theme: value })}
-            />
-          </SettingRow>
-
-          <SettingRow
-            label="Bandeau uni"
-            hint="Le bandeau du haut passe à l'aplat plein de la couleur d'assistant, sans dégradé."
-          >
-            <Switch
-              value={profile?.preferences.flatBanner ?? true}
-              onValueChange={(value) => updateProfile.mutate({ flatBanner: value })}
-              disabled={!profile || updateProfile.isPending}
-              accessibilityLabel="Bandeau uni"
-            />
-          </SettingRow>
         </Section>
 
         <Section title="Aide">
