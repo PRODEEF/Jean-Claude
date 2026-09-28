@@ -177,7 +177,7 @@ export function SuggestionCard({
           disabled={isPending || emptied}
           accessibilityRole="button"
           accessibilityLabel={preview.acceptLabel}
-          accessibilityState={{ busy: accepting }}
+          aria-busy={accepting}
           style={[
             styles.action,
             {
