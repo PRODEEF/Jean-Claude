@@ -862,7 +862,9 @@ export class ConversationService {
                 attachmentIds: [],
                 provider,
                 model,
-                ...(asked && !redirectTitle ? { choices: asked.choices } : {}),
+                ...(asked && !redirectTitle
+                  ? { choices: asked.choices, question: asked.question }
+                  : {}),
                 ...(redirectTitle ? { redirectTitle } : {}),
               },
               accessToken,

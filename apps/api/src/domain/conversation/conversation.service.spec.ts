@@ -57,6 +57,7 @@ function makeMessage(
     provider: null,
     model: null,
     choices: null,
+    question: null,
     redirectTitle: null,
     redirectAcceptedAt: null,
     createdAt: "2026-08-31T08:00:00.000Z",
@@ -711,7 +712,7 @@ describe("ConversationService", () => {
       expect(events.map((e) => e.type)).toEqual(["message", "text", "text", "done"]);
     });
 
-    it("attache au message de l'assistant les réponses qu'il propose", async () => {
+    it("attache au message de l'assistant la question et les réponses qu'il propose", async () => {
       const repo = makeRepository();
       const llm = makeLlm(
         ["On peut prendre ça par plusieurs bouts."],
@@ -736,6 +737,7 @@ describe("ConversationService", () => {
         expect.objectContaining({
           role: "assistant",
           choices: ["Vous connaître", "Cadrer un projet", "Creuser un problème"],
+          question: "Quel type de questions voulez-vous ?",
         }),
         TOKEN,
       );
@@ -2265,6 +2267,7 @@ describe("ConversationService", () => {
         expect.objectContaining({
           content: "Je t'organise ça ?",
           choices: ["Une todoliste pour les étapes", "Une liste d'achats", "Les deux"],
+          question: "On fait :",
         }),
         TOKEN,
       );

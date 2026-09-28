@@ -140,7 +140,9 @@ export function ConversationThread({
     if (!last || last.role !== "assistant" || !last.choices || last.id === skippedQuestion) {
       return null;
     }
-    return { id: last.id, text: last.content, choices: last.choices };
+    // Le texte entier ne sert qu'aux messages antérieurs à l'enregistrement de
+    // la question : la carte le tronque à deux lignes.
+    return { id: last.id, text: last.question ?? last.content, choices: last.choices };
   }, [messages.data, skippedQuestion]);
 
   const askable = question !== null && streamingText === null && pendingUserText === null;
@@ -438,10 +440,15 @@ type ThreadItem = (
  * que l'utilisateur a envoyée, et la dupliquer en base ferait deux textes à
  * tenir cohérents. Relue plus haut dans le fil, « Oui » ne dirait plus à quoi
  * il répondait.
+ *
+ * La question seule, jamais le texte entier du message : recopié après « Q : »,
+ * celui-ci plaçait toute la réponse de l'assistant dans la bulle de
+ * l'utilisateur, comme s'il l'avait écrite. Sans question enregistrée — les
+ * messages plus anciens —, la réponse se lit seule.
  */
 function answeredQuestion(message: Message, previous: Message | undefined): string | null {
   if (message.role !== "user" || !previous || previous.role !== "assistant") return null;
-  return previous.choices?.includes(message.content) ? previous.content : null;
+  return previous.choices?.includes(message.content) ? previous.question : null;
 }
 
 function itemDate(item: ThreadItem): number {
