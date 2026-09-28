@@ -167,9 +167,11 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
     paddingHorizontal: spacing.md,
     borderWidth: 1,
-    borderRadius: radius.md,
+    // Même rayon et même corps que `Input` : dans les réglages, le menu se
+    // range dans la même colonne que les champs et doit leur ressembler.
+    borderRadius: radius.sm,
   },
-  triggerText: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, flexShrink: 1 },
+  triggerText: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, flexShrink: 1 },
   menu: {
     position: "absolute",
     padding: spacing.xs,
