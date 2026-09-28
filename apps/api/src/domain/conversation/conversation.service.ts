@@ -134,6 +134,21 @@ const TOOL_ANSWER_RULE = [
  * `applyOnboardingMemory` ci-dessous : ni l'un ni l'autre n'est une donnée que
  * l'utilisateur aurait créée ou qu'il devrait valider une seconde fois.
  */
+/**
+ * Tous les outils qu'un tour peut exposer, quel que soit le registre.
+ *
+ * Le filtre de fin de réponse les reconnaît tous, et pas seulement ceux du
+ * tour : un modèle recopie volontiers en texte un outil qu'il a vu plus tôt
+ * dans le fil, même retiré depuis du jeu.
+ */
+const KNOWN_TOOL_NAMES = [
+  ...new Set(
+    [...CHAT_TOOLS, ...ASSISTANT_TOOLS, NAME_CONVERSATION, FINISH_ONBOARDING].map(
+      (tool) => tool.name,
+    ),
+  ),
+];
+
 const APPLIED_DIRECTLY = new Set([
   NAME_CONVERSATION.name,
   OPEN_NEW_CONVERSATION.name,
@@ -777,11 +792,12 @@ export class ConversationService {
             stripTitleJson: todo.tools.includes(NAME_CONVERSATION),
           })
         : null;
+    const trailingLeak = createTrailingLeakFilter(KNOWN_TOOL_NAMES);
 
     try {
       for await (const chunk of this.llm.stream(request)) {
         if (chunk.type === "text") {
-          const visible = textLeak ? textLeak.push(chunk.text) : chunk.text;
+          const visible = trailingLeak.push(textLeak ? textLeak.push(chunk.text) : chunk.text);
           if (visible.length > 0) {
             text += visible;
             yield { type: "text", text: visible };
@@ -794,12 +810,10 @@ export class ConversationService {
         }
       }
 
-      if (textLeak) {
-        const tail = textLeak.flush();
-        if (tail.length > 0) {
-          text += tail;
-          yield { type: "text", text: tail };
-        }
+      const tail = trailingLeak.push(textLeak?.flush() ?? "") + trailingLeak.flush();
+      if (tail.length > 0) {
+        text += tail;
+        yield { type: "text", text: tail };
       }
 
       // Le modèle s'en tient parfois à l'appel d'outil, sans un mot pour
@@ -816,10 +830,17 @@ export class ConversationService {
       // pleine génération, le texte déjà produit est déjà facturé. Le perdre
       // priverait l'utilisateur d'une réponse qu'il retrouverait de toute façon
       // au rechargement.
-      if (textLeak) text += textLeak.flush();
+      text += trailingLeak.push(textLeak?.flush() ?? "") + trailingLeak.flush();
+      const leaked = trailingLeak.leaked();
+      if (leaked !== null) {
+        logger.warn(SCOPE, "Appel d'outil recopié en texte en fin de réponse : retiré.");
+        text = withoutLeakIntro(text);
+      }
       // Résolu avant l'écriture : les réponses proposées voyagent sur le
-      // message qui porte la question, pas dans une seconde requête.
-      const asked = readQuestion(toolCalls);
+      // message qui porte la question, pas dans une seconde requête. Une
+      // question écrite en texte ne sert qu'à défaut de l'outil, qui la porte
+      // sous sa forme voulue.
+      const asked = readQuestion(toolCalls) ?? readLeakedQuestion(leaked);
       // La bascule prime sur tout ce que le modèle a pu écrire : l'annonce doit
       // être la même à chaque fois, puisque c'est elle qui porte la validation.
       const redirectTitle = readRedirectTitle(conversation.kind, toolCalls);
@@ -1479,6 +1500,165 @@ function takeJsonObject(text: string, start: number): number | "incomplete" {
     }
   }
   return "incomplete";
+}
+
+/**
+ * Appels d'outils recopiés en texte **en fin** de réponse, là où le filtre de
+ * préambule ne regarde plus.
+ *
+ * Relevé en usage réel avec Mistral : une ligne `` `ask_question` `` sous la
+ * question, un bloc `<ask_question>` qui déroule les réponses en liste, ou une
+ * section « Outils appelés » qui décrit `name_conversation` et
+ * `suggest_folders` avec leurs arguments JSON. Le modèle écrit ces lignes en
+ * plus, ou à la place, des vrais appels — et elles s'affichaient telles quelles
+ * au milieu de la conversation.
+ *
+ * Une ligne qui s'ouvre sur le nom d'un outil, entre accents graves ou en
+ * balise, coupe la réponse : tout ce qui la suit est de l'argument d'outil,
+ * jamais une réponse à l'utilisateur. Seul le début de ligne est retenu le
+ * temps de savoir s'il en est une : le reste du texte passe au fil de l'eau.
+ */
+type TrailingLeakFilter = {
+  push: (chunk: string) => string;
+  flush: () => string;
+  /** Le texte coupé, fuite comprise — `null` tant que rien n'a été coupé. */
+  leaked: () => string | null;
+};
+
+function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFilter {
+  const names = toolNames.map((name) => name.toLowerCase());
+  /** Début de la ligne courante, retenu tant qu'il peut encore ouvrir une fuite. */
+  let held = "";
+  /** La ligne courante a déjà été libérée : son début ne ressemblait à rien. */
+  let midLine = false;
+  let leaked: string | null = null;
+
+  return {
+    push(chunk) {
+      if (leaked !== null) {
+        leaked += chunk;
+        return "";
+      }
+
+      let out = "";
+      let rest = chunk;
+      while (rest.length > 0) {
+        const newline = rest.indexOf("\n");
+        const piece = newline === -1 ? rest : rest.slice(0, newline + 1);
+        rest = newline === -1 ? "" : rest.slice(newline + 1);
+
+        if (midLine) {
+          out += piece;
+          midLine = newline === -1;
+          continue;
+        }
+
+        held += piece;
+        const verdict = classifyTrailingLine(held, newline !== -1, names);
+        if (verdict === "leak") {
+          leaked = held + rest;
+          held = "";
+          return out;
+        }
+        if (verdict === "text") {
+          out += held;
+          held = "";
+          midLine = newline === -1;
+        }
+      }
+      return out;
+    },
+    flush() {
+      if (leaked !== null || held.length === 0) return "";
+      const line = held;
+      held = "";
+      if (classifyTrailingLine(line, true, names) === "leak") {
+        leaked = line;
+        return "";
+      }
+      return line;
+    },
+    leaked: () => leaked,
+  };
+}
+
+/**
+ * Une ligne de réponse ouvre-t-elle une fuite d'outil ?
+ *
+ * `maybe` tant que la ligne n'est pas complète et que son début peut encore
+ * devenir `` `nom_d_outil` `` ou `<nom_d_outil>`, puce comprise.
+ */
+function classifyTrailingLine(
+  line: string,
+  complete: boolean,
+  names: string[],
+): "leak" | "text" | "maybe" {
+  const indented = line.replace(/^[ \t]+/, "");
+  if (!complete && (indented === "" || indented === "-" || indented === "*")) return "maybe";
+
+  const body = indented.replace(/^[-*][ \t]+/, "");
+  if (!complete && body === "") return "maybe";
+
+  const opener = body.startsWith("</") ? "</" : body[0] === "`" || body[0] === "<" ? body[0] : null;
+  if (opener === null) return "text";
+
+  const after = body.slice(opener.length).toLowerCase();
+  const named = names.some((name) => {
+    const next = after[name.length];
+    return after.startsWith(name) && next !== undefined && !/\w/.test(next);
+  });
+  if (named) return "leak";
+
+  if (!complete && names.some((name) => name.startsWith(after))) return "maybe";
+  return "text";
+}
+
+/**
+ * Retire ce qui annonçait la fuite coupée : un « **Outils appelés** : » resté
+ * seul, le filet `---` posé au-dessus.
+ *
+ * Une dernière ligne qui se termine par deux-points introduisait ce qui vient
+ * d'être coupé ; laissée seule, elle annoncerait une suite qui n'existe plus.
+ */
+function withoutLeakIntro(text: string): string {
+  const lines = text.split("\n");
+  const dropBlankAndRules = () => {
+    while (lines.length > 0 && /^\s*(?:(?:[-*_]\s*){3,})?$/.test(lines[lines.length - 1] ?? "")) {
+      lines.pop();
+    }
+  };
+
+  dropBlankAndRules();
+  if (/:\s*$/.test(lines[lines.length - 1] ?? "")) {
+    lines.pop();
+    dropBlankAndRules();
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Question posée en texte dans un bloc `<ask_question>` plutôt que par l'outil.
+ *
+ * La première ligne du bloc est la question, ses puces les réponses : c'est la
+ * forme relevée en usage réel. Récupérée, elle s'affiche en boutons comme
+ * n'importe quelle question de l'outil ; inexploitable, elle est seulement
+ * retirée du texte.
+ */
+function readLeakedQuestion(leaked: string | null): AskedQuestion | null {
+  const block = leaked?.match(/^\s*<ask_question>([\s\S]*?)(?:<\/ask_question>|$)/i)?.[1];
+  if (!block) return null;
+
+  let question: string | null = null;
+  const choices: string[] = [];
+  for (const line of block.split("\n").map((raw) => raw.trim())) {
+    if (line.length === 0) continue;
+    const choice = line.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/)?.[1];
+    if (choice) choices.push(choice);
+    else if (question === null && choices.length === 0) question = line;
+  }
+
+  const asked = askedQuestionSchema.safeParse({ question, choices });
+  return asked.success ? asked.data : null;
 }
 
 function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[]): string | null {

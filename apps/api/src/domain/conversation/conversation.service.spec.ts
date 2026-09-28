@@ -2208,6 +2208,124 @@ describe("ConversationService", () => {
     });
   });
 
+  describe("appels d'outils recopiés en fin de réponse", () => {
+    /** Texte persisté pour la réponse de l'assistant. */
+    const savedContent = (repo: IConversationRepository) =>
+      ((repo.appendMessage as jest.Mock).mock.calls[1] as [string, string, { content: string }])[2]
+        .content;
+    const streamed = (events: MessageStreamEvent[]) =>
+      events.flatMap((event) => (event.type === "text" ? [event.text] : [])).join("");
+
+    beforeEach(() => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    });
+    afterEach(() => jest.restoreAllMocks());
+
+    it("retire la ligne `ask_question` écrite sous la question, à l'écran comme en base", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm(
+        ["Tu veux que je te rappelle les dates ?\n", "`ask_", "question`"],
+        [
+          {
+            id: "call-1",
+            name: "ask_question",
+            input: { question: "Je te rappelle les dates ?", choices: ["Oui", "Non"] },
+          },
+        ],
+      );
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).not.toContain("ask_question");
+      expect(savedContent(repo)).toBe("Tu veux que je te rappelle les dates ?");
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({ choices: ["Oui", "Non"] }),
+        TOKEN,
+      );
+    });
+
+    it("fait d'un bloc <ask_question> écrit en texte des réponses à choisir d'un appui", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "Je t'organise ça ?\n<ask_",
+        "question>\nOn fait :\n- Une todoliste pour les étapes\n",
+        "- Une liste d'achats\n- Les deux\n</ask_question>",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).toBe("Je t'organise ça ?\n");
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content: "Je t'organise ça ?",
+          choices: ["Une todoliste pour les étapes", "Une liste d'achats", "Les deux"],
+        }),
+        TOKEN,
+      );
+    });
+
+    it("préfère la question de l'outil à celle recopiée en texte", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm(
+        ["On y va ?\n<ask_question>\nOn fait :\n- A\n- B\n</ask_question>"],
+        [
+          {
+            id: "call-1",
+            name: "ask_question",
+            input: { question: "On y va ?", choices: ["Oui", "Plus tard"] },
+          },
+        ],
+      );
+
+      await drain(makeService(repo, llm));
+
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({ choices: ["Oui", "Plus tard"] }),
+        TOKEN,
+      );
+    });
+
+    it("coupe la section qui décrit les outils appelés, et ce qui l'annonçait", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "Je te propose de ranger cette conversation. Ça te convient ?\n\n---\n**Outils appelés** :\n",
+        '- `name_conversation` → *"Remorque"*\n- `suggest_folders` →\n  ```json\n  {"folders": []}\n  ```',
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).not.toContain("name_conversation");
+      expect(savedContent(repo)).toBe(
+        "Je te propose de ranger cette conversation. Ça te convient ?",
+      );
+    });
+
+    it("laisse passer accents graves, balises et puces qui ne nomment aucun outil", async () => {
+      const text =
+        "Deux options :\n- `npm install` d'abord\n- **Budget** ensuite\n<div> reste du HTML.";
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "Deux options :\n- `np",
+        "m install` d'abord\n- **Bud",
+        "get** ensuite\n<div> reste du HTML.",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).toBe(text);
+      expect(savedContent(repo)).toBe(text);
+    });
+  });
+
   describe("correction et reprise d'un tour", () => {
     /** Déroule un générateur de tour, comme le fait le controller. */
     async function collect(
