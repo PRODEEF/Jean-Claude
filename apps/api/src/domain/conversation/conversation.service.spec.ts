@@ -2329,6 +2329,44 @@ describe("ConversationService", () => {
       );
     });
 
+    it("fait d'une ligne *ask_question* suivie d'une liste numérotée des réponses à choisir", async () => {
+      // Réponse relevée telle quelle avec ministral-14b.
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "Je propose de créer un dossier **\"Impôts\"**. Tu veux des sous-dossiers ?\n\n*ask_",
+        "question*\nTu veux :\n1. Un dossier **\"Impôts\"** simple, sans sous-dossiers.\n",
+        "2. Un dossier **\"Impôts\"** avec des sous-dossiers pour mieux organiser.",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).not.toContain("ask_question");
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content: "Je propose de créer un dossier **\"Impôts\"**. Tu veux des sous-dossiers ?",
+          choices: [
+            'Un dossier "Impôts" simple, sans sous-dossiers.',
+            'Un dossier "Impôts" avec des sous-dossiers pour mieux organiser.',
+          ],
+          question: "Tu veux :",
+        }),
+        TOKEN,
+      );
+    });
+
+    it("retire un nom d'outil écrit nu en fin de réponse", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm(["Ça te convient ?\nask_", "question"]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).toBe("Ça te convient ?\n");
+      expect(savedContent(repo)).toBe("Ça te convient ?");
+    });
+
     it("préfère la question de l'outil à celle recopiée en texte", async () => {
       const repo = makeRepository();
       const llm = makeLlm(
@@ -2370,12 +2408,14 @@ describe("ConversationService", () => {
 
     it("laisse passer accents graves, balises et puces qui ne nomment aucun outil", async () => {
       const text =
-        "Deux options :\n- `npm install` d'abord\n- **Budget** ensuite\n<div> reste du HTML.";
+        "Deux options :\n- `npm install` d'abord\n- **Budget** ensuite\n<div> reste du HTML.\n*Astuce* : suggestions bienvenues.\nAssure-toi d'avoir tout.";
       const repo = makeRepository();
       const llm = makeLlm([
         "Deux options :\n- `np",
         "m install` d'abord\n- **Bud",
-        "get** ensuite\n<div> reste du HTML.",
+        "get** ensuite\n<div> reste du HTML.\n*Ast",
+        "uce* : suggestions bienvenues.\nAs",
+        "sure-toi d'avoir tout.",
       ]);
 
       const events = await drain(makeService(repo, llm));

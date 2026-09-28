@@ -1507,8 +1507,8 @@ function takeJsonObject(text: string, start: number): number | "incomplete" {
  * plus, ou à la place, des vrais appels — et elles s'affichaient telles quelles
  * au milieu de la conversation.
  *
- * Une ligne qui s'ouvre sur le nom d'un outil, entre accents graves ou en
- * balise, coupe la réponse : tout ce qui la suit est de l'argument d'outil,
+ * Une ligne qui s'ouvre sur le nom d'un outil, nu ou habillé de Markdown,
+ * coupe la réponse : tout ce qui la suit est de l'argument d'outil,
  * jamais une réponse à l'utilisateur. Seul le début de ligne est retenu le
  * temps de savoir s'il en est une : le reste du texte passe au fil de l'eau.
  */
@@ -1580,7 +1580,10 @@ function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFil
  * Une ligne de réponse ouvre-t-elle une fuite d'outil ?
  *
  * `maybe` tant que la ligne n'est pas complète et que son début peut encore
- * devenir `` `nom_d_outil` `` ou `<nom_d_outil>`, puce comprise.
+ * devenir le nom d'un outil, puce comprise. Le nom compte nu comme habillé —
+ * accents graves, balise, italique ou gras : ministral a écrit
+ * `*ask_question*` là où Mistral Medium écrivait `` `ask_question` ``, et un
+ * nom d'outil en début de ligne n'est jamais une réponse à l'utilisateur.
  */
 function classifyTrailingLine(
   line: string,
@@ -1593,13 +1596,12 @@ function classifyTrailingLine(
   const body = indented.replace(/^[-*][ \t]+/, "");
   if (!complete && body === "") return "maybe";
 
-  const opener = body.startsWith("</") ? "</" : body[0] === "`" || body[0] === "<" ? body[0] : null;
-  if (opener === null) return "text";
-
+  const opener = body.match(/^(?:<\/?|`|\*{1,2})/)?.[0] ?? "";
   const after = body.slice(opener.length).toLowerCase();
   const named = names.some((name) => {
     const next = after[name.length];
-    return after.startsWith(name) && next !== undefined && !/\w/.test(next);
+    // Un nom nu qui clôt le flux n'a plus rien derrière lui.
+    return after.startsWith(name) && (next === undefined ? complete : !/\w/.test(next));
   });
   if (named) return "leak";
 
@@ -1631,15 +1633,21 @@ function withoutLeakIntro(text: string): string {
 }
 
 /**
- * Question posée en texte dans un bloc `<ask_question>` plutôt que par l'outil.
+ * Question posée en texte sous le nom `ask_question` plutôt que par l'outil.
  *
- * La première ligne du bloc est la question, ses puces les réponses : c'est la
- * forme relevée en usage réel. Récupérée, elle s'affiche en boutons comme
- * n'importe quelle question de l'outil ; inexploitable, elle est seulement
- * retirée du texte.
+ * Deux formes relevées en usage réel : un bloc `<ask_question>`, et une ligne
+ * `*ask_question*` suivie de la question et d'une liste numérotée. Dans les
+ * deux, la première ligne est la question, les puces ou numéros les réponses.
+ * Récupérée, elle s'affiche en boutons comme n'importe quelle question de
+ * l'outil ; inexploitable, elle est seulement retirée du texte.
+ *
+ * Le gras et l'italique sont retirés : un bouton les afficherait en
+ * astérisques.
  */
 function readLeakedQuestion(leaked: string | null): AskedQuestion | null {
-  const block = leaked?.match(/^\s*<ask_question>([\s\S]*?)(?:<\/ask_question>|$)/i)?.[1];
+  const block = leaked?.match(
+    /^\s*(?:[-*][ \t]+)?(?:<|`|\*{1,2})?ask_question(?!\w)(?:>|`|\*{1,2})?([\s\S]*?)(?:<\/ask_question>|$)/i,
+  )?.[1];
   if (!block) return null;
 
   let question: string | null = null;
@@ -1647,12 +1655,16 @@ function readLeakedQuestion(leaked: string | null): AskedQuestion | null {
   for (const line of block.split("\n").map((raw) => raw.trim())) {
     if (line.length === 0) continue;
     const choice = line.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/)?.[1];
-    if (choice) choices.push(choice);
-    else if (question === null && choices.length === 0) question = line;
+    if (choice) choices.push(withoutEmphasis(choice));
+    else if (question === null && choices.length === 0) question = withoutEmphasis(line);
   }
 
   const asked = askedQuestionSchema.safeParse({ question, choices });
   return asked.success ? asked.data : null;
+}
+
+function withoutEmphasis(text: string): string {
+  return text.replace(/(\*\*|\*|`)(?=\S)(.+?)(?<=\S)\1/g, "$2");
 }
 
 function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[]): string | null {
