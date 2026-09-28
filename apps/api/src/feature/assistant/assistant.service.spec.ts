@@ -279,6 +279,7 @@ function makeTaskRepository(): ITaskRepository {
             done: false,
             completedAt: null,
             parentId: input.parentId ?? null,
+            dueOn: input.dueOn ?? null,
             position,
             createdAt: NOW,
             updatedAt: NOW,
@@ -1097,6 +1098,44 @@ describe("AssistantService", () => {
       expect(tasks.createList).not.toHaveBeenCalled();
     });
 
+    it("date chaque tâche du jour que lui donnait la proposition", async () => {
+      const tasks = makeTaskRepository();
+      const suggestion = makeSuggestion({
+        kind: "create_task_list",
+        message: "Je te les organise ?",
+        payload: {
+          lists: [
+            {
+              title: "Tâches Okiosk",
+              kind: "todo",
+              items: [
+                { title: "Refaire le site internet", dueOn: "2026-09-12" },
+                { title: "Améliorer les groupes", dueOn: "2026-09-14" },
+                { title: "Relire la charte" },
+              ],
+            },
+          ],
+        },
+      });
+
+      await makeService(
+        makeSuggestionStore(suggestion),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      // Une seule liste : c'est ce qui évitait la liste recopiée avec ses dates
+      // dans les titres.
+      const lists = (await tasks.findAll(TOKEN, { limit: 100 })).items;
+      expect(lists).toHaveLength(1);
+      expect(lists[0]?.tasks.map((task) => [task.title, task.dueOn])).toEqual([
+        ["Refaire le site internet", "2026-09-12"],
+        ["Améliorer les groupes", "2026-09-14"],
+        ["Relire la charte", null],
+      ]);
+    });
+
     it("crée les listes telles que corrigées avant validation, plutôt que la proposition d'origine (#17)", async () => {
       const tasks = makeTaskRepository();
 
@@ -1116,7 +1155,10 @@ describe("AssistantService", () => {
                 title: "Achats jardin",
                 kind: "shopping",
                 dueAt: null,
-                items: [{ title: "Terreau" }, { title: "Gants" }],
+                items: [
+                  { title: "Terreau", dueOn: null },
+                  { title: "Gants", dueOn: null },
+                ],
               },
             ],
           },
@@ -1146,7 +1188,7 @@ describe("AssistantService", () => {
                 title: "Courses de printemps",
                 kind: "shopping",
                 dueAt: null,
-                items: [{ title: "Terreau" }],
+                items: [{ title: "Terreau", dueOn: null }],
               },
             ],
           },
@@ -1164,7 +1206,7 @@ describe("AssistantService", () => {
               title: "Courses de printemps",
               kind: "shopping",
               dueAt: null,
-              items: [{ title: "Terreau" }],
+              items: [{ title: "Terreau", dueOn: null }],
             },
           ],
         }),

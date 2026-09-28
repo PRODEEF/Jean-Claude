@@ -67,9 +67,10 @@ export const taskRoutes = new Hono<AuthEnv>()
   })
 
   .patch("/:id/items/:itemId", itemParams, validate("json", updateTaskSchema), async (c) => {
+    const user = c.get("user");
     const { id, itemId } = c.req.valid("param");
     return c.json(
-      await service.updateTask(id, itemId, c.req.valid("json"), c.get("user").accessToken),
+      await service.updateTask(user.id, id, itemId, c.req.valid("json"), user.accessToken),
     );
   })
 

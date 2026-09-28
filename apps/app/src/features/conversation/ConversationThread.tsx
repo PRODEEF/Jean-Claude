@@ -55,7 +55,14 @@ export type ConversationThreadProps = {
    * qu'une conversation n'existe, il ne reste qu'à l'y rattacher.
    */
   initialAttachmentIds?: string[] | undefined;
+  /**
+   * Phrase posée en tête du fil. Le canal permanent y dit à quoi il sert :
+   * sans elle, rien ne le distinguait d'une nouvelle conversation (A.10).
+   */
+  intro?: string;
 };
+
+const DEFAULT_INTRO = "Écrivez ce que vous avez en tête. Le rangement viendra ensuite.";
 
 /**
  * Fil de conversation : historique et saisie.
@@ -72,6 +79,7 @@ export function ConversationThread({
   conversationId,
   initialDraft,
   initialAttachmentIds,
+  intro = DEFAULT_INTRO,
 }: ConversationThreadProps) {
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
@@ -327,9 +335,7 @@ export function ConversationThread({
           // une fois les premiers messages échangés, au lieu de disparaître dès
           // le premier envoi — elle défile avec le reste, sans être fixée.
           ListHeaderComponent={
-            <Text style={[styles.intro, { color: palette.textMuted }]}>
-              Écrivez ce que vous avez en tête. Le rangement viendra ensuite.
-            </Text>
+            <Text style={[styles.intro, { color: palette.textMuted }]}>{intro}</Text>
           }
           // Rendu `null` quand il n'y a rien à montrer : un pied vide compterait
           // malgré tout dans l'espacement de la liste.

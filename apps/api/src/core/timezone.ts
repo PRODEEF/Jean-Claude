@@ -75,3 +75,11 @@ export function isPastCalendarDay(iso: string, timezone: string, now = new Date(
 export function isSameCalendarDay(a: string, b: string, timezone: string): boolean {
   return calendarDayUtc(a, timezone) === calendarDayUtc(b, timezone);
 }
+
+/**
+ * Jour civil `AAAA-MM-JJ` où tombe l'instant dans `timezone` — la forme des
+ * échéances de tâche, qui visent un jour et non une heure.
+ */
+export function calendarDateIn(instant: Date, timezone: string): string {
+  return toWall(instant, timezone).toISOString().slice(0, 10);
+}
