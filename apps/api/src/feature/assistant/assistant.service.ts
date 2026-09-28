@@ -200,6 +200,11 @@ export class AssistantService {
    * pour une liste de tâches, ACHAT pour une liste de courses — la liste y
    * naît directement plutôt que dans le dossier projet lui-même.
    *
+   * Une conversation rangée dans plusieurs dossiers envoie chaque liste dans
+   * celui de son sujet — « Courses » dans Courses, « Devoirs » dans Devoirs —
+   * plutôt que toutes dans le premier : c'est le nom du dossier, retrouvé dans
+   * le titre de la liste, qui le désigne.
+   *
    * Les tâches sont ajoutées l'une après l'autre plutôt qu'en parallèle : leur
    * position se calcule à partir de celles déjà prises dans la liste, et deux
    * insertions concurrentes se verraient attribuer la même.
@@ -225,9 +230,10 @@ export class AssistantService {
     const dated: ScheduleListsPayload["lists"] = [];
 
     for (const proposed of payload.data.lists) {
+      const subjectFolderId = folderNamedIn(proposed.title, tree, conversation.folderIds);
       const typedFolderId = findTypedFolder(
         tree,
-        conversation.folderIds,
+        subjectFolderId === null ? conversation.folderIds : [subjectFolderId],
         TASK_LIST_FOLDER_PURPOSE[proposed.kind],
       );
 
@@ -236,7 +242,7 @@ export class AssistantService {
         {
           title: proposed.title,
           kind: proposed.kind,
-          folderId: typedFolderId ?? fallbackFolderId,
+          folderId: typedFolderId ?? subjectFolderId ?? fallbackFolderId,
           dueAt: proposed.dueAt,
           conversationId,
           createdByAssistant: true,
@@ -328,12 +334,16 @@ export class AssistantService {
   }
 
   /**
-   * Coche, décoche ou renomme des lignes d'une liste qui existe déjà (§12.1, A.2).
+   * Coche, décoche, renomme, retire ou ajoute des lignes d'une liste qui
+   * existe déjà (§12.1, A.2).
    *
    * Une ligne à la fois plutôt qu'en parallèle : `updateTask` relit la liste
    * à chaque passe, et deux écritures concurrentes se marcheraient dessus.
    * Une ligne disparue entre la proposition et l'acceptation rend un 404
    * plutôt que d'écrire dans le vide.
+   *
+   * Les ajouts passent en dernier : ils prennent la suite des positions
+   * restantes, une fois les lignes remplacées retirées.
    */
   private async updateTaskListItems(
     userId: string,
@@ -348,10 +358,19 @@ export class AssistantService {
     }
 
     for (const item of payload.data.items) {
+      if (item.remove === true) {
+        await this.tasks.deleteTask(payload.data.listId, item.taskId, accessToken);
+        continue;
+      }
+
       const patch: { title?: string; done?: boolean } = {};
       if (item.title !== undefined) patch.title = item.title;
       if (item.done !== undefined) patch.done = item.done;
       await this.tasks.updateTask(userId, payload.data.listId, item.taskId, patch, accessToken);
+    }
+
+    for (const item of payload.data.added) {
+      await this.tasks.addTask(userId, payload.data.listId, { title: item.title }, accessToken);
     }
 
     return [];
@@ -815,6 +834,41 @@ function findTypedFolder(
   }
 
   return null;
+}
+
+/**
+ * Dossier de la conversation dont le nom figure, mot pour mot, dans le titre
+ * de la liste — `null` si aucun.
+ *
+ * Mot pour mot et non par sous-chaîne : un dossier « Art » ne doit pas
+ * attirer une liste « Départ en vacances ». Casse et accents ne comptent pas,
+ * « Devoirs » et « devoirs » désignent le même sujet.
+ */
+function folderNamedIn(
+  title: string,
+  tree: FolderTreeNode[],
+  folderIds: string[],
+): string | null {
+  const titleWords = ` ${words(title).join(" ")} `;
+  const known = flatten(tree);
+
+  for (const id of folderIds) {
+    const folder = known.find((candidate) => candidate.id === id);
+    const name = folder ? words(folder.name).join(" ") : "";
+    if (name.length > 0 && titleWords.includes(` ${name} `)) return id;
+  }
+
+  return null;
+}
+
+/** Mots d'un libellé, en minuscules et sans accents. */
+function words(label: string): string[] {
+  return label
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase("fr")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 0);
 }
 
 /**

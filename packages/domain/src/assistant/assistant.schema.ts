@@ -56,7 +56,7 @@ export const suggestionKindSchema = z.enum([
   "create_events",
   /** « Je décale Courses à vendredi ? » (§12.1, A.2) */
   "update_task_list_due_date",
-  /** « Je coche le pain et je renomme les œufs ? » (§12.1, A.2) */
+  /** « Je coche le pain et je remplace Légumes par tomates et courgettes ? » (§12.1, A.2) */
   "update_task_list_items",
   /** « On dirait un bug, je le signale ? » (A.10) */
   "report_bug",
@@ -340,27 +340,41 @@ export type UpdateTaskListDueDatePayload = z.infer<typeof updateTaskListDueDateP
  * qu'un outil à sa portée, celui qui crée, et le modèle ouvrait une seconde
  * liste. Chaque ligne est désignée par son identifiant, repris de la consigne.
  *
- * Au moins un des deux champs `title` / `done` : une ligne sans rien à
+ * Au moins un des champs `title` / `done` / `remove` : une ligne sans rien à
  * changer n'a pas de proposition à porter.
+ *
+ * `remove` et `added` modifient la liste en place : « détaille les courses »
+ * retire « Légumes » et ajoute les légumes un par un, dans la même carte.
+ * Sans eux, le modèle n'avait que la création d'une liste pour exprimer ce
+ * geste, et la liste entière était recréée en double. `items` absent — une
+ * proposition enregistrée avant `added`, ou qui ne fait qu'ajouter — vaut
+ * aucune ligne existante touchée.
  */
-export const updateTaskListItemsPayloadSchema = z.object({
-  listId: uuidSchema,
-  items: z
-    .array(
-      z
-        .object({
-          taskId: uuidSchema,
-          title: labelSchema.optional(),
-          done: z.boolean().optional(),
-        })
-        .refine(
-          (item) => item.title !== undefined || item.done !== undefined,
-          "Une ligne à modifier doit au moins changer de titre ou d'état.",
-        ),
-    )
-    .min(1)
-    .max(30),
-});
+export const updateTaskListItemsPayloadSchema = z
+  .object({
+    listId: uuidSchema,
+    items: z
+      .array(
+        z
+          .object({
+            taskId: uuidSchema,
+            title: labelSchema.optional(),
+            done: z.boolean().optional(),
+            remove: z.boolean().optional(),
+          })
+          .refine(
+            (item) => item.title !== undefined || item.done !== undefined || item.remove === true,
+            "Une ligne à modifier doit au moins changer de titre ou d'état, ou être retirée.",
+          ),
+      )
+      .max(30)
+      .default([]),
+    added: z.array(z.object({ title: labelSchema })).max(30).default([]),
+  })
+  .refine(
+    (payload) => payload.items.length + payload.added.length > 0,
+    "Une modification sans ligne touchée ni ajoutée n'a rien à appliquer.",
+  );
 
 export type UpdateTaskListItemsPayload = z.infer<typeof updateTaskListItemsPayloadSchema>;
 

@@ -4601,4 +4601,238 @@ describe("ConversationService", () => {
       expect(tools).toContain("suggest_task_list_items");
     });
   });
+
+  describe("correction des todolistes proposées (§12.1, A.2)", () => {
+    const PENDING_LISTS = makeSuggestion({
+      id: "sug-1",
+      kind: "create_task_list",
+      status: "pending",
+      message: "Je te les organise ?",
+    });
+
+    /** Appel relevé sur « Organisation samedi » : les courses détaillées, les devoirs inchangés. */
+    const CORRECTED: LlmToolCall = {
+      id: "call-1",
+      name: "suggest_task_list",
+      input: {
+        message: "Je te propose les courses détaillées ?",
+        lists: [
+          {
+            title: "Courses",
+            kind: "shopping",
+            items: [{ title: "Pâtes à lasagnes" }, { title: "Viande hachée" }],
+          },
+          { title: "Devoirs", kind: "todo", items: [{ title: "Maths" }, { title: "Français" }] },
+        ],
+      },
+    };
+
+    /** Dépôt qui rend la proposition telle qu'elle vient d'être enregistrée. */
+    const makeRecordingSuggestions = (decided: Suggestion[]) =>
+      makeSuggestionRepository({
+        listForConversation: jest.fn().mockResolvedValue(decided),
+        create: jest
+          .fn()
+          .mockImplementation((_userId: string, input: Partial<Suggestion>) =>
+            Promise.resolve(makeSuggestion({ id: "sug-2", ...input })),
+          ),
+      });
+
+    /** Titres des listes portées par la proposition enregistrée. */
+    const proposedTitles = (suggestions: ISuggestionRepository): unknown[] => {
+      const call = (suggestions.create as jest.Mock).mock.calls[0] as [
+        string,
+        { payload: { lists: { title: string }[] } },
+      ];
+      return call[1].payload.lists.map((list) => list.title);
+    };
+
+    it("laisse au modèle de quoi corriger une proposition de todolistes qui attend", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm, makeRecordingSuggestions([PENDING_LISTS])));
+
+      // « Détaille les courses » pendant que la carte attend : sans l'outil, le
+      // modèle répondait « voici ta liste détaillée » sans rien proposer.
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_task_list");
+      expect(lastRequest(llm).system ?? "").toContain("remplace la carte en attente");
+    });
+
+    it("retire la proposition en attente que la version corrigée remplace", async () => {
+      const suggestions = makeRecordingSuggestions([PENDING_LISTS]);
+
+      await drain(
+        makeService(makeRepository(), makeLlm(["C'est détaillé dans la carte."], [CORRECTED]), suggestions),
+        { content: "Détaille les courses", inputMode: "text", attachmentIds: [] },
+      );
+
+      // Accepter les deux cartes créerait les listes en double.
+      expect(suggestions.create).toHaveBeenCalledTimes(1);
+      expect(suggestions.markResolved).toHaveBeenCalledWith("sug-1", "expired", TOKEN);
+    });
+
+    it("ne retire rien quand aucune proposition de todolistes n'attend", async () => {
+      const suggestions = makeRecordingSuggestions([]);
+
+      await drain(makeService(makeRepository(), makeLlm(["Voilà."], [CORRECTED]), suggestions));
+
+      expect(suggestions.create).toHaveBeenCalledTimes(1);
+      expect(suggestions.markResolved).not.toHaveBeenCalled();
+    });
+
+    it("écarte une todoliste reproposée alors qu'elle existe déjà sur ce fil", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeRecordingSuggestions([]);
+      const existing = makeTaskList({
+        title: "courses",
+        tasks: [makeTaskListItem({ id: "22222222-2222-4222-8222-222222222222", title: "Légumes" })],
+      });
+
+      await drain(
+        makeService(
+          makeRepository(),
+          makeLlm(["Je recommence."], [CORRECTED]),
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([existing]),
+        ),
+        { content: "Tout recommencer", inputMode: "text", attachmentIds: [] },
+      );
+
+      // « Tout recommencer » recréait les deux listes : celle qui existe se
+      // modifie, seule la nouvelle se propose.
+      expect(proposedTitles(suggestions)).toEqual(["Devoirs"]);
+      jest.restoreAllMocks();
+    });
+
+    it("demande quoi changer quand le modèle repropose, sans un mot, des listes qui existent déjà", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const repo = makeRepository();
+      const suggestions = makeRecordingSuggestions([]);
+      const lists = ["Courses", "Devoirs"].map((title, index) =>
+        makeTaskList({
+          id: `11111111-1111-4111-8111-11111111111${index}`,
+          title,
+          tasks: [makeTaskListItem({ id: `22222222-2222-4222-8222-22222222222${index}` })],
+        }),
+      );
+      const llm = makeLlmTurns([{ toolCalls: [CORRECTED] }]);
+
+      await drain(
+        makeService(
+          repo,
+          llm,
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository(lists),
+        ),
+        { content: "Tout recommencer", inputMode: "text", attachmentIds: [] },
+      );
+
+      // Relancé, le modèle présentait les listes en texte et demandait de
+      // confirmer — sans aucune carte à valider.
+      expect(callCount(llm)).toBe(1);
+      expect(suggestions.create).not.toHaveBeenCalled();
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content: expect.stringContaining("Ces listes existent déjà") as unknown,
+        }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("remet à la relance le contenu exact des listes de la carte", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const llm = makeLlmTurns([{ toolCalls: [CORRECTED] }, { chunks: ["Voilà pour samedi."] }]);
+
+      await drain(makeService(makeRepository(), llm, makeRecordingSuggestions([])));
+
+      // Sans lui, la relance détaillait en texte des lignes absentes de la carte.
+      expect(requestAt(llm, 1).system ?? "").toContain(
+        "- « Courses » : Pâtes à lasagnes, Viande hachée",
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("rétablit l'identifiant de liste d'après les lignes que la modification désigne", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeRecordingSuggestions([]);
+      const listId = "11111111-1111-4111-8111-111111111111";
+      const taskId = "22222222-2222-4222-8222-222222222222";
+      const existing = makeTaskList({
+        id: listId,
+        title: "Courses",
+        tasks: [makeTaskListItem({ id: taskId, title: "Salade" })],
+      });
+      // Relevé avec ministral-14b : un identifiant de liste qui n'existe pas,
+      // des lignes justes.
+      const replace: LlmToolCall = {
+        id: "call-1",
+        name: "suggest_update_task_items",
+        input: {
+          message: "Je remplace la salade par de la roquette ?",
+          listId: "befad81b-9e98-46aa-87b5-fac4c1ab20f5",
+          items: [{ taskId, remove: true }],
+          added: [{ title: "Roquette" }],
+        },
+      };
+
+      await drain(
+        makeService(
+          makeRepository(),
+          makeLlm(["C'est proposé."], [replace]),
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([existing]),
+        ),
+      );
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_task_list_items",
+          payload: expect.objectContaining({ listId }) as unknown,
+        }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("n'affiche aucune carte quand toutes les listes proposées existent déjà", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeRecordingSuggestions([]);
+      const lists = ["Courses", "Devoirs"].map((title, index) =>
+        makeTaskList({
+          id: `11111111-1111-4111-8111-11111111111${index}`,
+          title,
+          tasks: [makeTaskListItem({ id: `22222222-2222-4222-8222-22222222222${index}` })],
+        }),
+      );
+
+      await drain(
+        makeService(
+          makeRepository(),
+          makeLlm(["Je recommence."], [CORRECTED]),
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository(lists),
+        ),
+      );
+
+      expect(suggestions.create).not.toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+  });
 });
