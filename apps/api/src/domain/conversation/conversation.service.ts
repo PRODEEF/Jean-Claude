@@ -783,6 +783,10 @@ export class ConversationService {
           })
         : null;
     const trailingLeak = createTrailingLeakFilter(KNOWN_TOOL_NAMES);
+    // La relance sans outils a son propre filtre : privé d'outils, le modèle y
+    // recopie d'autant plus volontiers les siens en texte, et le filtre du
+    // premier appel, une fois coupé, avalerait toute la relance.
+    const retryLeak = createTrailingLeakFilter(KNOWN_TOOL_NAMES);
 
     try {
       for await (const chunk of this.llm.stream(request)) {
@@ -811,8 +815,17 @@ export class ConversationService {
       // réponse. Un second tour la lui donne, la consigne n'ayant pas suffi.
       if (text.length === 0 && needsWrittenAnswer(conversation.kind, toolCalls)) {
         for await (const chunk of this.answerAfterToolCall(request, toolCalls)) {
-          text += chunk;
-          yield { type: "text", text: chunk };
+          const visible = retryLeak.push(chunk);
+          if (visible.length > 0) {
+            text += visible;
+            yield { type: "text", text: visible };
+          }
+        }
+
+        const retryTail = retryLeak.flush();
+        if (retryTail.length > 0) {
+          text += retryTail;
+          yield { type: "text", text: retryTail };
         }
       }
     } finally {
@@ -820,17 +833,29 @@ export class ConversationService {
       // pleine génération, le texte déjà produit est déjà facturé. Le perdre
       // priverait l'utilisateur d'une réponse qu'il retrouverait de toute façon
       // au rechargement.
-      text += trailingLeak.push(textLeak?.flush() ?? "") + trailingLeak.flush();
-      const leaked = trailingLeak.leaked();
-      if (leaked !== null) {
+      text += trailingLeak.push(textLeak?.flush() ?? "") + trailingLeak.flush() + retryLeak.flush();
+      const leaks = [trailingLeak.leaked(), retryLeak.leaked()].filter(
+        (leak): leak is string => leak !== null,
+      );
+      if (leaks.length > 0) {
         logger.warn(SCOPE, "Appel d'outil recopié en texte en fin de réponse : retiré.");
+      }
+      if (leaks.length > 0 || trailingLeak.narrated() || retryLeak.narrated()) {
         text = withoutLeakIntro(text);
       }
       // Résolu avant l'écriture : les réponses proposées voyagent sur le
       // message qui porte la question, pas dans une seconde requête. Une
       // question écrite en texte ne sert qu'à défaut de l'outil, qui la porte
       // sous sa forme voulue.
-      const asked = readQuestion(toolCalls) ?? readLeakedQuestion(leaked);
+      const leakedBlock = leaks.map(leakedQuestionBlock).find((block) => block !== null) ?? null;
+      const asked =
+        readQuestion(toolCalls) ?? (leakedBlock === null ? null : readLeakedQuestion(leakedBlock));
+      // Une question recopiée qui ne tient pas en boutons — une réponse trop
+      // longue pour un bouton, une seule réponse — reste une question : elle
+      // s'affiche en texte plutôt que de disparaître avec le nom de l'outil.
+      if (asked === null && leakedBlock !== null) {
+        text = text.length > 0 ? `${text}\n\n${leakedBlock}` : leakedBlock;
+      }
       // La bascule prime sur tout ce que le modèle a pu écrire : l'annonce doit
       // être la même à chaque fois, puisque c'est elle qui porte la validation.
       const redirectTitle = readRedirectTitle(conversation.kind, toolCalls);
@@ -891,8 +916,11 @@ export class ConversationService {
             ),
             context.timezone,
           );
-          await this.suggestions.capture(userId, conversationId, corrected, accessToken);
-          suggestionCaptured = true;
+          // Une proposition écartée à la capture n'affiche aucune carte : elle
+          // ne peut pas tenir lieu de réponse au tour.
+          if (await this.suggestions.capture(userId, conversationId, corrected, accessToken)) {
+            suggestionCaptured = true;
+          }
         } catch (error) {
           // Une capture ne doit jamais faire perdre les suivantes : sans cet
           // isolement, l'échec d'un seul appel d'outil (ex. une nature de
@@ -1517,6 +1545,8 @@ type TrailingLeakFilter = {
   flush: () => string;
   /** Le texte coupé, fuite comprise — `null` tant que rien n'a été coupé. */
   leaked: () => string | null;
+  /** Une annonce en italique de ce que le modèle va faire a été retirée. */
+  narrated: () => boolean;
 };
 
 function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFilter {
@@ -1526,6 +1556,7 @@ function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFil
   /** La ligne courante a déjà été libérée : son début ne ressemblait à rien. */
   let midLine = false;
   let leaked: string | null = null;
+  let narrated = false;
 
   return {
     push(chunk) {
@@ -1554,6 +1585,10 @@ function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFil
           held = "";
           return out;
         }
+        if (verdict === "aside") {
+          held = "";
+          narrated = true;
+        }
         if (verdict === "text") {
           out += held;
           held = "";
@@ -1566,13 +1601,19 @@ function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFil
       if (leaked !== null || held.length === 0) return "";
       const line = held;
       held = "";
-      if (classifyTrailingLine(line, true, names) === "leak") {
+      const verdict = classifyTrailingLine(line, true, names);
+      if (verdict === "leak") {
         leaked = line;
+        return "";
+      }
+      if (verdict === "aside") {
+        narrated = true;
         return "";
       }
       return line;
     },
     leaked: () => leaked,
+    narrated: () => narrated,
   };
 }
 
@@ -1589,12 +1630,15 @@ function classifyTrailingLine(
   line: string,
   complete: boolean,
   names: string[],
-): "leak" | "text" | "maybe" {
+): "leak" | "aside" | "text" | "maybe" {
   const indented = line.replace(/^[ \t]+/, "");
   if (!complete && (indented === "" || indented === "-" || indented === "*")) return "maybe";
 
   const body = indented.replace(/^[-*][ \t]+/, "");
   if (!complete && body === "") return "maybe";
+
+  const aside = classifyAside(body, complete);
+  if (aside !== null) return aside;
 
   const opener = body.match(/^(?:<\/?|`|\*{1,2})/)?.[0] ?? "";
   const after = body.slice(opener.length).toLowerCase();
@@ -1607,6 +1651,29 @@ function classifyTrailingLine(
 
   if (!complete && names.some((name) => name.startsWith(after))) return "maybe";
   return "text";
+}
+
+/**
+ * Aparté en italique où le modèle annonce ce qu'il va faire — « *Je vais te
+ * proposer deux listes séparées.* ».
+ *
+ * Relevé avec ministral, surtout dans la relance sans outils : il y annonce la
+ * proposition qu'il ne peut plus faire, et la consigne n'a pas suffi à l'en
+ * empêcher. L'assistant ne fait rien de lui-même, il propose par une carte
+ * (§12.1) : l'annonce n'est jamais vraie. Seule la ligne entière en italique
+ * est visée — « Je vais te proposer deux listes. Ça te convient ? » en clair
+ * porte une question, et reste.
+ */
+function classifyAside(body: string, complete: boolean): "aside" | "maybe" | null {
+  const opening = body.match(/^[*_]\(?[ \t]*/)?.[0];
+  if (opening === undefined) return null;
+
+  const after = body.slice(opening.length).toLowerCase();
+  if (!/^je vais(?![\p{L}\p{N}])/u.test(after)) {
+    return !complete && "je vais".startsWith(after) ? "maybe" : null;
+  }
+  if (!complete) return "maybe";
+  return /[*_][^\p{L}\p{N}]*$/u.test(body.trimEnd()) ? "aside" : null;
 }
 
 /**
@@ -1636,26 +1703,36 @@ function withoutLeakIntro(text: string): string {
  * Question posée en texte sous le nom `ask_question` plutôt que par l'outil.
  *
  * Deux formes relevées en usage réel : un bloc `<ask_question>`, et une ligne
- * `*ask_question*` suivie de la question et d'une liste numérotée. Dans les
- * deux, la première ligne est la question, les puces ou numéros les réponses.
- * Récupérée, elle s'affiche en boutons comme n'importe quelle question de
- * l'outil ; inexploitable, elle est seulement retirée du texte.
+ * `*ask_question*` (ou `ask_question:`) suivie de la question et d'une liste
+ * numérotée. Dans les deux, la première ligne est la question, les puces ou
+ * numéros les réponses. Rendu ici sans le nom de l'outil, `null` si la fuite
+ * en nomme un autre.
+ */
+function leakedQuestionBlock(leaked: string): string | null {
+  const block = leaked
+    .match(
+      /^\s*(?:[-*][ \t]+)?(?:<|`|\*{1,2})?ask_question(?!\w)(?:>|`|\*{1,2})?(?:[ \t]*:)?([\s\S]*?)(?:<\/ask_question>|$)/i,
+    )?.[1]
+    ?.trim();
+  return block ? block : null;
+}
+
+/**
+ * Le bloc recopié, en question à réponses proposées — `null` s'il ne tient
+ * pas en boutons.
  *
  * Le gras et l'italique sont retirés : un bouton les afficherait en
- * astérisques.
+ * astérisques. Une ligne en retrait détaille la réponse qui la précède — le
+ * modèle y déroule le contenu de chaque option — et n'en est pas une.
  */
-function readLeakedQuestion(leaked: string | null): AskedQuestion | null {
-  const block = leaked?.match(
-    /^\s*(?:[-*][ \t]+)?(?:<|`|\*{1,2})?ask_question(?!\w)(?:>|`|\*{1,2})?([\s\S]*?)(?:<\/ask_question>|$)/i,
-  )?.[1];
-  if (!block) return null;
-
+function readLeakedQuestion(block: string): AskedQuestion | null {
   let question: string | null = null;
   const choices: string[] = [];
-  for (const line of block.split("\n").map((raw) => raw.trim())) {
-    if (line.length === 0) continue;
+  for (const raw of block.split("\n")) {
+    const line = raw.trim();
+    if (line.length === 0 || /^(?: {2,}|\t)/.test(raw)) continue;
     const choice = line.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/)?.[1];
-    if (choice) choices.push(withoutEmphasis(choice));
+    if (choice) choices.push(withoutEmphasis(choice).replace(/\s*:$/, ""));
     else if (question === null && choices.length === 0) question = withoutEmphasis(line);
   }
 

@@ -2357,6 +2357,137 @@ describe("ConversationService", () => {
       );
     });
 
+    it("filtre aussi la relance écrite après un appel d'outil sans texte", async () => {
+      // Réponse relevée telle quelle avec ministral-14b : le premier appel
+      // propose des listes sans un mot, la relance recopie `ask_question`.
+      const repo = makeRepository();
+      const llm = makeLlmTurns([
+        {
+          toolCalls: [
+            {
+              id: "call-1",
+              name: "suggest_task_list",
+              input: { message: "Je te les organise ?", lists: [] },
+            },
+          ],
+        },
+        {
+          chunks: [
+            "**ask_question**\nTu veux que je crée **deux listes séparées** pour samedi :\n",
+            "1. Une pour les **courses du matin** (avec rappels si besoin).\n",
+            "2. Une pour les **devoirs de l’après-midi** (avec rappels si besoin).\n\n",
+            "Ou bien préfères-tu :\n- **Une seule liste** avec les deux sections mélangées ?\n",
+            "- **Aucune liste automatique** et que je te propose juste un modèle à recopier ?",
+          ],
+        },
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).not.toContain("ask_question");
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content: "Tu veux que je crée deux listes séparées pour samedi :",
+          question: "Tu veux que je crée deux listes séparées pour samedi :",
+          choices: [
+            "Une pour les courses du matin (avec rappels si besoin).",
+            "Une pour les devoirs de l’après-midi (avec rappels si besoin).",
+            "Une seule liste avec les deux sections mélangées ?",
+            "Aucune liste automatique et que je te propose juste un modèle à recopier ?",
+          ],
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ne prend pour réponses que les options, pas le détail en retrait sous chacune", async () => {
+      // Relance rejouée telle quelle avec ministral-14b.
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "ask_question:\nTu veux que je crée :\n\n1. **Deux listes séparées** :\n",
+        "   - Une pour les *courses* (samedi matin)\n   - Une autre pour les *devoirs* (samedi après-midi)\n\n",
+        "2. **Une seule liste combinée** avec deux sections :\n",
+        '   - "À faire samedi matin" (courses)\n   - "À faire samedi après-midi" (devoirs)\n\n',
+        "*(Réponds par 1 ou 2.)*",
+      ]);
+
+      await drain(makeService(repo, llm));
+
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          question: "Tu veux que je crée :",
+          choices: ["Deux listes séparées", "Une seule liste combinée avec deux sections"],
+        }),
+        TOKEN,
+      );
+    });
+
+    it("laisse en texte une question recopiée qui ne tient pas en boutons", async () => {
+      const repo = makeRepository();
+      const llm = makeLlmTurns([
+        { toolCalls: [{ id: "call-1", name: "suggest_task_list", input: { message: "Ok ?", lists: [] } }] },
+        {
+          chunks: [
+            "ask_question\nTu préfères :\n- Une **liste de courses** ?\n",
+            '- Une **liste de tâches** pour tes devoirs (ex : "Relire le chapitre 3", "Faire les exercices 5 à 8") ?',
+          ],
+        },
+      ]);
+
+      await drain(makeService(repo, llm));
+
+      // La seconde réponse dépasse la longueur d'un bouton : la question
+      // reste lisible, seul le nom de l'outil disparaît.
+      expect(savedContent(repo)).toBe(
+        'Tu préfères :\n- Une **liste de courses** ?\n- Une **liste de tâches** pour tes devoirs (ex : "Relire le chapitre 3", "Faire les exercices 5 à 8") ?',
+      );
+    });
+
+    it("signale un tour vide quand la seule proposition est écartée à la capture", async () => {
+      const llm = makeLlmTurns([
+        { toolCalls: [{ id: "call-1", name: "suggest_task_list", input: { message: "Ok ?", lists: [] } }] },
+        { chunks: ["`ask_question`"] },
+      ]);
+
+      // Rien à l'écran, ni texte ni carte : l'utilisateur doit savoir que sa
+      // demande n'a pas abouti plutôt que rester devant un fil muet.
+      await expect(drain(makeService(makeRepository(), llm))).rejects.toThrow(
+        "Le modèle n'a produit aucune réponse",
+      );
+    });
+
+    it("retire l'aparté en italique où le modèle annonce ce qu'il va faire", async () => {
+      // Réponse relevée telle quelle avec ministral-14b.
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "Tu veux que je crée ces deux listes directement, ou tu préfères les préparer toi-même avant ?\n\n*Je v",
+        "ais proposer la création de ces listes pour que tu puisses les compléter facilement.*",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).not.toContain("Je vais");
+      expect(savedContent(repo)).toBe(
+        "Tu veux que je crée ces deux listes directement, ou tu préfères les préparer toi-même avant ?",
+      );
+    });
+
+    it("garde une annonce écrite en clair, qui porte une question", async () => {
+      const text = "Voici l'idée.\n\nJe vais te proposer deux listes. Ça te convient ?";
+      const repo = makeRepository();
+      const llm = makeLlm([text]);
+
+      await drain(makeService(repo, llm));
+
+      expect(savedContent(repo)).toBe(text);
+    });
+
     it("retire un nom d'outil écrit nu en fin de réponse", async () => {
       const repo = makeRepository();
       const llm = makeLlm(["Ça te convient ?\nask_", "question"]);
@@ -4318,8 +4449,10 @@ describe("ConversationService", () => {
     it("abandonne une reprogrammation dont la nouvelle échéance retombe dans le passé", async () => {
       const suggestions = makeSuggestionRepository();
       const tasks = makeTaskRepository([EXISTING_LIST]);
+      // Le tour porte une réponse écrite : sans elle, la proposition écartée
+      // le laisserait vide, et c'est ce tour vide qui serait signalé.
       const llm = makeLlm(
-        [],
+        ["Le 1er est déjà passé."],
         [
           {
             id: "call-1",

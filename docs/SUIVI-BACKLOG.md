@@ -202,6 +202,21 @@ numérotée (la réponse sur les impôts), forme que le filtre ne reconnaissait
 pas. Il reconnaît désormais le nom nu, en italique ou en gras, et la liste
 numérotée redevient elle aussi une question à réponses proposées.
 
+Toujours le 28 septembre, sur la conversation « courses samedi matin, devoirs
+l'après-midi » rejouée contre ministral-14b avec la vraie consigne : le modèle
+appelle bien `suggest_task_list`, mais avec des listes sans lignes (rien n'a
+encore été listé), que le serveur écarte. Le service relance alors le modèle
+sans outils, et c'est cette relance qui recopiait `ask_question` : son texte ne
+passait par aucun filtre. Il passe désormais par le même filtre ; une question
+recopiée qui ne tient pas en boutons (réponse de plus de 80 caractères) reste
+affichée en texte, sans le nom de l'outil. Une ligne entière en italique qui
+annonce ce que le modèle va faire (« *Je vais proposer la création de ces
+listes…* ») est retirée : dix relances sur dix l'écrivaient, avec ou sans
+consigne contraire. Enfin, un tour dont la seule proposition est écartée
+signale l'échec au lieu de se clore sans rien afficher. **À arbitrer :**
+accepter une todoliste proposée sans lignes, ou non (voir « Points à
+arbitrer »).
+
 **Une réponse semblait écrite par l'utilisateur.** Seules les réponses d'un
 `ask_question` étaient enregistrées ; le texte entier du message tenait lieu de
 question. Quand elle closait une longue réponse, la bulle de l'utilisateur qui
@@ -1807,6 +1822,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Instructions par dossier (retour de Nicolas, 01)  | A.1/A.4 | Yann — contexte de projet remis au modèle, cumulé sur les dossiers d'une conversation. Non implémenté, voir l'entrée du 28 septembre                                                                                  |
 | Aperçu calendrier / listes en conversation (07)   | A.2/A.3 | Yann — panneau latéral pendant une proposition, écran large seulement. Non implémenté                                                                                                                                |
 | Glisser-déposer des tâches au calendrier (09)     | A.3     | Yann — changer le jour d'une liste ou d'une tâche au geste, web d'abord. Non implémenté                                                                                                                              |
+| Todoliste proposée sans lignes                    | §12.1/A.2 | Clarisse — « courses samedi matin » sans rien de listé : le modèle la propose vide, le serveur et la carte exigent au moins une ligne et l'écartent. Accepter la liste vide datée, ou faire demander son contenu d'abord |
 
 ## Points nécessitant un A/B testing humain (§4.3)
 
