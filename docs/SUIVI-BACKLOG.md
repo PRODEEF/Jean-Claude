@@ -287,8 +287,11 @@ Décisions de Clarisse, et ce qui a changé :
 Filets ajoutés après rejeu contre ministral-14b : la relance qui écrit la
 réponse reçoit le contenu exact des listes de la carte (elle en recopiait
 d'autres) ; un identifiant de liste inconnu est rétabli d'après les lignes
-désignées ; une modification de lignes sans phrase reçoit « Je mets la liste à
-jour ? » (omise 2 fois sur 2). **Reste imparfait :** ministral propose encore
+désignées ; une ligne à modifier porte aussi son titre actuel, et un
+identifiant qui ne lui correspond pas est corrigé par le titre (« remplace la
+salade » retirait le beurre) ; une modification de lignes sans phrase reçoit
+« Je mets la liste à jour ? » (omise 2 fois sur 2). Rejoué ensuite : la salade
+est retirée, la roquette ajoutée, l'autre liste intacte. **Reste imparfait :** ministral propose encore
 parfois « Légumes » sans demander lesquels, et la relance recopie encore les
 listes en texte — désormais les mêmes que la carte.
 
