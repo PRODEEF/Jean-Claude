@@ -1950,18 +1950,26 @@ function withoutExistingLists(toolCall: LlmToolCall, existing: TaskListWithTasks
   return { ...toolCall, input: { ...toolCall.input, lists: kept } };
 }
 
+/** Outils qui désignent une liste existante par son identifiant. */
+const LIST_TARGETING_TOOL_NAMES = new Set([
+  SUGGEST_TASK_LIST_ITEMS.name,
+  SUGGEST_TASK_LIST_DUE_DATE.name,
+  SUGGEST_UPDATE_TASK_ITEMS.name,
+]);
+
 /**
- * Rend à un `suggest_update_task_items` l'identifiant de la liste que ses
- * lignes désignent, quand celui du modèle ne correspond à aucune liste du fil.
+ * Rend à un appel qui vise une liste existante l'identifiant de cette liste,
+ * quand celui du modèle ne correspond à aucune liste du fil.
  *
- * ministral recopiait l'identifiant d'une ligne, ou un identifiant inventé,
- * à la place de celui de la liste : la carte s'affichait, puis l'acceptation
- * échouait sur « Liste introuvable ». Les lignes, elles, étaient justes — et
- * une ligne n'appartient qu'à une liste. Sans ligne existante reconnue, rien
- * n'est deviné : l'identifiant du modèle reste tel quel.
+ * ministral recopiait l'identifiant d'une ligne à la place de celui de la
+ * liste — « ajoute du parmesan » visait la ligne « Légumes » : la carte
+ * s'affichait, puis l'acceptation échouait sur « Liste introuvable ». Une
+ * ligne n'appartient qu'à une liste : celle qui porte la ligne recopiée, ou
+ * les lignes qu'une modification désigne, est la bonne. Sans ligne existante
+ * reconnue, rien n'est deviné : l'identifiant du modèle reste tel quel.
  */
 function withListIdOfTasks(toolCall: LlmToolCall, lists: TaskListWithTasks[]): LlmToolCall {
-  if (toolCall.name !== SUGGEST_UPDATE_TASK_ITEMS.name) return toolCall;
+  if (!LIST_TARGETING_TOOL_NAMES.has(toolCall.name)) return toolCall;
 
   const listId = toolCall.input["listId"];
   if (lists.some((list) => list.id === listId)) return toolCall;
