@@ -3910,7 +3910,7 @@ describe("ConversationService", () => {
   });
 
   describe("création d'un rendez-vous récurrent (A.11)", () => {
-    it("capture la suggestion même quand le modèle omet les secondes et le fuseau de `startsAt`", async () => {
+    it("pose dans le fuseau du profil une heure donnée sans secondes ni fuseau", async () => {
       const suggestions = makeSuggestionRepository();
       const llm = makeLlm(
         [],
@@ -3941,7 +3941,9 @@ describe("ConversationService", () => {
         USER,
         expect.objectContaining({
           kind: "create_recurring_event",
-          payload: expect.objectContaining({ startsAt: "2026-09-08T18:00:00.000Z" }),
+          // 18h à Paris, heure d'été : 16h UTC. Lue dans le fuseau du serveur,
+          // la kiné tombait à 20h pour l'utilisateur.
+          payload: expect.objectContaining({ startsAt: "2026-09-08T16:00:00.000Z" }),
         }),
         TOKEN,
       );
@@ -3989,7 +3991,7 @@ describe("ConversationService", () => {
       );
     });
 
-    it("capture la suggestion même quand le modèle omet les secondes et le fuseau", async () => {
+    it("pose à 17h à Paris un rendez-vous donné « 17h » sans secondes ni fuseau", async () => {
       const suggestions = makeSuggestionRepository();
       const llm = makeLlm(
         [],
@@ -3999,7 +4001,7 @@ describe("ConversationService", () => {
             name: "suggest_events",
             input: {
               message: "Je te pose ce rendez-vous dans ton agenda ?",
-              events: [{ title: "Dentiste", startsAt: "2026-09-10T15:00" }],
+              events: [{ title: "Dentiste", startsAt: "2026-09-10T17:00" }],
             },
           },
         ],
@@ -4015,6 +4017,102 @@ describe("ConversationService", () => {
         USER,
         expect.objectContaining({
           kind: "create_events",
+          payload: { events: [{ title: "Dentiste", startsAt: "2026-09-10T15:00:00.000Z" }] },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("suit le changement d'heure pour une heure donnée sans fuseau", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_events",
+            input: {
+              message: "Je te pose ce rendez-vous dans ton agenda ?",
+              events: [{ title: "Dentiste", startsAt: "2026-11-05T17:00:00" }],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "J'ai rendez-vous chez le dentiste le 5 novembre à 17h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      // Heure d'hiver : Paris est à UTC+1.
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: { events: [{ title: "Dentiste", startsAt: "2026-11-05T16:00:00.000Z" }] },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("laisse à minuit du profil un rendez-vous daté sans heure", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_events",
+            input: {
+              message: "Je te pose ce rendez-vous dans ton agenda ?",
+              events: [{ title: "Salon", startsAt: "2026-09-10" }],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il y a le salon jeudi.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      // Minuit à Paris : c'est ce qui en fait un rendez-vous sur la journée
+      // entière à l'acceptation, et non un créneau de 2h du matin.
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: { events: [{ title: "Salon", startsAt: "2026-09-09T22:00:00.000Z" }] },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("garde l'instant d'une heure qui porte son propre décalage", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_events",
+            input: {
+              message: "Je te pose ce rendez-vous dans ton agenda ?",
+              events: [{ title: "Dentiste", startsAt: "2026-09-10T17:00:00+02:00" }],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "J'ai rendez-vous chez le dentiste jeudi à 17h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
           payload: { events: [{ title: "Dentiste", startsAt: "2026-09-10T15:00:00.000Z" }] },
         }),
         TOKEN,

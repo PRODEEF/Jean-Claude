@@ -285,7 +285,7 @@ export function AppSidebar({
           variant="ghost"
           onPress={() => go("/assistant")}
           accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
-          className={cx("h-auto justify-start gap-2 px-2 py-1.5", pathname === "/assistant")}
+          className={selected("h-auto justify-start gap-2 px-2 py-1.5", pathname === "/assistant")}
         >
           <View className="size-7 items-center justify-center rounded-md bg-primary">
             <Icon as={MessageCircle} size={14} className="text-primary-foreground" />
@@ -329,7 +329,7 @@ export function AppSidebar({
             key={link.href}
             variant="ghost"
             onPress={() => go(link.href)}
-            className={cx("justify-start gap-3 px-2", pathname === link.href)}
+            className={selected("justify-start gap-3 px-2", pathname === link.href)}
           >
             <Icon as={link.icon} size={16} className="text-muted-foreground" />
             <Text
@@ -496,9 +496,23 @@ function contextMenuProps(open: (x: number, y: number) => void): WebContextMenuP
   };
 }
 
-/** Ajoute le fond de survol shadcn quand la rangée est celle de la route courante. */
+/** Ajoute le fond de survol shadcn quand la rangée est survolée par un glisser. */
 function cx(base: string, active: boolean): string {
   return active ? `${base} bg-accent` : base;
+}
+
+/**
+ * Surligne la rangée de la route courante (demande de Yann).
+ *
+ * `bg-accent-soft` et non le `bg-accent` de shadcn : celui-ci est le gris du
+ * survol, et la conversation ouverte se confondrait avec celle que le curseur
+ * ne fait que traverser — la confusion déjà corrigée dans la bannière. La
+ * teinte atténuée de l'assistant est celle de la bulle de l'utilisateur :
+ * visible dans les deux thèmes, et qui suit la couleur choisie dans les
+ * réglages.
+ */
+function selected(base: string, active: boolean): string {
+  return active ? `${base} bg-accent-soft` : base;
 }
 
 /**
@@ -947,7 +961,7 @@ function ConversationRow({
     // La poignée de déplacement est portée par une vue et non par le bouton :
     // c'est elle qui reçoit la référence DOM, et le bouton garde la sienne pour
     // l'appui.
-    <View ref={dragRef} className={cx("group flex-row items-center rounded-md", active)}>
+    <View ref={dragRef} className={selected("group flex-row items-center rounded-md", active)}>
       <Button
         variant="ghost"
         size="sm"

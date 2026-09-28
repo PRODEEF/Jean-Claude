@@ -50,7 +50,10 @@ function initialValues(target: EventDialogTarget): EventFormValues {
   return {
     ...emptyForm(target.day),
     startTime: `${String(hour).padStart(2, "0")}:00`,
-    endTime: `${String(Math.min(hour + 1, 23)).padStart(2, "0")}:00`,
+    // Le formulaire ne porte qu'une date : une heure de plus depuis 23h
+    // passerait au lendemain. La fin s'arrête donc à 23h59 — borner à 23h
+    // donnait un créneau de 23h à 23h, que le serveur refusait.
+    endTime: hour >= 23 ? "23:59" : `${String(hour + 1).padStart(2, "0")}:00`,
   };
 }
 

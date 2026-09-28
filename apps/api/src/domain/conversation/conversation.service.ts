@@ -887,7 +887,9 @@ export class ConversationService {
                 now,
                 context.timezone,
               ),
+              context.timezone,
             ),
+            context.timezone,
           );
           await this.suggestions.capture(userId, conversationId, corrected, accessToken);
           suggestionCaptured = true;
@@ -1953,28 +1955,61 @@ function withCorrectedRescheduleDueDate(
   return { ...toolCall, input };
 }
 
+/** Date ISO sans décalage : `2026-09-30`, `2026-09-30T14:00`, `2026-09-30T14:00:00.000`. */
+const NAIVE_ISO = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?$/;
+
+/**
+ * Instant qu'un `startsAt` du modèle désigne, en ISO canonique — `null` s'il
+ * est illisible.
+ *
+ * Une date sans décalage (`2026-09-30T14:00`) est l'heure murale de
+ * l'utilisateur : c'est ce qu'il a dit (« à 14h ») et ce que la consigne de
+ * l'outil demande. `new Date` la lisait dans le fuseau du serveur — UTC sur
+ * Vercel —, et le rendez-vous tombait à 16h à Paris. Elle est donc posée dans
+ * le fuseau du profil. Une valeur qui porte son décalage (`Z`, `+02:00`) est
+ * prise telle quelle : le modèle a alors dit lui-même de quelle heure il parle.
+ */
+function instantFromModel(value: string, timeZone: string): string | null {
+  const naive = NAIVE_ISO.exec(value.trim());
+  if (naive) {
+    const [, year, month, day, hours = "0", minutes = "0", seconds = "0"] = naive;
+    const wallMs = Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hours),
+      Number(minutes),
+      Number(seconds),
+    );
+    return Number.isNaN(wallMs) ? null : fromWall(wallMs, timeZone).toISOString();
+  }
+
+  const instant = new Date(value);
+  return Number.isNaN(instant.getTime()) ? null : instant.toISOString();
+}
+
 /**
  * Fiabilise `startsAt` d'un `suggest_recurring_event` avant capture (A.11).
  *
  * Le modèle calcule cette date lui-même, sans jamais passer par le
  * validateur du serveur : une heure sans les secondes ou sans fuseau
- * (`2026-09-16T18:00`) est un ISO 8601 que `Date` lit très bien, mais que le
- * schéma strict de la charge utile rejette — la série entière disparaissait
- * alors silencieusement (`suggestion.service` la journalise comme
- * inexploitable). La reformater vers l'ISO canonique évite de perdre le
- * rendez-vous pour un simple défaut de forme ; une valeur réellement
+ * (`2026-09-16T18:00`) est un ISO 8601 que le schéma strict de la charge utile
+ * rejette — la série entière disparaissait alors silencieusement
+ * (`suggestion.service` la journalise comme inexploitable). La reformater vers
+ * l'ISO canonique, dans le fuseau du profil (`instantFromModel`), évite de
+ * perdre le rendez-vous pour un simple défaut de forme ; une valeur réellement
  * illisible reste telle quelle et la validation en aval l'écarte normalement.
  */
-function withCorrectedRecurringEventStartsAt(toolCall: LlmToolCall): LlmToolCall {
+function withCorrectedRecurringEventStartsAt(toolCall: LlmToolCall, timeZone: string): LlmToolCall {
   if (toolCall.name !== SUGGEST_RECURRING_EVENT.name) return toolCall;
 
   const startsAt = toolCall.input["startsAt"];
   if (typeof startsAt !== "string") return toolCall;
 
-  const instant = new Date(startsAt);
-  if (Number.isNaN(instant.getTime())) return toolCall;
+  const instant = instantFromModel(startsAt, timeZone);
+  if (instant === null) return toolCall;
 
-  return { ...toolCall, input: { ...toolCall.input, startsAt: instant.toISOString() } };
+  return { ...toolCall, input: { ...toolCall.input, startsAt: instant } };
 }
 
 /**
@@ -1986,7 +2021,7 @@ function withCorrectedRecurringEventStartsAt(toolCall: LlmToolCall): LlmToolCall
  * illisible malgré la reformatation n'est pas retirée du tableau : c'est la
  * validation en aval qui décide, comme pour n'importe quel autre outil.
  */
-function withCorrectedEventsStartsAt(toolCall: LlmToolCall): LlmToolCall {
+function withCorrectedEventsStartsAt(toolCall: LlmToolCall, timeZone: string): LlmToolCall {
   if (toolCall.name !== SUGGEST_EVENTS.name) return toolCall;
 
   const events = toolCall.input["events"];
@@ -1998,10 +2033,10 @@ function withCorrectedEventsStartsAt(toolCall: LlmToolCall): LlmToolCall {
     const startsAt = (entry as Record<string, unknown>)["startsAt"];
     if (typeof startsAt !== "string") return entry;
 
-    const instant = new Date(startsAt);
-    if (Number.isNaN(instant.getTime())) return entry;
+    const instant = instantFromModel(startsAt, timeZone);
+    if (instant === null) return entry;
 
-    return { ...entry, startsAt: instant.toISOString() };
+    return { ...entry, startsAt: instant };
   });
 
   return { ...toolCall, input: { ...toolCall.input, events: corrected } };

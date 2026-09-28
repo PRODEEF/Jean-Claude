@@ -4,6 +4,7 @@ import {
   calendarDayOf,
   dateOfCalendarDay,
   datedLists,
+  dueOnForDay,
   eventsOfDay,
   layoutDayEvents,
   layoutDayLists,
@@ -12,6 +13,7 @@ import {
   momentOf,
   momentsOfDay,
   openTaskCount,
+  todoDays,
 } from "./planning";
 
 /**
@@ -71,7 +73,10 @@ describe("momentOf", () => {
     expect(momentOf({ dueAt: localIso(2026, 9, 12, 9), dueAllDay: false })).toBe("morning");
     expect(momentOf({ dueAt: localIso(2026, 9, 12, 14), dueAllDay: false })).toBe("afternoon");
     expect(momentOf({ dueAt: localIso(2026, 9, 12, 19), dueAllDay: false })).toBe("evening");
-    expect(momentOf({ dueAt: localIso(2026, 9, 12, 23), dueAllDay: false })).toBe("night");
+  });
+
+  it("range la fin de soirée dans le soir, sans quatrième moment", () => {
+    expect(momentOf({ dueAt: localIso(2026, 9, 12, 23), dueAllDay: false })).toBe("evening");
   });
 
   it("annonce dans la journée une échéance à minuit, jamais le matin", () => {
@@ -90,14 +95,27 @@ describe("momentOf", () => {
 });
 
 describe("momentsOfDay", () => {
-  it("écarte les moments vides plutôt que d'annoncer cinq fois rien", () => {
+  it("rend matin, après-midi et soir même quand ils sont vides", () => {
     const groups = momentsOfDay(
       [makeList({ dueAt: localIso(2026, 9, 12, 9), dueAllDay: false })],
       DAY,
     );
 
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.moment.key).toBe("morning");
+    expect(groups.map((group) => group.moment.key)).toEqual(["morning", "afternoon", "evening"]);
+    expect(groups[0]?.lists).toHaveLength(1);
+    expect(groups[1]?.lists).toEqual([]);
+  });
+
+  it("n'annonce « Dans la journée » que s'il porte une liste", () => {
+    const groups = momentsOfDay([makeList({ dueAt: localIso(2026, 9, 12), dueAllDay: true })], DAY);
+
+    expect(groups.map((group) => group.moment.key)).toEqual([
+      "anytime",
+      "morning",
+      "afternoon",
+      "evening",
+    ]);
+    expect(groups[0]?.lists).toHaveLength(1);
   });
 
   it("ordonne les listes d'un même moment de la plus tôt à la plus tard", () => {
@@ -112,8 +130,30 @@ describe("momentsOfDay", () => {
     expect(groups[0]?.lists.map((list) => list.title)).toEqual(["Tôt", "Tard"]);
   });
 
-  it("ne retient rien d'un jour sans échéance", () => {
-    expect(momentsOfDay([makeList({ dueAt: localIso(2026, 9, 13, 9) })], DAY)).toEqual([]);
+  it("laisse vide la trame d'un jour sans échéance", () => {
+    const groups = momentsOfDay([makeList({ dueAt: localIso(2026, 9, 13, 9) })], DAY);
+
+    expect(groups).toHaveLength(3);
+    expect(groups.every((group) => group.lists.length === 0)).toBe(true);
+  });
+});
+
+describe("todoDays", () => {
+  const september = Array.from({ length: 30 }, (_, index) => new Date(2026, 8, index + 1));
+
+  it("ouvre le mois en cours sur aujourd'hui", () => {
+    const days = todoDays(september, new Date(2026, 8, 28, 15, 30));
+
+    expect(days.map((day) => day.getDate())).toEqual([28, 29, 30]);
+  });
+
+  it("déroule en entier un mois qui n'est pas le mois en cours", () => {
+    expect(todoDays(september, new Date(2026, 9, 2))).toHaveLength(30);
+    expect(todoDays(september, new Date(2026, 7, 31))).toHaveLength(30);
+  });
+
+  it("garde le dernier jour du mois quand c'est aujourd'hui", () => {
+    expect(todoDays(september, new Date(2026, 8, 30, 23, 59))).toHaveLength(1);
   });
 });
 
@@ -177,6 +217,24 @@ describe("byDueDate", () => {
     const tard = makeList({ dueAt: localIso(2026, 9, 12, 18) });
 
     expect([tard, tot].sort(byDueDate)[0]).toBe(tot);
+  });
+});
+
+describe("dueOnForDay", () => {
+  it("date la tâche tapée un autre jour que celui de sa liste", () => {
+    const list = makeList({ dueAt: localIso(2026, 9, 12), dueAllDay: true });
+
+    expect(dueOnForDay(list, new Date(2026, 8, 14))).toBe("2026-09-14");
+  });
+
+  it("ne répète pas le jour que la liste porte déjà", () => {
+    const list = makeList({ dueAt: localIso(2026, 9, 12, 9, 30), dueAllDay: false });
+
+    expect(dueOnForDay(list, new Date(2026, 8, 12))).toBeNull();
+  });
+
+  it("date la tâche d'une liste sans échéance, visible par ses seules tâches", () => {
+    expect(dueOnForDay(makeList(), new Date(2026, 8, 14))).toBe("2026-09-14");
   });
 });
 
@@ -331,6 +389,53 @@ describe("layoutDayEvents", () => {
 
     const [box] = layoutDayEvents([event], DAY);
     expect(box?.endMinute).toBeGreaterThanOrEqual(box?.startMinute ?? 0);
+  });
+});
+
+/**
+ * Ces cas supposent le fuseau Europe/Paris, fixé pour tout le paquet par
+ * `jest.global-setup.js` : une journée UTC n'a jamais 23 ni 25 heures.
+ */
+describe("placement un jour de changement d'heure", () => {
+  it("place sur la ligne de 10h un rendez-vous de 10h le jour du passage à l'heure d'hiver", () => {
+    const [box] = layoutDayEvents(
+      [makeEvent({ startsAt: localIso(2026, 10, 25, 10), endsAt: localIso(2026, 10, 25, 11) })],
+      new Date(2026, 9, 25),
+    );
+
+    expect(box).toMatchObject({ startMinute: 600, endMinute: 660 });
+  });
+
+  it("place sur la ligne de 10h un rendez-vous de 10h le jour du passage à l'heure d'été", () => {
+    const [box] = layoutDayEvents(
+      [makeEvent({ startsAt: localIso(2026, 3, 29, 10), endsAt: localIso(2026, 3, 29, 11) })],
+      new Date(2026, 2, 29),
+    );
+
+    expect(box).toMatchObject({ startMinute: 600, endMinute: 660 });
+  });
+
+  it("garde dans la grille un rendez-vous de fin de soirée le jour de 25 heures", () => {
+    const [box] = layoutDayEvents(
+      [
+        makeEvent({
+          startsAt: localIso(2026, 10, 25, 23),
+          endsAt: localIso(2026, 10, 25, 23, 45),
+        }),
+      ],
+      new Date(2026, 9, 25),
+    );
+
+    expect(box).toMatchObject({ startMinute: 1380, endMinute: 1425 });
+  });
+
+  it("place une todoliste à heure précise sur la ligne de son heure", () => {
+    const { timed } = layoutDayLists(
+      [makeList({ dueAt: localIso(2026, 10, 25, 14), dueAllDay: false })],
+      new Date(2026, 9, 25),
+    );
+
+    expect(timed[0]).toMatchObject({ startMinute: 840, endMinute: 900 });
   });
 });
 

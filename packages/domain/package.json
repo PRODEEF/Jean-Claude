@@ -30,6 +30,7 @@
     ],
     "rootDir": "src",
     "testRegex": ".*.spec.ts$",
+    "globalSetup": "<rootDir>/../jest.global-setup.js",
     "transform": {
       "^.+.ts$": [
         "ts-jest",

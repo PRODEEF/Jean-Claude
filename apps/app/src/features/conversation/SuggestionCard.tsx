@@ -459,8 +459,13 @@ function selectedFolders(lines: PreviewLine[], excluded: readonly string[]): Ass
  *
  * Ce que l'assistant a fait reste lisible dans la conversation qui l'a
  * provoqué : sans elle, des dossiers apparaîtraient dans la barre latérale
- * sans que rien n'explique d'où ils viennent. En une ligne discrète et non en
- * carte — c'est de l'historique, plus une action à mener.
+ * sans que rien n'explique d'où ils viennent. En une ligne et non en carte —
+ * c'est de l'historique, plus une action à mener.
+ *
+ * Elle se lit comme une réponse de l'assistant, dans la même typographie et
+ * sans cadre (demande de Yann) : « Dossiers créés » est une réplique comme une
+ * autre, pas une pièce rapportée qui change l'allure du fil. Seule la coche
+ * reste, pour dire que c'est fait.
  */
 export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion }) {
   const { palette } = useTheme();
@@ -475,9 +480,10 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
     .join(", ");
 
   return (
-    <View style={[styles.note, { borderColor: palette.border }]}>
-      {accepted ? <Check size={14} color={palette.accent} /> : null}
-      <Text style={[styles.noteLabel, { color: palette.textMuted }]}>
+    <View style={styles.note}>
+      {accepted ? <Check size={16} color={palette.accent} style={styles.noteCheck} /> : null}
+      {/* Une proposition écartée n'a rien fait : elle reste en retrait. */}
+      <Text style={[styles.noteLabel, { color: accepted ? palette.text : palette.textMuted }]}>
         {outcomeLabel(suggestion)}
         {/* Un signalement n'a rien à relire dans le fil : le texte technique
             s'adresse à l'équipe, pas à l'utilisateur qui vient de valider. */}
@@ -865,18 +871,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // Mêmes corps, interligne et marge verticale qu'une réponse de l'assistant
+  // (`MessageRow`) : la trace s'aligne sur le texte qui la précède.
   note: {
     alignSelf: "flex-start",
-    maxWidth: "85%",
+    maxWidth: "100%",
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderWidth: 1,
-    borderRadius: radius.pill,
+    paddingVertical: spacing.md,
   },
-  noteLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, flexShrink: 1 },
+  noteCheck: { marginTop: 3 },
+  noteLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22, flexShrink: 1 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   action: {
     minHeight: MIN_TOUCH_TARGET,
