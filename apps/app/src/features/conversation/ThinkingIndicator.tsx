@@ -1,20 +1,31 @@
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
+import { Cog } from "lucide-react-native";
 import { fontSize, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useAssistantName } from "@/shared/hooks/use-profile";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 /**
- * Attente de la réponse, avec le temps déjà écoulé (§4.2).
+ * Attente de la réponse : une roue qui tourne et le temps déjà écoulé (§4.2).
  *
- * Une roue qui tourne ne dit rien de l'attente : au bout de cinq secondes,
- * l'utilisateur ne sait pas s'il patiente normalement ou si quelque chose est
- * cassé. Le compteur répond à cette question — c'est ce qu'affichent ChatGPT et
- * Claude pendant leur temps de réflexion.
+ * Le compteur seul, en texte immobile, se lisait comme un écran figé : la roue
+ * dit que ça travaille, le compteur depuis combien de temps. Demande de Yann,
+ * sur le modèle de Claude.
  *
- * Rendu uniquement tant qu'aucun jeton n'est arrivé : le texte qui s'écrit
- * prouve ensuite de lui-même que la génération avance.
+ * Rendu pendant tout le tour, et non plus seulement jusqu'au premier jeton :
+ * une fois le texte écrit, le modèle peut encore préparer une proposition
+ * (création de dossiers, liste…) que le fil relit ensuite — plusieurs secondes
+ * où rien ne bougeait avant que la carte n'apparaisse.
  */
 export function ThinkingIndicator() {
   const { palette } = useTheme();
@@ -23,6 +34,7 @@ export function ThinkingIndicator() {
 
   return (
     <View style={styles.row}>
+      <SpinningCog size={14} color={palette.textMuted} />
       <Text
         style={[styles.label, { color: palette.textMuted }]}
         // Le libellé annoncé ne porte pas le compteur : une synthèse vocale le
@@ -36,13 +48,45 @@ export function ThinkingIndicator() {
 }
 
 /**
+ * Roue dentée qui tourne tant qu'elle est montée.
+ *
+ * Immobile quand l'appareil demande de réduire les animations : une rotation
+ * sans fin est précisément ce que ce réglage cherche à éviter, et le compteur
+ * qui l'accompagne suffit alors à dire que l'attente avance.
+ */
+export function SpinningCog({ size, color }: { size: number; color: string }) {
+  const reducedMotion = useReducedMotion();
+  const rotation = useSharedValue(0);
+
+  useEffect(() => {
+    if (reducedMotion) return;
+    rotation.value = withRepeat(
+      withTiming(360, { duration: 1600, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(rotation);
+  }, [reducedMotion, rotation]);
+
+  const spin = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+
+  return (
+    <Animated.View style={spin} aria-hidden>
+      <Cog size={size} color={color} />
+    </Animated.View>
+  );
+}
+
+/**
  * Secondes écoulées depuis le montage.
  *
  * Recalculées depuis l'instant de départ plutôt qu'incrémentées d'une unité :
  * un onglet mis en veille suspend le minuteur, et un compteur qui reprendrait
  * où il en était afficherait moins que le temps réellement attendu.
  */
-function useElapsedSeconds(): number {
+export function useElapsedSeconds(): number {
   const [seconds, setSeconds] = useState(0);
 
   useEffect(() => {
@@ -58,6 +102,11 @@ function useElapsedSeconds(): number {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", paddingVertical: spacing.sm },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
   label: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm },
 });
