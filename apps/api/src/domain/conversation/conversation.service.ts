@@ -814,11 +814,12 @@ export class ConversationService {
       // l'utilisateur : la carte s'affiche, et la question posée reste sans
       // réponse. Un second tour la lui donne, la consigne n'ayant pas suffi.
       if (text.length === 0 && needsWrittenAnswer(conversation.kind, toolCalls)) {
-        const contentQuestion = askForListContent(toolCalls);
+        const writtenByServer =
+          askForListContent(toolCalls) ?? answerExistingLists(toolCalls, todo.lists);
 
-        if (contentQuestion !== null) {
-          text = contentQuestion;
-          yield { type: "text", text: contentQuestion };
+        if (writtenByServer !== null) {
+          text = writtenByServer;
+          yield { type: "text", text: writtenByServer };
         } else {
           for await (const chunk of this.answerAfterToolCall(request, toolCalls)) {
             const visible = retryLeak.push(chunk);
@@ -912,7 +913,13 @@ export class ConversationService {
             withCorrectedRecurringEventStartsAt(
               withCorrectedRescheduleDueDate(
                 withCorrectedDueDates(
-                  withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+                  withListIdOfTasks(
+                    withoutExistingLists(
+                      withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+                      todo.lists,
+                    ),
+                    todo.lists,
+                  ),
                   now,
                   context.timezone,
                 ),
@@ -925,8 +932,17 @@ export class ConversationService {
           );
           // Une proposition écartée à la capture n'affiche aucune carte : elle
           // ne peut pas tenir lieu de réponse au tour.
-          if (await this.suggestions.capture(userId, conversationId, corrected, accessToken)) {
+          const captured = await this.suggestions.capture(
+            userId,
+            conversationId,
+            corrected,
+            accessToken,
+          );
+          if (captured) {
             suggestionCaptured = true;
+            if (captured.kind === "create_task_list") {
+              await this.supersedePendingLists(todo.decided, accessToken);
+            }
           }
         } catch (error) {
           // Une capture ne doit jamais faire perdre les suivantes : sans cet
@@ -1149,10 +1165,10 @@ export class ConversationService {
         // `SUGGEST_FOLDERS` n'est rendu qu'aux conversations non classées : il
         // n'a rien à proposer sur un fil déjà rangé.
         tool !== SUGGEST_FOLDERS &&
-        // Une todoliste déjà proposée attend un geste : la reproposer
-        // empilerait deux cartes pour la même chose, ce que le « non intrusif »
-        // du §12.1 exclut.
-        !(tool === SUGGEST_TASK_LIST && isPending(decided, "create_task_list")) &&
+        // `SUGGEST_TASK_LIST` reste exposé même quand une proposition de
+        // todolistes attend : c'est par lui que « détaille les courses » corrige
+        // la carte en attente, que la nouvelle remplace (`supersedePendingLists`)
+        // au lieu de s'y empiler.
         // Compléter suppose qu'il y ait quelque chose à compléter : sans liste
         // sur ce fil, l'outil n'aurait aucun identifiant à recevoir et le
         // modèle en inventerait un.
@@ -1197,6 +1213,33 @@ export class ConversationService {
       lists,
       decided,
     };
+  }
+
+  /**
+   * Retire les propositions de todolistes que la nouvelle vient corriger.
+   *
+   * « Détaille les courses » pendant que la carte attend encore : le modèle
+   * repropose la version corrigée, et l'ancienne passe en expirée plutôt que
+   * de rester acceptable à côté — accepter les deux créerait les listes en
+   * double. Un échec n'annule pas la nouvelle proposition, déjà enregistrée :
+   * l'utilisateur garde de quoi trancher, au prix d'une carte de trop.
+   */
+  private async supersedePendingLists(decided: Suggestion[], accessToken: string): Promise<void> {
+    const pending = decided.filter(
+      (suggestion) => suggestion.status === "pending" && suggestion.kind === "create_task_list",
+    );
+
+    for (const previous of pending) {
+      try {
+        await this.suggestions.markResolved(previous.id, "expired", accessToken);
+      } catch (error) {
+        logger.warn(
+          SCOPE,
+          "Proposition de todolistes remplacée impossible à retirer :",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
   }
 
   /**
@@ -1882,6 +1925,66 @@ function mergeTaskListCalls(toolCalls: LlmToolCall[]): LlmToolCall | null {
 }
 
 /**
+ * Retire d'un `suggest_task_list` les listes que ce fil a déjà créées.
+ *
+ * « Tout recommencer » faisait reproposer les deux listes à l'identique, et
+ * les accepter les créait en double : une liste existante se modifie
+ * (`suggest_update_task_items`), elle ne se recrée pas. Reconnue à son titre,
+ * au sens de `sameName` — c'est ainsi que l'utilisateur lit deux listes
+ * homonymes côte à côte. Si rien ne reste, la proposition échoue à la
+ * validation et aucune carte ne s'affiche.
+ */
+function withoutExistingLists(toolCall: LlmToolCall, existing: TaskListWithTasks[]): LlmToolCall {
+  if (toolCall.name !== SUGGEST_TASK_LIST.name || existing.length === 0) return toolCall;
+
+  const lists = toolCall.input["lists"];
+  if (!Array.isArray(lists)) return toolCall;
+
+  const kept = lists.filter((entry: unknown) => !isExistingList(entry, existing));
+  if (kept.length === lists.length) return toolCall;
+
+  logger.warn(SCOPE, "Todoliste reproposée alors qu'elle existe déjà sur ce fil : écartée.");
+  return { ...toolCall, input: { ...toolCall.input, lists: kept } };
+}
+
+/**
+ * Rend à un `suggest_update_task_items` l'identifiant de la liste que ses
+ * lignes désignent, quand celui du modèle ne correspond à aucune liste du fil.
+ *
+ * ministral recopiait l'identifiant d'une ligne, ou un identifiant inventé,
+ * à la place de celui de la liste : la carte s'affichait, puis l'acceptation
+ * échouait sur « Liste introuvable ». Les lignes, elles, étaient justes — et
+ * une ligne n'appartient qu'à une liste. Sans ligne existante reconnue, rien
+ * n'est deviné : l'identifiant du modèle reste tel quel.
+ */
+function withListIdOfTasks(toolCall: LlmToolCall, lists: TaskListWithTasks[]): LlmToolCall {
+  if (toolCall.name !== SUGGEST_UPDATE_TASK_ITEMS.name) return toolCall;
+
+  const listId = toolCall.input["listId"];
+  if (lists.some((list) => list.id === listId)) return toolCall;
+
+  const items: unknown = toolCall.input["items"];
+  const taskIds = Array.isArray(items)
+    ? items.flatMap((item: unknown) =>
+        typeof item === "object" && item !== null && "taskId" in item ? [item.taskId] : [],
+      )
+    : [];
+  const owner = lists.find((list) =>
+    list.tasks.some((task) => task.id === listId || taskIds.includes(task.id)),
+  );
+  if (!owner) return toolCall;
+
+  logger.warn(SCOPE, "Identifiant de liste inconnu, rétabli d'après les lignes désignées.");
+  return { ...toolCall, input: { ...toolCall.input, listId: owner.id } };
+}
+
+/** Une liste proposée porte-t-elle le titre d'une liste déjà née du fil ? */
+function isExistingList(entry: unknown, existing: TaskListWithTasks[]): boolean {
+  const title = typeof entry === "object" && entry !== null && "title" in entry ? entry.title : null;
+  return typeof title === "string" && existing.some((list) => sameName(list.title, title));
+}
+
+/**
  * `text` au format `HH:mm` (24 h), vers heure et minute — `null` si le format
  * ou les bornes ne correspondent pas, ex. une hallucination du modèle.
  */
@@ -2248,6 +2351,16 @@ function proposalReminder(toolCalls: LlmToolCall[]): string {
     );
   }
 
+  const lists = describeProposedLists(toolCalls.filter((toolCall) => !empty.includes(toolCall)));
+  if (lists.length > 0) {
+    lines.push(
+      "",
+      "La carte montre ces listes, ligne par ligne. Ne les recopie pas ; si tu en",
+      "cites une ligne, reprends-la telle quelle, et n'en cite aucune qui n'y figure pas :",
+      ...lists,
+    );
+  }
+
   // Sans ce rappel, le modèle annonçait une proposition qu'aucune carte ne
   // porterait, puis la reproposait vide au message suivant.
   if (empty.length > 0) {
@@ -2312,6 +2425,64 @@ function askForListContent(toolCalls: LlmToolCall[]): string | null {
   return titles.length === 1
     ? `Qu'est-ce qu'on met dans ${named} ? Dis-le-moi, et je te la propose.`
     : `Qu'est-ce qu'on met dans ${named} ? Dis-le-moi, et je te les propose.`;
+}
+
+/**
+ * Réponse écrite par le serveur quand le modèle n'a fait, sans un mot, que
+ * reproposer des todolistes que ce fil a déjà créées — `null` dans tout autre
+ * cas.
+ *
+ * La capture les écarte (`withoutExistingLists`) : aucune carte ne
+ * s'affichera. Relancé, ministral présentait pourtant les listes en texte et
+ * demandait « Confirme si c'est bon » (« Tout recommencer », conversation
+ * « Organisation samedi ») — une validation sans rien à valider. Une liste
+ * existante se modifie : la réponse demande quoi y changer.
+ */
+function answerExistingLists(toolCalls: LlmToolCall[], existing: TaskListWithTasks[]): string | null {
+  const proposals = toolCalls.filter((toolCall) => !APPLIED_DIRECTLY.has(toolCall.name));
+  if (proposals.length === 0) return null;
+  if (!proposals.every((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name)) return null;
+
+  const proposed = proposals.flatMap((toolCall) => {
+    const lists: unknown = toolCall.input["lists"];
+    return Array.isArray(lists) ? lists : [];
+  });
+  if (proposed.length === 0 || !proposed.every((entry) => isExistingList(entry, existing))) {
+    return null;
+  }
+
+  return "Ces listes existent déjà. Dis-moi ce que tu veux y changer — une ligne à ajouter, à retirer ou à remplacer — et je te propose la modification.";
+}
+
+/**
+ * Contenu des todolistes proposées par ces appels, tel que la carte le montre.
+ *
+ * Remis à la relance : sans lui, ministral recopiait en texte des listes qui
+ * n'étaient pas celles de la carte — « Légumes » dans la carte, « tomates,
+ * courgettes… » dans la réponse (conversation « Organisation samedi »). La
+ * consigne de ne pas les recopier n'y a rien changé ; s'il le fait encore, au
+ * moins la réponse et la carte disent-elles la même chose.
+ */
+function describeProposedLists(toolCalls: LlmToolCall[]): string[] {
+  return toolCalls
+    .filter((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name)
+    .flatMap((toolCall) => {
+      const lists: unknown = toolCall.input["lists"];
+      return Array.isArray(lists) ? lists : [];
+    })
+    .flatMap((entry: unknown) => {
+      if (typeof entry !== "object" || entry === null) return [];
+      const title = "title" in entry && typeof entry.title === "string" ? entry.title : null;
+      const items: unknown = "items" in entry ? entry.items : null;
+      const lines = Array.isArray(items)
+        ? items.flatMap((item: unknown) =>
+            typeof item === "object" && item !== null && "title" in item && typeof item.title === "string"
+              ? [item.title]
+              : [],
+          )
+        : [];
+      return title === null || lines.length === 0 ? [] : [`- « ${title} » : ${lines.join(", ")}`];
+    });
 }
 
 /**
@@ -2566,7 +2737,35 @@ function buildSystemPrompt(
       "Une liste se propose remplie. Tant que l'utilisateur n'a pas dit ce qu'elle",
       "contient — « les courses samedi » sans rien de listé —, n'appelle pas",
       "`suggest_task_list` : demande-lui d'abord ce qu'il faut y mettre.",
+      "",
+      "Une ligne par article. « De quoi faire des lasagnes » se décline en ses",
+      "ingrédients, une ligne chacun ; « des légumes » ne se devine pas : demande",
+      "lesquels avant de proposer. Une tâche énoncée (« devoirs de maths ») se",
+      "reprend telle quelle, sans demander de détail que l'utilisateur n'a pas évoqué.",
+      "",
+      "Le jour et le moment dits plus tôt dans l'échange valent pour la liste",
+      "proposée ensuite : « les courses samedi matin », puis le contenu au message",
+      "suivant, donne une liste « Courses » datée samedi (`dueAt`) à 10:00",
+      "(`dueTime`). Matin = 10:00, après-midi = 16:00, soir = 20:00. Jamais de date",
+      "ni de moment dans le titre.",
+      "",
+      "Ne recopie pas le contenu des listes dans ta réponse : la carte le montre, et",
+      "n'y cite jamais un article qui n'y figure pas. N'annonce jamais une liste",
+      "créée, modifiée ou détaillée sans avoir appelé l'outil qui la propose.",
     );
+
+    // Corriger la carte en attente plutôt qu'en empiler une seconde : la
+    // nouvelle proposition remplace l'ancienne (`supersedePendingLists`).
+    if (isPending(todo.decided, "create_task_list")) {
+      lines.push(
+        "",
+        "Une proposition de todolistes attend encore la réponse de l'utilisateur. S'il",
+        "demande de la corriger — détailler une ligne, en retirer, en ajouter —,",
+        "rappelle `suggest_task_list` avec la version corrigée complète, toutes listes",
+        "comprises, même celles qui ne changent pas : elle remplace la carte en attente.",
+        "Sinon, ne la repropose pas.",
+      );
+    }
   }
 
   // Exposer l'outil ne suffit pas : sa description est lue au moment de choisir,
@@ -2608,11 +2807,13 @@ function buildSystemPrompt(
   if (todo.tools.includes(SUGGEST_UPDATE_TASK_ITEMS)) {
     lines.push(
       "",
-      "Pour cocher, décocher ou renommer une ligne d'une liste ci-dessus, appelle",
-      "`suggest_update_task_items` avec l'identifiant de la liste ET celui de la",
-      "ligne, recopiés caractère pour caractère. N'ouvre jamais une seconde liste",
-      "pour marquer une ligne faite, et n'ajoute pas une ligne pour en remplacer",
-      "une qui existe déjà.",
+      "Pour modifier une liste ci-dessus — cocher, décocher, renommer, retirer une",
+      "ligne ou la remplacer par plusieurs —, appelle `suggest_update_task_items`",
+      "avec l'identifiant de la liste ET celui de chaque ligne, recopiés caractère",
+      "pour caractère. « Détaille les courses » retire « Légumes » (`remove`) et",
+      "ajoute les légumes un par un (`added`) dans le même appel ; l'autre liste",
+      "n'est pas touchée. Ne rappelle jamais `suggest_task_list` pour une liste qui",
+      "existe déjà, même si l'utilisateur demande de recommencer.",
     );
   }
 
@@ -2835,7 +3036,8 @@ function describeDecisions(suggestions: Suggestion[]): string[] {
     // L'accepté était absent de cette phrase : le modèle reproposait donc à
     // l'identique ce qui venait d'être créé.
     "Ne repropose ni ce qui a été accepté, ni ce qui a été écarté, ni ce qui attend",
-    "encore une réponse.",
+    "encore une réponse — sauf pour corriger, à la demande de l'utilisateur, des",
+    "todolistes qui attendent encore.",
   ];
 }
 
@@ -2878,7 +3080,7 @@ function outcome(status: Suggestion["status"]): string {
     case "dismissed":
       return "écartée par l'utilisateur";
     case "expired":
-      return "expirée";
+      return "remplacée par une version corrigée";
   }
 }
 

@@ -25,6 +25,7 @@ import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/des
 import { useFeedbackContext } from "@/features/feedback/hooks/use-feedback";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
+import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { SpinningCog, useElapsedSeconds } from "./ThinkingIndicator";
@@ -534,7 +535,9 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
 /** Ce qui est arrivé à la proposition, dit du point de vue de l'utilisateur. */
 function outcomeLabel(suggestion: Suggestion): string {
   if (suggestion.status === "dismissed") return "Proposition ignorée";
-  if (suggestion.status === "expired") return "Proposition expirée";
+  // Seul producteur de ce statut : une proposition de todolistes corrigée
+  // pendant qu'elle attendait, que la suivante remplace.
+  if (suggestion.status === "expired") return "Proposition remplacée";
 
   switch (suggestion.kind) {
     case "assign_folders":
@@ -591,6 +594,9 @@ function useSuggestionPreview(suggestion: Suggestion): {
     queryFn: () => api.folders.tree(),
     enabled: suggestion.kind === "assign_folders",
   });
+  // Une ligne retirée n'est désignée que par son identifiant : son titre est
+  // relu depuis les listes, déjà en cache — la même clé que Mes listes.
+  const taskLists = useTaskLists({ enabled: suggestion.kind === "update_task_list_items" });
 
   if (suggestion.kind === "create_project_folders") {
     const proposed = createProjectFoldersPayloadSchema.safeParse(suggestion.payload);
@@ -707,19 +713,32 @@ function useSuggestionPreview(suggestion: Suggestion): {
     };
   }
 
-  // Cocher ou renommer : la liste est déjà nommée dans la phrase, l'aperçu
-  // ne montre que ce qui change sur chaque ligne.
+  // Cocher, renommer, retirer, ajouter : la liste est déjà nommée dans la
+  // phrase, l'aperçu ne montre que ce qui change, ligne par ligne.
   if (suggestion.kind === "update_task_list_items") {
     const proposed = updateTaskListItemsPayloadSchema.safeParse(suggestion.payload);
+    const titles = new Map(
+      (taskLists.data ?? []).flatMap((list) => list.tasks).map((task) => [task.id, task.title]),
+    );
 
     return {
       acceptLabel: "Mettre à jour la liste",
       lines: proposed.success
-        ? proposed.data.items.map((item) => ({
-            key: item.taskId,
-            label: updateItemLabel(item),
-            nested: false,
-          }))
+        ? [
+            ...proposed.data.items.map((item) => ({
+              key: item.taskId,
+              label:
+                item.remove === true
+                  ? removedItemLabel(titles.get(item.taskId))
+                  : updateItemLabel(item),
+              nested: false,
+            })),
+            ...proposed.data.added.map((item, index) => ({
+              key: `ajout-${index}`,
+              label: `${item.title} (ajoutée)`,
+              nested: false,
+            })),
+          ]
         : [],
     };
   }
@@ -795,6 +814,15 @@ function updateItemLabel(item: { title?: string; done?: boolean }): string {
   if (state === "faite") return "Marquer comme faite";
   if (state === "à faire") return "Remettre à faire";
   return "Modifier";
+}
+
+/**
+ * Ce que la carte dit d'une ligne retirée. Son titre n'est plus en cache une
+ * fois la modification acceptée : la trace du fil dit alors seulement qu'une
+ * ligne est partie.
+ */
+function removedItemLabel(title: string | undefined): string {
+  return title === undefined ? "Ligne retirée" : `${title} (retirée)`;
 }
 
 /**

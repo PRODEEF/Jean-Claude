@@ -465,10 +465,93 @@ describe("SuggestionService", () => {
         USER,
         expect.objectContaining({
           kind: "update_task_list_items",
-          payload: { listId, items: [{ taskId, done: true }] },
+          payload: { listId, items: [{ taskId, done: true }], added: [] },
         }),
         TOKEN,
       );
+    });
+
+    it("traduit le remplacement d'une ligne par des lignes détaillées en une seule proposition", async () => {
+      const repo = makeRepository();
+      const listId = "11111111-1111-4111-8111-111111111111";
+      const taskId = "22222222-2222-4222-8222-222222222222";
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je remplace Légumes par courgettes et tomates ?",
+            listId,
+            items: [{ taskId, remove: true }],
+            added: [{ title: "Courgettes" }, { title: "Tomates" }],
+          },
+          "suggest_update_task_items",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_task_list_items",
+          payload: {
+            listId,
+            items: [{ taskId, remove: true }],
+            added: [{ title: "Courgettes" }, { title: "Tomates" }],
+          },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("pose une phrase par défaut sur une modification de lignes que le modèle n'a pas formulée", async () => {
+      const repo = makeRepository();
+      const listId = "11111111-1111-4111-8111-111111111111";
+      const taskId = "22222222-2222-4222-8222-222222222222";
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          { listId, items: [{ taskId, remove: true }], added: [{ title: "Roquette" }] },
+          "suggest_update_task_items",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_task_list_items",
+          message: "Je mets la liste à jour ?",
+        }),
+        TOKEN,
+      );
+    });
+
+    it("écarte une modification qui ne touche ni n'ajoute aucune ligne", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const repo = makeRepository();
+
+      const captured = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je mets la liste à jour ?",
+            listId: "11111111-1111-4111-8111-111111111111",
+            items: [],
+            added: [],
+          },
+          "suggest_update_task_items",
+        ),
+        TOKEN,
+      );
+
+      expect(captured).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+      jest.restoreAllMocks();
     });
 
     it("traduit un signalement en proposition report_bug", async () => {

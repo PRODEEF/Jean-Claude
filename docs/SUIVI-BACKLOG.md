@@ -7,7 +7,7 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **28 septembre 2026 (soir)** — refonte de la page
+Dernière mise à jour : **28 septembre 2026 (soir)** — todolistes de la conversation « Organisation samedi » (voir plus bas), et refonte de la page
 Réglages, sur la branche `refonte/ui`. Vérifiée dans Chromium sur le serveur de
 développement web branché sur une fausse API, en thème clair et en thème
 sombre, sur grand écran et à 390 pt de large, puis validée sur captures par
@@ -258,6 +258,39 @@ fait malgré tout sans écrire un mot, le serveur rédige lui-même la question 
 après-midi » ? » — au lieu de relancer le modèle, qui proposait des listes
 « types » à la place (3 sur 3). Rejoué de bout en bout deux fois : une fois le
 contenu donné, la carte de listes remplies s'affiche.
+
+**La suite de la même conversation, en usage réel** (« Organisation samedi »,
+relue en base) : listes sans échéance, date recopiée dans le titre (« Courses
+samedi matin »), texte qui détaillait des légumes absents de la carte,
+« détaille les courses » sans rien proposer, « Tout recommencer » qui recréait
+les deux listes en double, et les devoirs rangés dans le dossier Courses.
+Décisions de Clarisse, et ce qui a changé :
+
+- **Échéance dans la plage du moment dit** : matin 10h, après-midi 16h, soir
+  20h, par le champ `dueTime` qui existait déjà — pas de nouveau champ ni de
+  plage stockée. Le créneau garde sa durée d'une heure. Le titre ne porte plus
+  de date, et un jour dit avant le contenu de la liste vaut pour elle.
+- **Une ligne par article** : une recette se décline en ingrédients ; une
+  catégorie vague (« des légumes ») se demande avant de proposer.
+- **Modifier en place** : `update_task_list_items` sait retirer et ajouter des
+  lignes (`remove`, `added`) — même nature de suggestion, pas de migration. La
+  carte montre « Salade (retirée) », « Roquette (ajoutée) ». Une correction
+  demandée pendant que la carte des listes attend remplace cette carte (l'ancienne
+  passe « Proposition remplacée ») au lieu d'en empiler une seconde. Une liste
+  reproposée sous le titre d'une liste déjà née du fil est écartée ; si toutes le
+  sont, le serveur répond « Ces listes existent déjà. Dis-moi ce que tu veux y
+  changer… ».
+- **Chaque liste dans le dossier de son sujet** quand la conversation en a
+  plusieurs : le nom du dossier, retrouvé mot pour mot dans le titre de la
+  liste, le désigne.
+
+Filets ajoutés après rejeu contre ministral-14b : la relance qui écrit la
+réponse reçoit le contenu exact des listes de la carte (elle en recopiait
+d'autres) ; un identifiant de liste inconnu est rétabli d'après les lignes
+désignées ; une modification de lignes sans phrase reçoit « Je mets la liste à
+jour ? » (omise 2 fois sur 2). **Reste imparfait :** ministral propose encore
+parfois « Légumes » sans demander lesquels, et la relance recopie encore les
+listes en texte — désormais les mêmes que la carte.
 
 **Une réponse semblait écrite par l'utilisateur.** Seules les réponses d'un
 `ask_question` étaient enregistrées ; le texte entier du message tenait lieu de
