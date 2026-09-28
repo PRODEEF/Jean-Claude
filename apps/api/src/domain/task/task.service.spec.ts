@@ -18,6 +18,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     done: false,
     completedAt: null,
     parentId: null,
+    dueOn: null,
     position: 0,
     createdAt: "2026-09-01T08:00:00.000Z",
     updatedAt: "2026-09-01T08:00:00.000Z",
@@ -364,6 +365,23 @@ describe("TaskService", () => {
       expect(rows[0]).toMatchObject({ id: "task-1", parentId: null, position: 0 });
       expect(rows[1]).toMatchObject({ parentId: "task-1", position: 1 });
       expect(rows[2]).toMatchObject({ parentId: "task-1", position: 2 });
+    });
+
+    it("garde l'échéance d'une ligne réécrite, que l'éditeur ne transporte pas", async () => {
+      const repo = makeRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeList({ tasks: [makeTask({ dueOn: "2026-09-12" })] })),
+      });
+
+      await makeService(repo).replaceTasks(
+        USER,
+        LIST,
+        { items: [{ id: "task-1", title: "Refaire le site internet", depth: 0 }] },
+        TOKEN,
+      );
+
+      expect(written(repo).rows[0]).toMatchObject({ id: "task-1", dueOn: "2026-09-12" });
     });
 
     it("remonte au premier niveau une liste qui commence par une ligne indentée", async () => {
@@ -750,6 +768,39 @@ describe("TaskService", () => {
       expect(repo.createTask).toHaveBeenCalledWith(USER, LIST, { title: "Semer" }, 0, TOKEN);
     });
 
+    it("date la tâche du jour demandé", async () => {
+      const repo = makeRepository();
+
+      await makeService(repo).addTask(USER, LIST, { title: "Semer", dueOn: "2026-09-12" }, TOKEN);
+
+      expect(repo.createTask).toHaveBeenCalledWith(
+        USER,
+        LIST,
+        { title: "Semer", dueOn: "2026-09-12" },
+        0,
+        TOKEN,
+      );
+    });
+
+    it("refuse une tâche due un jour déjà passé", async () => {
+      const repo = makeRepository();
+
+      await expect(
+        makeService(repo).addTask(USER, LIST, { title: "Semer", dueOn: "2026-08-31" }, TOKEN),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.createTask).not.toHaveBeenCalled();
+    });
+
+    it("accepte une tâche due aujourd'hui dans le fuseau du profil", async () => {
+      // 23h30 à Paris le 1er septembre : déjà le 2 en UTC, encore le 1er ici.
+      jest.setSystemTime(new Date("2026-09-01T21:30:00.000Z"));
+      const repo = makeRepository();
+
+      await makeService(repo).addTask(USER, LIST, { title: "Semer", dueOn: "2026-09-01" }, TOKEN);
+
+      expect(repo.createTask).toHaveBeenCalled();
+    });
+
     it("refuse d'ajouter une tâche à une liste introuvable", async () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
 
@@ -766,7 +817,7 @@ describe("TaskService", () => {
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
       });
 
-      await makeService(repo).updateTask(LIST, "task-1", { done: true }, TOKEN);
+      await makeService(repo).updateTask(USER, LIST, "task-1", { done: true }, TOKEN);
 
       const patch = (repo.updateTask as jest.Mock).mock.calls[0][2] as { completedAt: string };
       expect(typeof patch.completedAt).toBe("string");
@@ -783,7 +834,7 @@ describe("TaskService", () => {
           ),
       });
 
-      await makeService(repo).updateTask(LIST, "task-1", { done: false }, TOKEN);
+      await makeService(repo).updateTask(USER, LIST, "task-1", { done: false }, TOKEN);
 
       expect(repo.updateTask).toHaveBeenCalledWith(
         LIST,
@@ -798,7 +849,7 @@ describe("TaskService", () => {
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
       });
 
-      await makeService(repo).updateTask(LIST, "task-1", { title: "Semer des radis" }, TOKEN);
+      await makeService(repo).updateTask(USER, LIST, "task-1", { title: "Semer des radis" }, TOKEN);
 
       expect(repo.updateTask).toHaveBeenCalledWith(
         LIST,
@@ -808,13 +859,54 @@ describe("TaskService", () => {
       );
     });
 
+    it("refuse de reporter une tâche à un jour déjà passé", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
+      });
+
+      await expect(
+        makeService(repo).updateTask(USER, LIST, "task-1", { dueOn: "2026-08-20" }, TOKEN),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.updateTask).not.toHaveBeenCalled();
+    });
+
+    it("laisse une tâche en retard garder son jour quand on la renomme", async () => {
+      const repo = makeRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeList({ tasks: [makeTask({ dueOn: "2026-08-20" })] })),
+      });
+
+      await makeService(repo).updateTask(
+        USER,
+        LIST,
+        "task-1",
+        { title: "Semer des radis", dueOn: "2026-08-20" },
+        TOKEN,
+      );
+
+      expect(repo.updateTask).toHaveBeenCalled();
+    });
+
+    it("retire l'échéance d'une tâche", async () => {
+      const repo = makeRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeList({ tasks: [makeTask({ dueOn: "2026-09-12" })] })),
+      });
+
+      await makeService(repo).updateTask(USER, LIST, "task-1", { dueOn: null }, TOKEN);
+
+      expect(repo.updateTask).toHaveBeenCalledWith(LIST, "task-1", { dueOn: null }, TOKEN);
+    });
+
     it("refuse de modifier une tâche qui n'appartient pas à la liste", async () => {
       const repo = makeRepository({
         findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
       });
 
       await expect(
-        makeService(repo).updateTask(LIST, "task-99", { done: true }, TOKEN),
+        makeService(repo).updateTask(USER, LIST, "task-99", { done: true }, TOKEN),
       ).rejects.toMatchObject({ status: 404 });
       expect(repo.updateTask).not.toHaveBeenCalled();
     });

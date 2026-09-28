@@ -399,6 +399,7 @@ function makeTaskListItem(overrides: Partial<Task> = {}): Task {
     done: false,
     completedAt: null,
     parentId: null,
+    dueOn: null,
     position: 0,
     createdAt: "2026-09-03T08:00:00.000Z",
     updatedAt: "2026-09-03T08:00:00.000Z",
@@ -3496,6 +3497,63 @@ describe("ConversationService", () => {
   });
 
   describe("correction des échéances relatives (A.3, #18)", () => {
+    it("date chaque ligne de son propre jour, expression relative fiabilisée comprise", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je te les organise ?",
+              lists: [
+                {
+                  title: "Tâches Okiosk",
+                  kind: "todo",
+                  items: [
+                    { title: "Refaire le site internet", dueOn: "2026-09-12" },
+                    // Jour fautif du modèle : NOW est le mercredi 2 septembre,
+                    // le prochain vendredi est le 4.
+                    { title: "Appeler l'imprimeur", dueOn: "2026-09-11", dueOnText: "vendredi" },
+                    // Déjà passé : la ligne reste, sans date.
+                    { title: "Relire la charte", dueOn: "2026-08-28" },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Le site pour le 12, l'imprimeur vendredi, la charte fin août.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: {
+            lists: [
+              {
+                title: "Tâches Okiosk",
+                kind: "todo",
+                dueAt: null,
+                items: [
+                  { title: "Refaire le site internet", dueOn: "2026-09-12" },
+                  { title: "Appeler l'imprimeur", dueOn: "2026-09-04" },
+                  { title: "Relire la charte", dueOn: null },
+                ],
+              },
+            ],
+          },
+        }),
+        TOKEN,
+      );
+    });
+
     it("remplace l'échéance du modèle par le calcul déterministe quand l'expression est reconnue", async () => {
       const suggestions = makeSuggestionRepository();
       const llm = makeLlm(

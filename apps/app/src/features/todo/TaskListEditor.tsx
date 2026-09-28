@@ -9,6 +9,8 @@ import {
 } from "react-native";
 import { Check, ChevronsLeft, ChevronsRight, NotebookPen } from "lucide-react-native";
 import type { Task, TaskListWithTasks } from "@jc/domain";
+import { dateOfCalendarDay } from "@jc/domain";
+import { formatDayLabel, formatFullDay } from "@/shared/lib/dates";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
 import { TASK_CHECKBOX_SIZE, TASK_INDENT, TASK_ROW_HEIGHT, titleMatchesQuery } from "@/shared/lib/tasks";
@@ -33,7 +35,7 @@ export type TaskListEditorProps = {
   list: TaskListWithTasks;
   /** Recherche en cours : les lignes qui y répondent sont mises en avant. */
   query: string;
-  /** Ouvre le détail d'une tâche — ses notes. */
+  /** Ouvre le détail d'une tâche — ses notes et son échéance. */
   onOpenTask: (task: Task) => void;
 };
 
@@ -381,6 +383,25 @@ export const TaskListEditor = memo(function TaskListEditor({
               }}
               className={cn("flex-1 text-sm", Platform.select({ web: "outline-none" }))}
             />
+
+            {/* Le jour d'une tâche datée reste lisible sur sa ligne, comme dans
+                Things 3 et Todoist ; il se change depuis le détail. */}
+            {task?.dueOn ? (
+              <Pressable
+                onPress={() => onOpenTask(task)}
+                accessibilityRole="button"
+                accessibilityLabel={`${row.title} est due ${formatFullDay(
+                  dateOfCalendarDay(task.dueOn),
+                )}. Modifier l'échéance`}
+                hitSlop={8}
+                style={{ minHeight: TASK_ROW_HEIGHT }}
+                className="justify-center"
+              >
+                <Text className="text-muted-foreground text-xs">
+                  {formatDayLabel(dateOfCalendarDay(task.dueOn))}
+                </Text>
+              </Pressable>
+            ) : null}
 
             {/* Les commandes de retrait ne s'affichent que sur la ligne active :
                 à demeure, elles doubleraient la hauteur de chaque rangée et
