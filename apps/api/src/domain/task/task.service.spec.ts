@@ -162,7 +162,22 @@ function makeService(
   return new TaskService(lists, events, users);
 }
 
+/**
+ * Horloge figée avant toutes les échéances des fixtures : `assertDueNotPast`
+ * compare au jour courant, et ces tests échouaient dès que leurs dates de
+ * septembre 2026 étaient passées sur l'horloge réelle.
+ */
+const NOW = new Date("2026-09-01T08:00:00.000Z");
+
 describe("TaskService", () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: NOW, doNotFake: ["nextTick", "queueMicrotask", "setImmediate"] });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   describe("list", () => {
     it("rend une page de listes, tous dossiers confondus", async () => {
       const lists = [makeList(), makeList({ id: "list-2", title: "Courses", kind: "shopping" })];
