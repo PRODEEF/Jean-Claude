@@ -180,9 +180,15 @@ export function CalendarScreen() {
     setSelectedDay(day);
     createAt(day, DEFAULT_CREATE_MINUTE);
   };
+  // Une entrée du calendrier peut n'être que la projection des tâches d'un
+  // jour (`datedLists`) : c'est la vraie liste qu'on modifie, sans quoi le
+  // formulaire lui prêterait pour échéance le jour de ces tâches.
   const editList = (list: TaskList) => {
     setListDetail(null);
-    setListTarget({ mode: "edit", list });
+    setListTarget({
+      mode: "edit",
+      list: allLists?.find((candidate) => candidate.id === list.id) ?? list,
+    });
   };
 
   return (

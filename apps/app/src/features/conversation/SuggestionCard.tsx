@@ -9,6 +9,7 @@ import {
   createProjectFoldersPayloadSchema,
   createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
+  dateOfCalendarDay,
   reportBugPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
@@ -247,7 +248,7 @@ function FolderChoice({
   );
 }
 
-type EditableItem = { key: string; title: string };
+type EditableItem = { key: string; title: string; dueOn: string | null };
 type EditableList = {
   key: string;
   title: string;
@@ -279,6 +280,7 @@ function useEditableTaskLists(suggestion: Suggestion) {
       items: list.items.map((item, itemIndex) => ({
         key: `item-${listIndex}-${itemIndex}`,
         title: item.title,
+        dueOn: item.dueOn,
       })),
     }));
   });
@@ -330,7 +332,7 @@ function editablePayload(lists: EditableList[]): CreateTaskListsPayload {
         kind: list.kind,
         dueAt: list.dueAt,
         items: list.items
-          .map((item) => ({ title: item.title.trim() }))
+          .map((item) => ({ title: item.title.trim(), dueOn: item.dueOn }))
           .filter((item) => item.title.length > 0),
       }))
       .filter((list) => list.title.length > 0 && list.items.length > 0),
@@ -390,6 +392,11 @@ function EditableTaskLists({
                 accessibilityLabel={`Élément ${item.title} de la liste ${list.title}`}
                 style={[styles.input, { color: palette.text }]}
               />
+              {item.dueOn === null ? null : (
+                <Text style={[styles.hint, { color: palette.textMuted }]}>
+                  {dueOnLabel(item.dueOn)}
+                </Text>
+              )}
               <RemoveButton
                 label={`Supprimer ${item.title || "cette ligne"}`}
                 disabled={disabled}
@@ -585,6 +592,7 @@ function useSuggestionPreview(suggestion: Suggestion): {
               key: `${list.title}/${item.title}`,
               label: item.title,
               nested: true,
+              ...(item.dueOn === null ? {} : { hint: dueOnLabel(item.dueOn) }),
             })),
           ])
         : [],
@@ -754,8 +762,8 @@ function updateItemLabel(item: { title?: string; done?: boolean }): string {
 /**
  * Ce que la carte dit d'une liste proposée : sa nature, puis son échéance.
  *
- * L'échéance est celle de la liste entière — c'est ce que la conversation a
- * donné, et l'accrocher à une de ses lignes ferait croire à une date par item.
+ * L'échéance est celle de la liste entière ; le jour propre d'une ligne
+ * s'affiche sur la ligne (`dueOnLabel`).
  */
 function hintOf(kind: "todo" | "shopping", dueAt: string | null): { hint?: string } {
   const parts = [
@@ -763,6 +771,11 @@ function hintOf(kind: "todo" | "shopping", dueAt: string | null): { hint?: strin
     ...(dueAt === null ? [] : [dueLabel(dueAt)]),
   ];
   return parts.length === 0 ? {} : { hint: parts.join(" · ") };
+}
+
+/** Jour d'une ligne proposée — « samedi 12 septembre ». */
+function dueOnLabel(dueOn: string): string {
+  return formatFullDay(dateOfCalendarDay(dueOn));
 }
 
 /**

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { PanResponder, Platform, ScrollView, View } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
+import { vars } from "nativewind";
 import {
   ChevronDown,
   ChevronRight,
@@ -43,6 +44,7 @@ import { Icon } from "@/shared/ui/icon";
 import { Separator } from "@/shared/ui/separator";
 import { Text } from "@/shared/ui/text";
 import { useAssistantName } from "@/shared/hooks/use-profile";
+import { useTheme } from "@/shared/providers/theme-provider";
 import { useSidebarData, type SidebarGroup } from "./use-sidebar-data";
 import { UTILITY_LINKS } from "./utility-links";
 
@@ -86,6 +88,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const assistantName = useAssistantName();
+  const { palette } = useTheme();
   const { groups, all, channel, isLoading, error } = useSidebarData();
   const [deleting, setDeleting] = useState<Folder | null>(null);
   const [menuTarget, setMenuTarget] = useState<FolderMenuTarget | null>(null);
@@ -176,7 +179,14 @@ export function AppSidebar({
   });
 
   return (
-    <View className="h-full border-r border-border bg-secondary" style={{ width }}>
+    <View
+      className="h-full border-r border-border bg-secondary"
+      // Le fond de survol et de sélection de shadcn (`accent`) est le gris de
+      // `surface` — celui de la barre elle-même. La rangée active s'y fondait :
+      // rien ne montrait que le calendrier était ouvert. Il est foncé ici, pour
+      // la barre seulement ; ailleurs, il se pose sur le fond blanc de l'écran.
+      style={[{ width }, vars({ "--accent": palette.border })]}
+    >
       <View className="gap-2 p-3">
         {/* Signalement direct, distinct des suggestions du modèle (§12.1) : un
             geste utilisateur, jamais une proposition (A.10). Même traitement
@@ -494,12 +504,12 @@ function cx(base: string, active: boolean): string {
 /**
  * Surligne la rangée de la route courante (demande de Yann).
  *
- * `bg-accent-soft` et non le `bg-accent` de shadcn : celui-ci vaut ici la
- * couleur de fond de la barre elle-même (`palette.surface`), et la
- * conversation ouverte ne se distinguait des autres que par la graisse de son
- * titre. La teinte atténuée de l'assistant est celle de la bulle de
- * l'utilisateur : visible dans les deux thèmes, et qui suit la couleur choisie
- * dans les réglages.
+ * `bg-accent-soft` et non le `bg-accent` de shadcn : celui-ci est le gris du
+ * survol, et la conversation ouverte se confondrait avec celle que le curseur
+ * ne fait que traverser — la confusion déjà corrigée dans la bannière. La
+ * teinte atténuée de l'assistant est celle de la bulle de l'utilisateur :
+ * visible dans les deux thèmes, et qui suit la couleur choisie dans les
+ * réglages.
  */
 function selected(base: string, active: boolean): string {
   return active ? `${base} bg-accent-soft` : base;

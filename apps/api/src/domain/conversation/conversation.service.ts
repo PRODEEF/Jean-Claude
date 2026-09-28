@@ -1,5 +1,6 @@
 import {
   assistantScopeSchema,
+  calendarDateSchema,
   DEFAULT_ASSISTANT_NAME,
   DEFAULT_CONVERSATION_TITLE,
   askedQuestionSchema,
@@ -42,7 +43,7 @@ import type {
 } from "../../core/llm/llm.port.js";
 import { logger } from "../../core/logger.js";
 import { parseRelativeDateFr } from "../../core/relative-date.js";
-import { fromWall, toWall } from "../../core/timezone.js";
+import { calendarDateIn, fromWall, toWall } from "../../core/timezone.js";
 import type { IAttachmentRepository } from "../attachment/attachment.repository.interface.js";
 import {
   ASK_QUESTION,
@@ -1864,6 +1865,9 @@ function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: strin
     if (typeof entry !== "object" || entry === null) return entry;
 
     const record = entry as Record<string, unknown>;
+    const items = Array.isArray(record["items"])
+      ? record["items"].map((item) => withCorrectedDueOn(item, now, timezone))
+      : record["items"];
     const dueAt = resolveDueAt(
       record["dueAtText"],
       record["dueAt"],
@@ -1871,17 +1875,45 @@ function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: strin
       now,
       timezone,
     );
-    if (dueAt === null) return entry;
+    if (dueAt === null) return { ...entry, items };
 
     if (isPastDay(dueAt, now, timezone)) {
       logger.warn(SCOPE, "Échéance de todoliste proposée dans le passé, effacée.");
-      return { ...entry, dueAt: null };
+      return { ...entry, items, dueAt: null };
     }
 
-    return { ...entry, dueAt };
+    return { ...entry, items, dueAt };
   });
 
   return { ...toolCall, input: { ...toolCall.input, lists: corrected } };
+}
+
+/**
+ * Corrige le jour d'une ligne proposée, sur le même principe que l'échéance
+ * de sa liste : l'expression relative recopiée (`dueOnText`) l'emporte sur le
+ * calcul du modèle quand le filet la reconnaît, et un jour déjà passé est
+ * effacé plutôt que de faire naître une tâche en retard.
+ *
+ * Une valeur illisible est laissée telle quelle : le schéma de la proposition
+ * la ramène à une ligne sans date.
+ */
+function withCorrectedDueOn(item: unknown, now: Date, timezone: string): unknown {
+  if (typeof item !== "object" || item === null) return item;
+
+  const record = item as Record<string, unknown>;
+  const relative =
+    typeof record["dueOnText"] === "string"
+      ? parseRelativeDateFr(record["dueOnText"], now, timezone)
+      : null;
+  const dueOn = relative !== null ? calendarDateIn(new Date(relative), timezone) : record["dueOn"];
+  if (typeof dueOn !== "string" || !calendarDateSchema.safeParse(dueOn).success) return item;
+
+  if (dueOn < calendarDateIn(now, timezone)) {
+    logger.warn(SCOPE, "Échéance de tâche proposée dans le passé, effacée.");
+    return { ...record, dueOn: null };
+  }
+
+  return { ...record, dueOn };
 }
 
 /**
@@ -2663,7 +2695,8 @@ function describeTaskLists(lists: TaskListWithTasks[]): string[] {
             .map((task) => {
               const state = task.done ? "faite" : "à faire";
               const nested = task.parentId === null ? "" : "> ";
-              return `${nested}identifiant ${task.id} : ${task.title} (${state})`;
+              const dueOn = task.dueOn === null ? "" : `, pour le ${task.dueOn}`;
+              return `${nested}identifiant ${task.id} : ${task.title} (${state}${dueOn})`;
             })
             .join(" ; ");
 

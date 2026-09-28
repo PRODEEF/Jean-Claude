@@ -2,6 +2,7 @@ import { z } from "zod";
 import { rruleSchema } from "../calendar/calendar.schema";
 import { feedbackPlatformSchema, FEEDBACK_CONTENT_MAX_LENGTH } from "../feedback/feedback.schema";
 import { folderPurposeSchema } from "../folder/folder.schema";
+import { calendarDateSchema } from "../shared/search.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 import { taskListKindSchema } from "../task/task.schema";
 
@@ -163,12 +164,13 @@ export type AssignFoldersPayload = z.infer<typeof assignFoldersPayloadSchema>;
  * les achats et les tâches — et les fusionner reviendrait à rendre une liste
  * de courses illisible au milieu du désherbage.
  *
- * `dueAt` date la liste et non ses lignes : une échéance sortie d'une
- * conversation vaut pour ce qui est à boucler, pas pour un article de la
- * liste de courses. Elle retombe sur `null` au lieu de faire échouer la
- * validation — le modèle rend parfois une date inexploitable, « lundi
- * prochain » laissé en clair ou sans fuseau, et perdre la liste entière pour
- * cela coûterait plus cher que de la proposer sans échéance.
+ * `dueAt` date la liste entière, `dueOn` une ligne qui a sa propre date —
+ * « le site pour le 12, les groupes pour le 14 » tient dans une seule liste.
+ * Les deux retombent sur `null` au lieu de faire échouer la validation — le
+ * modèle rend parfois une date inexploitable, « lundi prochain » laissé en
+ * clair ou sans fuseau, et perdre la liste entière pour cela coûterait plus
+ * cher que de la proposer sans échéance. `dueOn` absent — une proposition
+ * enregistrée avant qu'il existe — vaut une ligne sans date.
  */
 export const createTaskListsPayloadSchema = z.object({
   lists: z
@@ -178,7 +180,12 @@ export const createTaskListsPayloadSchema = z.object({
         kind: taskListKindSchema,
         dueAt: isoDateTimeSchema.nullable().catch(null).default(null),
         items: z
-          .array(z.object({ title: labelSchema }))
+          .array(
+            z.object({
+              title: labelSchema,
+              dueOn: calendarDateSchema.nullable().catch(null).default(null),
+            }),
+          )
           .min(1)
           .max(30),
       }),

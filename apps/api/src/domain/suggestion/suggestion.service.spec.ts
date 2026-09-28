@@ -249,13 +249,13 @@ describe("SuggestionService", () => {
                 title: "Achats jardin",
                 kind: "shopping",
                 dueAt: null,
-                items: [{ title: "Terreau" }],
+                items: [{ title: "Terreau", dueOn: null }],
               },
               {
                 title: "Travaux jardin",
                 kind: "todo",
                 dueAt: null,
-                items: [{ title: "Désherber" }],
+                items: [{ title: "Désherber", dueOn: null }],
               },
             ],
           },
@@ -292,7 +292,56 @@ describe("SuggestionService", () => {
       const input = (repo.create as jest.Mock).mock.calls[0]?.[1] as { payload: unknown };
       expect(input.payload).toEqual({
         lists: [
-          { title: "Travaux jardin", kind: "todo", dueAt: null, items: [{ title: "Désherber" }] },
+          {
+            title: "Travaux jardin",
+            kind: "todo",
+            dueAt: null,
+            items: [{ title: "Désherber", dueOn: null }],
+          },
+        ],
+      });
+    });
+
+    it("garde dans une seule liste des lignes datées de jours différents", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je te les organise ?",
+            lists: [
+              {
+                title: "Tâches Okiosk",
+                kind: "todo",
+                items: [
+                  { title: "Refaire le site internet", dueOn: "2026-09-12" },
+                  { title: "Améliorer les groupes", dueOn: "2026-09-14" },
+                  { title: "Relire la charte", dueOn: "le 20" },
+                ],
+              },
+            ],
+          },
+          "suggest_task_list",
+        ),
+        TOKEN,
+      );
+
+      // Une date illisible retombe sur une ligne sans date, sans perdre la ligne.
+      const input = (repo.create as jest.Mock).mock.calls[0]?.[1] as { payload: unknown };
+      expect(input.payload).toEqual({
+        lists: [
+          {
+            title: "Tâches Okiosk",
+            kind: "todo",
+            dueAt: null,
+            items: [
+              { title: "Refaire le site internet", dueOn: "2026-09-12" },
+              { title: "Améliorer les groupes", dueOn: "2026-09-14" },
+              { title: "Relire la charte", dueOn: null },
+            ],
+          },
         ],
       });
     });

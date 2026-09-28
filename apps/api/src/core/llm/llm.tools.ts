@@ -15,7 +15,10 @@ export const SUGGEST_TASK_LIST: LlmTool = {
     "À appeler quand la conversation fait émerger une ou plusieurs listes actionnables. " +
     "Créer une entrée par liste distincte : une conversation sur des travaux de jardin " +
     "produit typiquement une liste d'achats ET une liste de tâches, qui ne doivent pas " +
-    "être fusionnées.",
+    "être fusionnées. Une même ligne ne figure jamais dans deux listes : des dates " +
+    "différentes selon les lignes se portent sur chaque ligne avec `dueOn`, dans une " +
+    "seule liste — jamais dans une seconde liste qui répéterait les lignes avec leur " +
+    "date dans le titre.",
   inputSchema: {
     type: "object",
     properties: {
@@ -43,8 +46,10 @@ export const SUGGEST_TASK_LIST: LlmTool = {
               description:
                 "Échéance ISO 8601 de la liste entière si la conversation en mentionne " +
                 "une ou la rend déductible (« lundi prochain », « avant le week-end »), " +
-                "sinon omettre. La date vaut pour toute la liste, pas pour une de ses " +
-                "lignes : « les courses avant samedi » date la liste, pas la farine. " +
+                "sinon omettre. La date vaut pour toute la liste : « les courses avant " +
+                "samedi » date la liste, pas la farine. Quand chaque ligne a sa propre " +
+                "date (« le site pour le 12, les groupes pour le 14 »), omettre `dueAt` " +
+                "et dater les lignes avec `dueOn`. " +
                 "Viser minuit pour l'heure, qu'une heure précise ait été donnée ou non — " +
                 "elle se règle séparément avec `dueTime`, jamais ici.",
             },
@@ -73,7 +78,27 @@ export const SUGGEST_TASK_LIST: LlmTool = {
               type: "array",
               items: {
                 type: "object",
-                properties: { title: { type: "string" } },
+                properties: {
+                  title: {
+                    type: "string",
+                    description: "Intitulé de la ligne, sans sa date — elle va dans `dueOn`.",
+                  },
+                  dueOn: {
+                    type: "string",
+                    description:
+                      "Jour où cette ligne est due, au format AAAA-MM-JJ, quand la " +
+                      "conversation lui en donne un qui lui est propre. Omettre sinon, et " +
+                      "omettre aussi quand la date vaut pour toute la liste (`dueAt`).",
+                  },
+                  dueOnText: {
+                    type: "string",
+                    description:
+                      "Si `dueOn` vient d'une expression relative (« vendredi », " +
+                      "« demain », « dans deux semaines »), la recopier telle quelle, en " +
+                      "quelques mots : le serveur la relit pour fiabiliser le calcul, comme " +
+                      "`dueAtText`. Omettre pour une date absolue (« le 12 septembre »).",
+                  },
+                },
                 required: ["title"],
               },
             },

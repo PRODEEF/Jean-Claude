@@ -1,5 +1,5 @@
 import type { CalendarEvent } from "../calendar/calendar.schema";
-import type { TaskList, TaskListWithTasks } from "../task/task.schema";
+import type { Task, TaskList, TaskListWithTasks } from "../task/task.schema";
 
 /**
  * Ce qui place les todolistes et les rendez-vous dans le temps.
@@ -36,6 +36,26 @@ export function isSameDay(a: Date, b: Date): boolean {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
+}
+
+// ── Jours civils ───────────────────────────────────────────────────────────
+
+/**
+ * Minuit local du jour civil `AAAA-MM-JJ`.
+ *
+ * Jamais `new Date("AAAA-MM-JJ")` : cette forme est lue en UTC, et le jour
+ * reculerait d'un cran à l'ouest de Greenwich.
+ */
+export function dateOfCalendarDay(day: string): Date {
+  const [year = 1970, month = 1, date = 1] = day.split("-").map(Number);
+  return new Date(year, month - 1, date);
+}
+
+/** Jour civil `AAAA-MM-JJ` d'une date, lu dans l'horloge de l'appareil. */
+export function calendarDayOf(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 // ── Moments de la journée ──────────────────────────────────────────────────
@@ -124,13 +144,38 @@ export function todoDays(monthDays: Date[], today: Date): Date[] {
 // ── Ce que porte une journée ───────────────────────────────────────────────
 
 /**
- * Listes portant une échéance, tous dossiers confondus.
+ * Ce que le calendrier place, tous dossiers confondus : chaque liste datée à
+ * son échéance et, en plus, la liste à chaque jour où tombent certaines de
+ * ses tâches — ne portant alors que celles-là.
  *
- * L'échéance appartient à la liste et non à ses lignes : « les courses avant
- * samedi » date la liste, pas la farine.
+ * « Le site pour le 12, les groupes pour le 14 » tient dans une seule liste :
+ * elle apparaît le 12 avec le site, le 14 avec les groupes. Chaque entrée
+ * garde l'identité de sa liste — cocher ou ouvrir agit sur la vraie. Une tâche
+ * n'a pas de créneau à elle : l'entrée vise la journée et n'en réclame aucun.
+ *
+ * Une tâche due le jour même de l'échéance de sa liste y figure déjà : elle
+ * n'ouvre pas une seconde entrée, qui montrerait la liste deux fois ce jour-là.
  */
 export function datedLists(lists: TaskListWithTasks[]): TaskListWithTasks[] {
-  return lists.filter((list) => list.dueAt !== null);
+  return lists.flatMap((list) => {
+    const listDay = list.dueAt === null ? null : calendarDayOf(new Date(list.dueAt));
+
+    const tasksByDay = new Map<string, Task[]>();
+    for (const task of list.tasks) {
+      if (task.dueOn === null || task.dueOn === listDay) continue;
+      tasksByDay.set(task.dueOn, [...(tasksByDay.get(task.dueOn) ?? []), task]);
+    }
+
+    const byTaskDay = [...tasksByDay].map(([day, tasks]) => ({
+      ...list,
+      dueAt: dateOfCalendarDay(day).toISOString(),
+      dueAllDay: true,
+      eventId: null,
+      tasks,
+    }));
+
+    return list.dueAt === null ? byTaskDay : [list, ...byTaskDay];
+  });
 }
 
 /**

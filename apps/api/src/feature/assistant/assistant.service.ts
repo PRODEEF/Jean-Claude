@@ -250,7 +250,12 @@ export class AssistantService {
       }
 
       for (const item of proposed.items) {
-        await this.tasks.addTask(userId, list.id, { title: item.title }, accessToken);
+        await this.tasks.addTask(
+          userId,
+          list.id,
+          { title: item.title, dueOn: item.dueOn },
+          accessToken,
+        );
       }
     }
 
@@ -331,7 +336,7 @@ export class AssistantService {
    * plutôt que d'écrire dans le vide.
    */
   private async updateTaskListItems(
-    _userId: string,
+    userId: string,
     suggestion: Suggestion,
     accessToken: string,
   ): Promise<TaskList[]> {
@@ -346,7 +351,7 @@ export class AssistantService {
       const patch: { title?: string; done?: boolean } = {};
       if (item.title !== undefined) patch.title = item.title;
       if (item.done !== undefined) patch.done = item.done;
-      await this.tasks.updateTask(payload.data.listId, item.taskId, patch, accessToken);
+      await this.tasks.updateTask(userId, payload.data.listId, item.taskId, patch, accessToken);
     }
 
     return [];

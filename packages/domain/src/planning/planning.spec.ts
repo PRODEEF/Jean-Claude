@@ -1,6 +1,8 @@
-import type { CalendarEvent, TaskListWithTasks } from "../index";
+import type { CalendarEvent, Task, TaskListWithTasks } from "../index";
 import {
   byDueDate,
+  calendarDayOf,
+  dateOfCalendarDay,
   datedLists,
   eventsOfDay,
   layoutDayEvents,
@@ -221,6 +223,85 @@ describe("datedLists", () => {
   it("ne garde que ce qui est daté", () => {
     expect(datedLists([makeList(), makeList({ dueAt: localIso(2026, 9, 12) })])).toHaveLength(1);
   });
+
+  it("pose chaque tâche datée à son jour, même dans une liste sans échéance", () => {
+    // Le cas remonté en usage réel : trois tâches, trois jours, une liste.
+    const list = makeList({
+      tasks: [
+        { ...task("site"), dueOn: "2026-09-12" },
+        { ...task("groupes"), dueOn: "2026-09-14" },
+        { ...task("onboarding"), dueOn: "2026-09-20" },
+      ],
+    });
+
+    const entries = datedLists([list]);
+
+    expect(listsOfDay(entries, DAY).map((entry) => entry.tasks.map((t) => t.id))).toEqual([
+      ["site"],
+    ]);
+    expect(listsOfDay(entries, new Date(2026, 8, 14))[0]?.tasks.map((t) => t.id)).toEqual([
+      "groupes",
+    ]);
+    expect(listsOfDay(entries, new Date(2026, 8, 20))[0]?.tasks.map((t) => t.id)).toEqual([
+      "onboarding",
+    ]);
+  });
+
+  it("regroupe les tâches d'une même liste dues le même jour", () => {
+    const list = makeList({
+      tasks: [
+        { ...task("a"), dueOn: "2026-09-12" },
+        { ...task("b"), dueOn: "2026-09-12" },
+      ],
+    });
+
+    expect(datedLists([list])).toHaveLength(1);
+  });
+
+  it("garde l'identité de la liste, sans créneau ni heure", () => {
+    const list = makeList({ eventId: "evt-1", tasks: [{ ...task("a"), dueOn: "2026-09-12" }] });
+
+    expect(datedLists([list])[0]).toMatchObject({
+      id: "list-1",
+      title: "Courses",
+      dueAt: localIso(2026, 9, 12),
+      dueAllDay: true,
+      eventId: null,
+    });
+  });
+
+  it("montre la liste à son échéance, et en plus aux jours de ses tâches datées", () => {
+    const list = makeList({
+      dueAt: localIso(2026, 9, 20),
+      dueAllDay: true,
+      tasks: [task("sans-date"), { ...task("a"), dueOn: "2026-09-12" }],
+    });
+
+    const entries = datedLists([list]);
+
+    expect(entries).toHaveLength(2);
+    expect(listsOfDay(entries, new Date(2026, 8, 20))[0]).toBe(list);
+  });
+
+  it("ne dédouble pas la liste pour une tâche due le jour même de son échéance", () => {
+    const list = makeList({
+      dueAt: localIso(2026, 9, 12, 18),
+      dueAllDay: false,
+      tasks: [{ ...task("a"), dueOn: "2026-09-12" }],
+    });
+
+    expect(datedLists([list])).toEqual([list]);
+  });
+});
+
+describe("jours civils", () => {
+  it("lit un jour civil à minuit dans l'horloge de l'appareil", () => {
+    expect(dateOfCalendarDay("2026-09-12")).toEqual(new Date(2026, 8, 12));
+  });
+
+  it("rend le jour civil d'une date sans passer par UTC", () => {
+    expect(calendarDayOf(new Date(2026, 8, 5, 23, 30))).toBe("2026-09-05");
+  });
 });
 
 describe("eventsOfDay", () => {
@@ -361,7 +442,7 @@ describe("layoutDayLists", () => {
   });
 });
 
-function task(id: string) {
+function task(id: string): Task {
   return {
     id,
     listId: "list-1",
@@ -370,6 +451,7 @@ function task(id: string) {
     done: false,
     completedAt: null,
     parentId: null,
+    dueOn: null,
     position: 0,
     createdAt: localIso(2026, 9, 1),
     updatedAt: localIso(2026, 9, 1),

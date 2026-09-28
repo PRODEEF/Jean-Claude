@@ -49,8 +49,15 @@ function upstreamStatus(error: unknown, depth = 0): number | undefined {
  */
 export function toHttpException(error: unknown): HTTPException {
   switch (upstreamStatus(error)) {
+    // La limite atteinte est celle du fournisseur, partagée par tous les
+    // utilisateurs : « trop de requêtes » accusait d'une rafale quelqu'un qui
+    // venait d'envoyer son deuxième message. La limite propre à chacun a son
+    // message à elle, dans `rate-limit.middleware.ts`.
     case 429:
-      return httpError(429, "Trop de requêtes d'affilée. Réessayez dans un instant.");
+      return httpError(
+        429,
+        "Le moteur IA est très sollicité en ce moment. Réessayez dans un instant.",
+      );
 
     case 402:
       return httpError(402, "Le crédit du moteur IA est épuisé.");

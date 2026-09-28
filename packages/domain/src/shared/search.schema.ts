@@ -25,9 +25,20 @@ export type DateShortcut = z.infer<typeof dateShortcutSchema>;
  * Les bornes saisies par l'utilisateur ne sont pas des instants : « du 3 mars »
  * ne veut rien dire tant qu'on n'a pas dit dans quel fuseau. C'est le serveur
  * qui les transforme en instants, avec le fuseau du profil — même raison que
- * pour les raccourcis ci-dessus.
+ * pour les raccourcis ci-dessus. C'est aussi la forme de l'échéance d'une
+ * tâche (`Task.dueOn`) : « pour le 12 » vise un jour, pas un instant.
  */
-export const calendarDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date attendue");
+export const calendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date attendue")
+  .refine((value) => {
+    // `Date.UTC(2026, 1, 31)` glisse au 3 mars sans lever : un jour qui ne
+    // s'est pas conservé à la construction n'existe pas, et Postgres le
+    // refuserait plus loin, en panne plutôt qu'en message.
+    const [year = 0, month = 0, day = 0] = value.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  }, "Ce jour n'existe pas");
 
 export const searchFiltersSchema = z.object({
   /** Recherche plein texte sur les titres et le contenu des messages. */

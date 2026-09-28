@@ -1,4 +1,11 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { StyleSheet, useColorScheme, View } from "react-native";
 import { vars } from "nativewind";
 import {
@@ -32,11 +39,26 @@ export function ThemeProvider({
 }: ThemeProviderProps) {
   const systemScheme = useColorScheme();
 
+  /**
+   * Le réglage de l'appareil n'est suivi qu'une fois le premier rendu posé.
+   *
+   * Le web est pré-rendu à la construction (`web.output: "static"`), sans
+   * appareil à interroger : le HTML naît en clair. À l'hydratation, React
+   * adopte ce HTML sans en corriger les attributs — les variables posées
+   * ci-dessous restaient donc claires sur un appareil en sombre, alors que la
+   * palette, elle, passait en sombre : barre latérale claire à côté d'un fil
+   * noir. Rejouer d'abord le rendu du serveur fait de la bascule une mise à
+   * jour ordinaire, que React applique. `useLayoutEffect` la place avant le
+   * premier affichage : aucun éclair clair à l'écran.
+   */
+  const [hydrated, setHydrated] = useState(false);
+  useLayoutEffect(() => setHydrated(true), []);
+
   const value = useMemo<ThemeContextValue>(() => {
-    const scheme: ColorScheme =
-      preference === "system" ? (systemScheme === "dark" ? "dark" : "light") : preference;
+    const deviceScheme: ColorScheme = hydrated && systemScheme === "dark" ? "dark" : "light";
+    const scheme: ColorScheme = preference === "system" ? deviceScheme : preference;
     return { scheme, palette: buildPalette(scheme, accent) };
-  }, [preference, systemScheme, accent]);
+  }, [preference, systemScheme, accent, hydrated]);
 
   /**
    * La même palette, exposée aux classes utilitaires de NativeWind.
