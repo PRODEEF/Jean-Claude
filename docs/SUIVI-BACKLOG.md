@@ -44,9 +44,11 @@ fois messages et propositions. Le libellé blanc des boutons d'accent est à
 4,0:1 de contraste sur le bleu de la vérification (`#107FEA`), sous le seuil AA
 de 4,5:1 — couleurs inchangées ici.
 
-**Mis en attente :** remonter le canal permanent en haut de la barre et le sort
-du bouton « Signaler un problème » (décision de Clarisse). **Hors code :** le
-test d'import des TODO Notion de Clarisse, à mener avec elle.
+**Mis en attente :** le sort du bouton « Signaler un problème » (décision de
+Clarisse). Le canal permanent, lui, est remonté en haut de la barre, juste
+au-dessus de « Nouvelle conversation » et hors de la liste qui défile ; il
+n'apparaît plus sous « Discussions et tâches ». **Hors code :** le test
+d'import des TODO Notion de Clarisse, à mener avec elle.
 
 Plus tôt le même jour : les points de priorité 5 de la todo de Yann, sur la
 branche `feat/amazing-maxwell-embsbu`. Chaque point a été vérifié dans Chromium

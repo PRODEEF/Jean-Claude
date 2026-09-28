@@ -203,6 +203,30 @@ export function AppSidebar({
           <Text className="text-sm font-semibold text-foreground">SIGNALER UN PROBLÈME</Text>
         </Button>
 
+        {/* Le canal permanent (A.10) en tête, hors de la liste qui défile : il
+            n'est pas une conversation parmi d'autres, et doit rester à portée
+            quel que soit le nombre de dossiers et de conversations. */}
+        <Button
+          variant="ghost"
+          onPress={() => go("/assistant")}
+          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+          className={selected("h-auto justify-start gap-3 px-2 py-2", pathname === "/assistant")}
+        >
+          <View className="size-8 items-center justify-center rounded-md bg-primary">
+            <Icon as={MessageCircle} size={16} className="text-primary-foreground" />
+          </View>
+          <Text className="flex-1 text-sm" numberOfLines={1}>
+            <Text className="font-semibold text-foreground">{assistantName}</Text>
+            <Text className="font-normal text-muted-foreground"> - Canal permanent</Text>
+          </Text>
+          <UnreadBadge
+            count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
+            pendingQuestion={
+              pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
+            }
+          />
+        </Button>
+
         <Button
           variant="outline"
           onPress={() => go("/chat")}
@@ -271,36 +295,14 @@ export function AppSidebar({
           <FolderNameRow target={naming} onDone={() => setNaming(null)} />
         ) : null}
 
-        {/* Discussions et tâches : le canal permanent (A.10), non déplaçable —
-            il n'est pas une conversation parmi d'autres — puis toutes les
-            conversations à plat, y compris celles déjà rangées dans un
-            dossier. Ce n'est pas une duplication : la même conversation reste
-            visible depuis son dossier, ci-dessus, et depuis cette vue
-            chronologique (§5.2, A.1). Les conversations non rangées, elles,
-            n'apparaissent plus qu'ici — une section « Sans dossier » à part
-            aurait fait doublon avec cette liste, qui les contient déjà. */}
+        {/* Discussions et tâches : toutes les conversations à plat, y compris
+            celles déjà rangées dans un dossier. Ce n'est pas une duplication :
+            la même conversation reste visible depuis son dossier, ci-dessus, et
+            depuis cette vue chronologique (§5.2, A.1). Les conversations non
+            rangées, elles, n'apparaissent plus qu'ici — une section « Sans
+            dossier » à part aurait fait doublon avec cette liste, qui les
+            contient déjà. */}
         <SectionLabel>Discussions et tâches</SectionLabel>
-
-        <Button
-          variant="ghost"
-          onPress={() => go("/assistant")}
-          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
-          className={selected("h-auto justify-start gap-2 px-2 py-1.5", pathname === "/assistant")}
-        >
-          <View className="size-7 items-center justify-center rounded-md bg-primary">
-            <Icon as={MessageCircle} size={14} className="text-primary-foreground" />
-          </View>
-          <Text className="flex-1 text-sm" numberOfLines={1}>
-            <Text className="font-semibold text-foreground">{assistantName}</Text>
-            <Text className="font-normal text-muted-foreground"> - Canal permanent</Text>
-          </Text>
-          <UnreadBadge
-            count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
-            pendingQuestion={
-              pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
-            }
-          />
-        </Button>
 
         {all.map((conversation) =>
           renaming?.id === conversation.id ? (
