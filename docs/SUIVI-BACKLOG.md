@@ -7,10 +7,51 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **28 septembre 2026 (suite)** — les points de priorité 5
-de la todo de Yann, sur la branche `feat/amazing-maxwell-embsbu`. Chaque point
-a été vérifié dans Chromium sur un build web branché sur une fausse API, et
-comparé au même scénario joué sur `dev`.
+Dernière mise à jour : **28 septembre 2026 (fin de journée)** — les points de
+priorité 4 de la todo de Yann, sur la branche `feat/inspiring-newton-ht83qq`
+(#135, puis un correctif). Vérifiés dans Chromium sur un build web branché sur
+une fausse API qui simule les délais du modèle et du serveur, en thème clair et
+en thème sombre.
+
+**L'attente tourne, et dure jusqu'à la fin du tour.** Le compteur
+« <assistant> réfléchit… N s » existait depuis le 3 septembre, en texte
+immobile : une roue dentée tourne désormais devant lui (immobile si l'appareil
+demande de réduire les animations). L'indicateur ne s'efface plus au premier
+jeton : il reste sous le texte, puis sous la carte, jusqu'à la fin du tour. Il
+couvre ainsi le temps mort où le modèle prépare une proposition (création de
+dossiers, liste…) après avoir fini d'écrire, et où rien ne bougeait avant
+l'arrivée de la carte. Relevé toutes les 100 ms, le compteur monte sans
+interruption à travers le premier jeton, la fin du texte et l'arrivée de la
+carte.
+
+**Accepter une proposition ne fait plus seulement griser la carte.** Le bouton
+d'acceptation affiche la même roue et « En cours… N s » jusqu'à ce que le fil
+ait relu la proposition tranchée ; « Ignorer » reste grisé. C'est le même
+bouton pour toutes les propositions : listes, rangement et rendez-vous en
+profitent aussi.
+
+**Corrigé dans la foulée :** sur un fil qui défile, la ligne de l'indicateur
+passait à moitié sous la zone de saisie. Sur web, `scrollToEnd` de
+react-native-web s'arrête 28 pt avant la fin (il ignore le `gap` et le
+`padding` de la liste) ; la bulle qui entourait l'ancien indicateur absorbait
+cet écart, sa marge lui est rendue.
+
+**Relevés, non traités :** le même défilement trop court laisse le bas de la
+carte de proposition sous la saisie en fin de tour — antérieur à ce
+changement. La roue tourne encore un aller-retour après l'arrivée de la carte :
+en fin de tour, `invalidateQueries(["conversation", id])` relit une seconde
+fois messages et propositions. Le libellé blanc des boutons d'accent est à
+4,0:1 de contraste sur le bleu de la vérification (`#107FEA`), sous le seuil AA
+de 4,5:1 — couleurs inchangées ici.
+
+**Mis en attente :** remonter le canal permanent en haut de la barre et le sort
+du bouton « Signaler un problème » (décision de Clarisse). **Hors code :** le
+test d'import des TODO Notion de Clarisse, à mener avec elle.
+
+Plus tôt le même jour : les points de priorité 5 de la todo de Yann, sur la
+branche `feat/amazing-maxwell-embsbu`. Chaque point a été vérifié dans Chromium
+sur un build web branché sur une fausse API, et comparé au même scénario joué
+sur `dev`.
 
 **La vue Todo du calendrier suit le découpage demandé.** Chaque jour se lit en
 MATIN / APRÈS-MIDI / SOIR (avant 12h, 12h–18h, après 18h), bandeaux gris sur
