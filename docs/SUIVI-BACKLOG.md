@@ -7,11 +7,37 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **28 septembre 2026 (fin de journée)** — les points de
-priorité 4 de la todo de Yann, sur la branche `feat/inspiring-newton-ht83qq`
-(#135, puis un correctif). Vérifiés dans Chromium sur un build web branché sur
-une fausse API qui simule les délais du modèle et du serveur, en thème clair et
-en thème sombre.
+Dernière mise à jour : **28 septembre 2026 (soir)** — refonte de la page
+Réglages, sur la branche `refonte/ui`. Vérifiée dans Chromium sur le serveur de
+développement web branché sur une fausse API, en thème clair et en thème
+sombre, sur grand écran et à 390 pt de large, puis validée sur captures par
+Clarisse.
+
+**La page Réglages se lit par groupes.** Chaque section porte un vrai titre, et
+ses réglages sont rangés dans une carte, une ligne par réglage : libellé et
+phrase d'aide à gauche, contrôle à droite — sous le libellé sur téléphone pour
+un champ ou un menu. C'est la présentation d'iOS, de ChatGPT et de Claude
+(§4.2). Trois cartes : Compte (avatar, adresse, pseudo, déconnexion),
+Assistant (nom, couleur, bandeau uni, thème, modèle) et « Ce qu'il peut vous
+proposer ». Viennent ensuite l'avis et, isolée en fin de page, la suppression du
+compte. La déconnexion quitte le bandeau pour la carte Compte, en neutre : elle
+n'a rien de destructeur. « Enregistrer » n'apparaît qu'une fois un champ
+modifié, et disparaît à l'enregistrement. Le thème reprend le sélecteur
+segmenté du calendrier. Sous « Modèle », une phrase dit ce que fait le modèle
+actif et s'il est hébergé en Europe.
+
+**Le sélecteur de modèle coche « Mistral » par défaut.** `LLM_MODEL` vaut
+`mistral/ministral-14b` en production, absent du catalogue : tant que
+l'utilisateur n'avait rien choisi, les réglages n'affichaient que « Choisir un
+modèle ». `toCatalogueModel` (`@jc/domain`, testée) rattache le modèle servi à
+l'entrée de son éditeur. **Relevé, non traité :** choisir soi-même « Mistral »
+bascule sur `mistral-medium-3.5`, pas sur `ministral-14b`, et la phrase d'aide
+décrit le premier.
+
+Plus tôt le même jour : les points de priorité 4 de la todo de Yann, sur la
+branche `feat/inspiring-newton-ht83qq` (#135, puis un correctif). Vérifiés dans
+Chromium sur un build web branché sur une fausse API qui simule les délais du
+modèle et du serveur, en thème clair et en thème sombre.
 
 **L'attente tourne, et dure jusqu'à la fin du tour.** Le compteur
 « <assistant> réfléchit… N s » existait depuis le 3 septembre, en texte
