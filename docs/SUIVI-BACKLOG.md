@@ -29,8 +29,8 @@ question. Quand elle closait une longue réponse, la bulle de l'utilisateur qui
 répondait d'un appui recopiait toute la réponse de l'assistant après « Q : »,
 et la carte de question en affichait le début. La question est enregistrée à
 part (`messages.question`, migration `20260928090000_message_question.sql`,
-**à appliquer avant le déploiement du code**, qui lit la colonne). Les messages
-antérieurs n'affichent plus de « Q : ».
+**appliquée en production le 28 septembre**, avant tout déploiement du code
+qui lit la colonne). Les messages antérieurs n'affichent plus de « Q : ».
 
 **La pastille de non-lu ne s'allumait jamais pour une réponse arrivée
 ailleurs.** En fin de tour, le fil marquait sa conversation comme lue même
