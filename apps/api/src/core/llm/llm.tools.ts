@@ -420,8 +420,9 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
       startsAt: {
         type: "string",
         description:
-          "Première occurrence, ISO 8601 — la prochaine date qui correspond à la " +
-          "récurrence, pas une date passée.",
+          "Première occurrence, en heure locale de l'utilisateur, ISO 8601 sans " +
+          "fuseau ni « Z » — ex. 2026-09-15T18:00 pour « à 18h ». La prochaine date " +
+          "qui correspond à la récurrence, pas une date passée.",
       },
       rrule: {
         type: "string",
@@ -481,7 +482,9 @@ export const SUGGEST_EVENTS: LlmTool = {
             title: { type: "string", description: "Titre court du rendez-vous" },
             startsAt: {
               type: "string",
-              description: "Date et heure ISO 8601 du rendez-vous.",
+              description:
+                "Date et heure du rendez-vous en heure locale de l'utilisateur, ISO 8601 " +
+                "sans fuseau ni « Z » — ex. 2026-09-30T14:00 pour « à 14h ».",
             },
           },
           required: ["title", "startsAt"],
