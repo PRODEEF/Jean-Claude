@@ -395,8 +395,16 @@ export function ConversationThread({
                     la relit — un temps mort signalé par Yann. Sous les cartes,
                     pour que celle qui arrive en fin de tour se pose au-dessus
                     de la roue au lieu de la pousser. Même emplacement d'un bout
-                    à l'autre du tour : le compteur n'est jamais remis à zéro. */}
-                {send.isPending ? <ThinkingIndicator /> : null}
+                    à l'autre du tour : le compteur n'est jamais remis à zéro.
+                    La marge de bulle n'est pas décorative : sur web,
+                    `scrollToEnd` s'arrête 28 pt avant la fin (il ignore le
+                    `gap` et le `padding` de la liste), et sans elle la ligne
+                    passait à moitié sous la saisie dès que le fil défile. */}
+                {send.isPending ? (
+                  <View style={[styles.bubble, styles.plain]}>
+                    <ThinkingIndicator />
+                  </View>
+                ) : null}
               </View>
             )
           }
