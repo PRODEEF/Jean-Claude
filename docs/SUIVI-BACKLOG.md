@@ -7,6 +7,70 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **28 septembre 2026 (suite)** — les points de priorité 5
+de la todo de Yann, sur la branche `feat/amazing-maxwell-embsbu`. Chaque point
+a été vérifié dans Chromium sur un build web branché sur une fausse API, et
+comparé au même scénario joué sur `dev`.
+
+**La vue Todo du calendrier suit le découpage demandé.** Chaque jour se lit en
+MATIN / APRÈS-MIDI / SOIR (avant 12h, 12h–18h, après 18h), bandeaux gris sur
+toute la largeur, en corps plus grand que les tâches, et affichés même vides :
+c'est la trame d'un agenda papier. Les anciens moments « Soirée » et « Soir »
+sont fondus dans « Soir ». « Dans la journée » ne subsiste que pour les listes
+datées sans heure, et seulement s'il en porte. Le mois en cours s'ouvre sur
+aujourd'hui (`todoDays`, `@jc/domain`, testée) ; un autre mois se déroule en
+entier. Les jours sans liste sont affichés par défaut. L'heure d'une liste
+passe avant son titre, en gras. Un « + » par liste ajoute une tâche à cocher
+sans quitter le calendrier — Entrée enregistre et rouvre une ligne. Arbitrage
+du jour : **pas de puce non cochable**, une ligne ajoutée est toujours une
+tâche (aucune migration). En bas de la vue, deux boutons changent de mois et
+ramènent en haut de page.
+
+**Heures et positionnement dans le calendrier : trois défauts corrigés.**
+Un rendez-vous proposé par l'assistant à « 14h » s'affichait à 16h : le modèle
+écrit une heure sans fuseau, que le serveur lisait en UTC. Elle est désormais
+posée dans le fuseau du profil (heure d'hiver comprise), une valeur portant son
+décalage restant prise telle quelle ; la consigne des outils `suggest_events`
+et `suggest_recurring_event` demande l'heure locale sans fuseau. Deux tests qui
+figeaient l'ancienne lecture sont corrigés, quatre ajoutés. Sur le web, cliquer
+un créneau libre en vue Jour ou Semaine préremplissait « NaN:00 » (reproduit
+sur `dev`) : react-native-web ne transmet pas `locationY` au clic. Le créneau
+de 23h préremplissait 23:00–23:00, refusé à l'enregistrement ; il finit
+désormais à 23h59. Enfin, le jour d'un changement d'heure, la grille plaçait
+tout une heure trop bas (10h sur la ligne de 11h le 25 octobre) et faisait
+disparaître ce qui suivait 23h : les minutes se lisent maintenant sur
+l'horloge murale. Les tests du paquet `domain` tournent en Europe/Paris
+(`jest.global-setup.js`) — en UTC, ceux du changement d'heure ne vérifiaient
+rien.
+
+**Relevés et non traités :** modifier un rendez-vous à cheval sur minuit ou sur
+plusieurs jours échoue ou le raccourcit en silence (le formulaire n'a qu'une
+date), et changer l'heure de début ne déplace pas la fin. Un rendez-vous et une
+todoliste à la même heure se superposent dans la grille au lieu de se partager
+la colonne.
+
+**Barre latérale.** La conversation ouverte est surlignée (teinte atténuée de
+l'assistant) : le fond « actif » précédent valait la couleur de la barre
+elle-même, seule la graisse du titre changeait. Même traitement pour le canal
+permanent, Mes listes et Calendrier quand ils sont ouverts.
+
+**« Dossiers créés » se lit comme une réponse.** La trace d'une proposition
+acceptée n'est plus une pastille encadrée en petit corps, mais une ligne dans
+la typographie des réponses de l'assistant, précédée de la coche.
+
+**Non reproduits :** le bouton « + Nouvelle conversation » reste en place après
+défilement de 60 conversations (il est hors de la zone défilante), et le bouton
+de la barre latérale ouvre et referme le tiroir en largeur téléphone, au doigt
+comme au voile, en thème clair et sombre — sur `dev` comme sur cette branche.
+Reste à essayer sur l'application native et sur un vrai téléphone : aucune
+cause n'a été trouvée dans le code.
+
+**Relevé en passant, préexistant :** sur le build web, en thème sombre, les
+couleurs portées par les classes (barre latérale, vue Todo) restent celles du
+thème clair alors que le fond passe au sombre — le texte des tâches devient
+illisible. React signale en même temps une erreur d'hydratation (#418). Constaté
+à l'identique sur `dev`.
+
 Dernière mise à jour : **28 septembre 2026** — traitement des retours remontés
 par le formulaire de signalement (table `feedback`, 14 et 19 septembre), sur la
 branche `fix/bugs`. Chaque cause a été établie sur les données réelles avant
