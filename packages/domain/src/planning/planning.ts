@@ -1,5 +1,5 @@
 import type { CalendarEvent } from "../calendar/calendar.schema";
-import type { TaskList, TaskListWithTasks } from "../task/task.schema";
+import type { Task, TaskList, TaskListWithTasks } from "../task/task.schema";
 
 /**
  * Ce qui place les todolistes et les rendez-vous dans le temps.
@@ -38,17 +38,40 @@ export function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
+// ── Jours civils ───────────────────────────────────────────────────────────
+
+/**
+ * Minuit local du jour civil `AAAA-MM-JJ`.
+ *
+ * Jamais `new Date("AAAA-MM-JJ")` : cette forme est lue en UTC, et le jour
+ * reculerait d'un cran à l'ouest de Greenwich.
+ */
+export function dateOfCalendarDay(day: string): Date {
+  const [year = 1970, month = 1, date = 1] = day.split("-").map(Number);
+  return new Date(year, month - 1, date);
+}
+
+/** Jour civil `AAAA-MM-JJ` d'une date, lu dans l'horloge de l'appareil. */
+export function calendarDayOf(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 // ── Moments de la journée ──────────────────────────────────────────────────
 
 /**
  * Découpage d'une journée en moments.
  *
- * C'est la forme de la maquette — MATIN, APRÈM, SOIRÉE, SOIR — et celle dans
- * laquelle l'utilisateur écrit déjà ses journées. Le moment est déduit de
+ * MATIN, APRÈS-MIDI, SOIR : le découpage demandé par Yann, et celui dans
+ * lequel l'utilisateur écrit déjà ses journées. Le moment est déduit de
  * l'heure de l'échéance plutôt que stocké : demander « à quel moment ? » en
  * plus de « quand ? » ajouterait une question à chaque saisie (§13.4.1).
+ *
+ * « Dans la journée » n'est pas un moment de la trame : il recueille les
+ * listes datées sans heure, qu'aucun des trois ne peut revendiquer.
  */
-export type MomentKey = "anytime" | "morning" | "afternoon" | "evening" | "night";
+export type MomentKey = "anytime" | "morning" | "afternoon" | "evening";
 
 export type Moment = { key: MomentKey; label: string };
 
@@ -57,14 +80,12 @@ export const MOMENTS: Moment[] = [
   { key: "anytime", label: "Dans la journée" },
   { key: "morning", label: "Matin" },
   { key: "afternoon", label: "Après-midi" },
-  { key: "evening", label: "Soirée" },
-  { key: "night", label: "Soir" },
+  { key: "evening", label: "Soir" },
 ];
 
 /** Bornes en heures locales, celles du langage courant plutôt qu'un découpage égal. */
 const AFTERNOON_FROM = 12;
 const EVENING_FROM = 18;
-const NIGHT_FROM = 22;
 
 /**
  * Moment d'une échéance.
@@ -74,14 +95,13 @@ const NIGHT_FROM = 22;
  * l'appareil et le serveur n'ont pas la même, et une liste datée « samedi »
  * depuis un fuseau lointain s'annonçait « samedi à 2h ».
  *
- * L'heure sert encore à trancher entre matin, après-midi et soirée — et là,
+ * L'heure sert encore à trancher entre matin, après-midi et soir — et là,
  * c'est bien l'horloge de l'appareil qui a raison.
  */
 export function momentOf(list: Pick<TaskList, "dueAt" | "dueAllDay">): MomentKey {
   if (list.dueAt === null || list.dueAllDay !== false) return "anytime";
 
   const hours = new Date(list.dueAt).getHours();
-  if (hours >= NIGHT_FROM) return "night";
   if (hours >= EVENING_FROM) return "evening";
   if (hours >= AFTERNOON_FROM) return "afternoon";
   return "morning";
@@ -92,8 +112,10 @@ export type MomentGroup = { moment: Moment; lists: TaskListWithTasks[] };
 /**
  * Listes échues ce jour-là, regroupées par moment.
  *
- * Les moments vides sont écartés : sept jours × cinq moments rempliraient la
- * semaine de « rien de prévu » et noieraient ce qui s'y passe vraiment.
+ * Matin, après-midi et soir sont rendus même vides : c'est la trame de la
+ * journée, celle d'un agenda papier, qu'on lit d'un coup d'œil et qui se
+ * remplit au fil des jours. « Dans la journée » n'apparaît que s'il porte
+ * quelque chose — vide, il annoncerait une case que rien ne vient remplir.
  */
 export function momentsOfDay(lists: TaskListWithTasks[], day: Date): MomentGroup[] {
   const ofDay = listsOfDay(lists, day).sort(byDueDate);
@@ -101,19 +123,76 @@ export function momentsOfDay(lists: TaskListWithTasks[], day: Date): MomentGroup
   return MOMENTS.map((moment) => ({
     moment,
     lists: ofDay.filter((list) => momentOf(list) === moment.key),
-  })).filter((group) => group.lists.length > 0);
+  })).filter((group) => group.moment.key !== "anytime" || group.lists.length > 0);
+}
+
+/**
+ * Jours que la vue Todo déroule pour un mois.
+ *
+ * Le mois en cours s'ouvre sur aujourd'hui : les jours révolus sont derrière
+ * l'utilisateur, et les faire défiler avant d'arriver à ce qui l'attend
+ * renverserait l'ordre d'importance. Un autre mois — passé qu'on relit, futur
+ * qu'on prépare — se déroule en entier.
+ */
+export function todoDays(monthDays: Date[], today: Date): Date[] {
+  if (!monthDays.some((day) => isSameDay(day, today))) return monthDays;
+
+  const start = startOfDay(today).getTime();
+  return monthDays.filter((day) => startOfDay(day).getTime() >= start);
 }
 
 // ── Ce que porte une journée ───────────────────────────────────────────────
 
 /**
- * Listes portant une échéance, tous dossiers confondus.
+ * Ce que le calendrier place, tous dossiers confondus : chaque liste datée à
+ * son échéance et, en plus, la liste à chaque jour où tombent certaines de
+ * ses tâches — ne portant alors que celles-là.
  *
- * L'échéance appartient à la liste et non à ses lignes : « les courses avant
- * samedi » date la liste, pas la farine.
+ * « Le site pour le 12, les groupes pour le 14 » tient dans une seule liste :
+ * elle apparaît le 12 avec le site, le 14 avec les groupes. Chaque entrée
+ * garde l'identité de sa liste — cocher ou ouvrir agit sur la vraie. Une tâche
+ * n'a pas de créneau à elle : l'entrée vise la journée et n'en réclame aucun.
+ *
+ * Une tâche due le jour même de l'échéance de sa liste y figure déjà : elle
+ * n'ouvre pas une seconde entrée, qui montrerait la liste deux fois ce jour-là.
  */
 export function datedLists(lists: TaskListWithTasks[]): TaskListWithTasks[] {
-  return lists.filter((list) => list.dueAt !== null);
+  return lists.flatMap((list) => {
+    const listDay = list.dueAt === null ? null : calendarDayOf(new Date(list.dueAt));
+
+    const tasksByDay = new Map<string, Task[]>();
+    for (const task of list.tasks) {
+      if (task.dueOn === null || task.dueOn === listDay) continue;
+      tasksByDay.set(task.dueOn, [...(tasksByDay.get(task.dueOn) ?? []), task]);
+    }
+
+    const byTaskDay = [...tasksByDay].map(([day, tasks]) => ({
+      ...list,
+      dueAt: dateOfCalendarDay(day).toISOString(),
+      dueAllDay: true,
+      eventId: null,
+      tasks,
+    }));
+
+    return list.dueAt === null ? byTaskDay : [list, ...byTaskDay];
+  });
+}
+
+/**
+ * Jour propre d'une tâche ajoutée à `list` depuis la journée `day` de la vue
+ * Todo, `null` quand elle n'en a pas besoin.
+ *
+ * La liste apparaît aussi aux jours de certaines de ses tâches (`datedLists`) :
+ * une ligne tapée ce jour-là lui appartient, et sans date elle rejoindrait
+ * l'échéance de la liste, loin de l'endroit où on l'a écrite. Le jour même de
+ * l'échéance, la tâche n'a rien à répéter — la liste le porte déjà.
+ *
+ * `list` est la liste enregistrée, pas son entrée recomposée pour un jour de
+ * tâches, dont l'échéance a été remplacée par ce jour.
+ */
+export function dueOnForDay(list: Pick<TaskList, "dueAt">, day: Date): string | null {
+  if (list.dueAt !== null && isSameDay(new Date(list.dueAt), day)) return null;
+  return calendarDayOf(day);
 }
 
 /**
@@ -258,10 +337,24 @@ function layoutBoxes<T>(boxes: TimeBox<T>[]): PositionedBox<T>[] {
   return positioned;
 }
 
+/**
+ * Minute de `instant` sur l'horloge murale de `day`, bornée à la journée.
+ *
+ * Lue sur l'horloge (`getHours`) et non comptée depuis minuit : un jour de
+ * changement d'heure dure 23 ou 25 heures, et le compte écoulé plaçait alors
+ * un rendez-vous de 10h sur la ligne de 11h — ou de 9h au printemps — tandis
+ * que son libellé annonçait bien 10h.
+ */
+function minuteInDay(instant: number, day: Date): number {
+  if (instant <= startOfDay(day).getTime()) return 0;
+  if (instant >= addDays(startOfDay(day), 1).getTime()) return MINUTES_PER_DAY;
+
+  const wall = new Date(instant);
+  return wall.getHours() * 60 + wall.getMinutes();
+}
+
 /** Place les événements horaires d'une journée en colonnes. */
 export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedEvent[] {
-  const dayStart = startOfDay(day).getTime();
-
   const boxes = events
     .filter((event) => !event.allDay)
     .map((event) => {
@@ -269,14 +362,14 @@ export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedE
       const end = event.endsAt
         ? new Date(event.endsAt).getTime()
         : start + IMPLICIT_DURATION_MINUTES * 60_000;
-      const startMinute = clamp(Math.round((start - dayStart) / 60_000), 0, MINUTES_PER_DAY);
+      const startMinute = minuteInDay(start, day);
       return {
         ref: event,
         startMinute,
         // Jamais avant son début : une fin antérieure — donnée incohérente,
         // événement à cheval sur la veille — donnerait une hauteur négative et
         // des colonnes calculées sur un intervalle à l'envers.
-        endMinute: clamp(Math.round((end - dayStart) / 60_000), startMinute, MINUTES_PER_DAY),
+        endMinute: Math.max(minuteInDay(end, day), startMinute),
       };
     });
 
@@ -292,7 +385,6 @@ export function layoutDayLists(
   lists: TaskListWithTasks[],
   day: Date,
 ): { timed: PositionedList[]; untimed: TaskListWithTasks[] } {
-  const dayStart = startOfDay(day).getTime();
   const untimed: TaskListWithTasks[] = [];
 
   const boxes = lists.flatMap((list) => {
@@ -301,8 +393,7 @@ export function layoutDayLists(
       return [];
     }
 
-    const start = new Date(list.dueAt).getTime();
-    const startMinute = clamp(Math.round((start - dayStart) / 60_000), 0, MINUTES_PER_DAY);
+    const startMinute = minuteInDay(new Date(list.dueAt).getTime(), day);
     return [
       {
         ref: list,

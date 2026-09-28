@@ -399,6 +399,7 @@ function makeTaskListItem(overrides: Partial<Task> = {}): Task {
     done: false,
     completedAt: null,
     parentId: null,
+    dueOn: null,
     position: 0,
     createdAt: "2026-09-03T08:00:00.000Z",
     updatedAt: "2026-09-03T08:00:00.000Z",
@@ -1909,7 +1910,7 @@ describe("ConversationService", () => {
         });
         const users = makeUserRepository(
           {},
-          { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+          { preferences: makePreferences({ llmModel: "mistral/ministral-14b" }) },
         );
 
         const events = await drain(withAttachments(attachments, repo, users), {
@@ -1952,7 +1953,7 @@ describe("ConversationService", () => {
         });
         const users = makeUserRepository(
           {},
-          { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+          { preferences: makePreferences({ llmModel: "mistral/ministral-14b" }) },
         );
 
         await drain(withAttachments(attachments, repo, users), {
@@ -1972,7 +1973,7 @@ describe("ConversationService", () => {
         });
         const users = makeUserRepository(
           {},
-          { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+          { preferences: makePreferences({ llmModel: "mistral/ministral-14b" }) },
         );
 
         const events = await drain(withAttachments(attachments, repo, users), {
@@ -2202,6 +2203,69 @@ describe("ConversationService", () => {
       jest.restoreAllMocks();
     });
 
+    it("demande le contenu des listes proposées vides, sans relancer le modèle", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const repo = makeRepository();
+      // Appel relevé avec ministral-14b : rien n'a encore été listé.
+      const llm = makeLlmTurns([
+        {
+          toolCalls: [
+            {
+              id: "call-1",
+              name: "suggest_task_list",
+              input: {
+                message: "On organise ça en deux listes ?",
+                lists: [
+                  { title: "Courses samedi matin", kind: "shopping", items: [] },
+                  { title: "Devoirs samedi après-midi", kind: "todo", items: [] },
+                ],
+              },
+            },
+          ],
+        },
+      ]);
+
+      await drain(makeService(repo, llm, suggestions));
+
+      // Une liste se propose remplie : aucune carte, et la question porte sur
+      // ce qui manque plutôt que sur l'envie d'avoir des listes.
+      expect(callCount(llm)).toBe(1);
+      expect(suggestions.create).not.toHaveBeenCalled();
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content:
+            "Qu'est-ce qu'on met dans « Courses samedi matin » et « Devoirs samedi après-midi » ? Dis-le-moi, et je te les propose.",
+        }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("ne présente pas au second tour une liste vide comme affichée", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const empty: LlmToolCall = {
+        id: "call-2",
+        name: "suggest_task_list",
+        input: {
+          message: "Je te prépare la liste des courses ?",
+          lists: [{ title: "Courses", kind: "shopping", items: [] }],
+        },
+      };
+      const llm = makeLlmTurns([{ toolCalls: [SUGGESTION, empty] }, { chunks: ["Voilà."] }]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      const reminder = requestAt(llm, 1).system ?? "";
+      expect(reminder).toContain("Je te fais la liste du rempotage ?");
+      expect(reminder).not.toContain("Je te prépare la liste des courses ?");
+      expect(reminder).toContain("demande à l'utilisateur ce");
+      jest.restoreAllMocks();
+    });
+
     it("ne rappelle pas le modèle quand il a déjà écrit sa réponse", async () => {
       const llm = makeLlmTurns([{ chunks: ["Bien sûr."], toolCalls: [SUGGESTION] }]);
 
@@ -2328,6 +2392,175 @@ describe("ConversationService", () => {
       );
     });
 
+    it("fait d'une ligne *ask_question* suivie d'une liste numérotée des réponses à choisir", async () => {
+      // Réponse relevée telle quelle avec ministral-14b.
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "Je propose de créer un dossier **\"Impôts\"**. Tu veux des sous-dossiers ?\n\n*ask_",
+        "question*\nTu veux :\n1. Un dossier **\"Impôts\"** simple, sans sous-dossiers.\n",
+        "2. Un dossier **\"Impôts\"** avec des sous-dossiers pour mieux organiser.",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).not.toContain("ask_question");
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content: "Je propose de créer un dossier **\"Impôts\"**. Tu veux des sous-dossiers ?",
+          choices: [
+            'Un dossier "Impôts" simple, sans sous-dossiers.',
+            'Un dossier "Impôts" avec des sous-dossiers pour mieux organiser.',
+          ],
+          question: "Tu veux :",
+        }),
+        TOKEN,
+      );
+    });
+
+    it("filtre aussi la relance écrite après un appel d'outil sans texte", async () => {
+      // Réponse relevée telle quelle avec ministral-14b : le premier appel
+      // propose des listes sans un mot, la relance recopie `ask_question`.
+      const repo = makeRepository();
+      const llm = makeLlmTurns([
+        {
+          toolCalls: [
+            {
+              id: "call-1",
+              name: "suggest_task_list",
+              input: { message: "Je te les organise ?", lists: [] },
+            },
+          ],
+        },
+        {
+          chunks: [
+            "**ask_question**\nTu veux que je crée **deux listes séparées** pour samedi :\n",
+            "1. Une pour les **courses du matin** (avec rappels si besoin).\n",
+            "2. Une pour les **devoirs de l’après-midi** (avec rappels si besoin).\n\n",
+            "Ou bien préfères-tu :\n- **Une seule liste** avec les deux sections mélangées ?\n",
+            "- **Aucune liste automatique** et que je te propose juste un modèle à recopier ?",
+          ],
+        },
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).not.toContain("ask_question");
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content: "Tu veux que je crée deux listes séparées pour samedi :",
+          question: "Tu veux que je crée deux listes séparées pour samedi :",
+          choices: [
+            "Une pour les courses du matin (avec rappels si besoin).",
+            "Une pour les devoirs de l’après-midi (avec rappels si besoin).",
+            "Une seule liste avec les deux sections mélangées ?",
+            "Aucune liste automatique et que je te propose juste un modèle à recopier ?",
+          ],
+        }),
+        TOKEN,
+      );
+    });
+
+    it("ne prend pour réponses que les options, pas le détail en retrait sous chacune", async () => {
+      // Relance rejouée telle quelle avec ministral-14b.
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "ask_question:\nTu veux que je crée :\n\n1. **Deux listes séparées** :\n",
+        "   - Une pour les *courses* (samedi matin)\n   - Une autre pour les *devoirs* (samedi après-midi)\n\n",
+        "2. **Une seule liste combinée** avec deux sections :\n",
+        '   - "À faire samedi matin" (courses)\n   - "À faire samedi après-midi" (devoirs)\n\n',
+        "*(Réponds par 1 ou 2.)*",
+      ]);
+
+      await drain(makeService(repo, llm));
+
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          question: "Tu veux que je crée :",
+          choices: ["Deux listes séparées", "Une seule liste combinée avec deux sections"],
+        }),
+        TOKEN,
+      );
+    });
+
+    it("laisse en texte une question recopiée qui ne tient pas en boutons", async () => {
+      const repo = makeRepository();
+      const llm = makeLlmTurns([
+        { toolCalls: [{ id: "call-1", name: "suggest_task_list", input: { message: "Ok ?", lists: [] } }] },
+        {
+          chunks: [
+            "ask_question\nTu préfères :\n- Une **liste de courses** ?\n",
+            '- Une **liste de tâches** pour tes devoirs (ex : "Relire le chapitre 3", "Faire les exercices 5 à 8") ?',
+          ],
+        },
+      ]);
+
+      await drain(makeService(repo, llm));
+
+      // La seconde réponse dépasse la longueur d'un bouton : la question
+      // reste lisible, seul le nom de l'outil disparaît.
+      expect(savedContent(repo)).toBe(
+        'Tu préfères :\n- Une **liste de courses** ?\n- Une **liste de tâches** pour tes devoirs (ex : "Relire le chapitre 3", "Faire les exercices 5 à 8") ?',
+      );
+    });
+
+    it("signale un tour vide quand la seule proposition est écartée à la capture", async () => {
+      const llm = makeLlmTurns([
+        { toolCalls: [{ id: "call-1", name: "suggest_task_list", input: { message: "Ok ?", lists: [] } }] },
+        { chunks: ["`ask_question`"] },
+      ]);
+
+      // Rien à l'écran, ni texte ni carte : l'utilisateur doit savoir que sa
+      // demande n'a pas abouti plutôt que rester devant un fil muet.
+      await expect(drain(makeService(makeRepository(), llm))).rejects.toThrow(
+        "Le modèle n'a produit aucune réponse",
+      );
+    });
+
+    it("retire l'aparté en italique où le modèle annonce ce qu'il va faire", async () => {
+      // Réponse relevée telle quelle avec ministral-14b.
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "Tu veux que je crée ces deux listes directement, ou tu préfères les préparer toi-même avant ?\n\n*Je v",
+        "ais proposer la création de ces listes pour que tu puisses les compléter facilement.*",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).not.toContain("Je vais");
+      expect(savedContent(repo)).toBe(
+        "Tu veux que je crée ces deux listes directement, ou tu préfères les préparer toi-même avant ?",
+      );
+    });
+
+    it("garde une annonce écrite en clair, qui porte une question", async () => {
+      const text = "Voici l'idée.\n\nJe vais te proposer deux listes. Ça te convient ?";
+      const repo = makeRepository();
+      const llm = makeLlm([text]);
+
+      await drain(makeService(repo, llm));
+
+      expect(savedContent(repo)).toBe(text);
+    });
+
+    it("retire un nom d'outil écrit nu en fin de réponse", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm(["Ça te convient ?\nask_", "question"]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).toBe("Ça te convient ?\n");
+      expect(savedContent(repo)).toBe("Ça te convient ?");
+    });
+
     it("préfère la question de l'outil à celle recopiée en texte", async () => {
       const repo = makeRepository();
       const llm = makeLlm(
@@ -2369,12 +2602,14 @@ describe("ConversationService", () => {
 
     it("laisse passer accents graves, balises et puces qui ne nomment aucun outil", async () => {
       const text =
-        "Deux options :\n- `npm install` d'abord\n- **Budget** ensuite\n<div> reste du HTML.";
+        "Deux options :\n- `npm install` d'abord\n- **Budget** ensuite\n<div> reste du HTML.\n*Astuce* : suggestions bienvenues.\nAssure-toi d'avoir tout.";
       const repo = makeRepository();
       const llm = makeLlm([
         "Deux options :\n- `np",
         "m install` d'abord\n- **Bud",
-        "get** ensuite\n<div> reste du HTML.",
+        "get** ensuite\n<div> reste du HTML.\n*Ast",
+        "uce* : suggestions bienvenues.\nAs",
+        "sure-toi d'avoir tout.",
       ]);
 
       const events = await drain(makeService(repo, llm));
@@ -3067,12 +3302,12 @@ describe("ConversationService", () => {
       const llm = makeLlm();
       const users = makeUserRepository(
         {},
-        { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+        { preferences: makePreferences({ llmModel: "mistral/ministral-14b" }) },
       );
 
       await drain(makeService(makeRepository(), llm, undefined, undefined, users));
 
-      expect(lastRequest(llm).model).toBe("mistral/mistral-medium-3.5");
+      expect(lastRequest(llm).model).toBe("mistral/ministral-14b");
     });
 
     it("laisse répondre le modèle du serveur tant que rien n'est choisi", async () => {
@@ -3496,6 +3731,63 @@ describe("ConversationService", () => {
   });
 
   describe("correction des échéances relatives (A.3, #18)", () => {
+    it("date chaque ligne de son propre jour, expression relative fiabilisée comprise", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_task_list",
+            input: {
+              message: "Je te les organise ?",
+              lists: [
+                {
+                  title: "Tâches Okiosk",
+                  kind: "todo",
+                  items: [
+                    { title: "Refaire le site internet", dueOn: "2026-09-12" },
+                    // Jour fautif du modèle : NOW est le mercredi 2 septembre,
+                    // le prochain vendredi est le 4.
+                    { title: "Appeler l'imprimeur", dueOn: "2026-09-11", dueOnText: "vendredi" },
+                    // Déjà passé : la ligne reste, sans date.
+                    { title: "Relire la charte", dueOn: "2026-08-28" },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Le site pour le 12, l'imprimeur vendredi, la charte fin août.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: {
+            lists: [
+              {
+                title: "Tâches Okiosk",
+                kind: "todo",
+                dueAt: null,
+                items: [
+                  { title: "Refaire le site internet", dueOn: "2026-09-12" },
+                  { title: "Appeler l'imprimeur", dueOn: "2026-09-04" },
+                  { title: "Relire la charte", dueOn: null },
+                ],
+              },
+            ],
+          },
+        }),
+        TOKEN,
+      );
+    });
+
     it("remplace l'échéance du modèle par le calcul déterministe quand l'expression est reconnue", async () => {
       const suggestions = makeSuggestionRepository();
       const llm = makeLlm(
@@ -3852,7 +4144,7 @@ describe("ConversationService", () => {
   });
 
   describe("création d'un rendez-vous récurrent (A.11)", () => {
-    it("capture la suggestion même quand le modèle omet les secondes et le fuseau de `startsAt`", async () => {
+    it("pose dans le fuseau du profil une heure donnée sans secondes ni fuseau", async () => {
       const suggestions = makeSuggestionRepository();
       const llm = makeLlm(
         [],
@@ -3883,7 +4175,9 @@ describe("ConversationService", () => {
         USER,
         expect.objectContaining({
           kind: "create_recurring_event",
-          payload: expect.objectContaining({ startsAt: "2026-09-08T18:00:00.000Z" }),
+          // 18h à Paris, heure d'été : 16h UTC. Lue dans le fuseau du serveur,
+          // la kiné tombait à 20h pour l'utilisateur.
+          payload: expect.objectContaining({ startsAt: "2026-09-08T16:00:00.000Z" }),
         }),
         TOKEN,
       );
@@ -3931,7 +4225,7 @@ describe("ConversationService", () => {
       );
     });
 
-    it("capture la suggestion même quand le modèle omet les secondes et le fuseau", async () => {
+    it("pose à 17h à Paris un rendez-vous donné « 17h » sans secondes ni fuseau", async () => {
       const suggestions = makeSuggestionRepository();
       const llm = makeLlm(
         [],
@@ -3941,7 +4235,7 @@ describe("ConversationService", () => {
             name: "suggest_events",
             input: {
               message: "Je te pose ce rendez-vous dans ton agenda ?",
-              events: [{ title: "Dentiste", startsAt: "2026-09-10T15:00" }],
+              events: [{ title: "Dentiste", startsAt: "2026-09-10T17:00" }],
             },
           },
         ],
@@ -3957,6 +4251,102 @@ describe("ConversationService", () => {
         USER,
         expect.objectContaining({
           kind: "create_events",
+          payload: { events: [{ title: "Dentiste", startsAt: "2026-09-10T15:00:00.000Z" }] },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("suit le changement d'heure pour une heure donnée sans fuseau", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_events",
+            input: {
+              message: "Je te pose ce rendez-vous dans ton agenda ?",
+              events: [{ title: "Dentiste", startsAt: "2026-11-05T17:00:00" }],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "J'ai rendez-vous chez le dentiste le 5 novembre à 17h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      // Heure d'hiver : Paris est à UTC+1.
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: { events: [{ title: "Dentiste", startsAt: "2026-11-05T16:00:00.000Z" }] },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("laisse à minuit du profil un rendez-vous daté sans heure", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_events",
+            input: {
+              message: "Je te pose ce rendez-vous dans ton agenda ?",
+              events: [{ title: "Salon", startsAt: "2026-09-10" }],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "Il y a le salon jeudi.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      // Minuit à Paris : c'est ce qui en fait un rendez-vous sur la journée
+      // entière à l'acceptation, et non un créneau de 2h du matin.
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: { events: [{ title: "Salon", startsAt: "2026-09-09T22:00:00.000Z" }] },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("garde l'instant d'une heure qui porte son propre décalage", async () => {
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlm(
+        [],
+        [
+          {
+            id: "call-1",
+            name: "suggest_events",
+            input: {
+              message: "Je te pose ce rendez-vous dans ton agenda ?",
+              events: [{ title: "Dentiste", startsAt: "2026-09-10T17:00:00+02:00" }],
+            },
+          },
+        ],
+      );
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "J'ai rendez-vous chez le dentiste jeudi à 17h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
           payload: { events: [{ title: "Dentiste", startsAt: "2026-09-10T15:00:00.000Z" }] },
         }),
         TOKEN,
@@ -4122,8 +4512,10 @@ describe("ConversationService", () => {
     it("abandonne une reprogrammation dont la nouvelle échéance retombe dans le passé", async () => {
       const suggestions = makeSuggestionRepository();
       const tasks = makeTaskRepository([EXISTING_LIST]);
+      // Le tour porte une réponse écrite : sans elle, la proposition écartée
+      // le laisserait vide, et c'est ce tour vide qui serait signalé.
       const llm = makeLlm(
-        [],
+        ["Le 1er est déjà passé."],
         [
           {
             id: "call-1",
@@ -4207,6 +4599,351 @@ describe("ConversationService", () => {
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).not.toContain("suggest_update_task_items");
       expect(tools).toContain("suggest_task_list_items");
+    });
+  });
+
+  describe("correction des todolistes proposées (§12.1, A.2)", () => {
+    const PENDING_LISTS = makeSuggestion({
+      id: "sug-1",
+      kind: "create_task_list",
+      status: "pending",
+      message: "Je te les organise ?",
+    });
+
+    /** Appel relevé sur « Organisation samedi » : les courses détaillées, les devoirs inchangés. */
+    const CORRECTED: LlmToolCall = {
+      id: "call-1",
+      name: "suggest_task_list",
+      input: {
+        message: "Je te propose les courses détaillées ?",
+        lists: [
+          {
+            title: "Courses",
+            kind: "shopping",
+            items: [{ title: "Pâtes à lasagnes" }, { title: "Viande hachée" }],
+          },
+          { title: "Devoirs", kind: "todo", items: [{ title: "Maths" }, { title: "Français" }] },
+        ],
+      },
+    };
+
+    /** Dépôt qui rend la proposition telle qu'elle vient d'être enregistrée. */
+    const makeRecordingSuggestions = (decided: Suggestion[]) =>
+      makeSuggestionRepository({
+        listForConversation: jest.fn().mockResolvedValue(decided),
+        create: jest
+          .fn()
+          .mockImplementation((_userId: string, input: Partial<Suggestion>) =>
+            Promise.resolve(makeSuggestion({ id: "sug-2", ...input })),
+          ),
+      });
+
+    /** Titres des listes portées par la proposition enregistrée. */
+    const proposedTitles = (suggestions: ISuggestionRepository): unknown[] => {
+      const call = (suggestions.create as jest.Mock).mock.calls[0] as [
+        string,
+        { payload: { lists: { title: string }[] } },
+      ];
+      return call[1].payload.lists.map((list) => list.title);
+    };
+
+    it("laisse au modèle de quoi corriger une proposition de todolistes qui attend", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm, makeRecordingSuggestions([PENDING_LISTS])));
+
+      // « Détaille les courses » pendant que la carte attend : sans l'outil, le
+      // modèle répondait « voici ta liste détaillée » sans rien proposer.
+      expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_task_list");
+      expect(lastRequest(llm).system ?? "").toContain("remplace la carte en attente");
+    });
+
+    it("retire la proposition en attente que la version corrigée remplace", async () => {
+      const suggestions = makeRecordingSuggestions([PENDING_LISTS]);
+
+      await drain(
+        makeService(makeRepository(), makeLlm(["C'est détaillé dans la carte."], [CORRECTED]), suggestions),
+        { content: "Détaille les courses", inputMode: "text", attachmentIds: [] },
+      );
+
+      // Accepter les deux cartes créerait les listes en double.
+      expect(suggestions.create).toHaveBeenCalledTimes(1);
+      expect(suggestions.markResolved).toHaveBeenCalledWith("sug-1", "expired", TOKEN);
+    });
+
+    it("ne retire rien quand aucune proposition de todolistes n'attend", async () => {
+      const suggestions = makeRecordingSuggestions([]);
+
+      await drain(makeService(makeRepository(), makeLlm(["Voilà."], [CORRECTED]), suggestions));
+
+      expect(suggestions.create).toHaveBeenCalledTimes(1);
+      expect(suggestions.markResolved).not.toHaveBeenCalled();
+    });
+
+    it("écarte une todoliste reproposée alors qu'elle existe déjà sur ce fil", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeRecordingSuggestions([]);
+      const existing = makeTaskList({
+        title: "courses",
+        tasks: [makeTaskListItem({ id: "22222222-2222-4222-8222-222222222222", title: "Légumes" })],
+      });
+
+      await drain(
+        makeService(
+          makeRepository(),
+          makeLlm(["Je recommence."], [CORRECTED]),
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([existing]),
+        ),
+        { content: "Tout recommencer", inputMode: "text", attachmentIds: [] },
+      );
+
+      // « Tout recommencer » recréait les deux listes : celle qui existe se
+      // modifie, seule la nouvelle se propose.
+      expect(proposedTitles(suggestions)).toEqual(["Devoirs"]);
+      jest.restoreAllMocks();
+    });
+
+    it("demande quoi changer quand le modèle repropose, sans un mot, des listes qui existent déjà", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const repo = makeRepository();
+      const suggestions = makeRecordingSuggestions([]);
+      const lists = ["Courses", "Devoirs"].map((title, index) =>
+        makeTaskList({
+          id: `11111111-1111-4111-8111-11111111111${index}`,
+          title,
+          tasks: [makeTaskListItem({ id: `22222222-2222-4222-8222-22222222222${index}` })],
+        }),
+      );
+      const llm = makeLlmTurns([{ toolCalls: [CORRECTED] }]);
+
+      await drain(
+        makeService(
+          repo,
+          llm,
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository(lists),
+        ),
+        { content: "Tout recommencer", inputMode: "text", attachmentIds: [] },
+      );
+
+      // Relancé, le modèle présentait les listes en texte et demandait de
+      // confirmer — sans aucune carte à valider.
+      expect(callCount(llm)).toBe(1);
+      expect(suggestions.create).not.toHaveBeenCalled();
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content: expect.stringContaining("Ces listes existent déjà") as unknown,
+        }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("remet à la relance le contenu exact des listes de la carte", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const llm = makeLlmTurns([{ toolCalls: [CORRECTED] }, { chunks: ["Voilà pour samedi."] }]);
+
+      await drain(makeService(makeRepository(), llm, makeRecordingSuggestions([])));
+
+      // Sans lui, la relance détaillait en texte des lignes absentes de la carte.
+      expect(requestAt(llm, 1).system ?? "").toContain(
+        "- « Courses » : Pâtes à lasagnes, Viande hachée",
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("rétablit la liste d'un ajout de lignes quand le modèle a recopié l'identifiant d'une ligne", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeRecordingSuggestions([]);
+      const listId = "11111111-1111-4111-8111-111111111111";
+      const legumes = "22222222-2222-4222-8222-222222222222";
+      const existing = makeTaskList({
+        id: listId,
+        title: "Courses",
+        tasks: [makeTaskListItem({ id: legumes, title: "Légumes" })],
+      });
+      // Relevé en usage réel : « ajoute du parmesan » visait la ligne Légumes.
+      const add: LlmToolCall = {
+        id: "call-1",
+        name: "suggest_task_list_items",
+        input: {
+          message: "J'ajoute du parmesan à ta liste de courses ?",
+          listId: legumes,
+          items: [{ title: "Parmesan" }],
+        },
+      };
+
+      await drain(
+        makeService(
+          makeRepository(),
+          makeLlm(["C'est proposé."], [add]),
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([existing]),
+        ),
+      );
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "add_task_list_items",
+          payload: expect.objectContaining({ listId }) as unknown,
+        }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("rétablit l'identifiant de liste d'après les lignes que la modification désigne", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeRecordingSuggestions([]);
+      const listId = "11111111-1111-4111-8111-111111111111";
+      const taskId = "22222222-2222-4222-8222-222222222222";
+      const existing = makeTaskList({
+        id: listId,
+        title: "Courses",
+        tasks: [makeTaskListItem({ id: taskId, title: "Salade" })],
+      });
+      // Relevé avec ministral-14b : un identifiant de liste qui n'existe pas,
+      // des lignes justes.
+      const replace: LlmToolCall = {
+        id: "call-1",
+        name: "suggest_update_task_items",
+        input: {
+          message: "Je remplace la salade par de la roquette ?",
+          listId: "befad81b-9e98-46aa-87b5-fac4c1ab20f5",
+          items: [{ taskId, remove: true }],
+          added: [{ title: "Roquette" }],
+        },
+      };
+
+      await drain(
+        makeService(
+          makeRepository(),
+          makeLlm(["C'est proposé."], [replace]),
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository([existing]),
+        ),
+      );
+
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_task_list_items",
+          payload: expect.objectContaining({ listId }) as unknown,
+        }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    describe("ligne désignée par une modification", () => {
+      const listId = "11111111-1111-4111-8111-111111111111";
+      const SALADE = "22222222-2222-4222-8222-222222222221";
+      const BEURRE = "22222222-2222-4222-8222-222222222222";
+      const courses = makeTaskList({
+        id: listId,
+        title: "Courses",
+        tasks: [
+          makeTaskListItem({ id: SALADE, title: "Salade" }),
+          makeTaskListItem({ id: BEURRE, title: "Beurre" }),
+        ],
+      });
+
+      const replaceSalade = (taskId: string, currentTitle: string): LlmToolCall => ({
+        id: "call-1",
+        name: "suggest_update_task_items",
+        input: {
+          message: "Je remplace la salade par de la roquette ?",
+          listId,
+          items: [{ taskId, currentTitle, remove: true }],
+          added: [{ title: "Roquette" }],
+        },
+      });
+
+      const proposedItems = async (call: LlmToolCall): Promise<unknown> => {
+        const suggestions = makeRecordingSuggestions([]);
+        await drain(
+          makeService(
+            makeRepository(),
+            makeLlm(["C'est proposé."], [call]),
+            suggestions,
+            makeFolderRepository(),
+            makeUserRepository(),
+            makeCalendarRepository(),
+            makeTaskRepository([courses]),
+          ),
+        );
+        const created = (suggestions.create as jest.Mock).mock.calls[0] as
+          | [string, { payload: { items: unknown } }]
+          | undefined;
+        return created?.[1].payload.items;
+      };
+
+      it("retrouve par son titre la ligne dont le modèle a recopié un autre identifiant", async () => {
+        jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+        // Relevé avec ministral-14b : l'identifiant du beurre, pour retirer la salade.
+        expect(await proposedItems(replaceSalade(BEURRE, "Salade"))).toEqual([
+          { taskId: SALADE, remove: true },
+        ]);
+        jest.restoreAllMocks();
+      });
+
+      it("écarte une ligne dont le titre recopié ne désigne aucune ligne de la liste", async () => {
+        jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+        expect(await proposedItems(replaceSalade(BEURRE, "Laitue"))).toEqual([]);
+        jest.restoreAllMocks();
+      });
+
+      it("garde la ligne quand identifiant et titre se correspondent", async () => {
+        expect(await proposedItems(replaceSalade(SALADE, "salade"))).toEqual([
+          { taskId: SALADE, remove: true },
+        ]);
+      });
+    });
+
+    it("n'affiche aucune carte quand toutes les listes proposées existent déjà", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeRecordingSuggestions([]);
+      const lists = ["Courses", "Devoirs"].map((title, index) =>
+        makeTaskList({
+          id: `11111111-1111-4111-8111-11111111111${index}`,
+          title,
+          tasks: [makeTaskListItem({ id: `22222222-2222-4222-8222-22222222222${index}` })],
+        }),
+      );
+
+      await drain(
+        makeService(
+          makeRepository(),
+          makeLlm(["Je recommence."], [CORRECTED]),
+          suggestions,
+          makeFolderRepository(),
+          makeUserRepository(),
+          makeCalendarRepository(),
+          makeTaskRepository(lists),
+        ),
+      );
+
+      expect(suggestions.create).not.toHaveBeenCalled();
+      jest.restoreAllMocks();
     });
   });
 });

@@ -9,6 +9,7 @@ import {
   createProjectFoldersPayloadSchema,
   createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
+  dateOfCalendarDay,
   reportBugPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
@@ -16,6 +17,7 @@ import {
   type AssignFoldersPayload,
   type CreateTaskListsPayload,
   type FeedbackPlatform,
+  type ResolveSuggestion,
   type Suggestion,
   type TaskListKind,
 } from "@jc/domain";
@@ -23,8 +25,10 @@ import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/des
 import { useFeedbackContext } from "@/features/feedback/hooks/use-feedback";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
+import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { SpinningCog, useElapsedSeconds } from "./ThinkingIndicator";
 
 /** Ce qu'accepter transmet en plus de l'action, selon la nature de la proposition. */
 export type SuggestionAcceptInput = {
@@ -51,8 +55,11 @@ export type SuggestionCardProps = {
   suggestion: Suggestion;
   onAccept: (input?: SuggestionAcceptInput) => void;
   onDismiss: () => void;
-  /** Une réponse est en cours d'envoi : les deux gestes sont neutralisés. */
-  isPending: boolean;
+  /**
+   * Geste en cours d'envoi sur cette carte, `null` sinon : les deux gestes sont
+   * neutralisés tant qu'il n'a pas abouti.
+   */
+  pendingAction: ResolveSuggestion["action"] | null;
 };
 
 /**
@@ -66,9 +73,11 @@ export function SuggestionCard({
   suggestion,
   onAccept,
   onDismiss,
-  isPending,
+  pendingAction,
 }: SuggestionCardProps) {
   const { palette } = useTheme();
+  const isPending = pendingAction !== null;
+  const accepting = pendingAction === "accept";
   const preview = useSuggestionPreview(suggestion);
   const editableTaskLists = suggestion.kind === "create_task_list";
   const isBugReport = suggestion.kind === "report_bug";
@@ -169,14 +178,24 @@ export function SuggestionCard({
           disabled={isPending || emptied}
           accessibilityRole="button"
           accessibilityLabel={preview.acceptLabel}
+          aria-busy={accepting}
           style={[
             styles.action,
-            { backgroundColor: palette.accent, opacity: isPending || emptied ? 0.4 : 1 },
+            {
+              backgroundColor: palette.accent,
+              // Pleinement opaque pendant l'acceptation : c'est lui qui porte
+              // la roue, grisé on ne la verrait plus tourner.
+              opacity: (isPending && !accepting) || emptied ? 0.4 : 1,
+            },
           ]}
         >
-          <Text style={[styles.actionLabel, { color: palette.accentText }]}>
-            {preview.acceptLabel}
-          </Text>
+          {accepting ? (
+            <AcceptingLabel color={palette.accentText} />
+          ) : (
+            <Text style={[styles.actionLabel, { color: palette.accentText }]}>
+              {preview.acceptLabel}
+            </Text>
+          )}
         </Pressable>
 
         <Pressable
@@ -193,6 +212,27 @@ export function SuggestionCard({
           <Text style={[styles.actionLabel, { color: palette.textMuted }]}>Ignorer</Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+/**
+ * Contenu du bouton d'acceptation le temps que le serveur crée ce qui a été
+ * accepté, puis que le fil le relise.
+ *
+ * La carte se contentait de griser : rien ne distinguait une création lente
+ * d'un clic perdu (retour de Yann, sur la création de dossiers). Même roue et
+ * même compteur que l'attente d'une réponse.
+ */
+function AcceptingLabel({ color }: { color: string }) {
+  const seconds = useElapsedSeconds();
+
+  return (
+    <View style={styles.accepting}>
+      <SpinningCog size={14} color={color} />
+      <Text style={[styles.actionLabel, { color }]}>
+        En cours…{seconds > 0 ? ` ${seconds} s` : ""}
+      </Text>
     </View>
   );
 }
@@ -247,7 +287,7 @@ function FolderChoice({
   );
 }
 
-type EditableItem = { key: string; title: string };
+type EditableItem = { key: string; title: string; dueOn: string | null };
 type EditableList = {
   key: string;
   title: string;
@@ -279,6 +319,7 @@ function useEditableTaskLists(suggestion: Suggestion) {
       items: list.items.map((item, itemIndex) => ({
         key: `item-${listIndex}-${itemIndex}`,
         title: item.title,
+        dueOn: item.dueOn,
       })),
     }));
   });
@@ -330,7 +371,7 @@ function editablePayload(lists: EditableList[]): CreateTaskListsPayload {
         kind: list.kind,
         dueAt: list.dueAt,
         items: list.items
-          .map((item) => ({ title: item.title.trim() }))
+          .map((item) => ({ title: item.title.trim(), dueOn: item.dueOn }))
           .filter((item) => item.title.length > 0),
       }))
       .filter((list) => list.title.length > 0 && list.items.length > 0),
@@ -390,6 +431,11 @@ function EditableTaskLists({
                 accessibilityLabel={`Élément ${item.title} de la liste ${list.title}`}
                 style={[styles.input, { color: palette.text }]}
               />
+              {item.dueOn === null ? null : (
+                <Text style={[styles.hint, { color: palette.textMuted }]}>
+                  {dueOnLabel(item.dueOn)}
+                </Text>
+              )}
               <RemoveButton
                 label={`Supprimer ${item.title || "cette ligne"}`}
                 disabled={disabled}
@@ -452,8 +498,13 @@ function selectedFolders(lines: PreviewLine[], excluded: readonly string[]): Ass
  *
  * Ce que l'assistant a fait reste lisible dans la conversation qui l'a
  * provoqué : sans elle, des dossiers apparaîtraient dans la barre latérale
- * sans que rien n'explique d'où ils viennent. En une ligne discrète et non en
- * carte — c'est de l'historique, plus une action à mener.
+ * sans que rien n'explique d'où ils viennent. En une ligne et non en carte —
+ * c'est de l'historique, plus une action à mener.
+ *
+ * Elle se lit comme une réponse de l'assistant, dans la même typographie et
+ * sans cadre (demande de Yann) : « Dossiers créés » est une réplique comme une
+ * autre, pas une pièce rapportée qui change l'allure du fil. Seule la coche
+ * reste, pour dire que c'est fait.
  */
 export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion }) {
   const { palette } = useTheme();
@@ -468,9 +519,10 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
     .join(", ");
 
   return (
-    <View style={[styles.note, { borderColor: palette.border }]}>
-      {accepted ? <Check size={14} color={palette.accent} /> : null}
-      <Text style={[styles.noteLabel, { color: palette.textMuted }]}>
+    <View style={styles.note}>
+      {accepted ? <Check size={16} color={palette.accent} style={styles.noteCheck} /> : null}
+      {/* Une proposition écartée n'a rien fait : elle reste en retrait. */}
+      <Text style={[styles.noteLabel, { color: accepted ? palette.text : palette.textMuted }]}>
         {outcomeLabel(suggestion)}
         {/* Un signalement n'a rien à relire dans le fil : le texte technique
             s'adresse à l'équipe, pas à l'utilisateur qui vient de valider. */}
@@ -483,7 +535,9 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
 /** Ce qui est arrivé à la proposition, dit du point de vue de l'utilisateur. */
 function outcomeLabel(suggestion: Suggestion): string {
   if (suggestion.status === "dismissed") return "Proposition ignorée";
-  if (suggestion.status === "expired") return "Proposition expirée";
+  // Seul producteur de ce statut : une proposition de todolistes corrigée
+  // pendant qu'elle attendait, que la suivante remplace.
+  if (suggestion.status === "expired") return "Proposition remplacée";
 
   switch (suggestion.kind) {
     case "assign_folders":
@@ -540,6 +594,9 @@ function useSuggestionPreview(suggestion: Suggestion): {
     queryFn: () => api.folders.tree(),
     enabled: suggestion.kind === "assign_folders",
   });
+  // Une ligne retirée n'est désignée que par son identifiant : son titre est
+  // relu depuis les listes, déjà en cache — la même clé que Mes listes.
+  const taskLists = useTaskLists({ enabled: suggestion.kind === "update_task_list_items" });
 
   if (suggestion.kind === "create_project_folders") {
     const proposed = createProjectFoldersPayloadSchema.safeParse(suggestion.payload);
@@ -579,6 +636,7 @@ function useSuggestionPreview(suggestion: Suggestion): {
               key: `${list.title}/${item.title}`,
               label: item.title,
               nested: true,
+              ...(item.dueOn === null ? {} : { hint: dueOnLabel(item.dueOn) }),
             })),
           ])
         : [],
@@ -655,19 +713,32 @@ function useSuggestionPreview(suggestion: Suggestion): {
     };
   }
 
-  // Cocher ou renommer : la liste est déjà nommée dans la phrase, l'aperçu
-  // ne montre que ce qui change sur chaque ligne.
+  // Cocher, renommer, retirer, ajouter : la liste est déjà nommée dans la
+  // phrase, l'aperçu ne montre que ce qui change, ligne par ligne.
   if (suggestion.kind === "update_task_list_items") {
     const proposed = updateTaskListItemsPayloadSchema.safeParse(suggestion.payload);
+    const titles = new Map(
+      (taskLists.data ?? []).flatMap((list) => list.tasks).map((task) => [task.id, task.title]),
+    );
 
     return {
       acceptLabel: "Mettre à jour la liste",
       lines: proposed.success
-        ? proposed.data.items.map((item) => ({
-            key: item.taskId,
-            label: updateItemLabel(item),
-            nested: false,
-          }))
+        ? [
+            ...proposed.data.items.map((item) => ({
+              key: item.taskId,
+              label:
+                item.remove === true
+                  ? removedItemLabel(titles.get(item.taskId))
+                  : updateItemLabel(item),
+              nested: false,
+            })),
+            ...proposed.data.added.map((item, index) => ({
+              key: `ajout-${index}`,
+              label: `${item.title} (ajoutée)`,
+              nested: false,
+            })),
+          ]
         : [],
     };
   }
@@ -746,10 +817,19 @@ function updateItemLabel(item: { title?: string; done?: boolean }): string {
 }
 
 /**
+ * Ce que la carte dit d'une ligne retirée. Son titre n'est plus en cache une
+ * fois la modification acceptée : la trace du fil dit alors seulement qu'une
+ * ligne est partie.
+ */
+function removedItemLabel(title: string | undefined): string {
+  return title === undefined ? "Ligne retirée" : `${title} (retirée)`;
+}
+
+/**
  * Ce que la carte dit d'une liste proposée : sa nature, puis son échéance.
  *
- * L'échéance est celle de la liste entière — c'est ce que la conversation a
- * donné, et l'accrocher à une de ses lignes ferait croire à une date par item.
+ * L'échéance est celle de la liste entière ; le jour propre d'une ligne
+ * s'affiche sur la ligne (`dueOnLabel`).
  */
 function hintOf(kind: "todo" | "shopping", dueAt: string | null): { hint?: string } {
   const parts = [
@@ -757,6 +837,11 @@ function hintOf(kind: "todo" | "shopping", dueAt: string | null): { hint?: strin
     ...(dueAt === null ? [] : [dueLabel(dueAt)]),
   ];
   return parts.length === 0 ? {} : { hint: parts.join(" · ") };
+}
+
+/** Jour d'une ligne proposée — « samedi 12 septembre ». */
+function dueOnLabel(dueOn: string): string {
+  return formatFullDay(dateOfCalendarDay(dueOn));
 }
 
 /**
@@ -852,18 +937,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // Mêmes corps, interligne et marge verticale qu'une réponse de l'assistant
+  // (`MessageRow`) : la trace s'aligne sur le texte qui la précède.
   note: {
     alignSelf: "flex-start",
-    maxWidth: "85%",
+    maxWidth: "100%",
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderWidth: 1,
-    borderRadius: radius.pill,
+    paddingVertical: spacing.md,
   },
-  noteLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, flexShrink: 1 },
+  noteCheck: { marginTop: 3 },
+  noteLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22, flexShrink: 1 },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   action: {
     minHeight: MIN_TOUCH_TARGET,
@@ -872,5 +957,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   secondary: { borderWidth: 1 },
+  accepting: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
   actionLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
 });

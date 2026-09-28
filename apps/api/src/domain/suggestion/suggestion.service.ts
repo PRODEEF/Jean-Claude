@@ -34,6 +34,18 @@ const MESSAGE_MAX_LENGTH = 500;
 
 const SCOPE = "suggestion.service";
 
+/**
+ * Phrase posée par le serveur quand le modèle n'en a écrit aucune.
+ *
+ * Seulement là où la carte se suffit : une modification de lignes affiche
+ * chaque ligne retirée, ajoutée ou renommée, la phrase n'a qu'à demander.
+ * ministral l'omettait deux fois sur deux, et la proposition était perdue.
+ * Elle reste une question (§12.1).
+ */
+const DEFAULT_MESSAGE: Partial<Record<SuggestionKind, string>> = {
+  update_task_list_items: "Je mets la liste à jour ?",
+};
+
 export class SuggestionService {
   constructor(private readonly suggestions: ISuggestionRepository) {}
 
@@ -59,7 +71,8 @@ export class SuggestionService {
     if (!translated) return null;
 
     const raw = toolCall.input["message"];
-    const message = typeof raw === "string" ? raw.trim() : "";
+    const written = typeof raw === "string" ? raw.trim() : "";
+    const message = written.length > 0 ? written : (DEFAULT_MESSAGE[translated.kind] ?? "");
 
     if (message.length === 0 || message.length > MESSAGE_MAX_LENGTH) {
       logger.warn(SCOPE, `Appel d'outil \`${toolCall.name}\` sans phrase à afficher : ignoré.`);

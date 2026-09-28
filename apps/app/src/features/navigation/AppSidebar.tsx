@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { PanResponder, Platform, ScrollView, View } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
+import { vars } from "nativewind";
 import {
   ChevronDown,
   ChevronRight,
@@ -43,6 +44,7 @@ import { Icon } from "@/shared/ui/icon";
 import { Separator } from "@/shared/ui/separator";
 import { Text } from "@/shared/ui/text";
 import { useAssistantName } from "@/shared/hooks/use-profile";
+import { useTheme } from "@/shared/providers/theme-provider";
 import { useSidebarData, type SidebarGroup } from "./use-sidebar-data";
 import { UTILITY_LINKS } from "./utility-links";
 
@@ -86,6 +88,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const assistantName = useAssistantName();
+  const { palette } = useTheme();
   const { groups, all, channel, isLoading, error } = useSidebarData();
   const [deleting, setDeleting] = useState<Folder | null>(null);
   const [menuTarget, setMenuTarget] = useState<FolderMenuTarget | null>(null);
@@ -176,7 +179,14 @@ export function AppSidebar({
   });
 
   return (
-    <View className="h-full border-r border-border bg-secondary" style={{ width }}>
+    <View
+      className="h-full border-r border-border bg-secondary"
+      // Le fond de survol et de sélection de shadcn (`accent`) est le gris de
+      // `surface` — celui de la barre elle-même. La rangée active s'y fondait :
+      // rien ne montrait que le calendrier était ouvert. Il est foncé ici, pour
+      // la barre seulement ; ailleurs, il se pose sur le fond blanc de l'écran.
+      style={[{ width }, vars({ "--accent": palette.border })]}
+    >
       <View className="gap-2 p-3">
         {/* Signalement direct, distinct des suggestions du modèle (§12.1) : un
             geste utilisateur, jamais une proposition (A.10). Même traitement
@@ -191,6 +201,30 @@ export function AppSidebar({
             <Icon as={MessageCircle} size={16} className="text-white" />
           </View>
           <Text className="text-sm font-semibold text-foreground">SIGNALER UN PROBLÈME</Text>
+        </Button>
+
+        {/* Le canal permanent (A.10) en tête, hors de la liste qui défile : il
+            n'est pas une conversation parmi d'autres, et doit rester à portée
+            quel que soit le nombre de dossiers et de conversations. */}
+        <Button
+          variant="ghost"
+          onPress={() => go("/assistant")}
+          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+          className={selected("h-auto justify-start gap-3 px-2 py-2", pathname === "/assistant")}
+        >
+          <View className="size-8 items-center justify-center rounded-md bg-primary">
+            <Icon as={MessageCircle} size={16} className="text-primary-foreground" />
+          </View>
+          <Text className="flex-1 text-sm" numberOfLines={1}>
+            <Text className="font-semibold text-foreground">{assistantName}</Text>
+            <Text className="font-normal text-muted-foreground"> - Canal permanent</Text>
+          </Text>
+          <UnreadBadge
+            count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
+            pendingQuestion={
+              pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
+            }
+          />
         </Button>
 
         <Button
@@ -261,36 +295,14 @@ export function AppSidebar({
           <FolderNameRow target={naming} onDone={() => setNaming(null)} />
         ) : null}
 
-        {/* Discussions et tâches : le canal permanent (A.10), non déplaçable —
-            il n'est pas une conversation parmi d'autres — puis toutes les
-            conversations à plat, y compris celles déjà rangées dans un
-            dossier. Ce n'est pas une duplication : la même conversation reste
-            visible depuis son dossier, ci-dessus, et depuis cette vue
-            chronologique (§5.2, A.1). Les conversations non rangées, elles,
-            n'apparaissent plus qu'ici — une section « Sans dossier » à part
-            aurait fait doublon avec cette liste, qui les contient déjà. */}
+        {/* Discussions et tâches : toutes les conversations à plat, y compris
+            celles déjà rangées dans un dossier. Ce n'est pas une duplication :
+            la même conversation reste visible depuis son dossier, ci-dessus, et
+            depuis cette vue chronologique (§5.2, A.1). Les conversations non
+            rangées, elles, n'apparaissent plus qu'ici — une section « Sans
+            dossier » à part aurait fait doublon avec cette liste, qui les
+            contient déjà. */}
         <SectionLabel>Discussions et tâches</SectionLabel>
-
-        <Button
-          variant="ghost"
-          onPress={() => go("/assistant")}
-          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
-          className={cx("h-auto justify-start gap-2 px-2 py-1.5", pathname === "/assistant")}
-        >
-          <View className="size-7 items-center justify-center rounded-md bg-primary">
-            <Icon as={MessageCircle} size={14} className="text-primary-foreground" />
-          </View>
-          <Text className="flex-1 text-sm" numberOfLines={1}>
-            <Text className="font-semibold text-foreground">{assistantName}</Text>
-            <Text className="font-normal text-muted-foreground"> - Canal permanent</Text>
-          </Text>
-          <UnreadBadge
-            count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
-            pendingQuestion={
-              pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
-            }
-          />
-        </Button>
 
         {all.map((conversation) =>
           renaming?.id === conversation.id ? (
@@ -319,7 +331,7 @@ export function AppSidebar({
             key={link.href}
             variant="ghost"
             onPress={() => go(link.href)}
-            className={cx("justify-start gap-3 px-2", pathname === link.href)}
+            className={selected("justify-start gap-3 px-2", pathname === link.href)}
           >
             <Icon as={link.icon} size={16} className="text-muted-foreground" />
             <Text
@@ -486,9 +498,23 @@ function contextMenuProps(open: (x: number, y: number) => void): WebContextMenuP
   };
 }
 
-/** Ajoute le fond de survol shadcn quand la rangée est celle de la route courante. */
+/** Ajoute le fond de survol shadcn quand la rangée est survolée par un glisser. */
 function cx(base: string, active: boolean): string {
   return active ? `${base} bg-accent` : base;
+}
+
+/**
+ * Surligne la rangée de la route courante (demande de Yann).
+ *
+ * `bg-accent-soft` et non le `bg-accent` de shadcn : celui-ci est le gris du
+ * survol, et la conversation ouverte se confondrait avec celle que le curseur
+ * ne fait que traverser — la confusion déjà corrigée dans la bannière. La
+ * teinte atténuée de l'assistant est celle de la bulle de l'utilisateur :
+ * visible dans les deux thèmes, et qui suit la couleur choisie dans les
+ * réglages.
+ */
+function selected(base: string, active: boolean): string {
+  return active ? `${base} bg-accent-soft` : base;
 }
 
 /**
@@ -937,7 +963,7 @@ function ConversationRow({
     // La poignée de déplacement est portée par une vue et non par le bouton :
     // c'est elle qui reçoit la référence DOM, et le bouton garde la sienne pour
     // l'appui.
-    <View ref={dragRef} className={cx("group flex-row items-center rounded-md", active)}>
+    <View ref={dragRef} className={selected("group flex-row items-center rounded-md", active)}>
       <Button
         variant="ghost"
         size="sm"

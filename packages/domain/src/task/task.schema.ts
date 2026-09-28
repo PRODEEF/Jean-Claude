@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { calendarDateSchema } from "../shared/search.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 
 /**
@@ -26,8 +27,8 @@ export const taskListSchema = z.object({
   /**
    * Échéance de la liste entière.
    *
-   * Portée par la liste et non par ses lignes : « les courses avant samedi »
-   * date la liste, pas le paquet de farine.
+   * « Les courses avant samedi » date la liste, pas le paquet de farine. Une
+   * ligne qui a sa propre date la porte elle-même (`Task.dueOn`).
    */
   dueAt: isoDateTimeSchema.nullable(),
   /**
@@ -65,6 +66,15 @@ export const taskSchema = z.object({
   completedAt: isoDateTimeSchema.nullable(),
   /** Tâche dont celle-ci est une sous-tâche. `null` au premier niveau. */
   parentId: uuidSchema.nullable(),
+  /**
+   * Jour où la tâche est due, indépendamment de l'échéance de sa liste.
+   *
+   * « Le site pour le 12, les groupes pour le 14 » : des lignes d'une même
+   * liste qui n'ont pas la même date. Sans elle, le modèle recopiait la liste
+   * une seconde fois pour écrire les dates dans les titres. Un jour et non un
+   * instant — voir `calendarDateSchema`.
+   */
+  dueOn: calendarDateSchema.nullable(),
   position: z.number().int().nonnegative(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
@@ -76,6 +86,7 @@ export const createTaskSchema = z.object({
   title: labelSchema,
   notes: z.string().max(4_000).nullable().optional(),
   parentId: uuidSchema.nullable().optional(),
+  dueOn: calendarDateSchema.nullable().optional(),
 });
 
 export type CreateTask = z.infer<typeof createTaskSchema>;

@@ -29,10 +29,11 @@ const PAGE_SIZE = 100;
  * déjà chargé, supposent la totalité des listes. Il boucle donc sur les pages
  * lui-même plutôt que de répercuter la pagination jusqu'ici.
  */
-export function useTaskLists() {
+export function useTaskLists({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["taskLists"],
     queryFn: () => fetchAllLists(),
+    enabled,
   });
 }
 

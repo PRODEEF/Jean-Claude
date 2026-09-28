@@ -2,6 +2,7 @@ import { z } from "zod";
 import { rruleSchema } from "../calendar/calendar.schema";
 import { feedbackPlatformSchema, FEEDBACK_CONTENT_MAX_LENGTH } from "../feedback/feedback.schema";
 import { folderPurposeSchema } from "../folder/folder.schema";
+import { calendarDateSchema } from "../shared/search.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 import { taskListKindSchema } from "../task/task.schema";
 
@@ -55,7 +56,7 @@ export const suggestionKindSchema = z.enum([
   "create_events",
   /** « Je décale Courses à vendredi ? » (§12.1, A.2) */
   "update_task_list_due_date",
-  /** « Je coche le pain et je renomme les œufs ? » (§12.1, A.2) */
+  /** « Je coche le pain et je remplace Légumes par tomates et courgettes ? » (§12.1, A.2) */
   "update_task_list_items",
   /** « On dirait un bug, je le signale ? » (A.10) */
   "report_bug",
@@ -163,12 +164,13 @@ export type AssignFoldersPayload = z.infer<typeof assignFoldersPayloadSchema>;
  * les achats et les tâches — et les fusionner reviendrait à rendre une liste
  * de courses illisible au milieu du désherbage.
  *
- * `dueAt` date la liste et non ses lignes : une échéance sortie d'une
- * conversation vaut pour ce qui est à boucler, pas pour un article de la
- * liste de courses. Elle retombe sur `null` au lieu de faire échouer la
- * validation — le modèle rend parfois une date inexploitable, « lundi
- * prochain » laissé en clair ou sans fuseau, et perdre la liste entière pour
- * cela coûterait plus cher que de la proposer sans échéance.
+ * `dueAt` date la liste entière, `dueOn` une ligne qui a sa propre date —
+ * « le site pour le 12, les groupes pour le 14 » tient dans une seule liste.
+ * Les deux retombent sur `null` au lieu de faire échouer la validation — le
+ * modèle rend parfois une date inexploitable, « lundi prochain » laissé en
+ * clair ou sans fuseau, et perdre la liste entière pour cela coûterait plus
+ * cher que de la proposer sans échéance. `dueOn` absent — une proposition
+ * enregistrée avant qu'il existe — vaut une ligne sans date.
  */
 export const createTaskListsPayloadSchema = z.object({
   lists: z
@@ -178,7 +180,12 @@ export const createTaskListsPayloadSchema = z.object({
         kind: taskListKindSchema,
         dueAt: isoDateTimeSchema.nullable().catch(null).default(null),
         items: z
-          .array(z.object({ title: labelSchema }))
+          .array(
+            z.object({
+              title: labelSchema,
+              dueOn: calendarDateSchema.nullable().catch(null).default(null),
+            }),
+          )
           .min(1)
           .max(30),
       }),
@@ -333,27 +340,41 @@ export type UpdateTaskListDueDatePayload = z.infer<typeof updateTaskListDueDateP
  * qu'un outil à sa portée, celui qui crée, et le modèle ouvrait une seconde
  * liste. Chaque ligne est désignée par son identifiant, repris de la consigne.
  *
- * Au moins un des deux champs `title` / `done` : une ligne sans rien à
+ * Au moins un des champs `title` / `done` / `remove` : une ligne sans rien à
  * changer n'a pas de proposition à porter.
+ *
+ * `remove` et `added` modifient la liste en place : « détaille les courses »
+ * retire « Légumes » et ajoute les légumes un par un, dans la même carte.
+ * Sans eux, le modèle n'avait que la création d'une liste pour exprimer ce
+ * geste, et la liste entière était recréée en double. `items` absent — une
+ * proposition enregistrée avant `added`, ou qui ne fait qu'ajouter — vaut
+ * aucune ligne existante touchée.
  */
-export const updateTaskListItemsPayloadSchema = z.object({
-  listId: uuidSchema,
-  items: z
-    .array(
-      z
-        .object({
-          taskId: uuidSchema,
-          title: labelSchema.optional(),
-          done: z.boolean().optional(),
-        })
-        .refine(
-          (item) => item.title !== undefined || item.done !== undefined,
-          "Une ligne à modifier doit au moins changer de titre ou d'état.",
-        ),
-    )
-    .min(1)
-    .max(30),
-});
+export const updateTaskListItemsPayloadSchema = z
+  .object({
+    listId: uuidSchema,
+    items: z
+      .array(
+        z
+          .object({
+            taskId: uuidSchema,
+            title: labelSchema.optional(),
+            done: z.boolean().optional(),
+            remove: z.boolean().optional(),
+          })
+          .refine(
+            (item) => item.title !== undefined || item.done !== undefined || item.remove === true,
+            "Une ligne à modifier doit au moins changer de titre ou d'état, ou être retirée.",
+          ),
+      )
+      .max(30)
+      .default([]),
+    added: z.array(z.object({ title: labelSchema })).max(30).default([]),
+  })
+  .refine(
+    (payload) => payload.items.length + payload.added.length > 0,
+    "Une modification sans ligne touchée ni ajoutée n'a rien à appliquer.",
+  );
 
 export type UpdateTaskListItemsPayload = z.infer<typeof updateTaskListItemsPayloadSchema>;
 

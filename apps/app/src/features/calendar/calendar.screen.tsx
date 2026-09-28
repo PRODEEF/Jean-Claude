@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
-import { View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ListPlus, Plus } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEvent, CalendarRange, TaskList, TaskListWithTasks } from "@jc/domain";
-import { datedLists, listsOfDay, listsWithoutVisibleEvent } from "@jc/domain";
+import { datedLists, listsOfDay, listsWithoutVisibleEvent, todoDays } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { Button } from "@/shared/ui/button";
@@ -76,6 +76,7 @@ export function CalendarScreen() {
   /** Détail d'une todoliste échue, au clic depuis l'agenda du jour. */
   const [listDetail, setListDetail] = useState<TaskListWithTasks | null>(null);
   const router = useRouter();
+  const scroll = useRef<ScrollView>(null);
 
   const days = useMemo(() => visibleDays(view, anchor), [view, anchor]);
   const range = useMemo(() => rangeOf(days), [days]);
@@ -103,14 +104,22 @@ export function CalendarScreen() {
   // apparaître ici, contrairement aux autres vues.
   const allDatedLists = useMemo(() => datedLists(allLists ?? []), [allLists]);
 
-  /** Masque par défaut : sur un mois entier, tout afficher noierait les jours qui comptent. */
-  const [hideEmptyDays, setHideEmptyDays] = useState(true);
+  /**
+   * Affichés par défaut (demande de Yann) : chaque jour porte la trame
+   * matin / après-midi / soir, et les journées vides aujourd'hui se rempliront
+   * à l'usage — les masquer ferait d'un agenda un simple relevé.
+   */
+  const [hideEmptyDays, setHideEmptyDays] = useState(false);
 
   // Les jours réels du mois affiché, sans le débord des mois voisins que
   // porte la grille : une todoliste du 31 août n'a pas sa place dans « le
-  // mois de septembre ».
+  // mois de septembre ». Le mois en cours s'ouvre sur aujourd'hui.
   const monthDays = useMemo(
-    () => days.filter((day) => day.getMonth() === anchor.getMonth()),
+    () =>
+      todoDays(
+        days.filter((day) => day.getMonth() === anchor.getMonth()),
+        new Date(),
+      ),
     [days, anchor],
   );
   const monthListDays = useMemo(
@@ -126,6 +135,11 @@ export function CalendarScreen() {
     setAnchor(next);
     if (view === "week") setSelectedDay(startOfWeek(next));
     else if (view !== "year") setSelectedDay(startOfDay(next));
+  };
+
+  const shiftFromBottom = (direction: 1 | -1) => {
+    shift(direction);
+    scroll.current?.scrollTo({ y: 0, animated: false });
   };
 
   const goToToday = () => {
@@ -158,16 +172,23 @@ export function CalendarScreen() {
     setEventDetail(null);
     setDialogTarget({ mode: "edit", event });
   };
-  const createAt = (day: Date, minute: number) => setDialogTarget({ mode: "create", day, minute });
+  const createAt = (day: Date, minute = DEFAULT_CREATE_MINUTE) =>
+    setDialogTarget({ mode: "create", day, minute });
   // Un jour cliqué en vue mois propose directement d'y poser un événement : la
   // sélection continue par ailleurs d'alimenter l'agenda du jour, en dessous.
   const selectDay = (day: Date) => {
     setSelectedDay(day);
     createAt(day, DEFAULT_CREATE_MINUTE);
   };
+  // Une entrée du calendrier peut n'être que la projection des tâches d'un
+  // jour (`datedLists`) : c'est la vraie liste qu'on modifie, sans quoi le
+  // formulaire lui prêterait pour échéance le jour de ces tâches.
   const editList = (list: TaskList) => {
     setListDetail(null);
-    setListTarget({ mode: "edit", list });
+    setListTarget({
+      mode: "edit",
+      list: allLists?.find((candidate) => candidate.id === list.id) ?? list,
+    });
   };
 
   return (
@@ -203,6 +224,7 @@ export function CalendarScreen() {
         </View>
       }
       maxWidth={GRID_MAX_WIDTH}
+      scrollRef={scroll}
     >
       <CalendarToolbar
         label={periodLabel(view, anchor)}
@@ -256,13 +278,40 @@ export function CalendarScreen() {
           </View>
 
           {hideEmptyDays && monthListDays.length === 0 ? (
-            <Text className="text-muted-foreground text-sm">Aucune todoliste ce mois-ci.</Text>
+            <Text className="text-muted-foreground text-sm">Aucune todoliste sur cette période.</Text>
           ) : (
             <DueListsBoard
               days={hideEmptyDays ? monthListDays : monthDays}
               lists={allDatedLists}
             />
           )}
+
+          {/* Au bout du mois, la suite est à portée de doigt (demande
+              produit) : remonter jusqu'au bandeau pour changer de mois
+              obligerait à refaire défiler tout ce qu'on vient de lire. Le
+              défilement repart en haut, là où commence le mois ouvert. */}
+          <View className="flex-row items-center justify-between gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={() => shiftFromBottom(-1)}
+              accessibilityRole="button"
+              accessibilityLabel={`Afficher ${monthLabel(addMonths(anchor, -1))}`}
+            >
+              <Icon as={ChevronLeft} className="size-4" />
+              <Text>{monthLabel(addMonths(anchor, -1))}</Text>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={() => shiftFromBottom(1)}
+              accessibilityRole="button"
+              accessibilityLabel={`Afficher ${monthLabel(addMonths(anchor, 1))}`}
+            >
+              <Text>{monthLabel(addMonths(anchor, 1))}</Text>
+              <Icon as={ChevronRight} className="size-4" />
+            </Button>
+          </View>
         </View>
       ) : null}
 

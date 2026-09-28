@@ -1,5 +1,6 @@
 import {
   assistantScopeSchema,
+  calendarDateSchema,
   DEFAULT_ASSISTANT_NAME,
   DEFAULT_CONVERSATION_TITLE,
   askedQuestionSchema,
@@ -42,7 +43,7 @@ import type {
 } from "../../core/llm/llm.port.js";
 import { logger } from "../../core/logger.js";
 import { parseRelativeDateFr } from "../../core/relative-date.js";
-import { fromWall, toWall } from "../../core/timezone.js";
+import { calendarDateIn, fromWall, toWall } from "../../core/timezone.js";
 import type { IAttachmentRepository } from "../attachment/attachment.repository.interface.js";
 import {
   ASK_QUESTION,
@@ -782,6 +783,10 @@ export class ConversationService {
           })
         : null;
     const trailingLeak = createTrailingLeakFilter(KNOWN_TOOL_NAMES);
+    // La relance sans outils a son propre filtre : privé d'outils, le modèle y
+    // recopie d'autant plus volontiers les siens en texte, et le filtre du
+    // premier appel, une fois coupé, avalerait toute la relance.
+    const retryLeak = createTrailingLeakFilter(KNOWN_TOOL_NAMES);
 
     try {
       for await (const chunk of this.llm.stream(request)) {
@@ -809,9 +814,26 @@ export class ConversationService {
       // l'utilisateur : la carte s'affiche, et la question posée reste sans
       // réponse. Un second tour la lui donne, la consigne n'ayant pas suffi.
       if (text.length === 0 && needsWrittenAnswer(conversation.kind, toolCalls)) {
-        for await (const chunk of this.answerAfterToolCall(request, toolCalls)) {
-          text += chunk;
-          yield { type: "text", text: chunk };
+        const writtenByServer =
+          askForListContent(toolCalls) ?? answerExistingLists(toolCalls, todo.lists);
+
+        if (writtenByServer !== null) {
+          text = writtenByServer;
+          yield { type: "text", text: writtenByServer };
+        } else {
+          for await (const chunk of this.answerAfterToolCall(request, toolCalls)) {
+            const visible = retryLeak.push(chunk);
+            if (visible.length > 0) {
+              text += visible;
+              yield { type: "text", text: visible };
+            }
+          }
+
+          const retryTail = retryLeak.flush();
+          if (retryTail.length > 0) {
+            text += retryTail;
+            yield { type: "text", text: retryTail };
+          }
         }
       }
     } finally {
@@ -819,17 +841,29 @@ export class ConversationService {
       // pleine génération, le texte déjà produit est déjà facturé. Le perdre
       // priverait l'utilisateur d'une réponse qu'il retrouverait de toute façon
       // au rechargement.
-      text += trailingLeak.push(textLeak?.flush() ?? "") + trailingLeak.flush();
-      const leaked = trailingLeak.leaked();
-      if (leaked !== null) {
+      text += trailingLeak.push(textLeak?.flush() ?? "") + trailingLeak.flush() + retryLeak.flush();
+      const leaks = [trailingLeak.leaked(), retryLeak.leaked()].filter(
+        (leak): leak is string => leak !== null,
+      );
+      if (leaks.length > 0) {
         logger.warn(SCOPE, "Appel d'outil recopié en texte en fin de réponse : retiré.");
+      }
+      if (leaks.length > 0 || trailingLeak.narrated() || retryLeak.narrated()) {
         text = withoutLeakIntro(text);
       }
       // Résolu avant l'écriture : les réponses proposées voyagent sur le
       // message qui porte la question, pas dans une seconde requête. Une
       // question écrite en texte ne sert qu'à défaut de l'outil, qui la porte
       // sous sa forme voulue.
-      const asked = readQuestion(toolCalls) ?? readLeakedQuestion(leaked);
+      const leakedBlock = leaks.map(leakedQuestionBlock).find((block) => block !== null) ?? null;
+      const asked =
+        readQuestion(toolCalls) ?? (leakedBlock === null ? null : readLeakedQuestion(leakedBlock));
+      // Une question recopiée qui ne tient pas en boutons — une réponse trop
+      // longue pour un bouton, une seule réponse — reste une question : elle
+      // s'affiche en texte plutôt que de disparaître avec le nom de l'outil.
+      if (asked === null && leakedBlock !== null) {
+        text = text.length > 0 ? `${text}\n\n${leakedBlock}` : leakedBlock;
+      }
       // La bascule prime sur tout ce que le modèle a pu écrire : l'annonce doit
       // être la même à chaque fois, puisque c'est elle qui porte la validation.
       const redirectTitle = readRedirectTitle(conversation.kind, toolCalls);
@@ -879,17 +913,40 @@ export class ConversationService {
             withCorrectedRecurringEventStartsAt(
               withCorrectedRescheduleDueDate(
                 withCorrectedDueDates(
-                  withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+                  withListIdOfTasks(
+                    withVerifiedTaskIds(
+                      withoutExistingLists(
+                        withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+                        todo.lists,
+                      ),
+                      todo.lists,
+                    ),
+                    todo.lists,
+                  ),
                   now,
                   context.timezone,
                 ),
                 now,
                 context.timezone,
               ),
+              context.timezone,
             ),
+            context.timezone,
           );
-          await this.suggestions.capture(userId, conversationId, corrected, accessToken);
-          suggestionCaptured = true;
+          // Une proposition écartée à la capture n'affiche aucune carte : elle
+          // ne peut pas tenir lieu de réponse au tour.
+          const captured = await this.suggestions.capture(
+            userId,
+            conversationId,
+            corrected,
+            accessToken,
+          );
+          if (captured) {
+            suggestionCaptured = true;
+            if (captured.kind === "create_task_list") {
+              await this.supersedePendingLists(todo.decided, accessToken);
+            }
+          }
         } catch (error) {
           // Une capture ne doit jamais faire perdre les suivantes : sans cet
           // isolement, l'échec d'un seul appel d'outil (ex. une nature de
@@ -1111,10 +1168,10 @@ export class ConversationService {
         // `SUGGEST_FOLDERS` n'est rendu qu'aux conversations non classées : il
         // n'a rien à proposer sur un fil déjà rangé.
         tool !== SUGGEST_FOLDERS &&
-        // Une todoliste déjà proposée attend un geste : la reproposer
-        // empilerait deux cartes pour la même chose, ce que le « non intrusif »
-        // du §12.1 exclut.
-        !(tool === SUGGEST_TASK_LIST && isPending(decided, "create_task_list")) &&
+        // `SUGGEST_TASK_LIST` reste exposé même quand une proposition de
+        // todolistes attend : c'est par lui que « détaille les courses » corrige
+        // la carte en attente, que la nouvelle remplace (`supersedePendingLists`)
+        // au lieu de s'y empiler.
         // Compléter suppose qu'il y ait quelque chose à compléter : sans liste
         // sur ce fil, l'outil n'aurait aucun identifiant à recevoir et le
         // modèle en inventerait un.
@@ -1159,6 +1216,33 @@ export class ConversationService {
       lists,
       decided,
     };
+  }
+
+  /**
+   * Retire les propositions de todolistes que la nouvelle vient corriger.
+   *
+   * « Détaille les courses » pendant que la carte attend encore : le modèle
+   * repropose la version corrigée, et l'ancienne passe en expirée plutôt que
+   * de rester acceptable à côté — accepter les deux créerait les listes en
+   * double. Un échec n'annule pas la nouvelle proposition, déjà enregistrée :
+   * l'utilisateur garde de quoi trancher, au prix d'une carte de trop.
+   */
+  private async supersedePendingLists(decided: Suggestion[], accessToken: string): Promise<void> {
+    const pending = decided.filter(
+      (suggestion) => suggestion.status === "pending" && suggestion.kind === "create_task_list",
+    );
+
+    for (const previous of pending) {
+      try {
+        await this.suggestions.markResolved(previous.id, "expired", accessToken);
+      } catch (error) {
+        logger.warn(
+          SCOPE,
+          "Proposition de todolistes remplacée impossible à retirer :",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
   }
 
   /**
@@ -1504,8 +1588,8 @@ function takeJsonObject(text: string, start: number): number | "incomplete" {
  * plus, ou à la place, des vrais appels — et elles s'affichaient telles quelles
  * au milieu de la conversation.
  *
- * Une ligne qui s'ouvre sur le nom d'un outil, entre accents graves ou en
- * balise, coupe la réponse : tout ce qui la suit est de l'argument d'outil,
+ * Une ligne qui s'ouvre sur le nom d'un outil, nu ou habillé de Markdown,
+ * coupe la réponse : tout ce qui la suit est de l'argument d'outil,
  * jamais une réponse à l'utilisateur. Seul le début de ligne est retenu le
  * temps de savoir s'il en est une : le reste du texte passe au fil de l'eau.
  */
@@ -1514,6 +1598,8 @@ type TrailingLeakFilter = {
   flush: () => string;
   /** Le texte coupé, fuite comprise — `null` tant que rien n'a été coupé. */
   leaked: () => string | null;
+  /** Une annonce en italique de ce que le modèle va faire a été retirée. */
+  narrated: () => boolean;
 };
 
 function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFilter {
@@ -1523,6 +1609,7 @@ function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFil
   /** La ligne courante a déjà été libérée : son début ne ressemblait à rien. */
   let midLine = false;
   let leaked: string | null = null;
+  let narrated = false;
 
   return {
     push(chunk) {
@@ -1551,6 +1638,10 @@ function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFil
           held = "";
           return out;
         }
+        if (verdict === "aside") {
+          held = "";
+          narrated = true;
+        }
         if (verdict === "text") {
           out += held;
           held = "";
@@ -1563,13 +1654,19 @@ function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFil
       if (leaked !== null || held.length === 0) return "";
       const line = held;
       held = "";
-      if (classifyTrailingLine(line, true, names) === "leak") {
+      const verdict = classifyTrailingLine(line, true, names);
+      if (verdict === "leak") {
         leaked = line;
+        return "";
+      }
+      if (verdict === "aside") {
+        narrated = true;
         return "";
       }
       return line;
     },
     leaked: () => leaked,
+    narrated: () => narrated,
   };
 }
 
@@ -1577,31 +1674,59 @@ function createTrailingLeakFilter(toolNames: readonly string[]): TrailingLeakFil
  * Une ligne de réponse ouvre-t-elle une fuite d'outil ?
  *
  * `maybe` tant que la ligne n'est pas complète et que son début peut encore
- * devenir `` `nom_d_outil` `` ou `<nom_d_outil>`, puce comprise.
+ * devenir le nom d'un outil, puce comprise. Le nom compte nu comme habillé —
+ * accents graves, balise, italique ou gras : ministral a écrit
+ * `*ask_question*` là où Mistral Medium écrivait `` `ask_question` ``, et un
+ * nom d'outil en début de ligne n'est jamais une réponse à l'utilisateur.
  */
 function classifyTrailingLine(
   line: string,
   complete: boolean,
   names: string[],
-): "leak" | "text" | "maybe" {
+): "leak" | "aside" | "text" | "maybe" {
   const indented = line.replace(/^[ \t]+/, "");
   if (!complete && (indented === "" || indented === "-" || indented === "*")) return "maybe";
 
   const body = indented.replace(/^[-*][ \t]+/, "");
   if (!complete && body === "") return "maybe";
 
-  const opener = body.startsWith("</") ? "</" : body[0] === "`" || body[0] === "<" ? body[0] : null;
-  if (opener === null) return "text";
+  const aside = classifyAside(body, complete);
+  if (aside !== null) return aside;
 
+  const opener = body.match(/^(?:<\/?|`|\*{1,2})/)?.[0] ?? "";
   const after = body.slice(opener.length).toLowerCase();
   const named = names.some((name) => {
     const next = after[name.length];
-    return after.startsWith(name) && next !== undefined && !/\w/.test(next);
+    // Un nom nu qui clôt le flux n'a plus rien derrière lui.
+    return after.startsWith(name) && (next === undefined ? complete : !/\w/.test(next));
   });
   if (named) return "leak";
 
   if (!complete && names.some((name) => name.startsWith(after))) return "maybe";
   return "text";
+}
+
+/**
+ * Aparté en italique où le modèle annonce ce qu'il va faire — « *Je vais te
+ * proposer deux listes séparées.* ».
+ *
+ * Relevé avec ministral, surtout dans la relance sans outils : il y annonce la
+ * proposition qu'il ne peut plus faire, et la consigne n'a pas suffi à l'en
+ * empêcher. L'assistant ne fait rien de lui-même, il propose par une carte
+ * (§12.1) : l'annonce n'est jamais vraie. Seule la ligne entière en italique
+ * est visée — « Je vais te proposer deux listes. Ça te convient ? » en clair
+ * porte une question, et reste.
+ */
+function classifyAside(body: string, complete: boolean): "aside" | "maybe" | null {
+  const opening = body.match(/^[*_]\(?[ \t]*/)?.[0];
+  if (opening === undefined) return null;
+
+  const after = body.slice(opening.length).toLowerCase();
+  if (!/^je vais(?![\p{L}\p{N}])/u.test(after)) {
+    return !complete && "je vais".startsWith(after) ? "maybe" : null;
+  }
+  if (!complete) return "maybe";
+  return /[*_][^\p{L}\p{N}]*$/u.test(body.trimEnd()) ? "aside" : null;
 }
 
 /**
@@ -1628,28 +1753,48 @@ function withoutLeakIntro(text: string): string {
 }
 
 /**
- * Question posée en texte dans un bloc `<ask_question>` plutôt que par l'outil.
+ * Question posée en texte sous le nom `ask_question` plutôt que par l'outil.
  *
- * La première ligne du bloc est la question, ses puces les réponses : c'est la
- * forme relevée en usage réel. Récupérée, elle s'affiche en boutons comme
- * n'importe quelle question de l'outil ; inexploitable, elle est seulement
- * retirée du texte.
+ * Deux formes relevées en usage réel : un bloc `<ask_question>`, et une ligne
+ * `*ask_question*` (ou `ask_question:`) suivie de la question et d'une liste
+ * numérotée. Dans les deux, la première ligne est la question, les puces ou
+ * numéros les réponses. Rendu ici sans le nom de l'outil, `null` si la fuite
+ * en nomme un autre.
  */
-function readLeakedQuestion(leaked: string | null): AskedQuestion | null {
-  const block = leaked?.match(/^\s*<ask_question>([\s\S]*?)(?:<\/ask_question>|$)/i)?.[1];
-  if (!block) return null;
+function leakedQuestionBlock(leaked: string): string | null {
+  const block = leaked
+    .match(
+      /^\s*(?:[-*][ \t]+)?(?:<|`|\*{1,2})?ask_question(?!\w)(?:>|`|\*{1,2})?(?:[ \t]*:)?([\s\S]*?)(?:<\/ask_question>|$)/i,
+    )?.[1]
+    ?.trim();
+  return block ? block : null;
+}
 
+/**
+ * Le bloc recopié, en question à réponses proposées — `null` s'il ne tient
+ * pas en boutons.
+ *
+ * Le gras et l'italique sont retirés : un bouton les afficherait en
+ * astérisques. Une ligne en retrait détaille la réponse qui la précède — le
+ * modèle y déroule le contenu de chaque option — et n'en est pas une.
+ */
+function readLeakedQuestion(block: string): AskedQuestion | null {
   let question: string | null = null;
   const choices: string[] = [];
-  for (const line of block.split("\n").map((raw) => raw.trim())) {
-    if (line.length === 0) continue;
+  for (const raw of block.split("\n")) {
+    const line = raw.trim();
+    if (line.length === 0 || /^(?: {2,}|\t)/.test(raw)) continue;
     const choice = line.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/)?.[1];
-    if (choice) choices.push(choice);
-    else if (question === null && choices.length === 0) question = line;
+    if (choice) choices.push(withoutEmphasis(choice).replace(/\s*:$/, ""));
+    else if (question === null && choices.length === 0) question = withoutEmphasis(line);
   }
 
   const asked = askedQuestionSchema.safeParse({ question, choices });
   return asked.success ? asked.data : null;
+}
+
+function withoutEmphasis(text: string): string {
+  return text.replace(/(\*\*|\*|`)(?=\S)(.+?)(?<=\S)\1/g, "$2");
 }
 
 function readRedirectTitle(kind: Conversation["kind"], toolCalls: LlmToolCall[]): string | null {
@@ -1783,6 +1928,119 @@ function mergeTaskListCalls(toolCalls: LlmToolCall[]): LlmToolCall | null {
 }
 
 /**
+ * Retire d'un `suggest_task_list` les listes que ce fil a déjà créées.
+ *
+ * « Tout recommencer » faisait reproposer les deux listes à l'identique, et
+ * les accepter les créait en double : une liste existante se modifie
+ * (`suggest_update_task_items`), elle ne se recrée pas. Reconnue à son titre,
+ * au sens de `sameName` — c'est ainsi que l'utilisateur lit deux listes
+ * homonymes côte à côte. Si rien ne reste, la proposition échoue à la
+ * validation et aucune carte ne s'affiche.
+ */
+function withoutExistingLists(toolCall: LlmToolCall, existing: TaskListWithTasks[]): LlmToolCall {
+  if (toolCall.name !== SUGGEST_TASK_LIST.name || existing.length === 0) return toolCall;
+
+  const lists = toolCall.input["lists"];
+  if (!Array.isArray(lists)) return toolCall;
+
+  const kept = lists.filter((entry: unknown) => !isExistingList(entry, existing));
+  if (kept.length === lists.length) return toolCall;
+
+  logger.warn(SCOPE, "Todoliste reproposée alors qu'elle existe déjà sur ce fil : écartée.");
+  return { ...toolCall, input: { ...toolCall.input, lists: kept } };
+}
+
+/** Outils qui désignent une liste existante par son identifiant. */
+const LIST_TARGETING_TOOL_NAMES = new Set([
+  SUGGEST_TASK_LIST_ITEMS.name,
+  SUGGEST_TASK_LIST_DUE_DATE.name,
+  SUGGEST_UPDATE_TASK_ITEMS.name,
+]);
+
+/**
+ * Rend à un appel qui vise une liste existante l'identifiant de cette liste,
+ * quand celui du modèle ne correspond à aucune liste du fil.
+ *
+ * ministral recopiait l'identifiant d'une ligne à la place de celui de la
+ * liste — « ajoute du parmesan » visait la ligne « Légumes » : la carte
+ * s'affichait, puis l'acceptation échouait sur « Liste introuvable ». Une
+ * ligne n'appartient qu'à une liste : celle qui porte la ligne recopiée, ou
+ * les lignes qu'une modification désigne, est la bonne. Sans ligne existante
+ * reconnue, rien n'est deviné : l'identifiant du modèle reste tel quel.
+ */
+function withListIdOfTasks(toolCall: LlmToolCall, lists: TaskListWithTasks[]): LlmToolCall {
+  if (!LIST_TARGETING_TOOL_NAMES.has(toolCall.name)) return toolCall;
+
+  const listId = toolCall.input["listId"];
+  if (lists.some((list) => list.id === listId)) return toolCall;
+
+  const items: unknown = toolCall.input["items"];
+  const taskIds = Array.isArray(items)
+    ? items.flatMap((item: unknown) =>
+        typeof item === "object" && item !== null && "taskId" in item ? [item.taskId] : [],
+      )
+    : [];
+  const owner = lists.find((list) =>
+    list.tasks.some((task) => task.id === listId || taskIds.includes(task.id)),
+  );
+  if (!owner) return toolCall;
+
+  logger.warn(SCOPE, "Identifiant de liste inconnu, rétabli d'après les lignes désignées.");
+  return { ...toolCall, input: { ...toolCall.input, listId: owner.id } };
+}
+
+/**
+ * Vérifie que chaque ligne d'un `suggest_update_task_items` désigne bien celle
+ * dont le modèle a recopié le titre (`currentTitle`).
+ *
+ * ministral recopiait l'identifiant d'une ligne voisine : « remplace la salade
+ * par de la roquette » retirait le beurre. Même principe que les dossiers
+ * (`withVerifiedFolders`) : identifiant et titre viennent de la même ligne de
+ * la consigne, et un désaccord se tranche par le titre — l'utilisateur l'a
+ * dit, l'identifiant n'est qu'une recopie. Un titre qui ne désigne aucune
+ * ligne, ou plusieurs, fait écarter la ligne plutôt que d'en toucher une au
+ * hasard. Sans titre recopié, rien n'est vérifié.
+ *
+ * Les lignes sont d'abord cherchées dans la liste annoncée, pour qu'un titre
+ * présent dans deux listes du fil ne soit pas pris pour ambigu.
+ */
+function withVerifiedTaskIds(toolCall: LlmToolCall, lists: TaskListWithTasks[]): LlmToolCall {
+  if (toolCall.name !== SUGGEST_UPDATE_TASK_ITEMS.name) return toolCall;
+
+  const items: unknown = toolCall.input["items"];
+  if (!Array.isArray(items)) return toolCall;
+
+  const announced = lists.find((list) => list.id === toolCall.input["listId"]);
+  const candidates = announced ? announced.tasks : lists.flatMap((list) => list.tasks);
+
+  let changed = false;
+  const verified = items.flatMap((item: unknown) => {
+    if (typeof item !== "object" || item === null) return [item];
+    const record = item as Record<string, unknown>;
+    const title = record["currentTitle"];
+    if (typeof title !== "string") return [item];
+
+    const designated = candidates.find((task) => task.id === record["taskId"]);
+    if (designated && sameName(designated.title, title)) return [item];
+
+    changed = true;
+    const [only, ...others] = candidates.filter((task) => sameName(task.title, title));
+    return only && others.length === 0 ? [{ ...record, taskId: only.id }] : [];
+  });
+
+  if (!changed) return toolCall;
+
+  logger.warn(SCOPE, "Ligne désignée par un identifiant qui ne correspond pas à son titre : rétablie ou écartée.");
+  return { ...toolCall, input: { ...toolCall.input, items: verified } };
+}
+
+/** Une liste proposée porte-t-elle le titre d'une liste déjà née du fil ? */
+function isExistingList(entry: unknown, existing: TaskListWithTasks[]): boolean {
+  const title = typeof entry === "object" && entry !== null && "title" in entry ? entry.title : null;
+  return typeof title === "string" && existing.some((list) => sameName(list.title, title));
+}
+
+/**
  * `text` au format `HH:mm` (24 h), vers heure et minute — `null` si le format
  * ou les bornes ne correspondent pas, ex. une hallucination du modèle.
  */
@@ -1862,6 +2120,9 @@ function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: strin
     if (typeof entry !== "object" || entry === null) return entry;
 
     const record = entry as Record<string, unknown>;
+    const items = Array.isArray(record["items"])
+      ? record["items"].map((item) => withCorrectedDueOn(item, now, timezone))
+      : record["items"];
     const dueAt = resolveDueAt(
       record["dueAtText"],
       record["dueAt"],
@@ -1869,17 +2130,45 @@ function withCorrectedDueDates(toolCall: LlmToolCall, now: Date, timezone: strin
       now,
       timezone,
     );
-    if (dueAt === null) return entry;
+    if (dueAt === null) return { ...entry, items };
 
     if (isPastDay(dueAt, now, timezone)) {
       logger.warn(SCOPE, "Échéance de todoliste proposée dans le passé, effacée.");
-      return { ...entry, dueAt: null };
+      return { ...entry, items, dueAt: null };
     }
 
-    return { ...entry, dueAt };
+    return { ...entry, items, dueAt };
   });
 
   return { ...toolCall, input: { ...toolCall.input, lists: corrected } };
+}
+
+/**
+ * Corrige le jour d'une ligne proposée, sur le même principe que l'échéance
+ * de sa liste : l'expression relative recopiée (`dueOnText`) l'emporte sur le
+ * calcul du modèle quand le filet la reconnaît, et un jour déjà passé est
+ * effacé plutôt que de faire naître une tâche en retard.
+ *
+ * Une valeur illisible est laissée telle quelle : le schéma de la proposition
+ * la ramène à une ligne sans date.
+ */
+function withCorrectedDueOn(item: unknown, now: Date, timezone: string): unknown {
+  if (typeof item !== "object" || item === null) return item;
+
+  const record = item as Record<string, unknown>;
+  const relative =
+    typeof record["dueOnText"] === "string"
+      ? parseRelativeDateFr(record["dueOnText"], now, timezone)
+      : null;
+  const dueOn = relative !== null ? calendarDateIn(new Date(relative), timezone) : record["dueOn"];
+  if (typeof dueOn !== "string" || !calendarDateSchema.safeParse(dueOn).success) return item;
+
+  if (dueOn < calendarDateIn(now, timezone)) {
+    logger.warn(SCOPE, "Échéance de tâche proposée dans le passé, effacée.");
+    return { ...record, dueOn: null };
+  }
+
+  return { ...record, dueOn };
 }
 
 /**
@@ -1921,28 +2210,61 @@ function withCorrectedRescheduleDueDate(
   return { ...toolCall, input };
 }
 
+/** Date ISO sans décalage : `2026-09-30`, `2026-09-30T14:00`, `2026-09-30T14:00:00.000`. */
+const NAIVE_ISO = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?$/;
+
+/**
+ * Instant qu'un `startsAt` du modèle désigne, en ISO canonique — `null` s'il
+ * est illisible.
+ *
+ * Une date sans décalage (`2026-09-30T14:00`) est l'heure murale de
+ * l'utilisateur : c'est ce qu'il a dit (« à 14h ») et ce que la consigne de
+ * l'outil demande. `new Date` la lisait dans le fuseau du serveur — UTC sur
+ * Vercel —, et le rendez-vous tombait à 16h à Paris. Elle est donc posée dans
+ * le fuseau du profil. Une valeur qui porte son décalage (`Z`, `+02:00`) est
+ * prise telle quelle : le modèle a alors dit lui-même de quelle heure il parle.
+ */
+function instantFromModel(value: string, timeZone: string): string | null {
+  const naive = NAIVE_ISO.exec(value.trim());
+  if (naive) {
+    const [, year, month, day, hours = "0", minutes = "0", seconds = "0"] = naive;
+    const wallMs = Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hours),
+      Number(minutes),
+      Number(seconds),
+    );
+    return Number.isNaN(wallMs) ? null : fromWall(wallMs, timeZone).toISOString();
+  }
+
+  const instant = new Date(value);
+  return Number.isNaN(instant.getTime()) ? null : instant.toISOString();
+}
+
 /**
  * Fiabilise `startsAt` d'un `suggest_recurring_event` avant capture (A.11).
  *
  * Le modèle calcule cette date lui-même, sans jamais passer par le
  * validateur du serveur : une heure sans les secondes ou sans fuseau
- * (`2026-09-16T18:00`) est un ISO 8601 que `Date` lit très bien, mais que le
- * schéma strict de la charge utile rejette — la série entière disparaissait
- * alors silencieusement (`suggestion.service` la journalise comme
- * inexploitable). La reformater vers l'ISO canonique évite de perdre le
- * rendez-vous pour un simple défaut de forme ; une valeur réellement
+ * (`2026-09-16T18:00`) est un ISO 8601 que le schéma strict de la charge utile
+ * rejette — la série entière disparaissait alors silencieusement
+ * (`suggestion.service` la journalise comme inexploitable). La reformater vers
+ * l'ISO canonique, dans le fuseau du profil (`instantFromModel`), évite de
+ * perdre le rendez-vous pour un simple défaut de forme ; une valeur réellement
  * illisible reste telle quelle et la validation en aval l'écarte normalement.
  */
-function withCorrectedRecurringEventStartsAt(toolCall: LlmToolCall): LlmToolCall {
+function withCorrectedRecurringEventStartsAt(toolCall: LlmToolCall, timeZone: string): LlmToolCall {
   if (toolCall.name !== SUGGEST_RECURRING_EVENT.name) return toolCall;
 
   const startsAt = toolCall.input["startsAt"];
   if (typeof startsAt !== "string") return toolCall;
 
-  const instant = new Date(startsAt);
-  if (Number.isNaN(instant.getTime())) return toolCall;
+  const instant = instantFromModel(startsAt, timeZone);
+  if (instant === null) return toolCall;
 
-  return { ...toolCall, input: { ...toolCall.input, startsAt: instant.toISOString() } };
+  return { ...toolCall, input: { ...toolCall.input, startsAt: instant } };
 }
 
 /**
@@ -1954,7 +2276,7 @@ function withCorrectedRecurringEventStartsAt(toolCall: LlmToolCall): LlmToolCall
  * illisible malgré la reformatation n'est pas retirée du tableau : c'est la
  * validation en aval qui décide, comme pour n'importe quel autre outil.
  */
-function withCorrectedEventsStartsAt(toolCall: LlmToolCall): LlmToolCall {
+function withCorrectedEventsStartsAt(toolCall: LlmToolCall, timeZone: string): LlmToolCall {
   if (toolCall.name !== SUGGEST_EVENTS.name) return toolCall;
 
   const events = toolCall.input["events"];
@@ -1966,10 +2288,10 @@ function withCorrectedEventsStartsAt(toolCall: LlmToolCall): LlmToolCall {
     const startsAt = (entry as Record<string, unknown>)["startsAt"];
     if (typeof startsAt !== "string") return entry;
 
-    const instant = new Date(startsAt);
-    if (Number.isNaN(instant.getTime())) return entry;
+    const instant = instantFromModel(startsAt, timeZone);
+    if (instant === null) return entry;
 
-    return { ...entry, startsAt: instant.toISOString() };
+    return { ...entry, startsAt: instant };
   });
 
   return { ...toolCall, input: { ...toolCall.input, events: corrected } };
@@ -2065,7 +2387,9 @@ function needsWrittenAnswer(kind: Conversation["kind"], toolCalls: LlmToolCall[]
  * présenterait comme faite — l'inverse du §12.1.
  */
 function proposalReminder(toolCalls: LlmToolCall[]): string {
+  const empty = toolCalls.filter((toolCall) => emptyTaskLists(toolCall).length > 0);
   const proposed = toolCalls
+    .filter((toolCall) => !empty.includes(toolCall))
     .map((toolCall) => toolCall.input["message"])
     .filter((message): message is string => typeof message === "string" && message.length > 0);
 
@@ -2083,7 +2407,138 @@ function proposalReminder(toolCalls: LlmToolCall[]): string {
     );
   }
 
+  const lists = describeProposedLists(toolCalls.filter((toolCall) => !empty.includes(toolCall)));
+  if (lists.length > 0) {
+    lines.push(
+      "",
+      "La carte montre ces listes, ligne par ligne. Ne les recopie pas ; si tu en",
+      "cites une ligne, reprends-la telle quelle, et n'en cite aucune qui n'y figure pas :",
+      ...lists,
+    );
+  }
+
+  // Sans ce rappel, le modèle annonçait une proposition qu'aucune carte ne
+  // porterait, puis la reproposait vide au message suivant.
+  if (empty.length > 0) {
+    lines.push(
+      "",
+      "Les listes que tu voulais proposer n'ont encore aucune ligne : elles ne",
+      "s'afficheront pas. Une liste se propose remplie — demande à l'utilisateur ce",
+      "qu'il faut y mettre.",
+    );
+  }
+
   return lines.join("\n");
+}
+
+/**
+ * Todolistes proposées sans ligne par cet appel — aucune si ce n'en est pas un.
+ *
+ * Une liste se propose remplie (§12.1, A.2) : la capture les écarte, et le
+ * modèle doit d'abord en demander le contenu.
+ */
+function emptyTaskLists(toolCall: LlmToolCall): object[] {
+  if (toolCall.name !== SUGGEST_TASK_LIST.name) return [];
+
+  const lists: unknown = toolCall.input["lists"];
+  if (!Array.isArray(lists)) return [];
+
+  return lists.filter((list: unknown): list is object => {
+    if (typeof list !== "object" || list === null) return false;
+    const items = "items" in list ? list.items : null;
+    return !Array.isArray(items) || items.length === 0;
+  });
+}
+
+/**
+ * Question écrite par le serveur quand le modèle n'a proposé, sans un mot, que
+ * des todolistes vides — `null` dans tout autre cas.
+ *
+ * Aucune carte ne s'affichera : la capture les écarte. Rédigée ici plutôt que
+ * demandée au modèle : relancé avec la consigne d'en demander le contenu,
+ * ministral proposait des listes « types » à la place, trois fois sur trois.
+ * Les titres sont connus, il ne reste qu'à demander ce qu'on y met.
+ */
+function askForListContent(toolCalls: LlmToolCall[]): string | null {
+  const proposals = toolCalls.filter((toolCall) => !APPLIED_DIRECTLY.has(toolCall.name));
+  if (proposals.length === 0) return null;
+  if (!proposals.every((toolCall) => emptyTaskLists(toolCall).length > 0)) return null;
+
+  const titles = proposals
+    .flatMap(emptyTaskLists)
+    .flatMap((list) =>
+      "title" in list && typeof list.title === "string" && list.title.trim().length > 0
+        ? [`« ${list.title.trim()} »`]
+        : [],
+    );
+
+  if (titles.length === 0) {
+    return "Qu'est-ce qu'on met dans ces listes ? Dis-le-moi, et je te les propose.";
+  }
+
+  const last = titles[titles.length - 1];
+  const named = titles.length === 1 ? last : `${titles.slice(0, -1).join(", ")} et ${last}`;
+  return titles.length === 1
+    ? `Qu'est-ce qu'on met dans ${named} ? Dis-le-moi, et je te la propose.`
+    : `Qu'est-ce qu'on met dans ${named} ? Dis-le-moi, et je te les propose.`;
+}
+
+/**
+ * Réponse écrite par le serveur quand le modèle n'a fait, sans un mot, que
+ * reproposer des todolistes que ce fil a déjà créées — `null` dans tout autre
+ * cas.
+ *
+ * La capture les écarte (`withoutExistingLists`) : aucune carte ne
+ * s'affichera. Relancé, ministral présentait pourtant les listes en texte et
+ * demandait « Confirme si c'est bon » (« Tout recommencer », conversation
+ * « Organisation samedi ») — une validation sans rien à valider. Une liste
+ * existante se modifie : la réponse demande quoi y changer.
+ */
+function answerExistingLists(toolCalls: LlmToolCall[], existing: TaskListWithTasks[]): string | null {
+  const proposals = toolCalls.filter((toolCall) => !APPLIED_DIRECTLY.has(toolCall.name));
+  if (proposals.length === 0) return null;
+  if (!proposals.every((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name)) return null;
+
+  const proposed = proposals.flatMap((toolCall) => {
+    const lists: unknown = toolCall.input["lists"];
+    return Array.isArray(lists) ? lists : [];
+  });
+  if (proposed.length === 0 || !proposed.every((entry) => isExistingList(entry, existing))) {
+    return null;
+  }
+
+  return "Ces listes existent déjà. Dis-moi ce que tu veux y changer — une ligne à ajouter, à retirer ou à remplacer — et je te propose la modification.";
+}
+
+/**
+ * Contenu des todolistes proposées par ces appels, tel que la carte le montre.
+ *
+ * Remis à la relance : sans lui, ministral recopiait en texte des listes qui
+ * n'étaient pas celles de la carte — « Légumes » dans la carte, « tomates,
+ * courgettes… » dans la réponse (conversation « Organisation samedi »). La
+ * consigne de ne pas les recopier n'y a rien changé ; s'il le fait encore, au
+ * moins la réponse et la carte disent-elles la même chose.
+ */
+function describeProposedLists(toolCalls: LlmToolCall[]): string[] {
+  return toolCalls
+    .filter((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name)
+    .flatMap((toolCall) => {
+      const lists: unknown = toolCall.input["lists"];
+      return Array.isArray(lists) ? lists : [];
+    })
+    .flatMap((entry: unknown) => {
+      if (typeof entry !== "object" || entry === null) return [];
+      const title = "title" in entry && typeof entry.title === "string" ? entry.title : null;
+      const items: unknown = "items" in entry ? entry.items : null;
+      const lines = Array.isArray(items)
+        ? items.flatMap((item: unknown) =>
+            typeof item === "object" && item !== null && "title" in item && typeof item.title === "string"
+              ? [item.title]
+              : [],
+          )
+        : [];
+      return title === null || lines.length === 0 ? [] : [`- « ${title} » : ${lines.join(", ")}`];
+    });
 }
 
 /**
@@ -2334,7 +2789,39 @@ function buildSystemPrompt(
       "todoliste, ne le décris pas en texte : appelle `suggest_task_list` tout",
       "de suite, comme pour n'importe quelle autre proposition — la demande",
       "explicite ne dispense pas de la faire valider.",
+      "",
+      "Une liste se propose remplie. Tant que l'utilisateur n'a pas dit ce qu'elle",
+      "contient — « les courses samedi » sans rien de listé —, n'appelle pas",
+      "`suggest_task_list` : demande-lui d'abord ce qu'il faut y mettre.",
+      "",
+      "Une ligne par article. « De quoi faire des lasagnes » se décline en ses",
+      "ingrédients, une ligne chacun ; « des légumes » ne se devine pas : demande",
+      "lesquels avant de proposer. Une tâche énoncée (« devoirs de maths ») se",
+      "reprend telle quelle, sans demander de détail que l'utilisateur n'a pas évoqué.",
+      "",
+      "Le jour et le moment dits plus tôt dans l'échange valent pour la liste",
+      "proposée ensuite : « les courses samedi matin », puis le contenu au message",
+      "suivant, donne une liste « Courses » datée samedi (`dueAt`) à 10:00",
+      "(`dueTime`). Matin = 10:00, après-midi = 16:00, soir = 20:00. Jamais de date",
+      "ni de moment dans le titre.",
+      "",
+      "Ne recopie pas le contenu des listes dans ta réponse : la carte le montre, et",
+      "n'y cite jamais un article qui n'y figure pas. N'annonce jamais une liste",
+      "créée, modifiée ou détaillée sans avoir appelé l'outil qui la propose.",
     );
+
+    // Corriger la carte en attente plutôt qu'en empiler une seconde : la
+    // nouvelle proposition remplace l'ancienne (`supersedePendingLists`).
+    if (isPending(todo.decided, "create_task_list")) {
+      lines.push(
+        "",
+        "Une proposition de todolistes attend encore la réponse de l'utilisateur. S'il",
+        "demande de la corriger — détailler une ligne, en retirer, en ajouter —,",
+        "rappelle `suggest_task_list` avec la version corrigée complète, toutes listes",
+        "comprises, même celles qui ne changent pas : elle remplace la carte en attente.",
+        "Sinon, ne la repropose pas.",
+      );
+    }
   }
 
   // Exposer l'outil ne suffit pas : sa description est lue au moment de choisir,
@@ -2376,11 +2863,14 @@ function buildSystemPrompt(
   if (todo.tools.includes(SUGGEST_UPDATE_TASK_ITEMS)) {
     lines.push(
       "",
-      "Pour cocher, décocher ou renommer une ligne d'une liste ci-dessus, appelle",
-      "`suggest_update_task_items` avec l'identifiant de la liste ET celui de la",
-      "ligne, recopiés caractère pour caractère. N'ouvre jamais une seconde liste",
-      "pour marquer une ligne faite, et n'ajoute pas une ligne pour en remplacer",
-      "une qui existe déjà.",
+      "Pour modifier une liste ci-dessus — cocher, décocher, renommer, retirer une",
+      "ligne ou la remplacer par plusieurs —, appelle `suggest_update_task_items`",
+      "avec l'identifiant de la liste ET, pour chaque ligne, son identifiant et son",
+      "titre actuel (`currentTitle`) recopiés de la même ligne ci-dessus, caractère",
+      "pour caractère. « Détaille les courses » retire « Légumes » (`remove`) et",
+      "ajoute les légumes un par un (`added`) dans le même appel ; l'autre liste",
+      "n'est pas touchée. Ne rappelle jamais `suggest_task_list` pour une liste qui",
+      "existe déjà, même si l'utilisateur demande de recommencer.",
     );
   }
 
@@ -2603,7 +3093,8 @@ function describeDecisions(suggestions: Suggestion[]): string[] {
     // L'accepté était absent de cette phrase : le modèle reproposait donc à
     // l'identique ce qui venait d'être créé.
     "Ne repropose ni ce qui a été accepté, ni ce qui a été écarté, ni ce qui attend",
-    "encore une réponse.",
+    "encore une réponse — sauf pour corriger, à la demande de l'utilisateur, des",
+    "todolistes qui attendent encore.",
   ];
 }
 
@@ -2628,7 +3119,8 @@ function describeTaskLists(lists: TaskListWithTasks[]): string[] {
             .map((task) => {
               const state = task.done ? "faite" : "à faire";
               const nested = task.parentId === null ? "" : "> ";
-              return `${nested}identifiant ${task.id} : ${task.title} (${state})`;
+              const dueOn = task.dueOn === null ? "" : `, pour le ${task.dueOn}`;
+              return `${nested}identifiant ${task.id} : ${task.title} (${state}${dueOn})`;
             })
             .join(" ; ");
 
@@ -2645,7 +3137,7 @@ function outcome(status: Suggestion["status"]): string {
     case "dismissed":
       return "écartée par l'utilisateur";
     case "expired":
-      return "expirée";
+      return "remplacée par une version corrigée";
   }
 }
 

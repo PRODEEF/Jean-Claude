@@ -55,7 +55,14 @@ export type ConversationThreadProps = {
    * qu'une conversation n'existe, il ne reste qu'à l'y rattacher.
    */
   initialAttachmentIds?: string[] | undefined;
+  /**
+   * Phrase posée en tête du fil. Le canal permanent y dit à quoi il sert :
+   * sans elle, rien ne le distinguait d'une nouvelle conversation (A.10).
+   */
+  intro?: string;
 };
+
+const DEFAULT_INTRO = "Écrivez ce que vous avez en tête. Le rangement viendra ensuite.";
 
 /**
  * Fil de conversation : historique et saisie.
@@ -72,6 +79,7 @@ export function ConversationThread({
   conversationId,
   initialDraft,
   initialAttachmentIds,
+  intro = DEFAULT_INTRO,
 }: ConversationThreadProps) {
   const { palette } = useTheme();
   const insets = useSafeAreaInsets();
@@ -327,14 +335,15 @@ export function ConversationThread({
           // une fois les premiers messages échangés, au lieu de disparaître dès
           // le premier envoi — elle défile avec le reste, sans être fixée.
           ListHeaderComponent={
-            <Text style={[styles.intro, { color: palette.textMuted }]}>
-              Écrivez ce que vous avez en tête. Le rangement viendra ensuite.
-            </Text>
+            <Text style={[styles.intro, { color: palette.textMuted }]}>{intro}</Text>
           }
           // Rendu `null` quand il n'y a rien à montrer : un pied vide compterait
           // malgré tout dans l'espacement de la liste.
           ListFooterComponent={
-            streamingText === null && pending.length === 0 && pendingUserText === null ? null : (
+            streamingText === null &&
+            pending.length === 0 &&
+            pendingUserText === null &&
+            !send.isPending ? null : (
               <View style={styles.footer} onLayout={scrollToEndSoon}>
                 {/* Le message tel qu'il vient d'être tapé, en attendant que le
                     serveur renvoie sa version enregistrée. Même apparence que
@@ -353,18 +362,11 @@ export function ConversationThread({
                   </View>
                 )}
 
-                {streamingText === null ? null : (
+                {streamingText ? (
                   <View style={[styles.bubble, styles.plain]}>
-                    {/* Tant qu'aucun jeton n'est arrivé, le compteur dit que la
-                        demande est partie et depuis combien de temps ; ensuite
-                        le texte parle de lui-même. */}
-                    {streamingText.length === 0 ? (
-                      <ThinkingIndicator />
-                    ) : (
-                      <Markdown>{streamingText}</Markdown>
-                    )}
+                    <Markdown>{streamingText}</Markdown>
                   </View>
-                )}
+                ) : null}
 
                 {/* L'assistant propose, il n'exécute pas : les dossiers ne sont
                     créés que si l'utilisateur touche « Créer » (§12.1). */}
@@ -372,7 +374,11 @@ export function ConversationThread({
                   <SuggestionCard
                     key={suggestion.id}
                     suggestion={suggestion}
-                    isPending={resolve.isPending && resolve.variables?.id === suggestion.id}
+                    pendingAction={
+                      resolve.isPending && resolve.variables?.id === suggestion.id
+                        ? resolve.variables.action
+                        : null
+                    }
                     onAccept={(input) =>
                       resolve.mutate({
                         id: suggestion.id,
@@ -383,6 +389,22 @@ export function ConversationThread({
                     onDismiss={() => resolve.mutate({ id: suggestion.id, action: "dismiss" })}
                   />
                 ))}
+
+                {/* Tout le tour, et pas seulement jusqu'au premier jeton : après
+                    le texte, le serveur prépare encore la proposition et le fil
+                    la relit — un temps mort signalé par Yann. Sous les cartes,
+                    pour que celle qui arrive en fin de tour se pose au-dessus
+                    de la roue au lieu de la pousser. Même emplacement d'un bout
+                    à l'autre du tour : le compteur n'est jamais remis à zéro.
+                    La marge de bulle n'est pas décorative : sur web,
+                    `scrollToEnd` s'arrête 28 pt avant la fin (il ignore le
+                    `gap` et le `padding` de la liste), et sans elle la ligne
+                    passait à moitié sous la saisie dès que le fil défile. */}
+                {send.isPending ? (
+                  <View style={[styles.bubble, styles.plain]}>
+                    <ThinkingIndicator />
+                  </View>
+                ) : null}
               </View>
             )
           }

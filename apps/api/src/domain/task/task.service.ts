@@ -15,7 +15,12 @@ import type {
 import { slotForList, userPreferencesSchema } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { logger } from "../../core/logger.js";
-import { hasWallTime, isPastCalendarDay, isSameCalendarDay } from "../../core/timezone.js";
+import {
+  calendarDateIn,
+  hasWallTime,
+  isPastCalendarDay,
+  isSameCalendarDay,
+} from "../../core/timezone.js";
 import type { ICalendarRepository } from "../calendar/calendar.repository.interface.js";
 import type { IUserRepository } from "../user/user.repository.interface.js";
 import type {
@@ -194,6 +199,7 @@ export class TaskService {
     accessToken: string,
   ): Promise<Task> {
     const list = await this.requireList(listId, accessToken);
+    await this.assertDayNotPast(userId, input.dueOn, accessToken);
     const last = list.tasks.reduce((max, task) => Math.max(max, task.position), -1);
     return this.lists.createTask(userId, listId, input, last + 1, accessToken);
   }
@@ -206,12 +212,14 @@ export class TaskService {
    * faite une première fois.
    */
   async updateTask(
+    userId: string,
     listId: string,
     taskId: string,
     patch: UpdateTask,
     accessToken: string,
   ): Promise<Task> {
-    await this.requireTask(listId, taskId, accessToken);
+    const existing = await this.requireTask(listId, taskId, accessToken);
+    await this.assertDayNotPast(userId, patch.dueOn, accessToken, existing.dueOn);
 
     const completion: TaskPatch =
       patch.done === undefined
@@ -245,9 +253,10 @@ export class TaskService {
    * Les identifiants des lignes nouvelles sont posés ici et non par Postgres :
    * une sous-tâche doit pouvoir désigner un parent créé dans la même passe.
    *
-   * L'éditeur ne transporte que le texte et l'indentation : la complétion et
-   * les notes sont reprises de la liste déjà chargée ici. Cocher et écrire sont
-   * deux gestes distincts, et taper une ligne ne doit pas décocher la voisine.
+   * L'éditeur ne transporte que le texte et l'indentation : la complétion, les
+   * notes et l'échéance sont reprises de la liste déjà chargée ici. Cocher et
+   * écrire sont deux gestes distincts, et taper une ligne ne doit pas décocher
+   * la voisine.
    */
   async replaceTasks(
     userId: string,
@@ -277,6 +286,7 @@ export class TaskService {
         notes: previous?.notes ?? null,
         done: previous?.done ?? false,
         completedAt: previous?.completedAt ?? null,
+        dueOn: previous?.dueOn ?? null,
       });
       if (!nested) parentId = id;
     });
@@ -324,6 +334,27 @@ export class TaskService {
     const timezone = await this.timezoneOf(userId, accessToken);
     if (!isPastCalendarDay(dueAt, timezone)) return;
     if (currentDueAt && isSameCalendarDay(dueAt, currentDueAt, timezone)) return;
+
+    throw httpError(400, "Une échéance ne peut pas être dans le passé.");
+  }
+
+  /**
+   * Même règle pour le jour d'une tâche : jamais un jour déjà révolu dans le
+   * fuseau du profil, sauf à garder celui qu'elle porte déjà.
+   *
+   * Les jours `AAAA-MM-JJ` se comparent comme des chaînes : l'ordre
+   * lexicographique y est celui du calendrier.
+   */
+  private async assertDayNotPast(
+    userId: string,
+    dueOn: string | null | undefined,
+    accessToken: string,
+    currentDueOn?: string | null,
+  ): Promise<void> {
+    if (dueOn === null || dueOn === undefined || dueOn === currentDueOn) return;
+
+    const timezone = await this.timezoneOf(userId, accessToken);
+    if (dueOn >= calendarDateIn(new Date(), timezone)) return;
 
     throw httpError(400, "Une échéance ne peut pas être dans le passé.");
   }

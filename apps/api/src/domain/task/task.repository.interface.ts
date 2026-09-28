@@ -47,10 +47,11 @@ export type TaskListCreate = Omit<CreateTaskList, "dueAllDay"> &
  * La filiation y est déjà résolue : le service traduit la profondeur envoyée
  * par l'éditeur en `parentId`, le Repository ne fait plus qu'écrire.
  *
- * La complétion et les notes y figurent alors que l'éditeur ne les transporte
- * pas : les conserver est une règle métier — cocher et écrire sont deux gestes
- * distincts, et taper une ligne ne doit pas décocher la voisine — donc elle est
- * tranchée par le service, à partir de la liste qu'il a déjà en main.
+ * La complétion, les notes et l'échéance y figurent alors que l'éditeur ne les
+ * transporte pas : les conserver est une règle métier — cocher et écrire sont
+ * deux gestes distincts, et taper une ligne ne doit pas décocher la voisine —
+ * donc elle est tranchée par le service, à partir de la liste qu'il a déjà en
+ * main.
  */
 export type TaskRowInput = {
   id: string;
@@ -60,6 +61,7 @@ export type TaskRowInput = {
   notes: string | null;
   done: boolean;
   completedAt: string | null;
+  dueOn: string | null;
 };
 
 /**

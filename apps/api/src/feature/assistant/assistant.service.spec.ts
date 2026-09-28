@@ -279,6 +279,7 @@ function makeTaskRepository(): ITaskRepository {
             done: false,
             completedAt: null,
             parentId: input.parentId ?? null,
+            dueOn: input.dueOn ?? null,
             position,
             createdAt: NOW,
             updatedAt: NOW,
@@ -295,7 +296,11 @@ function makeTaskRepository(): ITaskRepository {
       if (patch.completedAt !== undefined) task.completedAt = patch.completedAt;
       return Promise.resolve(task);
     }),
-    deleteTask: jest.fn(),
+    deleteTask: jest.fn().mockImplementation((listId: string, taskId: string) => {
+      const list = lists.get(listId);
+      if (list) list.tasks = list.tasks.filter((task) => task.id !== taskId);
+      return Promise.resolve();
+    }),
     replaceTasks: jest.fn(),
   };
 }
@@ -1034,6 +1039,74 @@ describe("AssistantService", () => {
       expect(createdLists(tasks).map((list) => list.folderId)).toEqual([jardin, jardin]);
     });
 
+    it("range chaque liste dans le dossier de la conversation qui porte son sujet", async () => {
+      const courses = uuid(301);
+      const devoirs = uuid(302);
+      const tasks = makeTaskRepository();
+      const folders = makeFolderRepository([
+        makeFolder({ id: courses, name: "Courses" }),
+        makeFolder({ id: devoirs, name: "Devoirs" }),
+      ]);
+      const conversations = makeConversationRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation([courses, devoirs])),
+      });
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "create_task_list",
+            message: "Je te les organise ?",
+            payload: {
+              lists: [
+                { title: "Devoirs", kind: "todo", items: [{ title: "Maths" }] },
+                { title: "Courses", kind: "shopping", items: [{ title: "Courgettes" }] },
+              ],
+            },
+          }),
+        ),
+        folders,
+        conversations,
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      // Cas relevé en usage réel : les devoirs rejoignaient « Courses », premier
+      // dossier de la conversation.
+      expect(createdLists(tasks).map((list) => [list.title, list.folderId])).toEqual([
+        ["Devoirs", devoirs],
+        ["Courses", courses],
+      ]);
+    });
+
+    it("ne prend pas un morceau de mot du titre pour le nom d'un dossier", async () => {
+      const voyage = uuid(303);
+      const art = uuid(304);
+      const tasks = makeTaskRepository();
+      const folders = makeFolderRepository([
+        makeFolder({ id: voyage, name: "Voyage" }),
+        makeFolder({ id: art, name: "Art" }),
+      ]);
+      const conversations = makeConversationRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation([voyage, art])),
+      });
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "create_task_list",
+            message: "Je te l'organise ?",
+            payload: {
+              lists: [{ title: "Départ en vacances", kind: "todo", items: [{ title: "Valise" }] }],
+            },
+          }),
+        ),
+        folders,
+        conversations,
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(createdLists(tasks).map((list) => list.folderId)).toEqual([voyage]);
+    });
+
     it("laisse les listes hors dossier quand la conversation n'est pas rangée", async () => {
       const tasks = makeTaskRepository();
 
@@ -1097,6 +1170,44 @@ describe("AssistantService", () => {
       expect(tasks.createList).not.toHaveBeenCalled();
     });
 
+    it("date chaque tâche du jour que lui donnait la proposition", async () => {
+      const tasks = makeTaskRepository();
+      const suggestion = makeSuggestion({
+        kind: "create_task_list",
+        message: "Je te les organise ?",
+        payload: {
+          lists: [
+            {
+              title: "Tâches Okiosk",
+              kind: "todo",
+              items: [
+                { title: "Refaire le site internet", dueOn: "2026-09-12" },
+                { title: "Améliorer les groupes", dueOn: "2026-09-14" },
+                { title: "Relire la charte" },
+              ],
+            },
+          ],
+        },
+      });
+
+      await makeService(
+        makeSuggestionStore(suggestion),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      // Une seule liste : c'est ce qui évitait la liste recopiée avec ses dates
+      // dans les titres.
+      const lists = (await tasks.findAll(TOKEN, { limit: 100 })).items;
+      expect(lists).toHaveLength(1);
+      expect(lists[0]?.tasks.map((task) => [task.title, task.dueOn])).toEqual([
+        ["Refaire le site internet", "2026-09-12"],
+        ["Améliorer les groupes", "2026-09-14"],
+        ["Relire la charte", null],
+      ]);
+    });
+
     it("crée les listes telles que corrigées avant validation, plutôt que la proposition d'origine (#17)", async () => {
       const tasks = makeTaskRepository();
 
@@ -1116,7 +1227,10 @@ describe("AssistantService", () => {
                 title: "Achats jardin",
                 kind: "shopping",
                 dueAt: null,
-                items: [{ title: "Terreau" }, { title: "Gants" }],
+                items: [
+                  { title: "Terreau", dueOn: null },
+                  { title: "Gants", dueOn: null },
+                ],
               },
             ],
           },
@@ -1146,7 +1260,7 @@ describe("AssistantService", () => {
                 title: "Courses de printemps",
                 kind: "shopping",
                 dueAt: null,
-                items: [{ title: "Terreau" }],
+                items: [{ title: "Terreau", dueOn: null }],
               },
             ],
           },
@@ -1164,7 +1278,7 @@ describe("AssistantService", () => {
               title: "Courses de printemps",
               kind: "shopping",
               dueAt: null,
-              items: [{ title: "Terreau" }],
+              items: [{ title: "Terreau", dueOn: null }],
             },
           ],
         }),
@@ -1282,6 +1396,64 @@ describe("AssistantService", () => {
       expect(updated?.tasks.find((task) => task.id === desherber.id)?.done).toBe(true);
       expect(updated?.tasks.find((task) => task.id === tondre.id)?.title).toBe("Tondre la pelouse");
       expect((tasks.createList as jest.Mock).mock.calls.length).toBe(before);
+    });
+
+    it("remplace une ligne par ses lignes détaillées, sans toucher à l'autre liste", async () => {
+      const { tasks, listId } = await withTravauxList();
+      const before = (tasks.createList as jest.Mock).mock.calls.length;
+      const listed = async () => (await tasks.findAll(TOKEN, { limit: 100 })).items;
+      const tondre = (await listed())
+        .find((list) => list.id === listId)
+        ?.tasks.find((task) => task.title === "Tondre");
+      if (!tondre) throw new Error("La ligne Tondre devrait exister");
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "update_task_list_items",
+            message: "Je remplace Tondre par la tonte et le ramassage ?",
+            payload: {
+              listId,
+              items: [{ taskId: tondre.id, remove: true }],
+              added: [{ title: "Tondre la pelouse" }, { title: "Ramasser l'herbe" }],
+            },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      const titles = (title: string) =>
+        listed().then((lists) =>
+          lists.find((list) => list.title === title)?.tasks.map((task) => task.title),
+        );
+      expect(await titles("Travaux jardin")).toEqual([
+        "Désherber",
+        "Tondre la pelouse",
+        "Ramasser l'herbe",
+      ]);
+      expect(await titles("Achats jardin")).toEqual(["Terreau"]);
+      expect((tasks.createList as jest.Mock).mock.calls.length).toBe(before);
+    });
+
+    it("refuse de retirer une ligne qui n'existe plus", async () => {
+      const { tasks, listId } = await withTravauxList();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_task_list_items",
+              message: "Je retire Désherber ?",
+              payload: { listId, items: [{ taskId: uuid(99), remove: true }] },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          tasks,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 404 });
     });
 
     it("refuse une modification dont la charge utile est illisible", async () => {

@@ -32,6 +32,7 @@ type TaskRow = {
   done: boolean;
   completed_at: string | null;
   parent_id: string | null;
+  due_on: string | null;
   position: number;
   created_at: string;
   updated_at: string;
@@ -62,6 +63,7 @@ function toTask(row: TaskRow): Task {
     done: row.done,
     completedAt: row.completed_at,
     parentId: row.parent_id,
+    dueOn: row.due_on,
     position: row.position,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -83,7 +85,7 @@ function toListWithTasks(row: TaskListRow & { tasks: TaskRow[] }): TaskListWithT
 const LIST_COLUMNS =
   "id, title, kind, due_at, due_all_day, event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
 const TASK_COLUMNS =
-  "id, list_id, title, notes, done, completed_at, parent_id, position, created_at, updated_at";
+  "id, list_id, title, notes, done, completed_at, parent_id, due_on, position, created_at, updated_at";
 const LIST_WITH_TASKS_COLUMNS = `${LIST_COLUMNS}, tasks(${TASK_COLUMNS})`;
 
 export const taskRepository: ITaskRepository = {
@@ -201,6 +203,7 @@ export const taskRepository: ITaskRepository = {
         title: input.title,
         notes: input.notes ?? null,
         parent_id: input.parentId ?? null,
+        due_on: input.dueOn ?? null,
         position,
       })
       .select(TASK_COLUMNS)
@@ -218,6 +221,7 @@ export const taskRepository: ITaskRepository = {
     if (patch.completedAt !== undefined) payload["completed_at"] = patch.completedAt;
     if (patch.position !== undefined) payload["position"] = patch.position;
     if (patch.parentId !== undefined) payload["parent_id"] = patch.parentId;
+    if (patch.dueOn !== undefined) payload["due_on"] = patch.dueOn;
 
     const { data, error } = await forUser(accessToken)
       .from("tasks")
@@ -270,6 +274,7 @@ export const taskRepository: ITaskRepository = {
         notes: row.notes,
         done: row.done,
         completed_at: row.completedAt,
+        due_on: row.dueOn,
       }));
 
       const { data, error } = await client.from("tasks").upsert(payload).select(TASK_COLUMNS);

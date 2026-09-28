@@ -15,7 +15,15 @@ export const SUGGEST_TASK_LIST: LlmTool = {
     "À appeler quand la conversation fait émerger une ou plusieurs listes actionnables. " +
     "Créer une entrée par liste distincte : une conversation sur des travaux de jardin " +
     "produit typiquement une liste d'achats ET une liste de tâches, qui ne doivent pas " +
-    "être fusionnées.",
+    "être fusionnées. Une même ligne ne figure jamais dans deux listes : des dates " +
+    "différentes selon les lignes se portent sur chaque ligne avec `dueOn`, dans une " +
+    "seule liste — jamais dans une seconde liste qui répéterait les lignes avec leur " +
+    "date dans le titre. " +
+    "Jamais pour une liste déjà créée : la modifier avec `suggest_update_task_items`, " +
+    "même quand l'utilisateur demande de recommencer. Seule exception : tant que la " +
+    "proposition de listes attend sa réponse, une correction demandée par l'utilisateur " +
+    "se fait en rappelant cet outil avec la version corrigée complète — elle remplace " +
+    "la carte en attente.",
   inputSchema: {
     type: "object",
     properties: {
@@ -32,7 +40,13 @@ export const SUGGEST_TASK_LIST: LlmTool = {
         items: {
           type: "object",
           properties: {
-            title: { type: "string", description: "Titre court de la liste" },
+            title: {
+              type: "string",
+              description:
+                "Titre court du sujet de la liste, sans date ni moment de la journée — " +
+                "« Courses », pas « Courses samedi matin » : le jour va dans `dueAt`, le " +
+                "moment dans `dueTime`.",
+            },
             kind: {
               type: "string",
               enum: ["todo", "shopping"],
@@ -43,8 +57,11 @@ export const SUGGEST_TASK_LIST: LlmTool = {
               description:
                 "Échéance ISO 8601 de la liste entière si la conversation en mentionne " +
                 "une ou la rend déductible (« lundi prochain », « avant le week-end »), " +
-                "sinon omettre. La date vaut pour toute la liste, pas pour une de ses " +
-                "lignes : « les courses avant samedi » date la liste, pas la farine. " +
+                "y compris quand elle a été dite plus tôt dans l'échange, avant le contenu " +
+                "de la liste — sinon omettre. La date vaut pour toute la liste : « les courses avant " +
+                "samedi » date la liste, pas la farine. Quand chaque ligne a sa propre " +
+                "date (« le site pour le 12, les groupes pour le 14 »), omettre `dueAt` " +
+                "et dater les lignes avec `dueOn`. " +
                 "Viser minuit pour l'heure, qu'une heure précise ait été donnée ou non — " +
                 "elle se règle séparément avec `dueTime`, jamais ici.",
             },
@@ -54,8 +71,8 @@ export const SUGGEST_TASK_LIST: LlmTool = {
                 "Si `dueAt` est renseigné à partir d'une expression relative (« lundi » " +
                 "« vendredi prochain », « dans deux semaines », « demain », « ce week-end », " +
                 "« avant le week-end »), recopier cette expression telle quelle — quelques " +
-                "mots, pas la phrase entière, et sans l'heure qui peut l'accompagner " +
-                "(« samedi à 10h » → « samedi »). Le serveur la relit pour fiabiliser le " +
+                "mots, pas la phrase entière, et sans l'heure ni le moment qui peuvent " +
+                "l'accompagner (« samedi à 10h », « samedi matin » → « samedi »). Le serveur la relit pour fiabiliser le " +
                 "calcul de date, qu'un modèle de langage fait parfois mal (confondre le " +
                 "jour de cette semaine avec celui de la prochaine). Omettre si l'échéance " +
                 "vient d'une date absolue (« le 15 septembre »).",
@@ -63,19 +80,54 @@ export const SUGGEST_TASK_LIST: LlmTool = {
             dueTime: {
               type: "string",
               description:
-                "Heure précise de l'échéance, au format HH:mm (24 h) — « 10:00 » pour " +
-                "« à 10h », « 14:30 » pour « à 14h30 ». Uniquement si l'utilisateur en a " +
-                "donné une explicitement ; omettre dans tous les autres cas, y compris " +
-                "quand `dueAt` en calcule une par convention. Sans elle, la liste reste " +
-                "« dans la journée », sans créneau réservé.",
+                "Heure de l'échéance, au format HH:mm (24 h). Une heure donnée par " +
+                "l'utilisateur — « 10:00 » pour « à 10h », « 14:30 » pour « à 14h30 » — ou " +
+                "un moment de la journée : « 10:00 » pour le matin, « 16:00 » pour " +
+                "l'après-midi, « 20:00 » pour le soir. Omettre quand la conversation ne " +
+                "dit ni l'un ni l'autre, y compris quand `dueAt` en calcule une par " +
+                "convention. Sans elle, la liste reste « dans la journée », sans créneau " +
+                "réservé.",
             },
             items: {
               type: "array",
               items: {
                 type: "object",
-                properties: { title: { type: "string" } },
+                properties: {
+                  title: {
+                    type: "string",
+                    description:
+                      "Un article à acheter ou une tâche, sans sa date — elle va dans `dueOn`.",
+                  },
+                  dueOn: {
+                    type: "string",
+                    description:
+                      "Jour où cette ligne est due, au format AAAA-MM-JJ, quand la " +
+                      "conversation lui en donne un qui lui est propre. Omettre sinon, et " +
+                      "omettre aussi quand la date vaut pour toute la liste (`dueAt`).",
+                  },
+                  dueOnText: {
+                    type: "string",
+                    description:
+                      "Si `dueOn` vient d'une expression relative (« vendredi », " +
+                      "« demain », « dans deux semaines »), la recopier telle quelle, en " +
+                      "quelques mots : le serveur la relit pour fiabiliser le calcul, comme " +
+                      "`dueAtText`. Omettre pour une date absolue (« le 12 septembre »).",
+                  },
+                },
                 required: ["title"],
               },
+              // Même borne que `createTaskListsPayloadSchema` : une liste sans
+              // ligne y est refusée, et la proposition entière avec elle.
+              minItems: 1,
+              description:
+                "Lignes de la liste, au moins une, une par article. Un plat ou une recette " +
+                "(« de quoi faire des lasagnes ») se décline en ses ingrédients, une ligne " +
+                "chacun. Une catégorie vague (« des légumes », « des fruits ») ne se devine " +
+                "pas : tant qu'elle n'est pas précisée, n'appelle pas l'outil et demande " +
+                "d'abord lesquels. Une tâche énoncée (« devoirs de maths ») se reprend " +
+                "telle quelle. Une liste se propose remplie : tant que la conversation ne " +
+                "dit pas ce qu'elle contient, ne l'appelle pas et demande d'abord à " +
+                "l'utilisateur ce qu'il faut y mettre.",
             },
           },
           required: ["title", "kind", "items"],
@@ -207,20 +259,25 @@ export const SUGGEST_TASK_LIST_DUE_DATE: LlmTool = {
 };
 
 /**
- * Cocher, décocher ou renommer des lignes d'une liste qui existe déjà (§12.1, A.2).
+ * Modifier les lignes d'une liste qui existe déjà (§12.1, A.2) : cocher,
+ * décocher, renommer, retirer, remplacer une ligne par plusieurs.
  *
- * Distinct de `suggest_task_list_items` (qui ajoute) et de `suggest_task_list`
- * (qui ouvre une liste). Sans lui, « coche le pain » n'avait qu'un outil à
- * sa portée — celui qui crée — et le modèle reproduisait la liste.
+ * Distinct de `suggest_task_list_items` (qui ne fait qu'ajouter) et de
+ * `suggest_task_list` (qui ouvre une liste). Sans lui, « coche le pain » ou
+ * « détaille les courses » n'avaient qu'un outil à leur portée — celui qui
+ * crée — et le modèle reproduisait la liste en double.
  */
 export const SUGGEST_UPDATE_TASK_ITEMS: LlmTool = {
   name: "suggest_update_task_items",
   description:
-    "À appeler pour modifier des lignes d'une todoliste qui existe déjà : cocher " +
-    "ou décocher une tâche, en changer le titre. Les listes et leurs lignes sont " +
-    "données dans la consigne avec leurs identifiants : recopie-les caractère pour " +
-    "caractère. N'ouvre jamais une seconde liste pour marquer une ligne faite, et " +
-    "n'appelle pas `suggest_task_list_items` pour renommer.",
+    "À appeler pour modifier une todoliste qui existe déjà : cocher ou décocher une " +
+    "tâche, en changer le titre, retirer une ligne, ou la remplacer par plusieurs. " +
+    "« Détaille les courses » retire « Légumes » (`remove`) et ajoute « Tomates », " +
+    "« Courgettes »… (`added`) dans le même appel — l'autre liste n'est pas touchée. " +
+    "Les listes et leurs lignes sont données dans la consigne avec leurs identifiants : " +
+    "recopie-les caractère pour caractère. N'ouvre jamais une seconde liste pour " +
+    "modifier celle-ci, même si l'utilisateur demande de recommencer, et n'appelle pas " +
+    "`suggest_task_list_items` pour renommer ou remplacer.",
   inputSchema: {
     type: "object",
     properties: {
@@ -228,19 +285,31 @@ export const SUGGEST_UPDATE_TASK_ITEMS: LlmTool = {
         type: "string",
         description:
           "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
-          "de question, nommant ce qui change — ex. « Je coche le pain et je renomme " +
-          "les œufs en œufs bio ? ». Ne jamais présenter le changement comme déjà " +
-          "fait. 500 caractères maximum.",
+          "de question, nommant ce qui change — ex. « Je coche le pain et je remplace " +
+          "Légumes par tomates et courgettes ? ». Ne jamais présenter le changement " +
+          "comme déjà fait. 500 caractères maximum.",
       },
       listId: {
         type: "string",
         description:
           "Identifiant de la liste, recopié caractère pour caractère depuis la consigne.",
       },
+      added: {
+        type: "array",
+        maxItems: 30,
+        description:
+          "Lignes nouvelles à ajouter à la liste, une par article ou par tâche — " +
+          "notamment celles qui remplacent une ligne retirée.",
+        items: {
+          type: "object",
+          properties: { title: { type: "string" } },
+          required: ["title"],
+        },
+      },
       items: {
         type: "array",
-        minItems: 1,
         maxItems: 30,
+        description: "Lignes existantes à modifier ou à retirer.",
         items: {
           type: "object",
           properties: {
@@ -248,6 +317,13 @@ export const SUGGEST_UPDATE_TASK_ITEMS: LlmTool = {
               type: "string",
               description:
                 "Identifiant de la ligne, recopié caractère pour caractère depuis la consigne.",
+            },
+            currentTitle: {
+              type: "string",
+              description:
+                "Titre actuel de la ligne, recopié de la même ligne de la consigne que son " +
+                "identifiant — le serveur écarte ou corrige la ligne si les deux ne se " +
+                "correspondent pas.",
             },
             title: {
               type: "string",
@@ -257,12 +333,18 @@ export const SUGGEST_UPDATE_TASK_ITEMS: LlmTool = {
               type: "boolean",
               description: "true pour cocher, false pour décocher. Omettre si l'état ne change pas.",
             },
+            remove: {
+              type: "boolean",
+              description:
+                "true pour retirer la ligne de la liste — notamment quand elle est " +
+                "remplacée par des lignes plus détaillées dans `added`.",
+            },
           },
-          required: ["taskId"],
+          required: ["taskId", "currentTitle"],
         },
       },
     },
-    required: ["message", "listId", "items"],
+    required: ["message", "listId"],
   },
 };
 
@@ -420,8 +502,9 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
       startsAt: {
         type: "string",
         description:
-          "Première occurrence, ISO 8601 — la prochaine date qui correspond à la " +
-          "récurrence, pas une date passée.",
+          "Première occurrence, en heure locale de l'utilisateur, ISO 8601 sans " +
+          "fuseau ni « Z » — ex. 2026-09-15T18:00 pour « à 18h ». La prochaine date " +
+          "qui correspond à la récurrence, pas une date passée.",
       },
       rrule: {
         type: "string",
@@ -481,7 +564,9 @@ export const SUGGEST_EVENTS: LlmTool = {
             title: { type: "string", description: "Titre court du rendez-vous" },
             startsAt: {
               type: "string",
-              description: "Date et heure ISO 8601 du rendez-vous.",
+              description:
+                "Date et heure du rendez-vous en heure locale de l'utilisateur, ISO 8601 " +
+                "sans fuseau ni « Z » — ex. 2026-09-30T14:00 pour « à 14h ».",
             },
           },
           required: ["title", "startsAt"],

@@ -7,7 +7,216 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **28 septembre 2026** — traitement des retours remontés
+Dernière mise à jour : **28 septembre 2026 (soir)** — todolistes de la conversation « Organisation samedi » (voir plus bas), et refonte de la page
+Réglages, sur la branche `refonte/ui`. Vérifiée dans Chromium sur le serveur de
+développement web branché sur une fausse API, en thème clair et en thème
+sombre, sur grand écran et à 390 pt de large, puis validée sur captures par
+Clarisse.
+
+**La page Réglages se lit par groupes.** Chaque section porte un vrai titre, et
+ses réglages sont rangés dans une carte, une ligne par réglage : libellé et
+phrase d'aide à gauche, contrôle à droite — sous le libellé sur téléphone pour
+un champ ou un menu. C'est la présentation d'iOS, de ChatGPT et de Claude
+(§4.2). Trois cartes : Compte (avatar, adresse, pseudo, déconnexion),
+Assistant (nom, couleur, bandeau uni, thème, modèle) et « Ce qu'il peut vous
+proposer ». Viennent ensuite l'avis et, isolée en fin de page, la suppression du
+compte. La déconnexion quitte le bandeau pour la carte Compte, en neutre : elle
+n'a rien de destructeur. « Enregistrer » n'apparaît qu'une fois un champ
+modifié, et disparaît à l'enregistrement. Le thème reprend le sélecteur
+segmenté du calendrier. Sous « Modèle », une phrase dit ce que fait le modèle
+actif et s'il est hébergé en Europe.
+
+**Le sélecteur de modèle coche « Mistral » par défaut.** `LLM_MODEL` vaut
+`mistral/ministral-14b` en production, absent du catalogue : tant que
+l'utilisateur n'avait rien choisi, les réglages n'affichaient que « Choisir un
+modèle ». `toCatalogueModel` (`@jc/domain`, testée) rattache le modèle servi à
+l'entrée de son éditeur.
+
+**« Mistral » désigne désormais `mistral/ministral-14b`** (demande de Clarisse),
+à la place de `mistral-medium-3.5` : choisir « Mistral » dans le menu donne bien
+le modèle servi en production. Le défaut du code (`LLM_MODEL`, `.env.example`)
+le suit, puisqu'il doit rester dans le catalogue. Ministral 14B lit les images
+(fiche du Gateway Vercel et documentation Mistral) : il devient aussi le modèle
+de secours des tours avec image. Un profil qui avait retenu
+`mistral-medium-3.5` retombe sur le modèle du serveur, sans migration. **Non
+revu :** la phrase d'aide « Bon équilibre entre vitesse et finesse, au
+quotidien » a été écrite pour Medium 3.5.
+
+Plus tôt le même jour : les points de priorité 4 de la todo de Yann, sur la
+branche `feat/inspiring-newton-ht83qq` (#135, puis un correctif). Vérifiés dans
+Chromium sur un build web branché sur une fausse API qui simule les délais du
+modèle et du serveur, en thème clair et en thème sombre.
+
+**L'attente tourne, et dure jusqu'à la fin du tour.** Le compteur
+« <assistant> réfléchit… N s » existait depuis le 3 septembre, en texte
+immobile : une roue dentée tourne désormais devant lui (immobile si l'appareil
+demande de réduire les animations). L'indicateur ne s'efface plus au premier
+jeton : il reste sous le texte, puis sous la carte, jusqu'à la fin du tour. Il
+couvre ainsi le temps mort où le modèle prépare une proposition (création de
+dossiers, liste…) après avoir fini d'écrire, et où rien ne bougeait avant
+l'arrivée de la carte. Relevé toutes les 100 ms, le compteur monte sans
+interruption à travers le premier jeton, la fin du texte et l'arrivée de la
+carte.
+
+**Accepter une proposition ne fait plus seulement griser la carte.** Le bouton
+d'acceptation affiche la même roue et « En cours… N s » jusqu'à ce que le fil
+ait relu la proposition tranchée ; « Ignorer » reste grisé. C'est le même
+bouton pour toutes les propositions : listes, rangement et rendez-vous en
+profitent aussi.
+
+**Corrigé dans la foulée :** sur un fil qui défile, la ligne de l'indicateur
+passait à moitié sous la zone de saisie. Sur web, `scrollToEnd` de
+react-native-web s'arrête 28 pt avant la fin (il ignore le `gap` et le
+`padding` de la liste) ; la bulle qui entourait l'ancien indicateur absorbait
+cet écart, sa marge lui est rendue.
+
+**Relevés, non traités :** le même défilement trop court laisse le bas de la
+carte de proposition sous la saisie en fin de tour — antérieur à ce
+changement. La roue tourne encore un aller-retour après l'arrivée de la carte :
+en fin de tour, `invalidateQueries(["conversation", id])` relit une seconde
+fois messages et propositions. Le libellé blanc des boutons d'accent est à
+4,0:1 de contraste sur le bleu de la vérification (`#107FEA`), sous le seuil AA
+de 4,5:1 — couleurs inchangées ici.
+
+**Mis en attente :** le sort du bouton « Signaler un problème » (décision de
+Clarisse). Le canal permanent, lui, est remonté en haut de la barre, juste
+au-dessus de « Nouvelle conversation » et hors de la liste qui défile ; il
+n'apparaît plus sous « Discussions et tâches ». **Hors code :** le test
+d'import des TODO Notion de Clarisse, à mener avec elle.
+
+Plus tôt le même jour : les points de priorité 5 de la todo de Yann, sur la
+branche `feat/amazing-maxwell-embsbu`. Chaque point a été vérifié dans Chromium
+sur un build web branché sur une fausse API, et comparé au même scénario joué
+sur `dev`.
+
+**La vue Todo du calendrier suit le découpage demandé.** Chaque jour se lit en
+MATIN / APRÈS-MIDI / SOIR (avant 12h, 12h–18h, après 18h), bandeaux gris sur
+toute la largeur, en corps plus grand que les tâches, et affichés même vides :
+c'est la trame d'un agenda papier. Les anciens moments « Soirée » et « Soir »
+sont fondus dans « Soir ». « Dans la journée » ne subsiste que pour les listes
+datées sans heure, et seulement s'il en porte. Le mois en cours s'ouvre sur
+aujourd'hui (`todoDays`, `@jc/domain`, testée) ; un autre mois se déroule en
+entier. Les jours sans liste sont affichés par défaut. L'heure d'une liste
+passe avant son titre, en gras. Un « + » par liste ajoute une tâche à cocher
+sans quitter le calendrier — Entrée enregistre et rouvre une ligne. Sur une
+liste qui n'apparaît ce jour-là que par certaines de ses tâches (jour propre
+d'une tâche, arrivé le même jour sur `dev`), la tâche ajoutée prend ce jour au
+lieu de repartir sur l'échéance de la liste (`dueOnForDay`, testée). Arbitrage
+du jour : **pas de puce non cochable**, une ligne ajoutée est toujours une
+tâche (aucune migration). En bas de la vue, deux boutons changent de mois et
+ramènent en haut de page.
+
+**Heures et positionnement dans le calendrier : trois défauts corrigés.**
+Un rendez-vous proposé par l'assistant à « 14h » s'affichait à 16h : le modèle
+écrit une heure sans fuseau, que le serveur lisait en UTC. Elle est désormais
+posée dans le fuseau du profil (heure d'hiver comprise), une valeur portant son
+décalage restant prise telle quelle ; la consigne des outils `suggest_events`
+et `suggest_recurring_event` demande l'heure locale sans fuseau. Deux tests qui
+figeaient l'ancienne lecture sont corrigés, quatre ajoutés. Sur le web, cliquer
+un créneau libre en vue Jour ou Semaine préremplissait « NaN:00 » (reproduit
+sur `dev`) : react-native-web ne transmet pas `locationY` au clic. Le créneau
+de 23h préremplissait 23:00–23:00, refusé à l'enregistrement ; il finit
+désormais à 23h59. Enfin, le jour d'un changement d'heure, la grille plaçait
+tout une heure trop bas (10h sur la ligne de 11h le 25 octobre) et faisait
+disparaître ce qui suivait 23h : les minutes se lisent maintenant sur
+l'horloge murale. Les tests du paquet `domain` tournent en Europe/Paris
+(`jest.global-setup.js`) — en UTC, ceux du changement d'heure ne vérifiaient
+rien.
+
+**Relevés et non traités :** modifier un rendez-vous à cheval sur minuit ou sur
+plusieurs jours échoue ou le raccourcit en silence (le formulaire n'a qu'une
+date), et changer l'heure de début ne déplace pas la fin. Un rendez-vous et une
+todoliste à la même heure se superposent dans la grille au lieu de se partager
+la colonne.
+
+**Barre latérale.** La conversation ouverte est surlignée de la teinte
+atténuée de l'assistant. La correction du même jour (remarque 12 de Nicolas,
+ci-dessous) rendait déjà la rangée active visible, mais dans le gris du
+survol : la conversation ouverte s'en distingue désormais. Même traitement
+pour le canal permanent, Mes listes et Calendrier quand ils sont ouverts.
+
+**« Dossiers créés » se lit comme une réponse.** La trace d'une proposition
+acceptée n'est plus une pastille encadrée en petit corps, mais une ligne dans
+la typographie des réponses de l'assistant, précédée de la coche.
+
+**Non reproduits :** le bouton « + Nouvelle conversation » reste en place après
+défilement de 60 conversations (il est hors de la zone défilante), et le bouton
+de la barre latérale ouvre et referme le tiroir en largeur téléphone, au doigt
+comme au voile, en thème clair et sombre — sur `dev` comme sur cette branche.
+Reste à essayer sur l'application native et sur un vrai téléphone : aucune
+cause n'a été trouvée dans le code.
+
+Plus tôt le même jour : traitement des retours de
+Nicolas (prise en main de la bêta web, 11 septembre : 6 écrans, 13 remarques),
+sur la branche `feat/serene-tesla-8l1m5z`. Les corrections d'affichage ont été
+vérifiées dans Chromium sur un build web branché sur une fausse API, en thème
+clair et en thème sombre.
+
+**Le contraste jugé trop fort était un bug de thème, pas un choix (02, 04,
+11).** Nicolas était en thème sombre. Le web est pré-rendu en clair à la
+construction (`web.output: "static"`) ; à l'hydratation, React adoptait les
+variables CSS claires posées sur la racine du thème sans les corriger, alors
+que la palette JS passait en sombre. Résultat : barre latérale et accueil
+(classes NativeWind) clairs, fil, composer et calendrier (palette JS) noirs —
+ses captures reproduites à l'identique. `ThemeProvider` rejoue désormais le
+rendu du serveur avant de suivre le réglage de l'appareil. Le thème sombre est
+cohérent, et le clair donne le fond blanc et la barre gris léger qu'il
+suggérait.
+
+**La rangée active de la barre latérale se voit (12).** Elle prenait le fond de
+survol de shadcn (`accent`), qui valait le gris de la barre elle-même. Le jeton
+est foncé pour la barre seulement, ce qui rend aussi le survol visible.
+
+**Une tâche porte sa propre échéance (06, 10, 13).** Une seule cause pour trois
+remarques : l'échéance n'existait que sur la liste depuis le 3 septembre. Pour
+« le site pour le 12, les groupes pour le 14, l'onboarding pour le 20 », le
+modèle a proposé la même liste deux fois — une sans dates, une avec la date
+dans le titre de chaque ligne —, l'acceptation a créé les tâches en double, et
+le calendrier a tout posé sur le 12. `tasks.due_on` (un jour civil, facultatif)
+s'ajoute à l'échéance de la liste, comme dans Things 3, Todoist et TickTick
+(§4.2). `suggest_task_list` date chaque ligne et interdit de répéter une ligne
+dans une seconde liste ; le filet de dates relatives s'applique aux lignes
+(`dueOnText`). Le calendrier montre une liste à chaque jour où tombent
+certaines de ses tâches (`datedLists`, `@jc/domain`, testée) ; le jour se
+règle dans le détail de la tâche et s'affiche sur sa ligne comme sur la carte
+de proposition. Migration `20260928120000_task_due_on.sql`, rejouée avec les 28
+autres sur un Postgres 16 vierge, **à appliquer en production avant le
+déploiement** : le code lit la colonne à chaque chargement de liste. Au passage,
+`calendarDateSchema` refuse un jour qui n'existe pas (31 février) — la
+recherche par période en bénéficie aussi. Hors périmètre, à faire ensuite :
+`suggest_task_list_items` et `suggest_update_task_items` ne savent pas encore
+dater une ligne.
+
+**Le canal permanent dit à quoi il sert (03).** Sa phrase d'en-tête était celle
+d'une conversation classique. Elle annonce désormais ses quatre sujets (A.10)
+et renvoie le reste vers une nouvelle conversation.
+
+**Erreur après l'envoi d'une photo (05) — non résolu.** Le message « Trop de
+requêtes d'affilée » traduisait un 429 renvoyé par le fournisseur via le
+Gateway, sur le tour texte : la photo était encore dans le composer. Il laissait
+croire à l'utilisateur qu'il avait envoyé trop de messages ; il désigne
+désormais le moteur saturé. La cause du 429 n'est pas établie : la base n'en
+garde pas trace, et les journaux Vercel du 11 septembre seraient nécessaires. Même situation que les deux messages sans réponse du 19
+septembre, plus bas.
+
+**Remarque positive (08) :** la création de listes groupées depuis la
+conversation.
+
+**Pistes consignées, non implémentées :**
+
+- **Instructions par dossier (01)**, comme les projets de Claude : un contexte
+  saisi sur un dossier et remis au modèle pour ses conversations. Une
+  conversation appartenant à plusieurs dossiers (§5.2), les instructions de
+  chacun devraient s'additionner — à borner en longueur. Migration, API et
+  écran d'édition. Recoupe la piste « Distinguer dossier et projet » (A.4/A.5).
+- **Aperçu du calendrier ou des listes à côté de la conversation (07)**, pendant
+  une proposition. Mise en page en trois colonnes, écran large seulement ; le
+  plus lourd des trois.
+- **Glisser-déposer des tâches dans le calendrier (09)** pour en changer le
+  jour. Web d'abord, comme le glisser-déposer des dossiers ; porte désormais
+  aussi sur le jour propre d'une tâche.
+
+Plus tôt le même jour : traitement des retours remontés
 par le formulaire de signalement (table `feedback`, 14 et 19 septembre), sur la
 branche `fix/bugs`. Chaque cause a été établie sur les données réelles avant
 d'être corrigée, puis vérifiée dans Chromium sur un build web branché sur une
@@ -21,7 +230,71 @@ les réponses en liste, ou une section « Outils appelés » décrivant
 « Recherche remorque all road »). Le filtre existant ne regardait que le début
 du flux. La réponse est désormais coupée à la première ligne qui s'ouvre sur le
 nom d'un outil, en flux comme à l'enregistrement, et un bloc `<ask_question>`
-redevient une question à réponses proposées.
+redevient une question à réponses proposées. Complété le même jour : ministral
+écrivait `*ask_question*` en italique, suivi de la question et d'une liste
+numérotée (la réponse sur les impôts), forme que le filtre ne reconnaissait
+pas. Il reconnaît désormais le nom nu, en italique ou en gras, et la liste
+numérotée redevient elle aussi une question à réponses proposées.
+
+Toujours le 28 septembre, sur la conversation « courses samedi matin, devoirs
+l'après-midi » rejouée contre ministral-14b avec la vraie consigne : le modèle
+appelle bien `suggest_task_list`, mais avec des listes sans lignes (rien n'a
+encore été listé), que le serveur écarte. Le service relance alors le modèle
+sans outils, et c'est cette relance qui recopiait `ask_question` : son texte ne
+passait par aucun filtre. Il passe désormais par le même filtre ; une question
+recopiée qui ne tient pas en boutons (réponse de plus de 80 caractères) reste
+affichée en texte, sans le nom de l'outil. Une ligne entière en italique qui
+annonce ce que le modèle va faire (« *Je vais proposer la création de ces
+listes…* ») est retirée : dix relances sur dix l'écrivaient, avec ou sans
+consigne contraire. Enfin, un tour dont la seule proposition est écartée
+signale l'échec au lieu de se clore sans rien afficher.
+
+**Une todoliste se propose remplie** (décision de Clarisse, même jour) : pas
+de liste sans ligne, le contenu se demande avant la proposition. La définition
+de l'outil et la consigne le disent au modèle ; au premier message, ministral
+n'a plus proposé de liste vide (0 sur 3, contre 4 sur 4 avant). Quand il le
+fait malgré tout sans écrire un mot, le serveur rédige lui-même la question —
+« Qu'est-ce qu'on met dans « Courses samedi matin » et « Devoirs samedi
+après-midi » ? » — au lieu de relancer le modèle, qui proposait des listes
+« types » à la place (3 sur 3). Rejoué de bout en bout deux fois : une fois le
+contenu donné, la carte de listes remplies s'affiche.
+
+**La suite de la même conversation, en usage réel** (« Organisation samedi »,
+relue en base) : listes sans échéance, date recopiée dans le titre (« Courses
+samedi matin »), texte qui détaillait des légumes absents de la carte,
+« détaille les courses » sans rien proposer, « Tout recommencer » qui recréait
+les deux listes en double, et les devoirs rangés dans le dossier Courses.
+Décisions de Clarisse, et ce qui a changé :
+
+- **Échéance dans la plage du moment dit** : matin 10h, après-midi 16h, soir
+  20h, par le champ `dueTime` qui existait déjà — pas de nouveau champ ni de
+  plage stockée. Le créneau garde sa durée d'une heure. Le titre ne porte plus
+  de date, et un jour dit avant le contenu de la liste vaut pour elle.
+- **Une ligne par article** : une recette se décline en ingrédients ; une
+  catégorie vague (« des légumes ») se demande avant de proposer.
+- **Modifier en place** : `update_task_list_items` sait retirer et ajouter des
+  lignes (`remove`, `added`) — même nature de suggestion, pas de migration. La
+  carte montre « Salade (retirée) », « Roquette (ajoutée) ». Une correction
+  demandée pendant que la carte des listes attend remplace cette carte (l'ancienne
+  passe « Proposition remplacée ») au lieu d'en empiler une seconde. Une liste
+  reproposée sous le titre d'une liste déjà née du fil est écartée ; si toutes le
+  sont, le serveur répond « Ces listes existent déjà. Dis-moi ce que tu veux y
+  changer… ».
+- **Chaque liste dans le dossier de son sujet** quand la conversation en a
+  plusieurs : le nom du dossier, retrouvé mot pour mot dans le titre de la
+  liste, le désigne.
+
+Filets ajoutés après rejeu contre ministral-14b : la relance qui écrit la
+réponse reçoit le contenu exact des listes de la carte (elle en recopiait
+d'autres) ; un identifiant de liste inconnu est rétabli d'après les lignes
+désignées, pour l'ajout, la modification et le report d'échéance (« ajoute du
+parmesan » visait la ligne « Légumes », relevé en usage réel) ; une ligne à modifier porte aussi son titre actuel, et un
+identifiant qui ne lui correspond pas est corrigé par le titre (« remplace la
+salade » retirait le beurre) ; une modification de lignes sans phrase reçoit
+« Je mets la liste à jour ? » (omise 2 fois sur 2). Rejoué ensuite : la salade
+est retirée, la roquette ajoutée, l'autre liste intacte. **Reste imparfait :** ministral propose encore
+parfois « Légumes » sans demander lesquels, et la relance recopie encore les
+listes en texte — désormais les mêmes que la carte.
 
 **Une réponse semblait écrite par l'utilisateur.** Seules les réponses d'un
 `ask_question` étaient enregistrées ; le texte entier du message tenait lieu de
@@ -1552,7 +1825,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 | Réf.         | Exigence                                                | Statut | Note                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------ | ------------------------------------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| §5.1         | Moteur IA Claude en V1                                  |   ✅   | Défaut serveur ramené à `mistral/mistral-medium-3.5` (8 sept.) : `anthropic/claude-opus-5`, hors catalogue utilisateur, laissait le sélecteur des réglages sans rien coché tant que rien n'était choisi. Claude reste joignable via `LLM_MODEL`, hors défaut                                                                                                                              |
+| §5.1         | Moteur IA Claude en V1                                  |   ✅   | Défaut serveur ramené à `mistral/mistral-medium-3.5` (8 sept.), puis à `mistral/ministral-14b` (28 sept.) : `anthropic/claude-opus-5`, hors catalogue utilisateur, laissait le sélecteur des réglages sans rien coché tant que rien n'était choisi. Claude reste joignable via `LLM_MODEL`, hors défaut                                                                                                                              |
 | §5.1         | Abstraction multi-modèle                                |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code                                                                                                                                                                                                                                                                                   |
 | §5.1         | Timeouts, quotas et erreurs                             |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés                                                                                                                                                                                                                                                                                               |
 | §5.1         | Choix du modèle par l'utilisateur                       |   ✅   | Catalogue de trois modèles dans `@jc/domain`, choisi dans les réglages et porté par `profiles.llm_model`. `LLM_MODEL` devient le repli, servi tant que rien n'est choisi                                                                                                                                                                                                                  |
@@ -1587,7 +1860,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer d'une conversation sur un dossier (ajouter ou déplacer, au choix) **et d'un dossier dans un autre**, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | A.2  | Conversion conversation → todoliste                   |   ✅   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet Mes listes (une seule lecture, filtrable par dossier, cherchable à la loupe ; la lecture par semaine vit désormais dans le calendrier, vue Todo — mois complet), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Le contenu s'édite comme un texte — une ligne par tâche, deux niveaux d'indentation, réécrit en un appel. Listes groupées par dossier dans l'agenda du calendrier, où « + Tâches » en ouvre une sur le jour affiché. L'assistant propose les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation ; l'utilisateur peut aussi la demander (menu contextuel ou message tapé) et corriger les tâches extraites avant validation (#17) |
-| A.3  | Détection de tâches datées                            |   ✅   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte sur la **liste** et non sur ses lignes : le modèle date la liste qu'il propose, puis une seconde proposition bloque un créneau d'agenda par liste datée, avec une durée par défaut plutôt que sans fin. Le calcul de date relative du modèle est doublé d'un filet de sécurité déterministe sur les tournures les plus sujettes à erreur — jours de semaine, demain/après-demain, dans N jours/semaines, week-end (#18)                                                                                                                                                                                                                                                                                                    |
+| A.3  | Détection de tâches datées                            |   ✅   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte sur la **liste**, et une tâche peut en outre porter son propre jour (`due_on`, 28 septembre) : le modèle date la liste ou chacune de ses lignes, puis une seconde proposition bloque un créneau d'agenda par liste datée, avec une durée par défaut plutôt que sans fin. Le calcul de date relative du modèle est doublé d'un filet de sécurité déterministe sur les tournures les plus sujettes à erreur — jours de semaine, demain/après-demain, dans N jours/semaines, week-end (#18)                                                                                                                                                                                                                                                                                                    |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste — consigne de détection reprise, avec un critère explicite (#19). Une todoliste acceptée rejoint son sous-dossier typé (ACHAT, TODO) quand il existe, au lieu du dossier de projet. Restent PRENDRE RDV — `calendar_events` ne porte aucun dossier — et IDÉE, faute de concept de note dans le produit                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -1625,6 +1898,9 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | **Profondeur d'arborescence portée de 2 à 5**     | §3      | Yann — écart assumé au cahier des charges, à valider                                                                                                                                                                 |
 | Jeu d'icônes de la navigation                     | §4.2    | — lucide-react-native en place (défaut react-native-reusables)                                                                                                                                                       |
 | Distinguer dossier et « projet »                  | A.4/A.5 | Yann — un projet gagnerait à être un format de dossier à part, avec mémoire globale et structure propre, plutôt qu'un dossier ordinaire portant des sous-dossiers typés. Piste soulevée pendant #19, non implémentée |
+| Instructions par dossier (retour de Nicolas, 01)  | A.1/A.4 | Yann — contexte de projet remis au modèle, cumulé sur les dossiers d'une conversation. Non implémenté, voir l'entrée du 28 septembre                                                                                  |
+| Aperçu calendrier / listes en conversation (07)   | A.2/A.3 | Yann — panneau latéral pendant une proposition, écran large seulement. Non implémenté                                                                                                                                |
+| Glisser-déposer des tâches au calendrier (09)     | A.3     | Yann — changer le jour d'une liste ou d'une tâche au geste, web d'abord. Non implémenté                                                                                                                              |
 
 ## Points nécessitant un A/B testing humain (§4.3)
 
