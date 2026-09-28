@@ -56,6 +56,8 @@ export interface IConversationRepository {
       model?: string | null;
       /** Réponses proposées sous une question de l'assistant. */
       choices?: string[] | null;
+      /** La question que ces réponses proposées viennent compléter. */
+      question?: string | null;
       /** Titre de la conversation dédiée que le message propose d'ouvrir (A.10). */
       redirectTitle?: string | null;
     },

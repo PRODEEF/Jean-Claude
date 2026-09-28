@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -35,6 +35,12 @@ import { ThinkingIndicator } from "./ThinkingIndicator";
 
 /** Distance au bas du fil en deçà de laquelle on reste collé pendant le stream. */
 const STICK_THRESHOLD = 64;
+
+/**
+ * Durée laissée à un défilement animé pour arriver en bas — un peu plus que
+ * ce que prennent les navigateurs pour quelques centaines de points.
+ */
+const GLIDE_MS = 700;
 
 export type ConversationThreadProps = {
   conversationId: string;
@@ -83,6 +89,25 @@ export function ConversationThread({
    * message recolle — c'est le geste qui dit « je veux voir la suite ».
    */
   const stickToBottom = useRef(true);
+  /**
+   * Le fil défile en glissant plutôt qu'en sautant : vrai une fois un tour
+   * terminé, faux pendant le suivant.
+   *
+   * Ce qui arrive en fin de tour — carte de proposition, carte de question —
+   * arrive d'un bloc. Rejoindre le bas sans animation faisait alors sauter de
+   * 300 points le texte qu'on était en train de lire, davantage que la moitié
+   * d'un écran de téléphone : c'est la « remontée du texte » signalée en usage
+   * réel. Pendant le flux au contraire le texte avance d'une ligne à la fois,
+   * et une animation ne ferait que le mettre en retard sur le modèle.
+   */
+  const glide = useRef(false);
+  const hadTurn = useRef(false);
+  /**
+   * Instant où le défilement animé en cours doit être arrivé. D'ici là, ses
+   * positions intermédiaires, loin du bas, ne sont pas un utilisateur qui
+   * remonte le fil — les lire ainsi cesserait de le suivre en plein trajet.
+   */
+  const glidingUntil = useRef(0);
   const attachments = useComposerAttachments();
   const picker = useAttachmentPicker(attachments.add, inputRef);
   // Question écartée d'un « Passer », retenue par identifiant de message : le
@@ -140,7 +165,9 @@ export function ConversationThread({
     if (!last || last.role !== "assistant" || !last.choices || last.id === skippedQuestion) {
       return null;
     }
-    return { id: last.id, text: last.content, choices: last.choices };
+    // Le texte entier ne sert qu'aux messages antérieurs à l'enregistrement de
+    // la question : la carte le tronque à deux lignes.
+    return { id: last.id, text: last.question ?? last.content, choices: last.choices };
   }, [messages.data, skippedQuestion]);
 
   const askable = question !== null && streamingText === null && pendingUserText === null;
@@ -165,7 +192,9 @@ export function ConversationThread({
   // tout dernier jeton d'une réponse, celui qui referme souvent une liste.
   const scrollToEndSoon = useCallback(() => {
     if (!stickToBottom.current) return;
-    const scroll = () => listRef.current?.scrollToEnd({ animated: false });
+    const animated = glide.current;
+    if (animated) glidingUntil.current = Date.now() + GLIDE_MS;
+    const scroll = () => listRef.current?.scrollToEnd({ animated });
     requestAnimationFrame(() => {
       scroll();
       // Web : le Markdown se met en page après la première frame. Sans une
@@ -177,9 +206,19 @@ export function ConversationThread({
 
   const onThreadScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    stickToBottom.current =
+    const atBottom =
       contentSize.height - layoutMeasurement.height - contentOffset.y <= STICK_THRESHOLD;
+    if (!atBottom && Date.now() < glidingUntil.current) return;
+    stickToBottom.current = atBottom;
   }, []);
+
+  // Avant la peinture : la carte de question se monte dans le rendu même où
+  // le tour se termine, et le défilement qu'elle déclenche doit déjà glisser.
+  const turnInFlight = streamingText !== null || pendingUserText !== null;
+  useLayoutEffect(() => {
+    if (turnInFlight) hadTurn.current = true;
+    glide.current = !turnInFlight && hadTurn.current;
+  }, [turnInFlight]);
 
   // Suivre `streamingText` recale la liste à chaque arrivée de texte : le
   // pied de liste grandit d'un jeton à la fois, `onContentSizeChange` seul
@@ -271,6 +310,9 @@ export function ConversationThread({
           renderItem={renderItem}
           contentContainerStyle={[styles.list, column]}
           onContentSizeChange={scrollToEndSoon}
+          // La carte de question se pose entre le fil et la saisie : elle ne
+          // change pas la hauteur du contenu, seulement celle de la fenêtre.
+          onLayout={scrollToEndSoon}
           onScroll={onThreadScroll}
           scrollEventThrottle={16}
           // Par défaut, `FlatList` ne rend que 10 éléments au montage, en
@@ -438,10 +480,15 @@ type ThreadItem = (
  * que l'utilisateur a envoyée, et la dupliquer en base ferait deux textes à
  * tenir cohérents. Relue plus haut dans le fil, « Oui » ne dirait plus à quoi
  * il répondait.
+ *
+ * La question seule, jamais le texte entier du message : recopié après « Q : »,
+ * celui-ci plaçait toute la réponse de l'assistant dans la bulle de
+ * l'utilisateur, comme s'il l'avait écrite. Sans question enregistrée — les
+ * messages plus anciens —, la réponse se lit seule.
  */
 function answeredQuestion(message: Message, previous: Message | undefined): string | null {
   if (message.role !== "user" || !previous || previous.role !== "assistant") return null;
-  return previous.choices?.includes(message.content) ? previous.content : null;
+  return previous.choices?.includes(message.content) ? previous.question : null;
 }
 
 function itemDate(item: ThreadItem): number {

@@ -2,7 +2,9 @@ import {
   ASSISTANT_MODELS,
   isSovereignModel,
   isVisionCapableModel,
+  modelReadingImages,
   toAssistantModel,
+  VISION_FALLBACK_MODEL,
   updateUserProfileSchema,
   userPreferencesSchema,
 } from "./preferences.schema";
@@ -104,5 +106,25 @@ describe("préférences", () => {
 
   it("propose au moins un modèle hébergé en Europe (§8, §13.4.6)", () => {
     expect(ASSISTANT_MODELS.some((model) => model.sovereign)).toBe(true);
+  });
+});
+
+describe("modelReadingImages", () => {
+  it("garde le modèle choisi quand il lit les images", () => {
+    expect(modelReadingImages("openai/gpt-5.4-mini")).toBe("openai/gpt-5.4-mini");
+  });
+
+  it("confie l'image à un modèle qui la lit quand le modèle actif en est incapable", () => {
+    expect(modelReadingImages("anthropic/claude-sonnet-5")).toBe(VISION_FALLBACK_MODEL);
+  });
+
+  it("traite un identifiant vide ou inconnu comme incapable de lire une image", () => {
+    expect(modelReadingImages("")).toBe(VISION_FALLBACK_MODEL);
+    expect(modelReadingImages("mistral/mistral-medium")).toBe(VISION_FALLBACK_MODEL);
+  });
+
+  it("se rabat sur un modèle souverain qui lit bien les images", () => {
+    expect(isVisionCapableModel(VISION_FALLBACK_MODEL)).toBe(true);
+    expect(isSovereignModel(VISION_FALLBACK_MODEL)).toBe(true);
   });
 });

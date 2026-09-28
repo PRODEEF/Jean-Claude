@@ -56,6 +56,27 @@ export function isVisionCapableModel(model: string): boolean {
 }
 
 /**
+ * Modèle qui répond à la place d'un modèle incapable de lire une image jointe.
+ *
+ * Mistral parce qu'il est souverain (§13.4.6) : la bascule se fait sans rien
+ * demander, elle ne doit donc jamais faire sortir d'Europe des données qu'un
+ * choix de l'utilisateur y aurait gardées.
+ */
+export const VISION_FALLBACK_MODEL: AssistantModel = "mistral/mistral-medium-3.5";
+
+/**
+ * Modèle à interroger quand le fil porte une image (§13.4.1).
+ *
+ * Joindre une photo relève de l'application, pas d'un réglage : refuser
+ * l'envoi en demandant de changer de modèle renvoyait l'utilisateur à un choix
+ * technique qu'il n'a pas à connaître — signalé en usage réel. Un modèle hors
+ * catalogue, dont on ne sait rien, est traité comme ne lisant pas les images.
+ */
+export function modelReadingImages(model: string): string {
+  return isVisionCapableModel(model) ? model : VISION_FALLBACK_MODEL;
+}
+
+/**
  * Modèles proposés à l'utilisateur dans ses réglages (§5.1).
  *
  * Liste fermée, et non un champ libre : l'identifiant `éditeur/modèle` du

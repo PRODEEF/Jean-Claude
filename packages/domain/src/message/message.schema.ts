@@ -101,6 +101,14 @@ export const messageSchema = z.object({
    */
   choices: z.array(messageChoiceSchema).min(2).max(6).nullable(),
   /**
+   * La question elle-même, quand le message porte des réponses proposées.
+   *
+   * Distincte de `content` : la question clôt souvent une réponse plus longue,
+   * et c'est elle seule que la carte de choix et la réponse de l'utilisateur
+   * doivent rappeler. `null` sur les messages antérieurs à son enregistrement.
+   */
+  question: askedQuestionSchema.shape.question.nullable(),
+  /**
    * Titre de la conversation dédiée que ce message propose d'ouvrir (A.10).
    *
    * `null` partout ailleurs. Porté par le message et non par une suggestion :

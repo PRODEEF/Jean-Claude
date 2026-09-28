@@ -475,6 +475,20 @@ function createdFolders(repo: IFolderRepository): { name: string; parentId: stri
 }
 
 describe("AssistantService", () => {
+  // Horloge figée à `NOW`, avant toutes les échéances des fixtures : accepter
+  // une todoliste datée passe par `assertDueNotPast`, qui compare au jour
+  // courant — ces tests échouaient dès que leurs dates étaient passées.
+  beforeEach(() => {
+    jest.useFakeTimers({
+      now: new Date(NOW),
+      doNotFake: ["nextTick", "queueMicrotask", "setImmediate"],
+    });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   describe("acceptation d'une proposition", () => {
     it("crée le dossier racine puis ses sous-dossiers", async () => {
       const folders = makeFolderRepository();
