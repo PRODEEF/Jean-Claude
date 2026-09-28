@@ -101,6 +101,13 @@ export const SUGGEST_TASK_LIST: LlmTool = {
                 },
                 required: ["title"],
               },
+              // Même borne que `createTaskListsPayloadSchema` : une liste sans
+              // ligne y est refusée, et la proposition entière avec elle.
+              minItems: 1,
+              description:
+                "Lignes de la liste, au moins une. Une liste se propose remplie : tant " +
+                "que la conversation ne dit pas ce qu'elle contient, ne l'appelle pas et " +
+                "demande d'abord à l'utilisateur ce qu'il faut y mettre.",
             },
           },
           required: ["title", "kind", "items"],

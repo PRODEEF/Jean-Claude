@@ -236,6 +236,29 @@ numérotée (la réponse sur les impôts), forme que le filtre ne reconnaissait
 pas. Il reconnaît désormais le nom nu, en italique ou en gras, et la liste
 numérotée redevient elle aussi une question à réponses proposées.
 
+Toujours le 28 septembre, sur la conversation « courses samedi matin, devoirs
+l'après-midi » rejouée contre ministral-14b avec la vraie consigne : le modèle
+appelle bien `suggest_task_list`, mais avec des listes sans lignes (rien n'a
+encore été listé), que le serveur écarte. Le service relance alors le modèle
+sans outils, et c'est cette relance qui recopiait `ask_question` : son texte ne
+passait par aucun filtre. Il passe désormais par le même filtre ; une question
+recopiée qui ne tient pas en boutons (réponse de plus de 80 caractères) reste
+affichée en texte, sans le nom de l'outil. Une ligne entière en italique qui
+annonce ce que le modèle va faire (« *Je vais proposer la création de ces
+listes…* ») est retirée : dix relances sur dix l'écrivaient, avec ou sans
+consigne contraire. Enfin, un tour dont la seule proposition est écartée
+signale l'échec au lieu de se clore sans rien afficher.
+
+**Une todoliste se propose remplie** (décision de Clarisse, même jour) : pas
+de liste sans ligne, le contenu se demande avant la proposition. La définition
+de l'outil et la consigne le disent au modèle ; au premier message, ministral
+n'a plus proposé de liste vide (0 sur 3, contre 4 sur 4 avant). Quand il le
+fait malgré tout sans écrire un mot, le serveur rédige lui-même la question —
+« Qu'est-ce qu'on met dans « Courses samedi matin » et « Devoirs samedi
+après-midi » ? » — au lieu de relancer le modèle, qui proposait des listes
+« types » à la place (3 sur 3). Rejoué de bout en bout deux fois : une fois le
+contenu donné, la carte de listes remplies s'affiche.
+
 **Une réponse semblait écrite par l'utilisateur.** Seules les réponses d'un
 `ask_question` étaient enregistrées ; le texte entier du message tenait lieu de
 question. Quand elle closait une longue réponse, la bulle de l'utilisateur qui
