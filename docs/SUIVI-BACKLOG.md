@@ -7,11 +7,45 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
-Dernière mise à jour : **28 septembre 2026 (fin de journée)** — les points de
-priorité 4 de la todo de Yann, sur la branche `feat/inspiring-newton-ht83qq`
-(#135, puis un correctif). Vérifiés dans Chromium sur un build web branché sur
-une fausse API qui simule les délais du modèle et du serveur, en thème clair et
-en thème sombre.
+Dernière mise à jour : **28 septembre 2026 (soir)** — refonte de la page
+Réglages, sur la branche `refonte/ui`. Vérifiée dans Chromium sur le serveur de
+développement web branché sur une fausse API, en thème clair et en thème
+sombre, sur grand écran et à 390 pt de large, puis validée sur captures par
+Clarisse.
+
+**La page Réglages se lit par groupes.** Chaque section porte un vrai titre, et
+ses réglages sont rangés dans une carte, une ligne par réglage : libellé et
+phrase d'aide à gauche, contrôle à droite — sous le libellé sur téléphone pour
+un champ ou un menu. C'est la présentation d'iOS, de ChatGPT et de Claude
+(§4.2). Trois cartes : Compte (avatar, adresse, pseudo, déconnexion),
+Assistant (nom, couleur, bandeau uni, thème, modèle) et « Ce qu'il peut vous
+proposer ». Viennent ensuite l'avis et, isolée en fin de page, la suppression du
+compte. La déconnexion quitte le bandeau pour la carte Compte, en neutre : elle
+n'a rien de destructeur. « Enregistrer » n'apparaît qu'une fois un champ
+modifié, et disparaît à l'enregistrement. Le thème reprend le sélecteur
+segmenté du calendrier. Sous « Modèle », une phrase dit ce que fait le modèle
+actif et s'il est hébergé en Europe.
+
+**Le sélecteur de modèle coche « Mistral » par défaut.** `LLM_MODEL` vaut
+`mistral/ministral-14b` en production, absent du catalogue : tant que
+l'utilisateur n'avait rien choisi, les réglages n'affichaient que « Choisir un
+modèle ». `toCatalogueModel` (`@jc/domain`, testée) rattache le modèle servi à
+l'entrée de son éditeur.
+
+**« Mistral » désigne désormais `mistral/ministral-14b`** (demande de Clarisse),
+à la place de `mistral-medium-3.5` : choisir « Mistral » dans le menu donne bien
+le modèle servi en production. Le défaut du code (`LLM_MODEL`, `.env.example`)
+le suit, puisqu'il doit rester dans le catalogue. Ministral 14B lit les images
+(fiche du Gateway Vercel et documentation Mistral) : il devient aussi le modèle
+de secours des tours avec image. Un profil qui avait retenu
+`mistral-medium-3.5` retombe sur le modèle du serveur, sans migration. **Non
+revu :** la phrase d'aide « Bon équilibre entre vitesse et finesse, au
+quotidien » a été écrite pour Medium 3.5.
+
+Plus tôt le même jour : les points de priorité 4 de la todo de Yann, sur la
+branche `feat/inspiring-newton-ht83qq` (#135, puis un correctif). Vérifiés dans
+Chromium sur un build web branché sur une fausse API qui simule les délais du
+modèle et du serveur, en thème clair et en thème sombre.
 
 **L'attente tourne, et dure jusqu'à la fin du tour.** Le compteur
 « <assistant> réfléchit… N s » existait depuis le 3 septembre, en texte
@@ -1754,7 +1788,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 | Réf.         | Exigence                                                | Statut | Note                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------ | ------------------------------------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| §5.1         | Moteur IA Claude en V1                                  |   ✅   | Défaut serveur ramené à `mistral/mistral-medium-3.5` (8 sept.) : `anthropic/claude-opus-5`, hors catalogue utilisateur, laissait le sélecteur des réglages sans rien coché tant que rien n'était choisi. Claude reste joignable via `LLM_MODEL`, hors défaut                                                                                                                              |
+| §5.1         | Moteur IA Claude en V1                                  |   ✅   | Défaut serveur ramené à `mistral/mistral-medium-3.5` (8 sept.), puis à `mistral/ministral-14b` (28 sept.) : `anthropic/claude-opus-5`, hors catalogue utilisateur, laissait le sélecteur des réglages sans rien coché tant que rien n'était choisi. Claude reste joignable via `LLM_MODEL`, hors défaut                                                                                                                              |
 | §5.1         | Abstraction multi-modèle                                |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code                                                                                                                                                                                                                                                                                   |
 | §5.1         | Timeouts, quotas et erreurs                             |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés                                                                                                                                                                                                                                                                                               |
 | §5.1         | Choix du modèle par l'utilisateur                       |   ✅   | Catalogue de trois modèles dans `@jc/domain`, choisi dans les réglages et porté par `profiles.llm_model`. `LLM_MODEL` devient le repli, servi tant que rien n'est choisi                                                                                                                                                                                                                  |
