@@ -1910,7 +1910,7 @@ describe("ConversationService", () => {
         });
         const users = makeUserRepository(
           {},
-          { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+          { preferences: makePreferences({ llmModel: "mistral/ministral-14b" }) },
         );
 
         const events = await drain(withAttachments(attachments, repo, users), {
@@ -1953,7 +1953,7 @@ describe("ConversationService", () => {
         });
         const users = makeUserRepository(
           {},
-          { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+          { preferences: makePreferences({ llmModel: "mistral/ministral-14b" }) },
         );
 
         await drain(withAttachments(attachments, repo, users), {
@@ -1973,7 +1973,7 @@ describe("ConversationService", () => {
         });
         const users = makeUserRepository(
           {},
-          { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+          { preferences: makePreferences({ llmModel: "mistral/ministral-14b" }) },
         );
 
         const events = await drain(withAttachments(attachments, repo, users), {
@@ -3108,12 +3108,12 @@ describe("ConversationService", () => {
       const llm = makeLlm();
       const users = makeUserRepository(
         {},
-        { preferences: makePreferences({ llmModel: "mistral/mistral-medium-3.5" }) },
+        { preferences: makePreferences({ llmModel: "mistral/ministral-14b" }) },
       );
 
       await drain(makeService(makeRepository(), llm, undefined, undefined, users));
 
-      expect(lastRequest(llm).model).toBe("mistral/mistral-medium-3.5");
+      expect(lastRequest(llm).model).toBe("mistral/ministral-14b");
     });
 
     it("laisse répondre le modèle du serveur tant que rien n'est choisi", async () => {

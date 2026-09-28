@@ -75,7 +75,7 @@ describe("isVisionCapableModel", () => {
 
 describe("toAssistantModel", () => {
   it("retient un modèle du catalogue", () => {
-    expect(toAssistantModel("mistral/mistral-medium-3.5")).toBe("mistral/mistral-medium-3.5");
+    expect(toAssistantModel("mistral/ministral-14b")).toBe("mistral/ministral-14b");
   });
 
   it("rend la main au serveur quand le modèle enregistré n'est plus proposé", () => {
@@ -91,7 +91,7 @@ describe("toCatalogueModel", () => {
   });
 
   it("rattache un modèle servi hors catalogue à l'entrée de son éditeur", () => {
-    expect(toCatalogueModel("mistral/ministral-14b")).toBe("mistral/mistral-medium-3.5");
+    expect(toCatalogueModel("mistral/mistral-medium-3.5")).toBe("mistral/ministral-14b");
   });
 
   it("ne rattache rien quand l'éditeur n'est pas au catalogue", () => {

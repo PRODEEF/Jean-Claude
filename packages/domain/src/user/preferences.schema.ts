@@ -33,16 +33,17 @@ export function isSovereignModel(model: string): boolean {
  *
  * ⚠️ Liste tenue à la main — le Gateway ne l'expose pas par API. Les cinq
  * éditeurs confirment la lecture d'image en entrée dans leur documentation :
- * Mistral Medium 3.5 (encodeur façon Pixtral), GPT-5.4 mini, Gemini 2.5
- * Flash-Lite, Grok 4.6, et Sonar Reasoning Pro — ce dernier avec une réserve :
- * une image ne peut pas s'accompagner d'une sortie structurée sur ce modèle,
- * sans effet ici puisque l'assistant ne lui fait jamais produire de JSON.
+ * Ministral 14B (lecture d'image native, série Mistral 3), GPT-5.4 mini,
+ * Gemini 2.5 Flash-Lite, Grok 4.6, et Sonar Reasoning Pro — ce dernier avec
+ * une réserve : une image ne peut pas s'accompagner d'une sortie structurée
+ * sur ce modèle, sans effet ici puisque l'assistant ne lui fait jamais
+ * produire de JSON.
  * Un nouveau modèle du catalogue reste par prudence à `false` tant que son
  * support vision n'a pas été vérifié individuellement — mieux vaut refuser
  * une pièce jointe à tort que l'envoyer à un modèle qui ne la lira pas.
  */
 const VISION_CAPABLE_MODELS: Record<AssistantModel, boolean> = {
-  "mistral/mistral-medium-3.5": true,
+  "mistral/ministral-14b": true,
   "openai/gpt-5.4-mini": true,
   "google/gemini-2.5-flash-lite": true,
   "perplexity/sonar-reasoning-pro": true,
@@ -62,7 +63,7 @@ export function isVisionCapableModel(model: string): boolean {
  * demander, elle ne doit donc jamais faire sortir d'Europe des données qu'un
  * choix de l'utilisateur y aurait gardées.
  */
-export const VISION_FALLBACK_MODEL: AssistantModel = "mistral/mistral-medium-3.5";
+export const VISION_FALLBACK_MODEL: AssistantModel = "mistral/ministral-14b";
 
 /**
  * Modèle à interroger quand le fil porte une image (§13.4.1).
@@ -99,7 +100,7 @@ export function modelReadingImages(model: string): string {
  * mémoire — `mistral/mistral-large` par exemple n'existe pas.
  */
 const ASSISTANT_MODEL_IDS = [
-  "mistral/mistral-medium-3.5",
+  "mistral/ministral-14b",
   "openai/gpt-5.4-mini",
   "google/gemini-2.5-flash-lite",
   "perplexity/sonar-reasoning-pro",
@@ -121,7 +122,7 @@ export type AssistantModel = z.infer<typeof assistantModelSchema>;
  * entre dans la liste sans qu'on ait écrit ce qu'il apporte.
  */
 const ASSISTANT_MODEL_DETAILS: Record<AssistantModel, { label: string; benefit: string }> = {
-  "mistral/mistral-medium-3.5": {
+  "mistral/ministral-14b": {
     label: "Mistral",
     benefit: "Bon équilibre entre vitesse et finesse, au quotidien.",
   },
@@ -180,10 +181,10 @@ export function toAssistantModel(value: unknown): AssistantModel | null {
  * Entrée du catalogue qui représente un modèle servi, ou `null` si aucun
  * éditeur ne correspond.
  *
- * `LLM_MODEL` peut désigner un modèle hors catalogue — `mistral/ministral-14b`
- * en production. Les réglages ne cochaient alors rien, comme si aucun modèle
- * ne répondait. Le catalogue proposant un modèle par éditeur, le modèle servi
- * est rattaché à celui de son éditeur : c'est bien « Mistral » qui répond.
+ * `LLM_MODEL` peut désigner un modèle hors catalogue, pour l'éprouver avant de
+ * le proposer. Les réglages ne cochaient alors rien, comme si aucun modèle ne
+ * répondait. Le catalogue proposant un modèle par éditeur, le modèle servi est
+ * rattaché à celui de son éditeur : c'est bien « Mistral » qui répond.
  */
 export function toCatalogueModel(model: string): AssistantModel | null {
   const known = toAssistantModel(model);

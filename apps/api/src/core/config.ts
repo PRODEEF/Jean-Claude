@@ -43,5 +43,5 @@ export const config = {
   // (§5.1). Pris dans le catalogue de `@jc/domain` : un défaut hors catalogue
   // ne correspond à aucune option du sélecteur, qui affiche alors une liste
   // sans rien de coché.
-  llmModel: optional("LLM_MODEL", "mistral/mistral-medium-3.5"),
+  llmModel: optional("LLM_MODEL", "mistral/ministral-14b"),
 } as const;
