@@ -914,8 +914,11 @@ export class ConversationService {
               withCorrectedRescheduleDueDate(
                 withCorrectedDueDates(
                   withListIdOfTasks(
-                    withoutExistingLists(
-                      withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+                    withVerifiedTaskIds(
+                      withoutExistingLists(
+                        withVerifiedFolders(toolCall, todo.filing?.folders ?? []),
+                        todo.lists,
+                      ),
                       todo.lists,
                     ),
                     todo.lists,
@@ -1978,6 +1981,51 @@ function withListIdOfTasks(toolCall: LlmToolCall, lists: TaskListWithTasks[]): L
   return { ...toolCall, input: { ...toolCall.input, listId: owner.id } };
 }
 
+/**
+ * Vérifie que chaque ligne d'un `suggest_update_task_items` désigne bien celle
+ * dont le modèle a recopié le titre (`currentTitle`).
+ *
+ * ministral recopiait l'identifiant d'une ligne voisine : « remplace la salade
+ * par de la roquette » retirait le beurre. Même principe que les dossiers
+ * (`withVerifiedFolders`) : identifiant et titre viennent de la même ligne de
+ * la consigne, et un désaccord se tranche par le titre — l'utilisateur l'a
+ * dit, l'identifiant n'est qu'une recopie. Un titre qui ne désigne aucune
+ * ligne, ou plusieurs, fait écarter la ligne plutôt que d'en toucher une au
+ * hasard. Sans titre recopié, rien n'est vérifié.
+ *
+ * Les lignes sont d'abord cherchées dans la liste annoncée, pour qu'un titre
+ * présent dans deux listes du fil ne soit pas pris pour ambigu.
+ */
+function withVerifiedTaskIds(toolCall: LlmToolCall, lists: TaskListWithTasks[]): LlmToolCall {
+  if (toolCall.name !== SUGGEST_UPDATE_TASK_ITEMS.name) return toolCall;
+
+  const items: unknown = toolCall.input["items"];
+  if (!Array.isArray(items)) return toolCall;
+
+  const announced = lists.find((list) => list.id === toolCall.input["listId"]);
+  const candidates = announced ? announced.tasks : lists.flatMap((list) => list.tasks);
+
+  let changed = false;
+  const verified = items.flatMap((item: unknown) => {
+    if (typeof item !== "object" || item === null) return [item];
+    const record = item as Record<string, unknown>;
+    const title = record["currentTitle"];
+    if (typeof title !== "string") return [item];
+
+    const designated = candidates.find((task) => task.id === record["taskId"]);
+    if (designated && sameName(designated.title, title)) return [item];
+
+    changed = true;
+    const [only, ...others] = candidates.filter((task) => sameName(task.title, title));
+    return only && others.length === 0 ? [{ ...record, taskId: only.id }] : [];
+  });
+
+  if (!changed) return toolCall;
+
+  logger.warn(SCOPE, "Ligne désignée par un identifiant qui ne correspond pas à son titre : rétablie ou écartée.");
+  return { ...toolCall, input: { ...toolCall.input, items: verified } };
+}
+
 /** Une liste proposée porte-t-elle le titre d'une liste déjà née du fil ? */
 function isExistingList(entry: unknown, existing: TaskListWithTasks[]): boolean {
   const title = typeof entry === "object" && entry !== null && "title" in entry ? entry.title : null;
@@ -2809,7 +2857,8 @@ function buildSystemPrompt(
       "",
       "Pour modifier une liste ci-dessus — cocher, décocher, renommer, retirer une",
       "ligne ou la remplacer par plusieurs —, appelle `suggest_update_task_items`",
-      "avec l'identifiant de la liste ET celui de chaque ligne, recopiés caractère",
+      "avec l'identifiant de la liste ET, pour chaque ligne, son identifiant et son",
+      "titre actuel (`currentTitle`) recopiés de la même ligne ci-dessus, caractère",
       "pour caractère. « Détaille les courses » retire « Légumes » (`remove`) et",
       "ajoute les légumes un par un (`added`) dans le même appel ; l'autre liste",
       "n'est pas touchée. Ne rappelle jamais `suggest_task_list` pour une liste qui",

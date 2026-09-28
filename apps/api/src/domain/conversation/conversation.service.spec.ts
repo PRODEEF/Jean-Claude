@@ -4808,6 +4808,73 @@ describe("ConversationService", () => {
       jest.restoreAllMocks();
     });
 
+    describe("ligne désignée par une modification", () => {
+      const listId = "11111111-1111-4111-8111-111111111111";
+      const SALADE = "22222222-2222-4222-8222-222222222221";
+      const BEURRE = "22222222-2222-4222-8222-222222222222";
+      const courses = makeTaskList({
+        id: listId,
+        title: "Courses",
+        tasks: [
+          makeTaskListItem({ id: SALADE, title: "Salade" }),
+          makeTaskListItem({ id: BEURRE, title: "Beurre" }),
+        ],
+      });
+
+      const replaceSalade = (taskId: string, currentTitle: string): LlmToolCall => ({
+        id: "call-1",
+        name: "suggest_update_task_items",
+        input: {
+          message: "Je remplace la salade par de la roquette ?",
+          listId,
+          items: [{ taskId, currentTitle, remove: true }],
+          added: [{ title: "Roquette" }],
+        },
+      });
+
+      const proposedItems = async (call: LlmToolCall): Promise<unknown> => {
+        const suggestions = makeRecordingSuggestions([]);
+        await drain(
+          makeService(
+            makeRepository(),
+            makeLlm(["C'est proposé."], [call]),
+            suggestions,
+            makeFolderRepository(),
+            makeUserRepository(),
+            makeCalendarRepository(),
+            makeTaskRepository([courses]),
+          ),
+        );
+        const created = (suggestions.create as jest.Mock).mock.calls[0] as
+          | [string, { payload: { items: unknown } }]
+          | undefined;
+        return created?.[1].payload.items;
+      };
+
+      it("retrouve par son titre la ligne dont le modèle a recopié un autre identifiant", async () => {
+        jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+        // Relevé avec ministral-14b : l'identifiant du beurre, pour retirer la salade.
+        expect(await proposedItems(replaceSalade(BEURRE, "Salade"))).toEqual([
+          { taskId: SALADE, remove: true },
+        ]);
+        jest.restoreAllMocks();
+      });
+
+      it("écarte une ligne dont le titre recopié ne désigne aucune ligne de la liste", async () => {
+        jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+        expect(await proposedItems(replaceSalade(BEURRE, "Laitue"))).toEqual([]);
+        jest.restoreAllMocks();
+      });
+
+      it("garde la ligne quand identifiant et titre se correspondent", async () => {
+        expect(await proposedItems(replaceSalade(SALADE, "salade"))).toEqual([
+          { taskId: SALADE, remove: true },
+        ]);
+      });
+    });
+
     it("n'affiche aucune carte quand toutes les listes proposées existent déjà", async () => {
       jest.spyOn(console, "warn").mockImplementation(() => undefined);
       const suggestions = makeRecordingSuggestions([]);
