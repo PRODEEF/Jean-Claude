@@ -318,6 +318,13 @@ export const SUGGEST_UPDATE_TASK_ITEMS: LlmTool = {
               description:
                 "Identifiant de la ligne, recopié caractère pour caractère depuis la consigne.",
             },
+            currentTitle: {
+              type: "string",
+              description:
+                "Titre actuel de la ligne, recopié de la même ligne de la consigne que son " +
+                "identifiant — le serveur écarte ou corrige la ligne si les deux ne se " +
+                "correspondent pas.",
+            },
             title: {
               type: "string",
               description: "Nouveau titre, uniquement si on le change.",
@@ -333,7 +340,7 @@ export const SUGGEST_UPDATE_TASK_ITEMS: LlmTool = {
                 "remplacée par des lignes plus détaillées dans `added`.",
             },
           },
-          required: ["taskId"],
+          required: ["taskId", "currentTitle"],
         },
       },
     },
