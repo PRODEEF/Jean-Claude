@@ -1,13 +1,17 @@
-import { Pressable, View } from "react-native";
+import { useRef, useState } from "react";
+import { Pressable, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
-import { ListChecks, ShoppingBasket } from "lucide-react-native";
+import { ListChecks, Plus, ShoppingBasket } from "lucide-react-native";
 import type { TaskListWithTasks } from "@jc/domain";
 import { momentsOfDay, openTaskCount } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { formatFullDay, formatTime, isSameDay } from "@/shared/lib/dates";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { TaskRow } from "@/features/todo/TaskRow";
+import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
+import { Input } from "@/shared/ui/input";
 import { Text } from "@/shared/ui/text";
 
 export type DueListsBoardProps = {
@@ -20,9 +24,9 @@ export type DueListsBoardProps = {
  * Todolistes échues, un bloc par jour découpé en moments (A.2).
  *
  * Cochable directement : le calendrier dit ce que porte chaque jour, et rayer
- * ce qui est fait ne doit pas obliger à changer d'onglet. Seul le titre de la
- * liste conduit vers Mes listes, pour l'édition complète — renommer, ajouter
- * une tâche.
+ * ce qui est fait ne doit pas obliger à changer d'onglet. Une tâche s'y ajoute
+ * aussi, au « + » de sa liste ; le titre de la liste conduit vers Mes listes,
+ * pour l'édition complète — renommer, réordonner, indenter.
  */
 export function DueListsBoard({ days, lists }: DueListsBoardProps) {
   const today = new Date();
@@ -50,7 +54,7 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
           >
             <View className="flex-row items-center justify-between gap-2">
               <Text
-                className={`text-xs font-semibold uppercase ${
+                className={`text-base font-bold uppercase ${
                   isToday ? "text-primary" : "text-foreground"
                 }`}
               >
@@ -61,20 +65,24 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
               ) : null}
             </View>
 
-            {groups.length === 0 ? (
-              <Text className="text-muted-foreground text-sm">Rien de prévu ce jour-là.</Text>
-            ) : (
-              groups.map((group) => (
-                <View key={group.moment.key} className={desktop ? "gap-1" : "gap-2"}>
-                  <Text className="text-muted-foreground text-[11px] font-medium uppercase">
+            {groups.map((group) => (
+              <View key={group.moment.key} className={desktop ? "gap-1" : "gap-2"}>
+                {/* Bandeau gris sur toute la largeur et corps plus grand que
+                    celui des tâches (demande de Yann) : le moment structure
+                    la journée, il doit se lire avant ce qu'il contient.
+                    `bg-border` et non `bg-muted` : ce dernier vaut la teinte
+                    de fond des surfaces, quasi blanche, et le bandeau ne se
+                    détachait presque pas de la carte du jour. */}
+                <View className="bg-border rounded-md px-2 py-1">
+                  <Text className="text-foreground text-[15px] font-semibold uppercase">
                     {group.moment.label}
                   </Text>
-                  {group.lists.map((list) => (
-                    <DueList key={list.id} list={list} desktop={desktop} />
-                  ))}
                 </View>
-              ))
-            )}
+                {group.lists.map((list) => (
+                  <DueList key={list.id} list={list} desktop={desktop} />
+                ))}
+              </View>
+            ))}
           </View>
         );
       })}
@@ -86,43 +94,126 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
  * Une liste échue ce jour-là, avec ce qu'elle contient.
  *
  * Le contenu est montré et non résumé : « Courses » sans ses lignes n'apprend
- * rien de ce qu'il reste à faire. Seul l'en-tête (icône, titre, heure) ouvre
- * la liste dans Mes listes — les tâches elles-mêmes se cochent ici, via
- * `TaskRow`, sans changer d'onglet.
+ * rien de ce qu'il reste à faire. L'en-tête (icône, heure, titre) ouvre la
+ * liste dans Mes listes ; les tâches se cochent ici, via `TaskRow`, et le
+ * « + » en ajoute sans changer d'onglet.
  */
 function DueList({ list, desktop }: { list: TaskListWithTasks; desktop: boolean }) {
   const router = useRouter();
   const shopping = list.kind === "shopping";
+  const time = timeLabel(list);
+  const [adding, setAdding] = useState(false);
 
   return (
     <View
       className={`border-border gap-0.5 rounded-lg border border-dashed ${desktop ? "p-1.5" : "p-2"}`}
     >
-      <Pressable
-        onPress={() => router.push(`/todo?list=${list.id}` as never)}
-        accessibilityRole="button"
-        accessibilityLabel={`Ouvrir la liste ${list.title}`}
-        style={{ minHeight: MIN_TOUCH_TARGET }}
-        className="flex-row items-center gap-2"
-      >
-        <Icon
-          as={shopping ? ShoppingBasket : ListChecks}
-          size={14}
-          className="text-muted-foreground"
-        />
-        <Text className="flex-1 text-sm font-medium" numberOfLines={1}>
-          {list.title}
-        </Text>
-        {timeLabel(list) ? (
-          <Text className="text-muted-foreground text-xs">{timeLabel(list)}</Text>
-        ) : null}
-      </Pressable>
+      <View className="flex-row items-center gap-1">
+        {/* L'heure précède le titre, comme dans un agenda papier : c'est elle
+            qui situe la liste dans le moment, avant ce qu'elle contient. */}
+        <Pressable
+          onPress={() => router.push(`/todo?list=${list.id}` as never)}
+          accessibilityRole="button"
+          accessibilityLabel={`Ouvrir la liste ${list.title}`}
+          style={{ minHeight: MIN_TOUCH_TARGET }}
+          className="min-w-0 flex-1 flex-row items-center gap-2"
+        >
+          <Icon
+            as={shopping ? ShoppingBasket : ListChecks}
+            size={14}
+            className="text-muted-foreground"
+          />
+          {time ? <Text className="text-sm font-bold">{time}</Text> : null}
+          <Text className="min-w-0 flex-1 text-sm font-medium" numberOfLines={1}>
+            {list.title}
+          </Text>
+        </Pressable>
 
-      {list.tasks.length === 0 ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          hitSlop={8}
+          onPress={() => setAdding(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Ajouter une tâche à ${list.title}`}
+          className="size-8"
+        >
+          <Icon as={Plus} size={16} className="text-muted-foreground" />
+        </Button>
+      </View>
+
+      {list.tasks.length === 0 && !adding ? (
         <Text className="text-muted-foreground text-xs">Liste vide.</Text>
       ) : (
         list.tasks.map((task) => <TaskRow key={task.id} task={task} />)
       )}
+
+      {adding ? <QuickAdd list={list} onClose={() => setAdding(false)} /> : null}
+    </View>
+  );
+}
+
+/**
+ * Saisie d'une tâche à la volée, en bas de sa liste.
+ *
+ * Une ligne tapée devient une case à cocher, comme partout ailleurs dans les
+ * todolistes (choix produit du 28 septembre : pas de puce non cochable). Entrée
+ * enregistre et rouvre une ligne vide, pour vider sa tête d'un trait ; quitter
+ * le champ vide le referme.
+ */
+function QuickAdd({ list, onClose }: { list: TaskListWithTasks; onClose: () => void }) {
+  const { addTask } = useTaskActions();
+  const [title, setTitle] = useState("");
+  const [failed, setFailed] = useState(false);
+  const input = useRef<TextInput>(null);
+
+  const submit = () => {
+    // Un second Entrée pendant l'aller-retour ajouterait la même tâche deux
+    // fois : le champ n'est pas encore vidé.
+    if (addTask.isPending) return;
+
+    const trimmed = title.trim();
+    if (trimmed.length === 0) {
+      onClose();
+      return;
+    }
+
+    setFailed(false);
+    addTask.mutate(
+      { listId: list.id, input: { title: trimmed } },
+      {
+        onSuccess: () => {
+          setTitle("");
+          input.current?.focus();
+        },
+        // Le texte reste dans le champ : le perdre sur un échec réseau
+        // obligerait à le retaper.
+        onError: () => setFailed(true),
+      },
+    );
+  };
+
+  return (
+    <View className="gap-1 pt-1">
+      <Input
+        ref={input}
+        autoFocus
+        value={title}
+        onChangeText={setTitle}
+        onSubmitEditing={submit}
+        onBlur={() => {
+          if (title.trim().length === 0 && !addTask.isPending) onClose();
+        }}
+        submitBehavior="submit"
+        returnKeyType="done"
+        placeholder="Nouvelle tâche"
+        accessibilityLabel={`Nouvelle tâche dans ${list.title}`}
+      />
+      {failed ? (
+        <Text className="text-destructive text-xs">
+          La tâche n'a pas pu être ajoutée. Réessayez dans un instant.
+        </Text>
+      ) : null}
     </View>
   );
 }

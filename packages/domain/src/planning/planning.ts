@@ -43,12 +43,15 @@ export function isSameDay(a: Date, b: Date): boolean {
 /**
  * Découpage d'une journée en moments.
  *
- * C'est la forme de la maquette — MATIN, APRÈM, SOIRÉE, SOIR — et celle dans
- * laquelle l'utilisateur écrit déjà ses journées. Le moment est déduit de
+ * MATIN, APRÈS-MIDI, SOIR : le découpage demandé par Yann, et celui dans
+ * lequel l'utilisateur écrit déjà ses journées. Le moment est déduit de
  * l'heure de l'échéance plutôt que stocké : demander « à quel moment ? » en
  * plus de « quand ? » ajouterait une question à chaque saisie (§13.4.1).
+ *
+ * « Dans la journée » n'est pas un moment de la trame : il recueille les
+ * listes datées sans heure, qu'aucun des trois ne peut revendiquer.
  */
-export type MomentKey = "anytime" | "morning" | "afternoon" | "evening" | "night";
+export type MomentKey = "anytime" | "morning" | "afternoon" | "evening";
 
 export type Moment = { key: MomentKey; label: string };
 
@@ -57,14 +60,12 @@ export const MOMENTS: Moment[] = [
   { key: "anytime", label: "Dans la journée" },
   { key: "morning", label: "Matin" },
   { key: "afternoon", label: "Après-midi" },
-  { key: "evening", label: "Soirée" },
-  { key: "night", label: "Soir" },
+  { key: "evening", label: "Soir" },
 ];
 
 /** Bornes en heures locales, celles du langage courant plutôt qu'un découpage égal. */
 const AFTERNOON_FROM = 12;
 const EVENING_FROM = 18;
-const NIGHT_FROM = 22;
 
 /**
  * Moment d'une échéance.
@@ -74,14 +75,13 @@ const NIGHT_FROM = 22;
  * l'appareil et le serveur n'ont pas la même, et une liste datée « samedi »
  * depuis un fuseau lointain s'annonçait « samedi à 2h ».
  *
- * L'heure sert encore à trancher entre matin, après-midi et soirée — et là,
+ * L'heure sert encore à trancher entre matin, après-midi et soir — et là,
  * c'est bien l'horloge de l'appareil qui a raison.
  */
 export function momentOf(list: Pick<TaskList, "dueAt" | "dueAllDay">): MomentKey {
   if (list.dueAt === null || list.dueAllDay !== false) return "anytime";
 
   const hours = new Date(list.dueAt).getHours();
-  if (hours >= NIGHT_FROM) return "night";
   if (hours >= EVENING_FROM) return "evening";
   if (hours >= AFTERNOON_FROM) return "afternoon";
   return "morning";
@@ -92,8 +92,10 @@ export type MomentGroup = { moment: Moment; lists: TaskListWithTasks[] };
 /**
  * Listes échues ce jour-là, regroupées par moment.
  *
- * Les moments vides sont écartés : sept jours × cinq moments rempliraient la
- * semaine de « rien de prévu » et noieraient ce qui s'y passe vraiment.
+ * Matin, après-midi et soir sont rendus même vides : c'est la trame de la
+ * journée, celle d'un agenda papier, qu'on lit d'un coup d'œil et qui se
+ * remplit au fil des jours. « Dans la journée » n'apparaît que s'il porte
+ * quelque chose — vide, il annoncerait une case que rien ne vient remplir.
  */
 export function momentsOfDay(lists: TaskListWithTasks[], day: Date): MomentGroup[] {
   const ofDay = listsOfDay(lists, day).sort(byDueDate);
@@ -101,7 +103,22 @@ export function momentsOfDay(lists: TaskListWithTasks[], day: Date): MomentGroup
   return MOMENTS.map((moment) => ({
     moment,
     lists: ofDay.filter((list) => momentOf(list) === moment.key),
-  })).filter((group) => group.lists.length > 0);
+  })).filter((group) => group.moment.key !== "anytime" || group.lists.length > 0);
+}
+
+/**
+ * Jours que la vue Todo déroule pour un mois.
+ *
+ * Le mois en cours s'ouvre sur aujourd'hui : les jours révolus sont derrière
+ * l'utilisateur, et les faire défiler avant d'arriver à ce qui l'attend
+ * renverserait l'ordre d'importance. Un autre mois — passé qu'on relit, futur
+ * qu'on prépare — se déroule en entier.
+ */
+export function todoDays(monthDays: Date[], today: Date): Date[] {
+  if (!monthDays.some((day) => isSameDay(day, today))) return monthDays;
+
+  const start = startOfDay(today).getTime();
+  return monthDays.filter((day) => startOfDay(day).getTime() >= start);
 }
 
 // ── Ce que porte une journée ───────────────────────────────────────────────
