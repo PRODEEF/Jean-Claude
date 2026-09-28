@@ -7,6 +7,61 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **28 septembre 2026** — traitement des retours remontés
+par le formulaire de signalement (table `feedback`, 14 et 19 septembre), sur la
+branche `fix/bugs`. Chaque cause a été établie sur les données réelles avant
+d'être corrigée, puis vérifiée dans Chromium sur un build web branché sur une
+fausse API.
+
+**`ask_question` s'écrivait au milieu des réponses.** Mistral recopiait ses
+appels d'outils en texte en fin de réponse, en plus ou à la place des vrais
+appels : une ligne `` `ask_question` ``, un bloc `<ask_question>` qui déroulait
+les réponses en liste, ou une section « Outils appelés » décrivant
+`name_conversation` et `suggest_folders` avec leur JSON (la conversation
+« Recherche remorque all road »). Le filtre existant ne regardait que le début
+du flux. La réponse est désormais coupée à la première ligne qui s'ouvre sur le
+nom d'un outil, en flux comme à l'enregistrement, et un bloc `<ask_question>`
+redevient une question à réponses proposées.
+
+**Une réponse semblait écrite par l'utilisateur.** Seules les réponses d'un
+`ask_question` étaient enregistrées ; le texte entier du message tenait lieu de
+question. Quand elle closait une longue réponse, la bulle de l'utilisateur qui
+répondait d'un appui recopiait toute la réponse de l'assistant après « Q : »,
+et la carte de question en affichait le début. La question est enregistrée à
+part (`messages.question`, migration `20260928090000_message_question.sql`,
+**à appliquer avant le déploiement du code**, qui lit la colonne). Les messages
+antérieurs n'affichent plus de « Q : ».
+
+**La pastille de non-lu ne s'allumait jamais pour une réponse arrivée
+ailleurs.** En fin de tour, le fil marquait sa conversation comme lue même
+quand l'utilisateur l'avait quittée pendant la génération. Il ne la marque plus
+lue qu'à l'écran — au passage au premier plan, retour sur un fil resté monté
+compris. Rejoué avant et après correction : compteur à 0 avant, à 1 après.
+
+**Une photo jointe était refusée.** Le serveur refusait l'envoi quand le modèle
+actif ne lisait pas les images, en renvoyant l'utilisateur à ses réglages. Les
+cinq modèles du catalogue lisant les images, seul un `LLM_MODEL` hors catalogue
+peut produire ce refus — valeur à vérifier sur Vercel, non consultable d'ici.
+Le tour est désormais confié à Mistral Medium 3.5, souverain, dès que le fil
+remis au modèle porte une image que le modèle actif ne sait pas lire
+(`modelReadingImages`, `@jc/domain`, testée).
+
+**Le texte « remontait » d'un coup en fin de réponse.** Mesuré : la carte de
+proposition ou de question qui arrive après le flux faisait sauter le texte de
+311 à 344 points en une image, sur une fenêtre de 592. Le fil glisse désormais
+jusqu'en bas une fois le tour terminé ; pendant le flux, il suit toujours la
+réponse sans animation. Écartée pour ce sprint : ne plus suivre le flux du
+tout, à la manière de ChatGPT, qui remonte la question en haut de l'écran.
+
+**Chevron des dossiers visible en permanence.** Il ne remplaçait l'icône de
+dossier qu'au survol de la souris, donc jamais au doigt ; il la précède
+désormais.
+
+**Non résolu :** les deux messages envoyés dans le canal le 19 septembre
+(11 h 49 et 11 h 50) n'ont reçu aucune réponse, sans que la base en dise la
+cause — ni la limite de débit (compteur à 2), ni une pièce jointe. Les journaux
+de l'API sur Vercel sont nécessaires pour conclure.
+
 Dernière mise à jour : **11 septembre 2026** — relecture complète des domaines
 Todo et Calendrier, puis traitement de ses trois causes racines : trois pertes
 de données de l'éditeur de todoliste, quatre autres points corrigés dans la
