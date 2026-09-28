@@ -814,18 +814,25 @@ export class ConversationService {
       // l'utilisateur : la carte s'affiche, et la question posée reste sans
       // réponse. Un second tour la lui donne, la consigne n'ayant pas suffi.
       if (text.length === 0 && needsWrittenAnswer(conversation.kind, toolCalls)) {
-        for await (const chunk of this.answerAfterToolCall(request, toolCalls)) {
-          const visible = retryLeak.push(chunk);
-          if (visible.length > 0) {
-            text += visible;
-            yield { type: "text", text: visible };
-          }
-        }
+        const contentQuestion = askForListContent(toolCalls);
 
-        const retryTail = retryLeak.flush();
-        if (retryTail.length > 0) {
-          text += retryTail;
-          yield { type: "text", text: retryTail };
+        if (contentQuestion !== null) {
+          text = contentQuestion;
+          yield { type: "text", text: contentQuestion };
+        } else {
+          for await (const chunk of this.answerAfterToolCall(request, toolCalls)) {
+            const visible = retryLeak.push(chunk);
+            if (visible.length > 0) {
+              text += visible;
+              yield { type: "text", text: visible };
+            }
+          }
+
+          const retryTail = retryLeak.flush();
+          if (retryTail.length > 0) {
+            text += retryTail;
+            yield { type: "text", text: retryTail };
+          }
         }
       }
     } finally {
@@ -2221,7 +2228,9 @@ function needsWrittenAnswer(kind: Conversation["kind"], toolCalls: LlmToolCall[]
  * présenterait comme faite — l'inverse du §12.1.
  */
 function proposalReminder(toolCalls: LlmToolCall[]): string {
+  const empty = toolCalls.filter((toolCall) => emptyTaskLists(toolCall).length > 0);
   const proposed = toolCalls
+    .filter((toolCall) => !empty.includes(toolCall))
     .map((toolCall) => toolCall.input["message"])
     .filter((message): message is string => typeof message === "string" && message.length > 0);
 
@@ -2239,7 +2248,70 @@ function proposalReminder(toolCalls: LlmToolCall[]): string {
     );
   }
 
+  // Sans ce rappel, le modèle annonçait une proposition qu'aucune carte ne
+  // porterait, puis la reproposait vide au message suivant.
+  if (empty.length > 0) {
+    lines.push(
+      "",
+      "Les listes que tu voulais proposer n'ont encore aucune ligne : elles ne",
+      "s'afficheront pas. Une liste se propose remplie — demande à l'utilisateur ce",
+      "qu'il faut y mettre.",
+    );
+  }
+
   return lines.join("\n");
+}
+
+/**
+ * Todolistes proposées sans ligne par cet appel — aucune si ce n'en est pas un.
+ *
+ * Une liste se propose remplie (§12.1, A.2) : la capture les écarte, et le
+ * modèle doit d'abord en demander le contenu.
+ */
+function emptyTaskLists(toolCall: LlmToolCall): object[] {
+  if (toolCall.name !== SUGGEST_TASK_LIST.name) return [];
+
+  const lists: unknown = toolCall.input["lists"];
+  if (!Array.isArray(lists)) return [];
+
+  return lists.filter((list: unknown): list is object => {
+    if (typeof list !== "object" || list === null) return false;
+    const items = "items" in list ? list.items : null;
+    return !Array.isArray(items) || items.length === 0;
+  });
+}
+
+/**
+ * Question écrite par le serveur quand le modèle n'a proposé, sans un mot, que
+ * des todolistes vides — `null` dans tout autre cas.
+ *
+ * Aucune carte ne s'affichera : la capture les écarte. Rédigée ici plutôt que
+ * demandée au modèle : relancé avec la consigne d'en demander le contenu,
+ * ministral proposait des listes « types » à la place, trois fois sur trois.
+ * Les titres sont connus, il ne reste qu'à demander ce qu'on y met.
+ */
+function askForListContent(toolCalls: LlmToolCall[]): string | null {
+  const proposals = toolCalls.filter((toolCall) => !APPLIED_DIRECTLY.has(toolCall.name));
+  if (proposals.length === 0) return null;
+  if (!proposals.every((toolCall) => emptyTaskLists(toolCall).length > 0)) return null;
+
+  const titles = proposals
+    .flatMap(emptyTaskLists)
+    .flatMap((list) =>
+      "title" in list && typeof list.title === "string" && list.title.trim().length > 0
+        ? [`« ${list.title.trim()} »`]
+        : [],
+    );
+
+  if (titles.length === 0) {
+    return "Qu'est-ce qu'on met dans ces listes ? Dis-le-moi, et je te les propose.";
+  }
+
+  const last = titles[titles.length - 1];
+  const named = titles.length === 1 ? last : `${titles.slice(0, -1).join(", ")} et ${last}`;
+  return titles.length === 1
+    ? `Qu'est-ce qu'on met dans ${named} ? Dis-le-moi, et je te la propose.`
+    : `Qu'est-ce qu'on met dans ${named} ? Dis-le-moi, et je te les propose.`;
 }
 
 /**
@@ -2490,6 +2562,10 @@ function buildSystemPrompt(
       "todoliste, ne le décris pas en texte : appelle `suggest_task_list` tout",
       "de suite, comme pour n'importe quelle autre proposition — la demande",
       "explicite ne dispense pas de la faire valider.",
+      "",
+      "Une liste se propose remplie. Tant que l'utilisateur n'a pas dit ce qu'elle",
+      "contient — « les courses samedi » sans rien de listé —, n'appelle pas",
+      "`suggest_task_list` : demande-lui d'abord ce qu'il faut y mettre.",
     );
   }
 

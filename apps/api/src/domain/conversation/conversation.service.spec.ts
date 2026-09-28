@@ -2203,6 +2203,69 @@ describe("ConversationService", () => {
       jest.restoreAllMocks();
     });
 
+    it("demande le contenu des listes proposées vides, sans relancer le modèle", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const repo = makeRepository();
+      // Appel relevé avec ministral-14b : rien n'a encore été listé.
+      const llm = makeLlmTurns([
+        {
+          toolCalls: [
+            {
+              id: "call-1",
+              name: "suggest_task_list",
+              input: {
+                message: "On organise ça en deux listes ?",
+                lists: [
+                  { title: "Courses samedi matin", kind: "shopping", items: [] },
+                  { title: "Devoirs samedi après-midi", kind: "todo", items: [] },
+                ],
+              },
+            },
+          ],
+        },
+      ]);
+
+      await drain(makeService(repo, llm, suggestions));
+
+      // Une liste se propose remplie : aucune carte, et la question porte sur
+      // ce qui manque plutôt que sur l'envie d'avoir des listes.
+      expect(callCount(llm)).toBe(1);
+      expect(suggestions.create).not.toHaveBeenCalled();
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content:
+            "Qu'est-ce qu'on met dans « Courses samedi matin » et « Devoirs samedi après-midi » ? Dis-le-moi, et je te les propose.",
+        }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("ne présente pas au second tour une liste vide comme affichée", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const empty: LlmToolCall = {
+        id: "call-2",
+        name: "suggest_task_list",
+        input: {
+          message: "Je te prépare la liste des courses ?",
+          lists: [{ title: "Courses", kind: "shopping", items: [] }],
+        },
+      };
+      const llm = makeLlmTurns([{ toolCalls: [SUGGESTION, empty] }, { chunks: ["Voilà."] }]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      const reminder = requestAt(llm, 1).system ?? "";
+      expect(reminder).toContain("Je te fais la liste du rempotage ?");
+      expect(reminder).not.toContain("Je te prépare la liste des courses ?");
+      expect(reminder).toContain("demande à l'utilisateur ce");
+      jest.restoreAllMocks();
+    });
+
     it("ne rappelle pas le modèle quand il a déjà écrit sa réponse", async () => {
       const llm = makeLlmTurns([{ chunks: ["Bien sûr."], toolCalls: [SUGGESTION] }]);
 
