@@ -1,4 +1,4 @@
-import { DEFAULT_CONVERSATION_TITLE } from "@jc/domain";
+import { DEFAULT_CONVERSATION_TITLE, VISION_FALLBACK_MODEL } from "@jc/domain";
 import type {
   AssistantScope,
   CalendarEvent,
@@ -57,6 +57,7 @@ function makeMessage(
     provider: null,
     model: null,
     choices: null,
+    question: null,
     redirectTitle: null,
     redirectAcceptedAt: null,
     createdAt: "2026-08-31T08:00:00.000Z",
@@ -711,7 +712,7 @@ describe("ConversationService", () => {
       expect(events.map((e) => e.type)).toEqual(["message", "text", "text", "done"]);
     });
 
-    it("attache au message de l'assistant les réponses qu'il propose", async () => {
+    it("attache au message de l'assistant la question et les réponses qu'il propose", async () => {
       const repo = makeRepository();
       const llm = makeLlm(
         ["On peut prendre ça par plusieurs bouts."],
@@ -736,6 +737,7 @@ describe("ConversationService", () => {
         expect.objectContaining({
           role: "assistant",
           choices: ["Vous connaître", "Cadrer un projet", "Creuser un problème"],
+          question: "Quel type de questions voulez-vous ?",
         }),
         TOKEN,
       );
@@ -1796,20 +1798,75 @@ describe("ConversationService", () => {
         );
       }
 
-      it("refuse une pièce jointe si le modèle actif ne lit pas les images, avant toute écriture", async () => {
-        const repo = makeRepository();
+      /** Le fil tel que relu après la liaison : la photo est rattachée à la demande. */
+      const illustratedThread = () =>
+        makeRepository({
+          listMessages: jest.fn().mockResolvedValue({
+            items: [
+              makeMessage({
+                id: "msg-user",
+                role: "user",
+                content: "Regarde cette photo.",
+                attachments: [makeAttachment({ messageId: "msg-user" })],
+              }),
+            ],
+            nextCursor: null,
+          }),
+        });
+
+      it("confie à un modèle qui lit les images le tour que le modèle actif ne saurait pas lire", async () => {
+        // Le modèle du serveur des tests est hors catalogue : rien ne dit qu'il
+        // lit les images. Refuser l'envoi renvoyait l'utilisateur à ses réglages.
+        jest.spyOn(console, "warn").mockImplementation(() => undefined);
+        const repo = illustratedThread();
+        const llm = makeLlm();
         const attachments = makeAttachmentRepository({
           findByIds: jest.fn().mockResolvedValue([makeAttachment()]),
         });
 
-        await expect(
-          drain(withAttachments(attachments, repo), {
-            content: "",
-            inputMode: "text",
-            attachmentIds: ["att-1"],
-          }),
-        ).rejects.toMatchObject({ status: 422 });
-        expect(repo.appendMessage).not.toHaveBeenCalled();
+        await drain(
+          makeService(
+            repo,
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            makeUserRepository(),
+            makeCalendarRepository(),
+            makeTaskRepository(),
+            attachments,
+          ),
+          { content: "Regarde cette photo.", inputMode: "text", attachmentIds: ["att-1"] },
+        );
+
+        expect(lastRequest(llm).model).toBe(VISION_FALLBACK_MODEL);
+        expect(repo.appendMessage).toHaveBeenCalledTimes(2);
+        jest.restoreAllMocks();
+      });
+
+      it("garde le modèle des réglages quand il lit les images", async () => {
+        const llm = makeLlm();
+        const users = makeUserRepository(
+          {},
+          { preferences: makePreferences({ llmModel: "openai/gpt-5.4-mini" }) },
+        );
+
+        await drain(
+          makeService(
+            illustratedThread(),
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            users,
+            makeCalendarRepository(),
+            makeTaskRepository(),
+            makeAttachmentRepository({
+              findByIds: jest.fn().mockResolvedValue([makeAttachment()]),
+            }),
+          ),
+          { content: "Regarde cette photo.", inputMode: "text", attachmentIds: ["att-1"] },
+        );
+
+        expect(lastRequest(llm).model).toBe("openai/gpt-5.4-mini");
       });
 
       it("refuse une pièce jointe introuvable", async () => {
@@ -2208,6 +2265,125 @@ describe("ConversationService", () => {
     });
   });
 
+  describe("appels d'outils recopiés en fin de réponse", () => {
+    /** Texte persisté pour la réponse de l'assistant. */
+    const savedContent = (repo: IConversationRepository) =>
+      ((repo.appendMessage as jest.Mock).mock.calls[1] as [string, string, { content: string }])[2]
+        .content;
+    const streamed = (events: MessageStreamEvent[]) =>
+      events.flatMap((event) => (event.type === "text" ? [event.text] : [])).join("");
+
+    beforeEach(() => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    });
+    afterEach(() => jest.restoreAllMocks());
+
+    it("retire la ligne `ask_question` écrite sous la question, à l'écran comme en base", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm(
+        ["Tu veux que je te rappelle les dates ?\n", "`ask_", "question`"],
+        [
+          {
+            id: "call-1",
+            name: "ask_question",
+            input: { question: "Je te rappelle les dates ?", choices: ["Oui", "Non"] },
+          },
+        ],
+      );
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).not.toContain("ask_question");
+      expect(savedContent(repo)).toBe("Tu veux que je te rappelle les dates ?");
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({ choices: ["Oui", "Non"] }),
+        TOKEN,
+      );
+    });
+
+    it("fait d'un bloc <ask_question> écrit en texte des réponses à choisir d'un appui", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "Je t'organise ça ?\n<ask_",
+        "question>\nOn fait :\n- Une todoliste pour les étapes\n",
+        "- Une liste d'achats\n- Les deux\n</ask_question>",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).toBe("Je t'organise ça ?\n");
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({
+          content: "Je t'organise ça ?",
+          choices: ["Une todoliste pour les étapes", "Une liste d'achats", "Les deux"],
+          question: "On fait :",
+        }),
+        TOKEN,
+      );
+    });
+
+    it("préfère la question de l'outil à celle recopiée en texte", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm(
+        ["On y va ?\n<ask_question>\nOn fait :\n- A\n- B\n</ask_question>"],
+        [
+          {
+            id: "call-1",
+            name: "ask_question",
+            input: { question: "On y va ?", choices: ["Oui", "Plus tard"] },
+          },
+        ],
+      );
+
+      await drain(makeService(repo, llm));
+
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({ choices: ["Oui", "Plus tard"] }),
+        TOKEN,
+      );
+    });
+
+    it("coupe la section qui décrit les outils appelés, et ce qui l'annonçait", async () => {
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "Je te propose de ranger cette conversation. Ça te convient ?\n\n---\n**Outils appelés** :\n",
+        '- `name_conversation` → *"Remorque"*\n- `suggest_folders` →\n  ```json\n  {"folders": []}\n  ```',
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).not.toContain("name_conversation");
+      expect(savedContent(repo)).toBe(
+        "Je te propose de ranger cette conversation. Ça te convient ?",
+      );
+    });
+
+    it("laisse passer accents graves, balises et puces qui ne nomment aucun outil", async () => {
+      const text =
+        "Deux options :\n- `npm install` d'abord\n- **Budget** ensuite\n<div> reste du HTML.";
+      const repo = makeRepository();
+      const llm = makeLlm([
+        "Deux options :\n- `np",
+        "m install` d'abord\n- **Bud",
+        "get** ensuite\n<div> reste du HTML.",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      expect(streamed(events)).toBe(text);
+      expect(savedContent(repo)).toBe(text);
+    });
+  });
+
   describe("correction et reprise d'un tour", () => {
     /** Déroule un générateur de tour, comme le fait le controller. */
     async function collect(
@@ -2356,58 +2532,26 @@ describe("ConversationService", () => {
       ).rejects.toThrow();
     });
 
-    it("refuse de corriger un message dont le modèle actif ne lit plus les images", async () => {
+    it("rejoue un message illustré avec un modèle qui lit les images, même si les réglages ont changé", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
       const question = makeMessage({
         id: "msg-1",
         role: "user",
         content: "Regarde cette photo.",
         createdAt: "2026-09-02T08:00:00.000Z",
-        attachments: [makeAttachment()],
+        attachments: [makeAttachment({ messageId: "msg-1" })],
       });
-      const repo = makeRepository({ findMessage: jest.fn().mockResolvedValue(question) });
-
-      await expect(
-        collect(
-          makeService(
-            repo,
-            makeLlm(),
-            makeSuggestionRepository(),
-            makeFolderRepository(),
-            makeUserRepository(),
-            makeCalendarRepository(),
-            makeTaskRepository(),
-            makeAttachmentRepository(),
-          ).editMessage("conv-1", USER, "msg-1", { content: "Et celle-là ?" }, TOKEN),
-        ),
-      ).rejects.toMatchObject({ status: 422 });
-      expect(repo.updateMessageContent).not.toHaveBeenCalled();
-    });
-
-    it("refuse de rejouer un message dont le modèle actif ne lit plus les images", async () => {
-      const question = makeMessage({
-        id: "msg-1",
-        role: "user",
-        content: "Regarde cette photo.",
-        createdAt: "2026-09-02T08:00:00.000Z",
-        attachments: [makeAttachment()],
+      const repo = makeRepository({
+        findMessage: jest.fn().mockResolvedValue(question),
+        listMessages: jest.fn().mockResolvedValue({ items: [question], nextCursor: null }),
       });
-      const repo = makeRepository({ findMessage: jest.fn().mockResolvedValue(question) });
+      const llm = makeLlm();
 
-      await expect(
-        collect(
-          makeService(
-            repo,
-            makeLlm(),
-            makeSuggestionRepository(),
-            makeFolderRepository(),
-            makeUserRepository(),
-            makeCalendarRepository(),
-            makeTaskRepository(),
-            makeAttachmentRepository(),
-          ).retryMessage("conv-1", USER, "msg-1", TOKEN),
-        ),
-      ).rejects.toMatchObject({ status: 422 });
-      expect(repo.deleteMessagesAfter).not.toHaveBeenCalled();
+      await collect(makeService(repo, llm).retryMessage("conv-1", USER, "msg-1", TOKEN));
+
+      expect(repo.deleteMessagesAfter).toHaveBeenCalled();
+      expect(lastRequest(llm).model).toBe(VISION_FALLBACK_MODEL);
+      jest.restoreAllMocks();
     });
   });
 

@@ -52,6 +52,7 @@ type MessageRow = {
   provider: string | null;
   model: string | null;
   choices: string[] | null;
+  question: string | null;
   redirect_title: string | null;
   redirect_accepted_at: string | null;
   created_at: string;
@@ -108,6 +109,7 @@ function toMessage(row: MessageRow, urlByPath: ReadonlyMap<string, string>): Mes
     provider: row.provider,
     model: row.model,
     choices: row.choices,
+    question: row.question,
     redirectTitle: row.redirect_title,
     redirectAcceptedAt: row.redirect_accepted_at,
     createdAt: row.created_at,
@@ -137,7 +139,7 @@ export const CONVERSATION_COLUMNS =
   "id, kind, title, archived_at, last_message_at, created_at, updated_at, unread_count, " +
   "pending_question, conversation_folders(folder_id)";
 const MESSAGE_COLUMNS =
-  "id, conversation_id, role, content, input_mode, provider, model, choices, " +
+  "id, conversation_id, role, content, input_mode, provider, model, choices, question, " +
   "redirect_title, redirect_accepted_at, created_at, " +
   "message_attachments(id, storage_path, mime_type, byte_size, file_name, extracted_text, created_at)";
 
@@ -355,6 +357,7 @@ export const conversationRepository: IConversationRepository = {
       provider?: string | null;
       model?: string | null;
       choices?: string[] | null;
+      question?: string | null;
       redirectTitle?: string | null;
     },
     accessToken,
@@ -372,6 +375,7 @@ export const conversationRepository: IConversationRepository = {
         provider: message.provider ?? null,
         model: message.model ?? null,
         choices: message.choices ?? null,
+        question: message.question ?? null,
         redirect_title: message.redirectTitle ?? null,
       })
       .select(MESSAGE_COLUMNS)
