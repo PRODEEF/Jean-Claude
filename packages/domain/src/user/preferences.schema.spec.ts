@@ -4,6 +4,7 @@ import {
   isVisionCapableModel,
   modelReadingImages,
   toAssistantModel,
+  toCatalogueModel,
   VISION_FALLBACK_MODEL,
   updateUserProfileSchema,
   userPreferencesSchema,
@@ -74,13 +75,28 @@ describe("isVisionCapableModel", () => {
 
 describe("toAssistantModel", () => {
   it("retient un modèle du catalogue", () => {
-    expect(toAssistantModel("mistral/mistral-medium-3.5")).toBe("mistral/mistral-medium-3.5");
+    expect(toAssistantModel("mistral/ministral-14b")).toBe("mistral/ministral-14b");
   });
 
   it("rend la main au serveur quand le modèle enregistré n'est plus proposé", () => {
     expect(toAssistantModel("openai/gpt-4")).toBeNull();
     expect(toAssistantModel(null)).toBeNull();
     expect(toAssistantModel(42)).toBeNull();
+  });
+});
+
+describe("toCatalogueModel", () => {
+  it("retient tel quel un modèle servi qui figure au catalogue", () => {
+    expect(toCatalogueModel("openai/gpt-5.4-mini")).toBe("openai/gpt-5.4-mini");
+  });
+
+  it("rattache un modèle servi hors catalogue à l'entrée de son éditeur", () => {
+    expect(toCatalogueModel("mistral/mistral-medium-3.5")).toBe("mistral/ministral-14b");
+  });
+
+  it("ne rattache rien quand l'éditeur n'est pas au catalogue", () => {
+    expect(toCatalogueModel("anthropic/claude-opus-5")).toBeNull();
+    expect(toCatalogueModel("")).toBeNull();
   });
 });
 

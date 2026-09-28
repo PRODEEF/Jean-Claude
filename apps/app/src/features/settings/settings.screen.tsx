@@ -1,21 +1,33 @@
-import { useState, type ReactNode } from "react";
+import { Children, Fragment, useState, type ComponentProps, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { Palette } from "lucide-react-native";
+import {
+  ChevronRight,
+  LogOut,
+  MessageSquareText,
+  Palette,
+  type LucideIcon,
+} from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
-import { ASSISTANT_MODELS, type AssistantScope, type Theme } from "@jc/domain";
+import { ASSISTANT_MODELS, toCatalogueModel, type AssistantScope, type Theme } from "@jc/domain";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
 import { AccountDeleteDialog } from "@/features/settings/AccountDeleteDialog";
+import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useCurrentUser } from "@/shared/hooks/use-current-user";
 import { useProfile, useUpdateProfile } from "@/shared/hooks/use-profile";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { api } from "@/shared/lib/api";
+import { cn } from "@/shared/lib/utils";
+import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
 import { Button } from "@/shared/ui/button";
 import { ColorPicker } from "@/shared/ui/color-picker";
 import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { FORM_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
+import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { Select } from "@/shared/ui/select";
+import { Separator } from "@/shared/ui/separator";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 
@@ -35,11 +47,18 @@ const THEMES: { value: Theme; label: string }[] = [
  * Libellés sans jargon (§13.4.4) : on décrit ce que l'assistant fait, pas le
  * nom technique de la capacité.
  */
-const CAPABILITIES: { key: keyof AssistantScope; label: string; hint: string }[] = [
+const CAPABILITIES: {
+  key: keyof AssistantScope;
+  label: string;
+  hint: string;
+  /** Réglable, mais rien n'est encore envoyé : dit par une pastille plutôt que noyé dans la phrase. */
+  soon?: boolean;
+}[] = [
   {
     key: "morningReminders",
     label: "Rappels du matin",
-    hint: "Bientôt : ce qui compte aujourd'hui, et le point du lundi. Pas encore envoyé.",
+    hint: "Ce qui compte aujourd'hui, et le point du lundi.",
+    soon: true,
   },
   {
     key: "folderOrganization",
@@ -72,17 +91,19 @@ const CAPABILITIES: { key: keyof AssistantScope; label: string; hint: string }[]
  * ici. Les deux sont donc fusionnés, et la pastille de la bannière ouvre
  * directement cette page.
  *
- * Une liste de lignes « libellé / contrôle » : ChatGPT, Claude et Perplexity
- * présentent tous leurs réglages ainsi (§4.2), et une page de préférences n'a
- * pas à attirer l'œil.
+ * Des groupes de lignes « libellé / contrôle » posés dans des cartes : c'est
+ * la présentation des réglages d'iOS, de ChatGPT et de Claude (§4.2). Le titre
+ * de chaque groupe prime sur ses lignes — l'œil trouve d'abord la section,
+ * puis le réglage — et la carte dit sans ambiguïté ce qui va ensemble.
  *
- * Même ossature que les autres écrans : le titre vit dans le bandeau, et la
- * déconnexion en est la commande de droite — c'est la place des actions
- * d'écran ici, et un bouton perdu au bas d'une page longue se cherche.
+ * La déconnexion vit dans la carte Compte, en haut de page : c'est là qu'on la
+ * cherche, sans avoir à parcourir la page, et elle libère le bandeau d'un
+ * bouton rouge qui n'annonçait rien de destructeur.
  */
 export function SettingsScreen() {
   const { signOut } = useAuth();
   const { palette } = useTheme();
+  const { displayName, initials } = useCurrentUser();
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -111,102 +132,82 @@ export function SettingsScreen() {
   // La pastille « Personnalisée » se rouvre d'elle-même si la couleur active
   // n'est déjà aucun des huit presets — sans quoi choisir une teinte brute
   // puis revenir sur cet écran ferait croire qu'elle a été perdue.
-  const isPresetAccent = ASSISTANT_ACCENTS.some(
+  const presetAccent = ASSISTANT_ACCENTS.find(
     (option) => option.value.toLowerCase() === accent.toLowerCase(),
   );
   const [customRequested, setCustomRequested] = useState(false);
-  const showColorPicker = customRequested || !isPresetAccent;
+  const showColorPicker = customRequested || !presetAccent;
 
   // Tant que rien n'a été choisi, c'est le modèle du serveur qui répond : on
   // coche l'entrée qui lui correspond plutôt que de n'en cocher aucune, sans
   // quoi la page laisserait croire qu'aucun modèle n'est actif.
   const chosenModel = profile?.preferences.llmModel ?? null;
-  const servedModel = health.data?.llm.model ?? null;
+  const servedModel = health.data ? toCatalogueModel(health.data.llm.model) : null;
   const activeModel = chosenModel ?? servedModel;
+  const activeModelChoice = ASSISTANT_MODELS.find((model) => model.id === activeModel);
 
   return (
-    <ScreenShell
-      title="Réglages"
-      maxWidth={FORM_MAX_WIDTH}
-      action={
-        <Button
-          variant="outline"
-          size="sm"
-          onPress={() => void signOut()}
-          accessibilityRole="button"
-          accessibilityLabel="Se déconnecter"
-        >
-          <Text className="text-destructive">Se déconnecter</Text>
-        </Button>
-      }
-    >
-      <View className="gap-8">
+    <ScreenShell title="Réglages" maxWidth={FORM_MAX_WIDTH}>
+      <View className="gap-8 pb-8">
         <Section title="Compte">
-          <Field label="Adresse e-mail" hint="Non modifiable">
-            <Input
-              value={profile?.email ?? ""}
-              editable={false}
-              accessibilityLabel="Adresse e-mail"
-              autoComplete="email"
-              textContentType="emailAddress"
-              keyboardType="email-address"
-            />
-          </Field>
-
-          <Field label="Pseudo">
-            <View className="flex-row gap-2">
-              <Input
-                value={pseudo}
-                onChangeText={setDraftPseudo}
-                placeholder="Votre pseudo"
-                maxLength={80}
-                autoComplete="name"
-                textContentType="nickname"
-                accessibilityLabel="Pseudo"
-                className="flex-1"
-              />
-              {/* Enregistrement explicite plutôt qu'à la perte de focus : sur
-                  un champ d'identité, l'utilisateur doit voir qu'il a validé.
-                  Aligné sur la hauteur du champ, le bouton descend sous les
-                  44 pt de `MIN_TOUCH_TARGET` : le `hitSlop` les rétablit sans
-                  désaligner la rangée, comme dans la barre latérale. */}
-              <Button
-                variant="outline"
-                disabled={!canSavePseudo || updateProfile.isPending}
-                onPress={() => updateProfile.mutate({ displayName: trimmedPseudo })}
-                hitSlop={8}
-                accessibilityRole="button"
-              >
-                <Text>Enregistrer</Text>
-              </Button>
+          <View className="flex-row items-center gap-3 px-4 py-4">
+            <Avatar alt={`Avatar de ${displayName}`} className="size-11">
+              <AvatarFallback className="bg-primary">
+                <Text className="text-base font-semibold text-primary-foreground">{initials}</Text>
+              </AvatarFallback>
+            </Avatar>
+            <View className="min-w-0 flex-1">
+              <Text className="text-base font-semibold" numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Text className="text-sm text-muted-foreground" numberOfLines={1}>
+                {profile?.email ?? ""}
+              </Text>
             </View>
-          </Field>
+          </View>
+
+          <SettingRow label="Pseudo" hint="Le nom affiché dans le bandeau." wide>
+            <SaveableInput
+              value={pseudo}
+              onChangeText={setDraftPseudo}
+              canSave={canSavePseudo}
+              saving={updateProfile.isPending}
+              onSave={() => updateProfile.mutate({ displayName: trimmedPseudo })}
+              placeholder="Votre pseudo"
+              maxLength={80}
+              autoComplete="name"
+              textContentType="nickname"
+              accessibilityLabel="Pseudo"
+            />
+          </SettingRow>
+
+          <ActionRow icon={LogOut} label="Se déconnecter" onPress={() => void signOut()} />
         </Section>
 
         <Section title="Assistant">
-          <Field label="Son nom">
-            <View className="flex-row gap-2">
-              <Input
-                value={assistantName}
-                onChangeText={setDraftName}
-                placeholder="Jean-Claude"
-                maxLength={40}
-                accessibilityLabel="Nom de l'assistant"
-                className="flex-1"
-              />
-              <Button
-                variant="outline"
-                disabled={!canSaveName || updateProfile.isPending}
-                onPress={() => updateProfile.mutate({ assistantName: trimmedName })}
-                hitSlop={8}
-                accessibilityRole="button"
-              >
-                <Text>Enregistrer</Text>
-              </Button>
-            </View>
-          </Field>
+          <SettingRow label="Nom" hint="Comment il se présente dans vos conversations." wide>
+            <SaveableInput
+              value={assistantName}
+              onChangeText={setDraftName}
+              canSave={canSaveName}
+              saving={updateProfile.isPending}
+              onSave={() => updateProfile.mutate({ assistantName: trimmedName })}
+              placeholder="Jean-Claude"
+              maxLength={40}
+              accessibilityLabel="Nom de l'assistant"
+            />
+          </SettingRow>
 
-          <Field label="Sa couleur">
+          <View className="gap-3 px-4 py-3">
+            <RowLabel
+              label="Couleur"
+              hint={
+                presetAccent && !showColorPicker
+                  ? `${presetAccent.label} · bandeau, bulles et boutons.`
+                  : "Personnalisée · bandeau, bulles et boutons."
+              }
+            />
+
             {/* Chaque pastille montre la couleur telle qu'elle apparaîtra en
                 thème clair et en thème sombre : c'est sur ces deux aplats
                 qu'elle se voit vraiment — bannière et bulles — et l'un des deux
@@ -284,9 +285,39 @@ export function SettingsScreen() {
                 onChange={(hex) => updateProfile.mutate({ assistantColor: hex })}
               />
             ) : null}
-          </Field>
+          </View>
 
-          <Field label="Modèle">
+          <SettingRow
+            label="Bandeau uni"
+            hint="Le bandeau du haut passe à l'aplat plein de la couleur d'assistant, sans dégradé."
+          >
+            <Switch
+              value={profile?.preferences.flatBanner ?? true}
+              onValueChange={(value) => updateProfile.mutate({ flatBanner: value })}
+              disabled={!profile || updateProfile.isPending}
+              accessibilityLabel="Bandeau uni"
+            />
+          </SettingRow>
+
+          <SettingRow label="Thème">
+            <SegmentedControl
+              options={THEMES}
+              value={theme}
+              onChange={(value) => updateProfile.mutate({ theme: value })}
+            />
+          </SettingRow>
+
+          <SettingRow
+            label="Modèle"
+            // Le bénéfice du modèle actif, sous le libellé : le menu fermé
+            // n'en montre que le nom, qui ne dit rien à qui ne les connaît pas.
+            hint={
+              activeModelChoice
+                ? `${activeModelChoice.benefit}${activeModelChoice.sovereign ? " Hébergé en Europe." : ""}`
+                : "Aucun de ces modèles n'est actif pour l'instant : choisissez-en un."
+            }
+            wide
+          >
             <Select
               value={activeModel}
               options={ASSISTANT_MODELS.map((model) => ({
@@ -301,26 +332,20 @@ export function SettingsScreen() {
               disabled={updateProfile.isPending}
               accessibilityLabel="Modèle"
             />
-            {activeModel === null ? (
-              <Text className="text-sm text-muted-foreground">
-                Aucun de ces modèles n'est actif pour l'instant : choisissez-en un.
-              </Text>
-            ) : null}
-          </Field>
+          </SettingRow>
         </Section>
 
-        <Section title="Ce qu'il peut proposer de lui-même">
-          <Text className="-mt-3 text-sm text-muted-foreground">
-            Il propose toujours, il n'agit jamais seul : vous acceptez ou vous ignorez d'un geste.
-            Ce qui est désactivé ici ne vous sera plus proposé.
-          </Text>
-
+        <Section
+          title="Ce qu'il peut vous proposer"
+          description="Il propose toujours, il n'agit jamais seul : vous acceptez ou vous ignorez d'un geste. Ce qui est désactivé ici ne vous sera plus proposé."
+        >
           {CAPABILITIES.map((capability) => (
-            <View key={capability.key} className="flex-row items-center gap-3">
-              <View className="flex-1">
-                <Text className="text-base text-foreground">{capability.label}</Text>
-                <Text className="text-sm text-muted-foreground">{capability.hint}</Text>
-              </View>
+            <SettingRow
+              key={capability.key}
+              label={capability.label}
+              hint={capability.hint}
+              soon={capability.soon}
+            >
               <Switch
                 value={scope?.[capability.key] ?? true}
                 onValueChange={(value) =>
@@ -329,73 +354,39 @@ export function SettingsScreen() {
                 disabled={!scope || updateProfile.isPending}
                 accessibilityLabel={capability.label}
               />
-            </View>
+            </SettingRow>
           ))}
         </Section>
 
-        <Section title="Apparence">
-          <Field label="Thème">
-            {/* Un groupe segmenté plutôt que trois boutons juxtaposés : les
-                options sont exclusives, et celle en cours doit se lire d'un
-                coup d'œil. */}
-            <View
-              className="flex-row gap-1 rounded-md border border-border p-1"
-              accessibilityRole="radiogroup"
-            >
-              {THEMES.map((option) => (
-                <Button
-                  key={option.value}
-                  variant={option.value === theme ? "default" : "ghost"}
-                  disabled={updateProfile.isPending}
-                  onPress={() => updateProfile.mutate({ theme: option.value })}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: option.value === theme }}
-                  className="h-11 flex-1 sm:h-11"
-                >
-                  <Text>{option.label}</Text>
-                </Button>
-              ))}
-            </View>
-          </Field>
-
-          <View className="flex-row items-center gap-3">
-            <View className="flex-1">
-              <Text className="text-base text-foreground">Bandeau uni</Text>
-              <Text className="text-sm text-muted-foreground">
-                Le bandeau du haut passe à l'aplat plein de la couleur d'assistant, sans dégradé.
-              </Text>
-            </View>
-            <Switch
-              value={profile?.preferences.flatBanner ?? true}
-              onValueChange={(value) => updateProfile.mutate({ flatBanner: value })}
-              disabled={!profile || updateProfile.isPending}
-              accessibilityLabel="Bandeau uni"
-            />
-          </View>
-        </Section>
-
         <Section title="Aide">
-          <Pressable
+          <ActionRow
+            icon={MessageSquareText}
+            label="Donner votre avis"
+            hint="Une idée, une gêne, un bug : tout nous intéresse."
             onPress={() => setFeedbackOpen(true)}
-            className="flex-row items-center justify-between"
-            style={{ minHeight: MIN_TOUCH_TARGET }}
-            accessibilityRole="button"
-            accessibilityLabel="Donner votre avis"
-          >
-            <Text className="text-base text-foreground">Donner votre avis</Text>
-          </Pressable>
+            chevron
+          />
         </Section>
 
-        <Section title="Supprimer le compte">
-          <Pressable
-            onPress={() => setDeleteAccountOpen(true)}
-            className="flex-row items-center justify-between"
-            style={{ minHeight: MIN_TOUCH_TARGET }}
-            accessibilityRole="button"
-            accessibilityLabel="Supprimer mon compte"
+        {/* À part et en dernier : une action irréversible ne se range pas
+            parmi les réglages qu'on bascule sans y penser. */}
+        <Section>
+          <SettingRow
+            label="Supprimer mon compte"
+            hint="Efface définitivement vos conversations, dossiers, listes et calendrier."
+            destructive
           >
-            <Text className="text-base text-destructive">Supprimer mon compte</Text>
-          </Pressable>
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={() => setDeleteAccountOpen(true)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Supprimer mon compte"
+            >
+              <Text className="text-destructive">Supprimer</Text>
+            </Button>
+          </SettingRow>
         </Section>
 
         {updateProfile.isError ? (
@@ -411,11 +402,188 @@ export function SettingsScreen() {
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * Groupe de réglages : un titre, puis ses lignes dans une carte.
+ *
+ * Le filet entre deux lignes est posé ici plutôt que par chaque ligne : une
+ * ligne conditionnelle qui disparaît n'y laisse ni trait orphelin ni double
+ * trait.
+ */
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title?: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  const rows = Children.toArray(children);
+
   return (
-    <View className="gap-5">
-      <Text className="text-sm font-medium text-muted-foreground">{title}</Text>
-      {children}
+    <View className="gap-3">
+      {title ? (
+        <View className="gap-1 px-1">
+          <Text className="text-base font-semibold" role="heading">
+            {title}
+          </Text>
+          {description ? (
+            <Text className="text-sm text-muted-foreground">{description}</Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View className="overflow-hidden rounded-xl border border-border bg-card">
+        {rows.map((row, index) => (
+          <Fragment key={index}>
+            {index > 0 ? <Separator /> : null}
+            {row}
+          </Fragment>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function RowLabel({
+  label,
+  hint,
+  soon = false,
+  destructive = false,
+}: {
+  label: string;
+  hint?: string | undefined;
+  soon?: boolean | undefined;
+  destructive?: boolean;
+}) {
+  return (
+    <View className="min-w-0 flex-1 gap-0.5">
+      <View className="flex-row flex-wrap items-center gap-2">
+        <Text className={cn("text-sm font-medium", destructive && "text-destructive")}>
+          {label}
+        </Text>
+        {soon ? (
+          <View className="rounded-full bg-muted px-2 py-0.5">
+            <Text className="text-xs font-medium text-muted-foreground">Bientôt</Text>
+          </View>
+        ) : null}
+      </View>
+      {hint ? <Text className="text-sm text-muted-foreground">{hint}</Text> : null}
+    </View>
+  );
+}
+
+/**
+ * Ligne « libellé / contrôle ».
+ *
+ * `wide` réserve au contrôle une largeur fixe — un champ ou un menu qui
+ * prendrait sa largeur naturelle ferait onduler la colonne de droite d'une
+ * ligne à l'autre. Sur téléphone, il passe sous le libellé : à côté, il ne
+ * resterait de place ni à l'un ni à l'autre.
+ */
+function SettingRow({
+  label,
+  hint,
+  soon,
+  destructive,
+  wide = false,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  soon?: boolean | undefined;
+  destructive?: boolean;
+  wide?: boolean;
+  children: ReactNode;
+}) {
+  const compact = useBreakpoint() === "compact";
+  const stacked = wide && compact;
+
+  return (
+    <View
+      className={cn("gap-3 px-4 py-3", stacked ? "flex-col" : "flex-row items-center gap-4")}
+      style={{ minHeight: MIN_TOUCH_TARGET + 12 }}
+    >
+      <RowLabel
+        label={label}
+        hint={hint}
+        soon={soon}
+        {...(destructive !== undefined ? { destructive } : {})}
+      />
+      <View className={cn(wide && (stacked ? "w-full" : "w-64"))}>{children}</View>
+    </View>
+  );
+}
+
+/** Ligne entière cliquable — ouvre une fenêtre ou déclenche une action. */
+function ActionRow({
+  icon,
+  label,
+  hint,
+  onPress,
+  chevron = false,
+}: {
+  icon: LucideIcon;
+  label: string;
+  hint?: string;
+  onPress: () => void;
+  chevron?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className="flex-row items-center gap-3 px-4 py-3 active:bg-accent web:hover:bg-accent"
+      style={{ minHeight: MIN_TOUCH_TARGET + 12 }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Icon as={icon} size={18} className="text-muted-foreground" />
+      <RowLabel label={label} hint={hint} />
+      {chevron ? <Icon as={ChevronRight} size={16} className="text-muted-foreground" /> : null}
+    </Pressable>
+  );
+}
+
+/**
+ * Champ d'identité à enregistrement explicite.
+ *
+ * Explicite plutôt qu'à la perte de focus : sur un champ d'identité,
+ * l'utilisateur doit voir qu'il a validé. Le bouton n'apparaît qu'une fois la
+ * valeur modifiée — grisé en permanence, il ajoutait deux boutons inertes à la
+ * page — et disparaît à l'enregistrement, ce qui vaut confirmation.
+ */
+function SaveableInput({
+  canSave,
+  saving,
+  onSave,
+  ...inputProps
+}: ComponentProps<typeof Input> & {
+  canSave: boolean;
+  saving: boolean;
+  onSave: () => void;
+}) {
+  return (
+    <View className="flex-row gap-2">
+      <Input
+        {...inputProps}
+        onSubmitEditing={() => {
+          if (canSave && !saving) onSave();
+        }}
+        returnKeyType="done"
+        // 44 pt, la hauteur du menu Modèle : les contrôles de la colonne de
+        // droite s'alignent d'une ligne à l'autre.
+        className="h-11 flex-1 sm:h-11"
+      />
+      {canSave ? (
+        <Button
+          disabled={saving}
+          onPress={onSave}
+          className="h-11 sm:h-11"
+          accessibilityRole="button"
+        >
+          <Text>Enregistrer</Text>
+        </Button>
+      ) : null}
     </View>
   );
 }
@@ -437,9 +605,7 @@ function previewDarkHalf(hex: string): string {
   const channel = (offset: number) =>
     Math.round(parseInt(normalized.slice(offset, offset + 2), 16) * kept);
 
-  return `#${[0, 2, 4]
-    .map((offset) => channel(offset).toString(16).padStart(2, "0"))
-    .join("")}`;
+  return `#${[0, 2, 4].map((offset) => channel(offset).toString(16).padStart(2, "0")).join("")}`;
 }
 
 /**
@@ -449,7 +615,7 @@ function previewDarkHalf(hex: string): string {
  * superposent en absolu et la teinte vient d'une donnée, pas d'un jeton — les
  * classes ne sauraient pas l'exprimer sans style en ligne de toute façon.
  */
-const SWATCH_SIZE = 40;
+const SWATCH_SIZE = 36;
 
 const styles = StyleSheet.create({
   swatch: {
@@ -473,15 +639,3 @@ const styles = StyleSheet.create({
   swatchHalf: { flex: 1 },
   swatchCore: { width: SWATCH_SIZE / 2.5, height: SWATCH_SIZE / 2.5, borderRadius: SWATCH_SIZE },
 });
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <View className="gap-2">
-      <View className="flex-row items-baseline justify-between gap-3">
-        <Text className="text-base text-foreground">{label}</Text>
-        {hint ? <Text className="text-sm text-muted-foreground">{hint}</Text> : null}
-      </View>
-      {children}
-    </View>
-  );
-}
