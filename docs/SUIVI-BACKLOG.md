@@ -7,6 +7,58 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026** — revue des retours testeurs
+par l'équipe, et canal permanent ouvert aux idées et réclamations, sur la
+branche `feat/zen-allen-ch2smh`. Vérifié par les tests (API et domaine), le
+typecheck, et les 30 migrations rejouées sur un Postgres 16 vierge, RLS
+éprouvées sous les rôles testeur, admin et anonyme. **Écran non vérifié dans
+un navigateur.**
+
+**L'accès aux retours est tranché : un rôle admin restreint** (décision de
+Clarisse, parmi les trois pistes : se connecter au canal du testeur, un accès
+admin, la lecture en base). Se connecter au canal aurait exposé les rappels
+et l'organisation personnelle du testeur (§8) ; la lecture en base restait
+réservée à qui sait écrire du SQL. Un compte inscrit à la main dans
+`public.admins` lit `feedback` et `message_ratings` — et rien d'autre : ni
+conversation, ni mémoire, ni réglages. L'accès passe par des policies RLS et
+non par la clé service_role, que la règle 100-api réserve aux traitements
+système. Le nom et l'adresse des auteurs viennent d'une fonction SQL
+(`feedback_authors`) qui ne rend que ces deux colonnes, et à un admin
+seulement. Donner l'accès : voir le skill `daily-report`.
+
+**« Retours des testeurs », en bas de la barre latérale, pour les seuls
+admins.** Un testeur par carte, le plus récemment actif en tête : ses retours
+du plus récent au plus ancien, chacun avec un statut (nouveau, pris en compte,
+traité, écarté) que l'admin change d'un menu, et ses notations de réponses —
+comptées, avec leurs commentaires. Le statut est la seule colonne qu'un admin
+peut modifier : ce que le testeur a écrit reste tel qu'il l'a envoyé, et le
+testeur, lui, ne touche plus au statut de ses propres retours.
+
+**« Analyser » produit une synthèse du testeur par le modèle** (port
+`LlmProvider`, modèle du serveur) : en bref, problèmes ouverts à traiter en
+priorité — regroupés quand ils décrivent la même chose —, idées et attentes,
+ce qui est déjà traité. Produite à la demande et non conservée : une synthèse
+stockée vieillirait dès le retour suivant. Soumise à la même limite de débit
+que les messages.
+
+**Le canal permanent recueille désormais idées et réclamations, en plus des
+bugs (A.10 amendé).** `report_bug` prend une catégorie (bug, idée, autre) ; la
+carte de proposition adapte son bouton (« Signaler le bug », « Transmettre
+l'idée », « Transmettre ») et l'utilisateur relit toujours le texte avant
+envoi (§12.1). Une proposition stockée avant ce changement, ou une catégorie
+inventée par le modèle, reste un bug plutôt que d'être perdue. Le nom de
+l'outil ne change pas : les propositions déjà stockées le portent. C'est ce
+qui permettra de retirer le bouton « Signaler un problème » quand ce sera
+décidé — **il reste en place pour l'instant**, comme la fenêtre d'avis.
+
+**Migration `20260929090000_feedback_review.sql` à appliquer en production
+avant le déploiement** : le profil lit le droit admin à chaque chargement, et
+l'envoi d'un avis relit la colonne `status`. Sans elle, l'application ne
+charge plus.
+
+**Non fait :** pas de filtre « à traiter seulement » dans la revue ; la revue
+plafonne à 500 retours et 500 notations, sans pagination.
+
 Dernière mise à jour : **28 septembre 2026 (soir)** — todolistes de la conversation « Organisation samedi » (voir plus bas), et refonte de la page
 Réglages, sur la branche `refonte/ui`. Vérifiée dans Chromium sur le serveur de
 développement web branché sur une fausse API, en thème clair et en thème
@@ -1901,6 +1953,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | Instructions par dossier (retour de Nicolas, 01)  | A.1/A.4 | Yann — contexte de projet remis au modèle, cumulé sur les dossiers d'une conversation. Non implémenté, voir l'entrée du 28 septembre                                                                                  |
 | Aperçu calendrier / listes en conversation (07)   | A.2/A.3 | Yann — panneau latéral pendant une proposition, écran large seulement. Non implémenté                                                                                                                                |
 | Glisser-déposer des tâches au calendrier (09)     | A.3     | Yann — changer le jour d'une liste ou d'une tâche au geste, web d'abord. Non implémenté                                                                                                                              |
+| Retrait du bouton « Signaler un problème »        | A.10    | Clarisse — le canal permanent recueille désormais bugs, idées et réclamations ; le bouton et la fenêtre d'avis restent en attendant la décision |
 
 ## Points nécessitant un A/B testing humain (§4.3)
 
