@@ -7,6 +7,21 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, listes
+proposées)** — sur la branche `feat/collaboration`. Vérifié par la migration
+rejouée sur Postgres 16, les tests, le typecheck, et dans Chromium sur une
+fausse API, en clair et en sombre, grand écran et 390 pt. **Aucun appel à un
+vrai modèle.**
+
+**Jean-Claude propose des listes dans les conversations d'espace.** Quand le
+groupe se répartit le travail, ou qu'on le lui demande, il propose une liste
+avec un responsable par tâche ; une carte s'affiche sous son message, et
+n'importe quel membre la crée pour l'espace ou l'ignore (§12.1). Tranche la
+question ouverte n°1 de `docs/COLLABORATION.md`.
+
+**Migration `20260929200000_workspace_list_suggestions.sql`** à appliquer
+après celle des listes.
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, listes)** —
 sur la branche `feat/collaboration`. Vérifié par la migration rejouée sur
 Postgres 16 avec un scénario RLS dédié, les tests, le typecheck, et dans

@@ -1,15 +1,18 @@
-import type { Group, GroupMessage } from "@jc/domain";
+import type { Group, GroupListSuggestion, GroupMessage, WorkspaceTaskList } from "@jc/domain";
 import type {
   LlmCompletionRequest,
   LlmCompletionResponse,
   LlmProvider,
 } from "../../core/llm/llm.port.js";
+import type { IWorkspaceListRepository } from "../workspace-list/workspace-list.repository.interface.js";
+import { WorkspaceListService } from "../workspace-list/workspace-list.service.js";
 import type { IGroupRepository } from "./group.repository.interface.js";
 import {
   describeThread,
   GROUP_PAUSE_MS,
   GroupService,
   groupSystemPrompt,
+  toListProposal,
   type GroupAssistantDeps,
 } from "./group.service.js";
 
@@ -63,7 +66,59 @@ function makeRepository(overrides: Partial<IGroupRepository> = {}): IGroupReposi
     appendMessage: jest.fn().mockResolvedValue(makeMessage()),
     appendAssistantMessage: jest.fn().mockResolvedValue(makeMessage({ role: "assistant" })),
     findAssistantModel: jest.fn().mockResolvedValue(null),
+    createListSuggestion: jest
+      .fn()
+      .mockImplementation(async (groupId, messageId, _userId, proposal) =>
+        makeSuggestion({ groupId, messageId, ...proposal }),
+      ),
+    findListSuggestions: jest.fn().mockResolvedValue([]),
+    resolveListSuggestion: jest.fn().mockResolvedValue(null),
+    setSuggestionList: jest.fn().mockResolvedValue(undefined),
+    reopenListSuggestion: jest.fn().mockResolvedValue(undefined),
     markRead: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+function makeSuggestion(overrides: Partial<GroupListSuggestion> = {}): GroupListSuggestion {
+  return {
+    id: "sugg-1",
+    groupId: "group-1",
+    messageId: "msg-jc",
+    title: "Kermesse",
+    tasks: [{ title: "Réserver la salle", assigneeId: "bruno" }],
+    status: "pending",
+    listId: null,
+    createdAt: "2026-09-29T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** Dépôt des listes où tout le monde est membre et où la création réussit. */
+function makeListRepository(
+  overrides: Partial<IWorkspaceListRepository> = {},
+): IWorkspaceListRepository {
+  const created: WorkspaceTaskList = {
+    id: "list-9",
+    workspaceId: WORKSPACE_ID,
+    title: "Kermesse",
+    folderId: null,
+    conversationId: "group-1",
+    tasks: [],
+    createdAt: "2026-09-29T08:00:00.000Z",
+    updatedAt: "2026-09-29T08:00:00.000Z",
+  };
+  return {
+    findWorkspaceMemberIds: jest.fn().mockResolvedValue(["alice", "bruno", "chloe"]),
+    findWorkspaceFolderIds: jest.fn().mockResolvedValue([]),
+    findByWorkspace: jest.fn().mockResolvedValue([]),
+    findById: jest.fn().mockResolvedValue(created),
+    create: jest.fn().mockResolvedValue(created),
+    update: jest.fn(),
+    delete: jest.fn(),
+    addTask: jest.fn(),
+    updateTask: jest.fn(),
+    deleteTask: jest.fn(),
     ...overrides,
   };
 }
@@ -122,9 +177,19 @@ function makeDeps(
   };
 }
 
-function service(repo: IGroupRepository, deps: GroupAssistantDeps = makeDeps(makeLlm().llm)) {
-  return new GroupService(repo, deps);
+function service(
+  repo: IGroupRepository,
+  deps: GroupAssistantDeps = makeDeps(makeLlm().llm),
+  lists: IWorkspaceListRepository = makeListRepository(),
+) {
+  return new GroupService(repo, deps, new WorkspaceListService(lists));
 }
+
+const proposalCall = (input: Record<string, unknown>) =>
+  response({
+    text: "Voici qui fait quoi.",
+    toolCalls: [{ id: "t2", name: "suggest_shared_list", input }],
+  });
 
 describe("GroupService", () => {
   describe("list", () => {
@@ -492,6 +557,238 @@ describe("GroupService", () => {
 
       expect(repo.markRead).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("propositions de liste", () => {
+  const message = makeMessage({
+    id: "msg-9",
+    authorId: "alice",
+    content: "Bruno réserve la salle.",
+  });
+
+  it("propose une liste quand le groupe se répartit le travail", async () => {
+    const { llm, requests } = makeLlm(
+      verdict(true, "decision_or_task"),
+      proposalCall({
+        title: "Kermesse",
+        tasks: [{ title: "Réserver la salle", assignee: "Bruno" }, { title: "Affiches" }],
+      }),
+    );
+    const repo = inWorkspace({
+      findLatestMessageId: jest.fn().mockResolvedValue("msg-9"),
+      appendAssistantMessage: jest
+        .fn()
+        .mockResolvedValue(makeMessage({ id: "msg-jc", role: "assistant" })),
+    });
+
+    await service(repo, makeDeps(llm)).considerSpeaking(makeGroup(), message, false, TOKEN);
+
+    expect(requests[1]?.tools?.map((tool) => tool.name)).toEqual(["suggest_shared_list"]);
+    expect(repo.createListSuggestion).toHaveBeenCalledWith(
+      "group-1",
+      "msg-jc",
+      "alice",
+      {
+        title: "Kermesse",
+        tasks: [
+          { title: "Réserver la salle", assigneeId: "bruno" },
+          { title: "Affiches", assigneeId: null },
+        ],
+      },
+      TOKEN,
+    );
+  });
+
+  it("ne propose pas de liste pour une question restée sans réponse", async () => {
+    const { llm, requests } = makeLlm(
+      verdict(true, "unanswered_question"),
+      proposalCall({ title: "Hors sujet", tasks: [{ title: "X" }] }),
+    );
+    const repo = inWorkspace({ findLatestMessageId: jest.fn().mockResolvedValue("msg-9") });
+
+    await service(repo, makeDeps(llm)).considerSpeaking(makeGroup(), message, false, TOKEN);
+
+    expect(requests[1]?.tools).toBeUndefined();
+    expect(repo.createListSuggestion).not.toHaveBeenCalled();
+  });
+
+  it("pose la carte sous un message même quand le modèle n'a rien écrit", async () => {
+    const { llm } = makeLlm(
+      response({
+        toolCalls: [
+          {
+            id: "t2",
+            name: "suggest_shared_list",
+            input: { title: "K", tasks: [{ title: "Salle" }] },
+          },
+        ],
+      }),
+    );
+    const repo = inWorkspace();
+
+    await service(repo, makeDeps(llm)).considerSpeaking(makeGroup(), message, true, TOKEN);
+
+    expect(repo.appendAssistantMessage).toHaveBeenCalledWith(
+      "group-1",
+      "alice",
+      expect.objectContaining({ content: "Je vous propose une liste :" }),
+      TOKEN,
+    );
+    expect(repo.createListSuggestion).toHaveBeenCalledTimes(1);
+  });
+
+  describe("acceptSuggestion", () => {
+    it("crée la liste de l'espace, rattachée à la conversation", async () => {
+      const lists = makeListRepository();
+      const repo = inWorkspace({
+        findById: jest.fn().mockResolvedValue(makeGroup()),
+        findListSuggestions: jest.fn().mockResolvedValue([makeSuggestion()]),
+        resolveListSuggestion: jest.fn().mockResolvedValue(makeSuggestion({ status: "accepted" })),
+      });
+
+      const accepted = await service(repo, undefined, lists).acceptSuggestion(
+        "group-1",
+        "sugg-1",
+        "chloe",
+        TOKEN,
+      );
+
+      expect(accepted.listId).toBe("list-9");
+      expect(lists.create).toHaveBeenCalledWith(
+        "chloe",
+        expect.objectContaining({
+          workspaceId: WORKSPACE_ID,
+          conversationId: "group-1",
+          tasks: [{ title: "Réserver la salle", assigneeId: "bruno", position: 0 }],
+        }),
+        TOKEN,
+      );
+      expect(repo.setSuggestionList).toHaveBeenCalledWith("sugg-1", "list-9", TOKEN);
+    });
+
+    it("libère la tâche d'un responsable parti de l'espace depuis la proposition", async () => {
+      const lists = makeListRepository();
+      const repo = inWorkspace({
+        findById: jest.fn().mockResolvedValue(makeGroup()),
+        findListSuggestions: jest.fn().mockResolvedValue([makeSuggestion()]),
+        resolveListSuggestion: jest
+          .fn()
+          .mockResolvedValue(
+            makeSuggestion({ status: "accepted", tasks: [{ title: "Salle", assigneeId: "zoe" }] }),
+          ),
+      });
+
+      await service(repo, undefined, lists).acceptSuggestion("group-1", "sugg-1", "alice", TOKEN);
+
+      expect(lists.create).toHaveBeenCalledWith(
+        "alice",
+        expect.objectContaining({ tasks: [{ title: "Salle", assigneeId: null, position: 0 }] }),
+        TOKEN,
+      );
+    });
+
+    it("refuse une proposition déjà tranchée par un autre membre", async () => {
+      const repo = inWorkspace({
+        findById: jest.fn().mockResolvedValue(makeGroup()),
+        findListSuggestions: jest.fn().mockResolvedValue([makeSuggestion({ status: "dismissed" })]),
+        resolveListSuggestion: jest.fn().mockResolvedValue(null),
+      });
+
+      await expect(
+        service(repo).acceptSuggestion("group-1", "sugg-1", "alice", TOKEN),
+      ).rejects.toMatchObject({ status: 409 });
+    });
+
+    it("répond introuvable pour une proposition d'une autre conversation", async () => {
+      const repo = inWorkspace({ findById: jest.fn().mockResolvedValue(makeGroup()) });
+
+      await expect(
+        service(repo).acceptSuggestion("group-1", "sugg-1", "alice", TOKEN),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(repo.resolveListSuggestion).not.toHaveBeenCalled();
+    });
+
+    it("remet la proposition en attente quand la création de la liste échoue", async () => {
+      const lists = makeListRepository({ create: jest.fn().mockRejectedValue(new Error("panne")) });
+      const repo = inWorkspace({
+        findById: jest.fn().mockResolvedValue(makeGroup()),
+        findListSuggestions: jest.fn().mockResolvedValue([makeSuggestion()]),
+        resolveListSuggestion: jest.fn().mockResolvedValue(makeSuggestion({ status: "accepted" })),
+      });
+
+      await expect(
+        service(repo, undefined, lists).acceptSuggestion("group-1", "sugg-1", "alice", TOKEN),
+      ).rejects.toThrow("panne");
+      expect(repo.reopenListSuggestion).toHaveBeenCalledWith("sugg-1", TOKEN);
+    });
+  });
+
+  describe("dismissSuggestion", () => {
+    it("ignore la proposition sans rien créer", async () => {
+      const lists = makeListRepository();
+      const repo = inWorkspace({
+        findById: jest.fn().mockResolvedValue(makeGroup()),
+        findListSuggestions: jest.fn().mockResolvedValue([makeSuggestion()]),
+        resolveListSuggestion: jest.fn().mockResolvedValue(makeSuggestion({ status: "dismissed" })),
+      });
+
+      const dismissed = await service(repo, undefined, lists).dismissSuggestion(
+        "group-1",
+        "sugg-1",
+        "bruno",
+        TOKEN,
+      );
+
+      expect(dismissed.status).toBe("dismissed");
+      expect(lists.create).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("toListProposal", () => {
+  it("retrouve les responsables par leur nom dans le fil, sans égard à la casse", () => {
+    const proposal = toListProposal(
+      {
+        title: " Kermesse ",
+        tasks: [
+          { title: "Salle", assignee: "bruno" },
+          { title: "Caisse", assignee: "Membre 1" },
+        ],
+      },
+      MEMBERS,
+    );
+
+    expect(proposal).toEqual({
+      title: "Kermesse",
+      tasks: [
+        { title: "Salle", assigneeId: "bruno" },
+        { title: "Caisse", assigneeId: "chloe" },
+      ],
+    });
+  });
+
+  it("laisse libre une tâche confiée à un nom inconnu", () => {
+    const proposal = toListProposal(
+      { title: "K", tasks: [{ title: "Salle", assignee: "Zoé" }] },
+      MEMBERS,
+    );
+
+    expect(proposal?.tasks[0]?.assigneeId).toBeNull();
+  });
+
+  it("écarte les tâches sans titre", () => {
+    const proposal = toListProposal(
+      { title: "K", tasks: [{ title: "  " }, { title: "Salle" }, 42] },
+      MEMBERS,
+    );
+
+    expect(proposal?.tasks).toEqual([{ title: "Salle", assigneeId: null }]);
+  });
+
+  it("rend null sans titre ou sans tâche", () => {
+    expect(toListProposal({ title: "", tasks: [{ title: "Salle" }] }, MEMBERS)).toBeNull();
+    expect(toListProposal({ title: "K", tasks: [] }, MEMBERS)).toBeNull();
   });
 });
 

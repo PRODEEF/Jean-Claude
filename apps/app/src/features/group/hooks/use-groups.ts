@@ -23,6 +23,38 @@ export function useGroupMessages(groupId: string) {
   });
 }
 
+export function useGroupSuggestions(groupId: string) {
+  return useQuery({
+    queryKey: ["group", groupId, "suggestions"],
+    queryFn: () => api.groups.suggestions(groupId),
+  });
+}
+
+/**
+ * Accepter ou ignorer une liste proposée par Jean-Claude. Un autre membre a pu
+ * trancher avant : la réponse du serveur fait foi, et le cache est relu.
+ */
+export function useResolveGroupSuggestion(groupId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["group", groupId, "suggestions"] }),
+      queryClient.invalidateQueries({ queryKey: ["workspace", workspaceId, "lists"] }),
+    ]);
+
+  const accept = useMutation({
+    mutationFn: (suggestionId: string) => api.groups.acceptSuggestion(groupId, suggestionId),
+    onSettled: refresh,
+  });
+
+  const dismiss = useMutation({
+    mutationFn: (suggestionId: string) => api.groups.dismissSuggestion(groupId, suggestionId),
+    onSettled: refresh,
+  });
+
+  return { accept, dismiss };
+}
+
 export function useCreateGroup() {
   const queryClient = useQueryClient();
   return useMutation({

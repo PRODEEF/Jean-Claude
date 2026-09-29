@@ -279,6 +279,32 @@ complet et 620 tests du dépôt au vert, scénario RLS rejoué avec la fonction
 modifiée. Les requêtes du Repository n'ont pas été jouées contre un vrai
 PostgREST : l'environnement n'a pas d'instance Supabase.
 
+### Listes proposées par Jean-Claude (29 septembre, suite)
+
+Quand une conversation d'espace fait émerger qui fait quoi — le cas
+`decision_or_task` — ou quand on le lui demande par mention, Jean-Claude peut
+proposer une liste partagée par l'outil `suggest_shared_list`. L'appel ne crée
+rien (§12.1) : une carte s'affiche sous son message, et n'importe quel membre
+de la conversation l'accepte (la liste rejoint l'espace, rattachée à la
+conversation) ou l'ignore. La décision vaut pour tous, une seule fois.
+
+- **Migration `20260929200000_workspace_list_suggestions.sql`** : table à
+  part, lisible et tranchable par les membres de la conversation — et non
+  `assistant_suggestions`, personnelle.
+- **Responsables** : le modèle les nomme comme le fil les lui montre ; l'API
+  les retrouve par ce nom, et laisse la tâche libre pour un nom inconnu.
+  À l'acceptation, un responsable parti de l'espace entre-temps est retiré
+  plutôt que de faire échouer la liste.
+- **Deux membres qui répondent en même temps** : la mise à jour est
+  conditionnée à l'état « en attente », un seul l'emporte, l'autre lit
+  « Cette proposition a déjà été traitée ». Si la création de la liste
+  échoue, la proposition redevient disponible.
+
+**Vérification.** Scénario RLS (5 vérifications), 17 nouveaux tests du service
+des conversations d'espace, typecheck, parcours Chromium sur une fausse API
+en clair et en sombre, grand écran et 390 pt. Aucun appel à un vrai modèle :
+la pertinence des propositions reste à éprouver.
+
 ### Listes partagées (29 septembre, suite)
 
 Des listes simples, communes à l'espace : un titre, des tâches cochables par
@@ -360,9 +386,9 @@ Jean-Claude prend part aux discussions de groupe.
   adresse. Aucune source personnelle : la consigne de groupe
   (`groupSystemPrompt`) est construite à part de `buildSystemPrompt`.
 - **Il propose, il n'exécute rien** : sur une décision ou une répartition du
-  travail, il récapitule qui fait quoi et demande si c'est juste. Aucune
-  suggestion en attente n'est créée tant que la question 1 du §9 n'est pas
-  tranchée.
+  travail, il récapitule qui fait quoi et demande si c'est juste. Depuis, il
+  peut aussi proposer une liste à valider (voir « Listes proposées par
+  Jean-Claude »).
 - **Bouton silence** dans l'en-tête du fil (`PATCH /api/groups/:id`), réglage
   du groupe entier, modifiable par tout membre.
 - **Traitement après réponse** : `core/after-response.ts`, sur `waitUntil` de
@@ -513,10 +539,10 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
 
 ## 9. Questions ouvertes
 
-1. **Suggestions de groupe.** Sans listes partagées en V1, que produit une
-   suggestion « tâche détectée » acceptée ? Proposition : une liste dans
-   l'espace personnel de qui l'accepte, en attendant les listes d'espace. Et
-   qui peut l'accepter — tout membre, ou seulement l'auteur du message ?
+1. ~~**Suggestions de groupe.**~~ Tranché le 29 septembre : la proposition
+   acceptée devient une liste partagée de l'espace, et tout membre de la
+   conversation peut l'accepter ou l'ignorer (voir « Listes proposées par
+   Jean-Claude »).
 2. **Coût.** Seule la réponse rédigée est imputée, au membre qui l'a
    déclenchée ; le verdict du petit modèle n'est décompté nulle part. Un membre
    bavard épuise son quota pour tout le groupe. Un quota par espace

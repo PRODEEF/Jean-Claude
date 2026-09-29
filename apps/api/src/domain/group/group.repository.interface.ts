@@ -1,7 +1,20 @@
-import type { CreateGroup, Group, GroupMessage, Paginated } from "@jc/domain";
+import type {
+  CreateGroup,
+  Group,
+  GroupListSuggestion,
+  GroupListSuggestionStatus,
+  GroupMessage,
+  Paginated,
+} from "@jc/domain";
 
 /** Un membre de l'espace, tel que Jean-Claude le nomme dans le fil. */
 export type WorkspaceMemberName = { userId: string; displayName: string | null };
+
+/** Liste proposée par Jean-Claude, déjà validée : titres bornés, responsables membres. */
+export type ListProposal = {
+  title: string;
+  tasks: { title: string; assigneeId: string | null }[];
+};
 
 /** Réponse de Jean-Claude à inscrire dans le fil, avec le moteur qui l'a produite. */
 export type AssistantReply = { content: string; provider: string; model: string };
@@ -47,6 +60,29 @@ export interface IGroupRepository {
   ): Promise<GroupMessage>;
   /** Modèle choisi par `userId` dans ses réglages (§5.1), `null` s'il n'en a pas choisi. */
   findAssistantModel(userId: string, accessToken: string): Promise<string | null>;
+  /** Inscrit une proposition de liste sous le message `messageId` de Jean-Claude. */
+  createListSuggestion(
+    groupId: string,
+    messageId: string,
+    userId: string,
+    proposal: ListProposal,
+    accessToken: string,
+  ): Promise<GroupListSuggestion>;
+  /** Propositions de la conversation, de la plus ancienne à la plus récente. */
+  findListSuggestions(groupId: string, accessToken: string): Promise<GroupListSuggestion[]>;
+  /**
+   * Tranche une proposition encore en attente. `null` si elle ne l'est plus :
+   * deux membres qui répondent en même temps, un seul l'emporte.
+   */
+  resolveListSuggestion(
+    suggestionId: string,
+    status: Exclude<GroupListSuggestionStatus, "pending">,
+    userId: string,
+    accessToken: string,
+  ): Promise<GroupListSuggestion | null>;
+  setSuggestionList(suggestionId: string, listId: string, accessToken: string): Promise<void>;
+  /** Remet en attente une proposition dont l'acceptation a échoué en route. */
+  reopenListSuggestion(suggestionId: string, accessToken: string): Promise<void>;
   /** Remet à zéro les non-lus de `userId` dans ce groupe. */
   markRead(groupId: string, userId: string, accessToken: string): Promise<void>;
 }

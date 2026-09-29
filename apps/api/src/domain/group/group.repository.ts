@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { Group, GroupMessage } from "@jc/domain";
+import type { Group, GroupListSuggestion, GroupMessage } from "@jc/domain";
 import { forUser } from "../../core/supabase/supabase.js";
 import type {
   AssistantReply,
   IGroupRepository,
+  ListProposal,
   WorkspaceMemberName,
 } from "./group.repository.interface.js";
 
@@ -31,6 +32,31 @@ type GroupMessageRow = {
   content: string;
   created_at: string;
 };
+
+type SuggestionRow = {
+  id: string;
+  conversation_id: string;
+  message_id: string;
+  payload: ListProposal;
+  status: string;
+  list_id: string | null;
+  created_at: string;
+};
+
+function toSuggestion(row: SuggestionRow): GroupListSuggestion {
+  return {
+    id: row.id,
+    groupId: row.conversation_id,
+    messageId: row.message_id,
+    title: row.payload.title,
+    tasks: row.payload.tasks,
+    status: row.status as GroupListSuggestion["status"],
+    listId: row.list_id,
+    createdAt: row.created_at,
+  };
+}
+
+const SUGGESTION_COLUMNS = "id, conversation_id, message_id, payload, status, list_id, created_at";
 
 function toGroup(row: GroupRow, unreadCount: number, memberIds: string[]): Group {
   return {
@@ -280,6 +306,64 @@ export const groupRepository: IGroupRepository = {
 
     if (error) throw new Error(error.message);
     return (data as { llm_model: string | null } | null)?.llm_model ?? null;
+  },
+
+  async createListSuggestion(groupId, messageId, userId, proposal, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_list_suggestions")
+      .insert({
+        conversation_id: groupId,
+        message_id: messageId,
+        payload: proposal,
+        created_by: userId,
+      })
+      .select(SUGGESTION_COLUMNS)
+      .single();
+
+    if (error) throw new Error(error.message);
+    return toSuggestion(data as unknown as SuggestionRow);
+  },
+
+  async findListSuggestions(groupId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_list_suggestions")
+      .select(SUGGESTION_COLUMNS)
+      .eq("conversation_id", groupId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return (data as unknown as SuggestionRow[]).map(toSuggestion);
+  },
+
+  async resolveListSuggestion(suggestionId, status, userId, accessToken) {
+    // Conditionnée à `pending` : c'est la base qui départage deux réponses
+    // simultanées, pas une lecture préalable.
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_list_suggestions")
+      .update({ status, resolved_by: userId, resolved_at: new Date().toISOString() })
+      .eq("id", suggestionId)
+      .eq("status", "pending")
+      .select(SUGGESTION_COLUMNS)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data ? toSuggestion(data as unknown as SuggestionRow) : null;
+  },
+
+  async setSuggestionList(suggestionId, listId, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("workspace_list_suggestions")
+      .update({ list_id: listId })
+      .eq("id", suggestionId);
+    if (error) throw new Error(error.message);
+  },
+
+  async reopenListSuggestion(suggestionId, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("workspace_list_suggestions")
+      .update({ status: "pending", resolved_by: null, resolved_at: null })
+      .eq("id", suggestionId);
+    if (error) throw new Error(error.message);
   },
 
   async markRead(groupId, userId, accessToken) {

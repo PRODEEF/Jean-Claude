@@ -68,6 +68,28 @@ export type ListGroupsQuery = z.infer<typeof listGroupsQuerySchema>;
 export const updateGroupSchema = z.object({ aiMuted: z.boolean() });
 export type UpdateGroup = z.infer<typeof updateGroupSchema>;
 
+export const groupListSuggestionStatusSchema = z.enum(["pending", "accepted", "dismissed"]);
+export type GroupListSuggestionStatus = z.infer<typeof groupListSuggestionStatusSchema>;
+
+/**
+ * Liste partagée proposée par Jean-Claude dans une conversation d'espace
+ * (§12.1) : tout membre de la conversation l'accepte — elle devient une liste
+ * de l'espace — ou l'ignore.
+ */
+export const groupListSuggestionSchema = z.object({
+  id: uuidSchema,
+  groupId: uuidSchema,
+  /** Le message de Jean-Claude sous lequel la carte s'affiche. */
+  messageId: uuidSchema,
+  title: z.string(),
+  tasks: z.array(z.object({ title: z.string(), assigneeId: uuidSchema.nullable() })),
+  status: groupListSuggestionStatusSchema,
+  /** La liste créée, une fois la proposition acceptée. */
+  listId: uuidSchema.nullable(),
+  createdAt: isoDateTimeSchema,
+});
+export type GroupListSuggestion = z.infer<typeof groupListSuggestionSchema>;
+
 /**
  * Le message appelle-t-il Jean-Claude ?
  *

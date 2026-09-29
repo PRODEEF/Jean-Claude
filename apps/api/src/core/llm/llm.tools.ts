@@ -833,6 +833,45 @@ export const DECIDE_INTERVENTION: LlmTool = {
   },
 };
 
+/**
+ * Liste partagée proposée dans une conversation d'espace. Comme les autres
+ * outils, l'appel ne crée rien : il devient une carte que les membres
+ * acceptent ou ignorent (§12.1).
+ */
+export const SUGGEST_SHARED_LIST: LlmTool = {
+  name: "suggest_shared_list",
+  description:
+    "À appeler quand le groupe vient de décider quelque chose ou de se répartir du " +
+    "travail, et qu'une liste partagée l'aiderait à s'y tenir — ou quand un membre te " +
+    "demande d'en faire une. L'appel ne crée rien : les membres voient la proposition " +
+    "et l'acceptent ou l'ignorent. Une seule liste par appel, faite de tâches concrètes " +
+    "tirées du fil, sans en inventer. Pour chaque tâche, `assignee` reprend exactement le " +
+    "nom de la personne tel qu'il apparaît dans le fil (« Bruno Petit », « Membre 1 ») ; " +
+    "l'omettre quand le fil ne dit pas qui s'en charge. Jamais pour toi-même.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: { type: "string", minLength: 1, maxLength: 120 },
+      tasks: {
+        type: "array",
+        minItems: 1,
+        maxItems: 30,
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string", minLength: 1, maxLength: 120 },
+            assignee: { type: "string" },
+          },
+          required: ["title"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["title", "tasks"],
+    additionalProperties: false,
+  },
+};
+
 export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_ITEMS,

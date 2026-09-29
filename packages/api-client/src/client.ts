@@ -49,6 +49,7 @@ import {
   type WorkspaceRole,
   type CreateGroup,
   type Group,
+  type GroupListSuggestion,
   type GroupMessage,
   type UpdateGroup,
   type CreateWorkspaceTask,
@@ -258,6 +259,20 @@ export class JeanClaudeClient {
       }),
 
     markRead: (id: string) => this.http.request<Group>(`/groups/${id}/read`, { method: "POST" }),
+
+    /** Listes proposées par Jean-Claude dans la conversation, à accepter ou ignorer (§12.1). */
+    suggestions: (id: string) =>
+      this.http.request<GroupListSuggestion[]>(`/groups/${id}/suggestions`),
+
+    acceptSuggestion: (id: string, suggestionId: string) =>
+      this.http.request<GroupListSuggestion>(`/groups/${id}/suggestions/${suggestionId}/accept`, {
+        method: "POST",
+      }),
+
+    dismissSuggestion: (id: string, suggestionId: string) =>
+      this.http.request<GroupListSuggestion>(`/groups/${id}/suggestions/${suggestionId}/dismiss`, {
+        method: "POST",
+      }),
   };
 
   readonly folders = {

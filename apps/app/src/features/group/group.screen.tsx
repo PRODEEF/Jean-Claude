@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowUp, Bell, BellOff, FolderInput } from "lucide-react-native";
-import type { GroupMessage, WorkspaceMember } from "@jc/domain";
+import type { GroupListSuggestion, GroupMessage, WorkspaceMember } from "@jc/domain";
 import { useWorkspaceMembers } from "@/features/workspace/hooks/use-workspaces";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useAssistantName } from "@/shared/hooks/use-profile";
@@ -15,10 +15,12 @@ import { Input } from "@/shared/ui/input";
 import { contentColumn, READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Text } from "@/shared/ui/text";
 import { GroupFoldersDialog } from "./GroupFoldersDialog";
+import { GroupListSuggestionCard } from "./GroupListSuggestionCard";
 import { useGroupTyping } from "./hooks/use-group-realtime";
 import {
   useGroup,
   useGroupMessages,
+  useGroupSuggestions,
   useMarkGroupRead,
   useSendGroupMessage,
   useSetGroupMuted,
@@ -43,6 +45,11 @@ export function GroupScreen() {
 
   const group = useGroup(groupId);
   const messages = useGroupMessages(groupId);
+  const suggestions = useGroupSuggestions(groupId);
+  const suggestionByMessage = useMemo(
+    () => new Map((suggestions.data ?? []).map((suggestion) => [suggestion.messageId, suggestion])),
+    [suggestions.data],
+  );
   const members = useWorkspaceMembers(workspaceId);
   const markRead = useMarkGroupRead(groupId);
   const send = useSendGroupMessage(groupId);
@@ -170,6 +177,10 @@ export function GroupScreen() {
                   message={item}
                   mine={item.role === "user" && item.authorId === selfId}
                   author={showAuthor ? authorLabel(item) : null}
+                  suggestion={suggestionByMessage.get(item.id) ?? null}
+                  workspaceId={workspaceId}
+                  nameOf={(userId) => names.get(userId) ?? "Ancien membre"}
+                  onOpenList={(listId) => router.push(`/workspace/${workspaceId}/list/${listId}`)}
                 />
               );
             }}
@@ -230,11 +241,20 @@ function MessageBubble({
   message,
   mine,
   author,
+  suggestion,
+  workspaceId,
+  nameOf,
+  onOpenList,
 }: {
   message: GroupMessage;
   mine: boolean;
   /** `null` quand le message précédent vient déjà de la même personne. */
   author: string | null;
+  /** Liste proposée par Jean-Claude dans ce message, s'il y en a une. */
+  suggestion: GroupListSuggestion | null;
+  workspaceId: string;
+  nameOf: (userId: string) => string;
+  onOpenList: (listId: string) => void;
 }) {
   const { palette } = useTheme();
 
@@ -251,6 +271,14 @@ function MessageBubble({
           {message.content}
         </Text>
       </View>
+      {suggestion ? (
+        <GroupListSuggestionCard
+          suggestion={suggestion}
+          workspaceId={workspaceId}
+          nameOf={nameOf}
+          onOpenList={onOpenList}
+        />
+      ) : null}
     </View>
   );
 }

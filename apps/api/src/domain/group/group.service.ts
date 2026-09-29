@@ -3,20 +3,26 @@ import {
   type CreateGroup,
   type CursorPagination,
   type Group,
+  type GroupListSuggestion,
   type GroupMessage,
   type Paginated,
   type SendGroupMessage,
   type UpdateGroup,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
-import { DECIDE_INTERVENTION } from "../../core/llm/llm.tools.js";
+import { DECIDE_INTERVENTION, SUGGEST_SHARED_LIST } from "../../core/llm/llm.tools.js";
 import type {
   LlmCompletionResponse,
   LlmProvider,
   LlmStreamChunk,
 } from "../../core/llm/llm.port.js";
 import { logger } from "../../core/logger.js";
-import type { IGroupRepository, WorkspaceMemberName } from "./group.repository.interface.js";
+import type { WorkspaceListService } from "../workspace-list/workspace-list.service.js";
+import type {
+  IGroupRepository,
+  ListProposal,
+  WorkspaceMemberName,
+} from "./group.repository.interface.js";
 
 const SCOPE = "group.service";
 
@@ -64,6 +70,8 @@ export class GroupService {
   constructor(
     private readonly groups: IGroupRepository,
     private readonly assistant: GroupAssistantDeps,
+    /** Pour créer la liste d'une proposition acceptée, avec les règles des listes. */
+    private readonly lists: WorkspaceListService,
   ) {}
 
   async list(workspaceId: string, userId: string, accessToken: string): Promise<Group[]> {
@@ -210,22 +218,134 @@ export class GroupService {
       return;
     }
 
+    // La liste ne se propose que là où elle a un sens : un récapitulatif de
+    // qui fait quoi, ou une demande adressée à Jean-Claude.
+    const mayProposeList = reason === "mention" || reason === "decision_or_task";
     const model = await this.groups.findAssistantModel(message.authorId, accessToken);
     const reply = await collect(
       this.assistant.llm.stream({
         system: groupSystemPrompt(reason),
         messages: [{ role: "user", content: transcript }],
+        ...(mayProposeList ? { tools: [SUGGEST_SHARED_LIST] } : {}),
         ...(model ? { model } : {}),
       }),
     );
-    if (!reply || !reply.text.trim()) return;
+    if (!reply) return;
 
-    await this.groups.appendAssistantMessage(
+    const call = reply.toolCalls.find((candidate) => candidate.name === SUGGEST_SHARED_LIST.name);
+    const proposal = mayProposeList && call ? toListProposal(call.input, members) : null;
+
+    // Un modèle qui s'en tient à son appel d'outil ne dit rien : la carte a
+    // tout de même besoin d'un message où se poser.
+    const content = reply.text.trim() || (proposal ? "Je vous propose une liste :" : "");
+    if (!content) return;
+
+    const posted = await this.groups.appendAssistantMessage(
       group.id,
       message.authorId,
-      { content: reply.text.trim(), provider: reply.provider, model: reply.model },
+      { content, provider: reply.provider, model: reply.model },
       accessToken,
     );
+
+    if (proposal) {
+      await this.groups.createListSuggestion(
+        group.id,
+        posted.id,
+        message.authorId,
+        proposal,
+        accessToken,
+      );
+    }
+  }
+
+  async listSuggestions(
+    id: string,
+    userId: string,
+    accessToken: string,
+  ): Promise<GroupListSuggestion[]> {
+    await this.get(id, userId, accessToken);
+    return this.groups.findListSuggestions(id, accessToken);
+  }
+
+  /**
+   * Accepte une liste proposée par Jean-Claude : elle devient une liste de
+   * l'espace, rattachée à la conversation. N'importe quel membre de la
+   * conversation peut trancher, une seule fois.
+   */
+  async acceptSuggestion(
+    id: string,
+    suggestionId: string,
+    userId: string,
+    accessToken: string,
+  ): Promise<GroupListSuggestion> {
+    const group = await this.get(id, userId, accessToken);
+    const suggestion = await this.claimSuggestion(
+      id,
+      suggestionId,
+      "accepted",
+      userId,
+      accessToken,
+    );
+
+    try {
+      // Un responsable a pu quitter l'espace depuis la proposition : sa tâche
+      // redevient libre plutôt que de faire échouer toute la liste.
+      const members = (await this.groups.findWorkspaceMembers(group.workspaceId, accessToken)).map(
+        (member) => member.userId,
+      );
+      const list = await this.lists.create(
+        userId,
+        {
+          workspaceId: group.workspaceId,
+          title: suggestion.title,
+          conversationId: group.id,
+          tasks: suggestion.tasks.map((task) => ({
+            title: task.title,
+            assigneeId:
+              task.assigneeId && members.includes(task.assigneeId) ? task.assigneeId : null,
+          })),
+        },
+        accessToken,
+      );
+      await this.groups.setSuggestionList(suggestionId, list.id, accessToken);
+      return { ...suggestion, listId: list.id };
+    } catch (error) {
+      // Rien n'a été créé : la proposition redevient disponible.
+      await this.groups.reopenListSuggestion(suggestionId, accessToken);
+      throw error;
+    }
+  }
+
+  async dismissSuggestion(
+    id: string,
+    suggestionId: string,
+    userId: string,
+    accessToken: string,
+  ): Promise<GroupListSuggestion> {
+    await this.get(id, userId, accessToken);
+    return this.claimSuggestion(id, suggestionId, "dismissed", userId, accessToken);
+  }
+
+  private async claimSuggestion(
+    groupId: string,
+    suggestionId: string,
+    status: "accepted" | "dismissed",
+    userId: string,
+    accessToken: string,
+  ): Promise<GroupListSuggestion> {
+    const existing = (await this.groups.findListSuggestions(groupId, accessToken)).find(
+      (candidate) => candidate.id === suggestionId,
+    );
+    if (!existing) throw httpError(404, "Proposition introuvable.");
+
+    const claimed = await this.groups.resolveListSuggestion(
+      suggestionId,
+      status,
+      userId,
+      accessToken,
+    );
+    if (!claimed) throw httpError(409, "Cette proposition a déjà été traitée.");
+    return claimed;
   }
 
   /** Verdict du petit modèle : la raison de parler, ou `null` pour se taire. */
@@ -283,11 +403,7 @@ async function collect(
  * apprendre plus qu'il ne faut.
  */
 export function describeThread(messages: GroupMessage[], members: WorkspaceMemberName[]): string {
-  const names = new Map<string, string>();
-  let anonymous = 0;
-  for (const member of members) {
-    names.set(member.userId, member.displayName?.trim() || `Membre ${++anonymous}`);
-  }
+  const names = memberLabels(members);
 
   return messages
     .map((message) => {
@@ -298,6 +414,55 @@ export function describeThread(messages: GroupMessage[], members: WorkspaceMembe
       return `${author} : ${message.content}`;
     })
     .join("\n");
+}
+
+/** Nom de chaque membre tel que le fil le montre au modèle. */
+function memberLabels(members: WorkspaceMemberName[]): Map<string, string> {
+  const names = new Map<string, string>();
+  let anonymous = 0;
+  for (const member of members) {
+    names.set(member.userId, member.displayName?.trim() || `Membre ${++anonymous}`);
+  }
+  return names;
+}
+
+/** Au-delà, la proposition est tronquée : une liste de 30 tâches se relit déjà mal. */
+const PROPOSAL_MAX_TASKS = 30;
+const TITLE_MAX_LENGTH = 120;
+
+/**
+ * Proposition de liste lue dans l'appel d'outil, `null` si elle est
+ * inutilisable. Les responsables sont retrouvés par le nom que le fil leur
+ * donne ; un nom inconnu laisse la tâche libre plutôt que de l'attribuer au
+ * hasard.
+ */
+export function toListProposal(
+  input: Record<string, unknown>,
+  members: WorkspaceMemberName[],
+): ListProposal | null {
+  const title = typeof input["title"] === "string" ? input["title"].trim() : "";
+  const rawTasks = Array.isArray(input["tasks"]) ? (input["tasks"] as unknown[]) : [];
+
+  const byName = new Map<string, string>();
+  for (const [userId, name] of memberLabels(members)) byName.set(name.toLowerCase(), userId);
+
+  const tasks = rawTasks
+    .map((raw) => {
+      if (typeof raw !== "object" || raw === null) return null;
+      const entry = raw as Record<string, unknown>;
+      const taskTitle = typeof entry["title"] === "string" ? entry["title"].trim() : "";
+      if (!taskTitle) return null;
+      const assignee = typeof entry["assignee"] === "string" ? entry["assignee"].trim() : "";
+      return {
+        title: taskTitle.slice(0, TITLE_MAX_LENGTH),
+        assigneeId: byName.get(assignee.toLowerCase()) ?? null,
+      };
+    })
+    .filter((task): task is { title: string; assigneeId: string | null } => task !== null)
+    .slice(0, PROPOSAL_MAX_TASKS);
+
+  if (!title || tasks.length === 0) return null;
+  return { title: title.slice(0, TITLE_MAX_LENGTH), tasks };
 }
 
 const DECISION_PROMPT =
@@ -312,7 +477,8 @@ const DECISION_PROMPT =
 const REASON_INSTRUCTIONS: Record<InterventionReason, string> = {
   mention:
     "On vient de t'appeler par une mention. Réponds à ce qu'on te demande dans le " +
-    "dernier message qui te mentionne.",
+    "dernier message qui te mentionne. Si on te demande une liste, propose-la avec " +
+    "l'outil `suggest_shared_list` : les membres l'accepteront ou non.",
   unanswered_question:
     "Une question posée au groupe est restée sans réponse. Réponds-y si tu le peux ; " +
     "sinon, dis simplement ce qui manque pour y répondre.",
@@ -322,7 +488,9 @@ const REASON_INSTRUCTIONS: Record<InterventionReason, string> = {
   decision_or_task:
     "Le groupe vient de décider quelque chose ou de se répartir du travail. " +
     "Récapitule en une courte liste : qui fait quoi, pour quand si c'est dit. " +
-    "Demande si le récapitulatif est juste.",
+    "Si une liste partagée aiderait le groupe à s'y tenir, propose-la avec l'outil " +
+    "`suggest_shared_list` et dis-le en une phrase : les membres l'accepteront ou " +
+    "non. Demande si le récapitulatif est juste.",
   going_in_circles:
     "La discussion tourne en rond. Propose une synthèse neutre des positions en " +
     "présence, puis une question qui aiderait le groupe à trancher.",
