@@ -543,6 +543,16 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
 - **Membres et invitations** : bouton sous « Nouvelle conversation », en
   espace collaboratif seulement (déplacé le 30 septembre, à la demande de
   Clarisse : il était entre le sélecteur d'espace et ce bouton).
+- **Fichiers** : sous « Membres et invitations », dans la même zone fixe et
+  serrée contre lui, affiché seulement si l'espace a au moins un fichier.
+- **Dossiers d'espace rendus comme les dossiers personnels** (30 septembre,
+  demande de Clarisse) : mêmes composants partagés via `SidebarSection.tsx` —
+  menu `FolderContextMenu` (Renommer, Ajouter un sous-dossier, Nouvelle
+  todoliste, Supprimer), clic droit, « … » au survol seulement, appui long au
+  doigt. Un dossier vide est replié et propose « Nouvelle conversation » : la
+  conversation créée d'ici y naît rangée. « Nouvelle todoliste » crée une
+  liste partagée rangée dans le dossier. Le compteur à droite du nom
+  disparaît, absent des dossiers personnels.
 - **Fenêtre « Mes espaces »** : « Espace collaboratif · x membre(s) » pour tous
   (`Workspace.memberCount`, agrégat PostgREST côté API).
 

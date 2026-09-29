@@ -13,7 +13,7 @@ import { useCreateWorkspaceList, useWorkspaceListActions } from "./hooks/use-wor
 
 /** Ce que la fenêtre s'apprête à faire d'une liste d'espace. */
 export type WorkspaceListTarget =
-  | { kind: "create"; workspaceId: string }
+  | { kind: "create"; workspaceId: string; folderId?: string }
   | { kind: "rename"; list: WorkspaceTaskList }
   | { kind: "folder"; list: WorkspaceTaskList }
   | { kind: "delete"; list: WorkspaceTaskList };
@@ -34,6 +34,7 @@ export function WorkspaceListDialog({ target, onClose, onDone }: WorkspaceListDi
       return (
         <CreateForm
           workspaceId={target.workspaceId}
+          folderId={target.folderId ?? null}
           onClose={onClose}
           onCreated={(list) => onDone?.(list)}
         />
@@ -77,10 +78,12 @@ function TitleField({
 
 function CreateForm({
   workspaceId,
+  folderId,
   onClose,
   onCreated,
 }: {
   workspaceId: string;
+  folderId: string | null;
   onClose: () => void;
   onCreated: (list: WorkspaceTaskList) => void;
 }) {
@@ -88,7 +91,9 @@ function CreateForm({
   const [title, setTitle] = useState("");
   const trimmed = title.trim();
   const submit = () => {
-    if (trimmed && !create.isPending) create.mutate(trimmed, { onSuccess: onCreated });
+    if (trimmed && !create.isPending) {
+      create.mutate({ title: trimmed, folderId }, { onSuccess: onCreated });
+    }
   };
 
   return (

@@ -1,20 +1,16 @@
 import { useState } from "react";
 import { View } from "react-native";
+import { ChevronDown, ChevronRight, Folder as FolderIcon } from "lucide-react-native";
+import type { FolderTreeNode, Group, WorkspaceTaskList } from "@jc/domain";
+import { FolderContextMenu, type FolderMenuTarget } from "@/features/folder/FolderContextMenu";
 import {
-  ChevronDown,
-  ChevronRight,
-  Folder as FolderIcon,
-  MoreHorizontal,
-} from "lucide-react-native";
-import {
-  MAX_FOLDER_DEPTH,
-  type FolderTreeNode,
-  type Group,
-  type WorkspaceTaskList,
-} from "@jc/domain";
-import { cn } from "@/shared/lib/utils";
+  contextMenuProps,
+  NewConversationRow,
+  RowMenuButton,
+  rowLabel,
+} from "@/features/navigation/SidebarSection";
 import { Button } from "@/shared/ui/button";
-import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import type { WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
@@ -28,6 +24,10 @@ export type WorkspaceFolderTreeProps = {
   /** Rendu d'une conversation rangée — la même rangée que dans la liste à plat. */
   renderGroup: (group: Group) => React.ReactNode;
   renderList: (list: WorkspaceTaskList) => React.ReactNode;
+  /** Crée une conversation déjà rangée dans ce dossier — depuis un dossier vide. */
+  onNewConversation: (folderId: string) => void;
+  /** Crée une liste partagée déjà rangée dans ce dossier. */
+  onNewList: (folderId: string) => void;
 };
 
 /**
@@ -45,94 +45,84 @@ export function WorkspaceFolderTree(props: WorkspaceFolderTreeProps) {
   );
 }
 
+/**
+ * Un dossier de l'espace, rendu comme un dossier personnel (`FolderGroup` de
+ * `AppSidebar`) : mêmes composants, même menu (`FolderContextMenu`), mêmes
+ * gestes — clic droit, « … » au survol, appui long au doigt. Les deux barres
+ * doivent se manier pareil.
+ */
 function FolderRow({
   node,
   depth,
   ...props
 }: WorkspaceFolderTreeProps & { node: FolderTreeNode; depth: number }) {
-  const [open, setOpen] = useState(true);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<FolderMenuTarget | null>(null);
   const filed = props.groups.filter((group) => group.folderIds.includes(node.id));
   const filedLists = props.lists.filter((list) => list.folderId === node.id);
-
-  const items: ContextMenuItem[] = [
-    // Au dernier niveau, un sous-dossier ne rentre plus : le serveur le refuse
-    // déjà, autant ne pas proposer le geste.
-    ...(depth < MAX_FOLDER_DEPTH
-      ? [
-          {
-            label: "Nouveau sous-dossier",
-            onPress: () => edit({ kind: "create", parentId: node.id }),
-          },
-        ]
-      : []),
-    { label: "Renommer", onPress: () => edit({ kind: "rename", folder: node }) },
-    {
-      label: "Supprimer",
-      destructive: true,
-      onPress: () => edit({ kind: "delete", folder: node }),
-    },
-  ];
-
-  function edit(target: WorkspaceFolderTarget) {
-    setMenu(null);
-    props.onEdit(target);
-  }
+  const isEmpty = node.children.length === 0 && filed.length === 0 && filedLists.length === 0;
+  // Un dossier vide reste replié : le déplier allongerait la barre sans rien
+  // apprendre.
+  const [open, setOpen] = useState(!isEmpty);
+  const openMenu = (x: number, y: number) => setMenu({ folder: node, depth, x, y });
 
   return (
-    <View>
-      <View className="flex-row items-center">
-        <Button
-          variant="ghost"
-          onPress={() => setOpen(!open)}
-          accessibilityLabel={`${open ? "Replier" : "Déplier"} le dossier ${node.name}`}
-          accessibilityState={{ expanded: open }}
-          className="flex-1 justify-start gap-2 px-2"
-        >
-          <Icon
-            as={open ? ChevronDown : ChevronRight}
-            size={14}
-            className="text-muted-foreground"
-          />
-          <Icon as={FolderIcon} size={16} className="text-muted-foreground" />
-          <Text className="flex-1 text-sm font-normal text-muted-foreground" numberOfLines={1}>
-            {node.name}
-          </Text>
-          {node.conversationCount > 0 ? (
-            <Text className="text-xs text-muted-foreground">{node.conversationCount}</Text>
-          ) : null}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={(event) => setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
-          accessibilityLabel={`Actions pour le dossier ${node.name}`}
-          className="size-8"
-        >
-          <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
-        </Button>
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <View className="group flex-row items-center rounded-md">
+        <CollapsibleTrigger asChild>
+          <Button
+            variant="ghost"
+            className="flex-1 justify-start gap-2 px-2"
+            onLongPress={(event) => openMenu(event.nativeEvent.pageX, event.nativeEvent.pageY)}
+            {...contextMenuProps(openMenu)}
+          >
+            <View className="flex-row items-center gap-1">
+              <Icon
+                as={open ? ChevronDown : ChevronRight}
+                size={14}
+                className="text-muted-foreground"
+              />
+              <Icon as={FolderIcon} size={16} className="text-muted-foreground" />
+            </View>
+            <Text className={rowLabel(false)} numberOfLines={1}>
+              {node.name}
+            </Text>
+          </Button>
+        </CollapsibleTrigger>
+
+        <RowMenuButton label={`Actions pour ${node.name}`} onOpen={openMenu} />
       </View>
 
-      {open ? (
-        <View className={cn("ml-4 border-l border-border pl-2")}>
-          {node.children.map((child) => (
-            <FolderRow key={child.id} node={child} depth={depth + 1} {...props} />
-          ))}
+      <CollapsibleContent>
+        <View className="ml-4 border-l border-border pl-2">
           {filed.map((group) => (
             <View key={group.id}>{props.renderGroup(group)}</View>
           ))}
           {filedLists.map((list) => (
             <View key={list.id}>{props.renderList(list)}</View>
           ))}
-          {node.children.length === 0 && filed.length === 0 && filedLists.length === 0 ? (
-            <Text className="px-2 py-1.5 text-xs italic text-muted-foreground">Vide</Text>
-          ) : null}
+          {node.children.map((child) => (
+            <FolderRow key={child.id} node={child} depth={depth + 1} {...props} />
+          ))}
+          {isEmpty ? <NewConversationRow onPress={() => props.onNewConversation(node.id)} /> : null}
         </View>
-      ) : null}
+      </CollapsibleContent>
 
-      {menu ? (
-        <ContextMenu x={menu.x} y={menu.y} items={items} onClose={() => setMenu(null)} />
-      ) : null}
-    </View>
+      <FolderContextMenu
+        target={menu}
+        onClose={() => setMenu(null)}
+        onRename={() => edit({ kind: "rename", folder: node })}
+        onAddChild={() => edit({ kind: "create", parentId: node.id })}
+        onAddTaskList={() => {
+          setMenu(null);
+          props.onNewList(node.id);
+        }}
+        onDelete={() => edit({ kind: "delete", folder: node })}
+      />
+    </Collapsible>
   );
+
+  function edit(target: WorkspaceFolderTarget) {
+    setMenu(null);
+    props.onEdit(target);
+  }
 }

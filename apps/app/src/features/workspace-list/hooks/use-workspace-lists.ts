@@ -24,7 +24,9 @@ export function useWorkspaceList(listId: string) {
 export function useCreateWorkspaceList(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (title: string) => api.workspaceLists.create({ workspaceId, title, tasks: [] }),
+    /** `folderId` : liste créée depuis un dossier, déjà rangée dedans. */
+    mutationFn: ({ title, folderId }: { title: string; folderId: string | null }) =>
+      api.workspaceLists.create({ workspaceId, title, folderId, tasks: [] }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["workspace", workspaceId, "lists"] }),
   });

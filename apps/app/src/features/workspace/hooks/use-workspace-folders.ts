@@ -50,3 +50,19 @@ export function useAssignGroupFolders(groupId: string) {
     },
   });
 }
+
+/**
+ * Range dans un dossier une conversation tout juste créée depuis ce dossier —
+ * le seul cas où le rangement précède la capture (§13.4.1).
+ */
+export function useFileNewGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ groupId, folderId }: { groupId: string; folderId: string }) =>
+      api.groups.assignFolders(groupId, [folderId]),
+    onSuccess: (group: Group) => {
+      queryClient.setQueryData(["group", group.id], group);
+      return queryClient.invalidateQueries({ queryKey: ["workspace", group.workspaceId] });
+    },
+  });
+}

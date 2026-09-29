@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
-import { FileText, ListChecks, Plus } from "lucide-react-native";
+import { ListChecks, Plus } from "lucide-react-native";
 import type { Group, WorkspaceTaskList } from "@jc/domain";
+import { CreateGroupDialog } from "@/features/group/CreateGroupDialog";
 import { useGroups } from "@/features/group/hooks/use-groups";
 import {
   rowLabel,
@@ -16,7 +17,7 @@ import {
 } from "@/features/workspace-list/WorkspaceListDialog";
 import { WorkspaceFolderDialog, type WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
 import { WorkspaceFolderTree } from "./WorkspaceFolderTree";
-import { useWorkspaceFolders } from "./hooks/use-workspace-folders";
+import { useFileNewGroup, useWorkspaceFolders } from "./hooks/use-workspace-folders";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
@@ -46,6 +47,9 @@ export function WorkspaceSidebarBody({
   const lists = useWorkspaceLists(workspaceId);
   const [listDialog, setListDialog] = useState<WorkspaceListTarget | null>(null);
   const [editing, setEditing] = useState<WorkspaceFolderTarget | null>(null);
+  /** Dossier d'où l'on crée une conversation, qui y naîtra rangée. */
+  const [creatingIn, setCreatingIn] = useState<string | null>(null);
+  const fileNewGroup = useFileNewGroup();
 
   const renderGroup = (group: Group) => {
     const href = `/workspace/${workspaceId}/group/${group.id}`;
@@ -56,22 +60,9 @@ export function WorkspaceSidebarBody({
     return <ListRow list={list} active={pathname === href} onPress={() => onNavigate(href)} />;
   };
   const createFolder = () => setEditing({ kind: "create", parentId: null });
-  const filesHref = `/workspace/${workspaceId}/files`;
 
   return (
     <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
-      {/* En tête, comme l'entrée « Fichiers » de Slack et de Teams : ce n'est
-          ni un dossier ni une conversation, mais ce qu'elles contiennent. */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onPress={() => onNavigate(filesHref)}
-        className={selected("mt-2 w-full justify-start gap-2 px-2", pathname === filesHref)}
-      >
-        <Icon as={FileText} size={14} className="text-muted-foreground" />
-        <Text className={rowLabel(pathname === filesHref)}>Fichiers</Text>
-      </Button>
-
       <SectionLabel action={{ label: "Créer un dossier", onPress: createFolder }}>
         Dossiers
       </SectionLabel>
@@ -100,6 +91,8 @@ export function WorkspaceSidebarBody({
         onEdit={setEditing}
         renderGroup={renderGroup}
         renderList={renderList}
+        onNewConversation={setCreatingIn}
+        onNewList={(folderId) => setListDialog({ kind: "create", workspaceId, folderId })}
       />
 
       {/* Le « + » n'existe pas dans l'espace personnel, où une liste naît d'une
@@ -133,6 +126,17 @@ export function WorkspaceSidebarBody({
         onDone={(list) => {
           setListDialog(null);
           if (list) onNavigate(`/workspace/${workspaceId}/list/${list.id}`);
+        }}
+      />
+
+      <CreateGroupDialog
+        workspaceId={creatingIn ? workspaceId : null}
+        onClose={() => setCreatingIn(null)}
+        onCreated={(group) => {
+          const folderId = creatingIn;
+          setCreatingIn(null);
+          if (folderId) fileNewGroup.mutate({ groupId: group.id, folderId });
+          onNavigate(`/workspace/${workspaceId}/group/${group.id}`);
         }}
       />
 
