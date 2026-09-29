@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   Group,
+  GroupEventSuggestion,
   GroupListSuggestion,
   GroupMessage,
   MessageAttachmentMimeType,
@@ -9,6 +10,7 @@ import { signAttachmentUrls } from "../../core/storage/attachment-storage.js";
 import { forUser } from "../../core/supabase/supabase.js";
 import type {
   AssistantReply,
+  EventProposal,
   IGroupRepository,
   ListProposal,
   WorkspaceMemberName,
@@ -78,6 +80,30 @@ function toSuggestion(row: SuggestionRow): GroupListSuggestion {
 }
 
 const SUGGESTION_COLUMNS = "id, conversation_id, message_id, payload, status, list_id, created_at";
+
+type EventSuggestionRow = Omit<SuggestionRow, "payload" | "list_id"> & {
+  payload: EventProposal;
+  event_id: string | null;
+};
+
+const EVENT_SUGGESTION_COLUMNS =
+  "id, conversation_id, message_id, payload, status, event_id, created_at";
+
+function toEventSuggestion(row: EventSuggestionRow): GroupEventSuggestion {
+  return {
+    id: row.id,
+    groupId: row.conversation_id,
+    messageId: row.message_id,
+    title: row.payload.title,
+    startsAt: row.payload.startsAt,
+    endsAt: row.payload.endsAt,
+    allDay: row.payload.allDay,
+    notes: row.payload.notes,
+    status: row.status as GroupEventSuggestion["status"],
+    eventId: row.event_id,
+    createdAt: row.created_at,
+  };
+}
 
 function toGroup(row: GroupRow, unreadCount: number, memberIds: string[]): Group {
   return {
@@ -452,6 +478,74 @@ export const groupRepository: IGroupRepository = {
   async reopenListSuggestion(suggestionId, accessToken) {
     const { error } = await forUser(accessToken)
       .from("workspace_list_suggestions")
+      .update({ status: "pending", resolved_by: null, resolved_at: null })
+      .eq("id", suggestionId);
+    if (error) throw new Error(error.message);
+  },
+
+  async findTimezone(userId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("profiles")
+      .select("timezone")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return (data as { timezone: string } | null)?.timezone ?? "Europe/Paris";
+  },
+
+  async createEventSuggestion(groupId, messageId, userId, proposal, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_event_suggestions")
+      .insert({
+        conversation_id: groupId,
+        message_id: messageId,
+        payload: proposal,
+        created_by: userId,
+      })
+      .select(EVENT_SUGGESTION_COLUMNS)
+      .single();
+
+    if (error) throw new Error(error.message);
+    return toEventSuggestion(data as unknown as EventSuggestionRow);
+  },
+
+  async findEventSuggestions(groupId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_event_suggestions")
+      .select(EVENT_SUGGESTION_COLUMNS)
+      .eq("conversation_id", groupId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return (data as unknown as EventSuggestionRow[]).map(toEventSuggestion);
+  },
+
+  async resolveEventSuggestion(suggestionId, status, userId, accessToken) {
+    // Conditionnée à `pending`, comme pour les listes : la base départage.
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_event_suggestions")
+      .update({ status, resolved_by: userId, resolved_at: new Date().toISOString() })
+      .eq("id", suggestionId)
+      .eq("status", "pending")
+      .select(EVENT_SUGGESTION_COLUMNS)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data ? toEventSuggestion(data as unknown as EventSuggestionRow) : null;
+  },
+
+  async setSuggestionEvent(suggestionId, eventId, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("workspace_event_suggestions")
+      .update({ event_id: eventId })
+      .eq("id", suggestionId);
+    if (error) throw new Error(error.message);
+  },
+
+  async reopenEventSuggestion(suggestionId, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("workspace_event_suggestions")
       .update({ status: "pending", resolved_by: null, resolved_at: null })
       .eq("id", suggestionId);
     if (error) throw new Error(error.message);

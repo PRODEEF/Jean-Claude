@@ -16,6 +16,8 @@ import { validate } from "../../core/http.js";
 import { llm } from "../../core/llm/providers/gateway.provider.js";
 import { consumeLlmCall, rateLimit } from "../../core/rate-limit/rate-limit.middleware.js";
 import { attachmentRepository } from "../attachment/attachment.repository.js";
+import { workspaceEventRepository } from "../workspace-event/workspace-event.repository.js";
+import { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
 import { workspaceListRepository } from "../workspace-list/workspace-list.repository.js";
 import { WorkspaceListService } from "../workspace-list/workspace-list.service.js";
 import { groupRepository } from "./group.repository.js";
@@ -29,9 +31,11 @@ const service = new GroupService(
     runAfterResponse,
     consumeLlmCall,
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: () => new Date(),
   },
   new WorkspaceListService(workspaceListRepository),
   attachmentRepository,
+  new WorkspaceEventService(workspaceEventRepository),
 );
 
 const suggestionParam = validate("param", z.object({ id: uuidSchema, suggestionId: uuidSchema }));
@@ -123,6 +127,28 @@ export const groupRoutes = new Hono<AuthEnv>()
     const user = c.get("user");
     const { id, suggestionId } = c.req.valid("param");
     return c.json(await service.dismissSuggestion(id, suggestionId, user.id, user.accessToken));
+  })
+
+  // Événements proposés par Jean-Claude (§12.1) : tout membre accepte ou ignore.
+  .get("/:id/event-suggestions", idParam, async (c) => {
+    const user = c.get("user");
+    return c.json(
+      await service.listEventSuggestions(c.req.valid("param").id, user.id, user.accessToken),
+    );
+  })
+
+  .post("/:id/event-suggestions/:suggestionId/accept", suggestionParam, async (c) => {
+    const user = c.get("user");
+    const { id, suggestionId } = c.req.valid("param");
+    return c.json(await service.acceptEventSuggestion(id, suggestionId, user.id, user.accessToken));
+  })
+
+  .post("/:id/event-suggestions/:suggestionId/dismiss", suggestionParam, async (c) => {
+    const user = c.get("user");
+    const { id, suggestionId } = c.req.valid("param");
+    return c.json(
+      await service.dismissEventSuggestion(id, suggestionId, user.id, user.accessToken),
+    );
   })
 
   .post("/:id/read", idParam, async (c) => {

@@ -1,4 +1,10 @@
-import type { Group, GroupListSuggestion, GroupMessage, WorkspaceTaskList } from "@jc/domain";
+import type {
+  Group,
+  GroupEventSuggestion,
+  GroupListSuggestion,
+  GroupMessage,
+  WorkspaceTaskList,
+} from "@jc/domain";
 import type {
   LlmCompletionRequest,
   LlmCompletionResponse,
@@ -10,12 +16,15 @@ import type {
   AttachmentRecord,
   IAttachmentRepository,
 } from "../attachment/attachment.repository.interface.js";
+import type { IWorkspaceEventRepository } from "../workspace-event/workspace-event.repository.interface.js";
+import { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
 import type { IGroupRepository } from "./group.repository.interface.js";
 import {
   describeThread,
   GROUP_PAUSE_MS,
   GroupService,
   groupSystemPrompt,
+  toEventProposal,
   toListProposal,
   type GroupAssistantDeps,
 } from "./group.service.js";
@@ -84,6 +93,16 @@ function makeRepository(overrides: Partial<IGroupRepository> = {}): IGroupReposi
     setSuggestionList: jest.fn().mockResolvedValue(undefined),
     reopenListSuggestion: jest.fn().mockResolvedValue(undefined),
     markRead: jest.fn().mockResolvedValue(undefined),
+    findTimezone: jest.fn().mockResolvedValue("Europe/Paris"),
+    createEventSuggestion: jest
+      .fn()
+      .mockImplementation(async (groupId, messageId, _userId, proposal) =>
+        makeEventSuggestion({ groupId, messageId, ...proposal }),
+      ),
+    findEventSuggestions: jest.fn().mockResolvedValue([]),
+    resolveEventSuggestion: jest.fn().mockResolvedValue(null),
+    setSuggestionEvent: jest.fn().mockResolvedValue(undefined),
+    reopenEventSuggestion: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -181,6 +200,7 @@ function makeDeps(
     runAfterResponse: jest.fn(),
     consumeLlmCall: jest.fn().mockResolvedValue(true),
     wait: jest.fn().mockResolvedValue(undefined),
+    now: () => NOW,
     ...overrides,
   };
 }
@@ -190,8 +210,69 @@ function service(
   deps: GroupAssistantDeps = makeDeps(makeLlm().llm),
   lists: IWorkspaceListRepository = makeListRepository(),
   attachments: IAttachmentRepository = makeAttachmentRepository(),
+  events: IWorkspaceEventRepository = makeEventRepository(),
 ) {
-  return new GroupService(repo, deps, new WorkspaceListService(lists), attachments);
+  return new GroupService(
+    repo,
+    deps,
+    new WorkspaceListService(lists),
+    attachments,
+    new WorkspaceEventService(events),
+  );
+}
+
+/** Jeudi 1er octobre 2026, 10 h à Paris. */
+const NOW = new Date("2026-10-01T08:00:00.000Z");
+
+function makeEventSuggestion(overrides: Partial<GroupEventSuggestion> = {}): GroupEventSuggestion {
+  return {
+    id: "evs-1",
+    groupId: "group-1",
+    messageId: "msg-1",
+    title: "Réunion",
+    startsAt: "2026-10-02T16:00:00.000Z",
+    endsAt: null,
+    allDay: false,
+    notes: null,
+    status: "pending",
+    eventId: null,
+    createdAt: "2026-10-01T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeEventRepository(
+  overrides: Partial<IWorkspaceEventRepository> = {},
+): IWorkspaceEventRepository {
+  return {
+    findSpace: jest.fn().mockResolvedValue({
+      workspaceId: WORKSPACE_ID,
+      workspaceName: "Club",
+      groupId: "group-1",
+      groupTitle: "Bureau",
+    }),
+    findById: jest.fn().mockResolvedValue(null),
+    findInRange: jest.fn().mockResolvedValue([]),
+    create: jest.fn().mockImplementation(async (userId, input) => ({
+      id: "wev-1",
+      groupId: input.groupId,
+      title: input.title,
+      notes: input.notes ?? null,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt ?? null,
+      allDay: input.allDay,
+      reminderMinutesBefore: null,
+      createdBy: userId,
+      createdByAssistant: true,
+      createdAt: "2026-10-01T08:00:00.000Z",
+      updatedAt: "2026-10-01T08:00:00.000Z",
+    })),
+    update: jest.fn(),
+    delete: jest.fn(),
+    findAuthor: jest.fn().mockResolvedValue({ displayName: "Bruno", timezone: "Europe/Paris" }),
+    appendSystemMessage: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
 }
 
 function makeAttachmentRecord(overrides: Partial<AttachmentRecord> = {}): AttachmentRecord {
@@ -793,7 +874,10 @@ describe("propositions de liste", () => {
 
     await service(repo, makeDeps(llm)).considerSpeaking(makeGroup(), message, false, TOKEN);
 
-    expect(requests[1]?.tools?.map((tool) => tool.name)).toEqual(["suggest_shared_list"]);
+    expect(requests[1]?.tools?.map((tool) => tool.name)).toEqual([
+      "suggest_shared_list",
+      "suggest_shared_event",
+    ]);
     expect(repo.createListSuggestion).toHaveBeenCalledWith(
       "group-1",
       "msg-jc",
@@ -998,6 +1082,181 @@ describe("toListProposal", () => {
   it("rend null sans titre ou sans tâche", () => {
     expect(toListProposal({ title: "", tasks: [{ title: "Salle" }] }, MEMBERS)).toBeNull();
     expect(toListProposal({ title: "K", tasks: [] }, MEMBERS)).toBeNull();
+  });
+});
+
+describe("toEventProposal", () => {
+  it("pose une heure murale dans le fuseau du membre", () => {
+    expect(
+      toEventProposal(
+        { title: "Réunion", startsAt: "2026-10-02T18:00", endsAt: "2026-10-02T19:30" },
+        "Europe/Paris",
+      ),
+    ).toEqual({
+      title: "Réunion",
+      startsAt: "2026-10-02T16:00:00.000Z",
+      endsAt: "2026-10-02T17:30:00.000Z",
+      allDay: false,
+      notes: null,
+    });
+  });
+
+  it("fait d'une date sans heure un événement sur la journée, sans fin", () => {
+    expect(
+      toEventProposal(
+        { title: "Kermesse", startsAt: "2026-10-10", endsAt: "2026-10-10T18:00" },
+        "Europe/Paris",
+      ),
+    ).toMatchObject({ allDay: true, endsAt: null, startsAt: "2026-10-09T22:00:00.000Z" });
+  });
+
+  it("abandonne une fin qui ne suit pas le début, et garde l'événement", () => {
+    expect(
+      toEventProposal(
+        { title: "Réunion", startsAt: "2026-10-02T18:00", endsAt: "2026-10-02T17:00" },
+        "Europe/Paris",
+      ),
+    ).toMatchObject({ endsAt: null });
+  });
+
+  it("garde le lieu en notes", () => {
+    expect(
+      toEventProposal(
+        { title: "Réunion", startsAt: "2026-10-02T18:00", notes: " Salle Colbert " },
+        "Europe/Paris",
+      )?.notes,
+    ).toBe("Salle Colbert");
+  });
+
+  it("refuse une proposition sans titre ou à la date illisible", () => {
+    expect(toEventProposal({ title: "", startsAt: "2026-10-02T18:00" }, "Europe/Paris")).toBeNull();
+    expect(toEventProposal({ title: "Réunion", startsAt: "vendredi" }, "Europe/Paris")).toBeNull();
+    expect(toEventProposal({ title: "Réunion" }, "Europe/Paris")).toBeNull();
+  });
+});
+
+describe("propositions d'événement", () => {
+  const message = makeMessage({
+    id: "msg-9",
+    authorId: "alice",
+    content: "@Jean-Claude ajoute la réunion de vendredi 18h",
+  });
+  const eventCall = response({
+    text: "Je vous propose de l'ajouter au calendrier.",
+    toolCalls: [
+      {
+        id: "t3",
+        name: "suggest_shared_event",
+        input: { title: "Réunion", startsAt: "2026-10-02T18:00" },
+      },
+    ],
+  });
+
+  it("pose la carte d'événement sous le message de Jean-Claude", async () => {
+    const { llm, requests } = makeLlm(eventCall);
+    const repo = inWorkspace();
+
+    await service(repo, makeDeps(llm)).considerSpeaking(makeGroup(), message, true, TOKEN);
+
+    expect(requests[0]?.tools?.map((tool) => tool.name)).toEqual([
+      "suggest_shared_list",
+      "suggest_shared_event",
+    ]);
+    expect(repo.createEventSuggestion).toHaveBeenCalledWith(
+      "group-1",
+      "msg-1",
+      "alice",
+      {
+        title: "Réunion",
+        startsAt: "2026-10-02T16:00:00.000Z",
+        endsAt: null,
+        allDay: false,
+        notes: null,
+      },
+      TOKEN,
+    );
+  });
+
+  it("ne propose rien quand il parle de lui-même sans décision", async () => {
+    const { llm, requests } = makeLlm(
+      response({
+        toolCalls: [
+          {
+            id: "t1",
+            name: "decide_intervention",
+            input: { intervene: true, reason: "unanswered_question" },
+          },
+        ],
+      }),
+      eventCall,
+    );
+    const repo = inWorkspace({ findLatestMessageId: jest.fn().mockResolvedValue("msg-9") });
+
+    await service(repo, makeDeps(llm)).considerSpeaking(makeGroup(), message, false, TOKEN);
+
+    expect(requests[1]?.tools).toBeUndefined();
+    expect(repo.createEventSuggestion).not.toHaveBeenCalled();
+  });
+
+  it("à l'acceptation, ajoute l'événement au calendrier de tous et le dit dans le fil", async () => {
+    const repo = makeRepository({
+      findById: jest.fn().mockResolvedValue(makeGroup()),
+      findEventSuggestions: jest.fn().mockResolvedValue([makeEventSuggestion()]),
+      resolveEventSuggestion: jest
+        .fn()
+        .mockResolvedValue(makeEventSuggestion({ status: "accepted" })),
+    });
+    const events = makeEventRepository();
+
+    const accepted = await service(
+      repo,
+      undefined,
+      undefined,
+      undefined,
+      events,
+    ).acceptEventSuggestion("group-1", "evs-1", "bruno", TOKEN);
+
+    expect(events.create).toHaveBeenCalledWith(
+      "bruno",
+      expect.objectContaining({ groupId: "group-1", title: "Réunion" }),
+      true,
+      TOKEN,
+    );
+    expect(events.appendSystemMessage).toHaveBeenCalled();
+    expect(repo.setSuggestionEvent).toHaveBeenCalledWith("evs-1", "wev-1", TOKEN);
+    expect(accepted.eventId).toBe("wev-1");
+  });
+
+  it("rouvre la proposition si l'événement n'a pas pu être créé", async () => {
+    const repo = makeRepository({
+      findById: jest.fn().mockResolvedValue(makeGroup()),
+      findEventSuggestions: jest.fn().mockResolvedValue([makeEventSuggestion()]),
+      resolveEventSuggestion: jest
+        .fn()
+        .mockResolvedValue(makeEventSuggestion({ status: "accepted" })),
+    });
+    const events = makeEventRepository({ create: jest.fn().mockRejectedValue(new Error("panne")) });
+
+    await expect(
+      service(repo, undefined, undefined, undefined, events).acceptEventSuggestion(
+        "group-1",
+        "evs-1",
+        "bruno",
+        TOKEN,
+      ),
+    ).rejects.toThrow("panne");
+    expect(repo.reopenEventSuggestion).toHaveBeenCalledWith("evs-1", TOKEN);
+  });
+
+  it("dit au second membre que la proposition a déjà été traitée", async () => {
+    const repo = makeRepository({
+      findById: jest.fn().mockResolvedValue(makeGroup()),
+      findEventSuggestions: jest.fn().mockResolvedValue([makeEventSuggestion()]),
+    });
+
+    await expect(
+      service(repo).dismissEventSuggestion("group-1", "evs-1", "bruno", TOKEN),
+    ).rejects.toMatchObject({ status: 409 });
   });
 });
 
@@ -1244,12 +1503,20 @@ describe("describeThread", () => {
   });
 });
 
+const CLOCK = { now: NOW, timezone: "Europe/Paris" };
+
 describe("groupSystemPrompt", () => {
+  it("date la consigne dans le fuseau du membre", () => {
+    expect(groupSystemPrompt("mention", CLOCK)).toContain(
+      "Nous sommes jeudi 1 octobre 2026 à 10:00 (fuseau Europe/Paris).",
+    );
+  });
+
   it("rappelle que Jean-Claude propose et n'exécute rien", () => {
-    expect(groupSystemPrompt("decision_or_task")).toContain("tu n'exécutes rien");
+    expect(groupSystemPrompt("decision_or_task", CLOCK)).toContain("tu n'exécutes rien");
   });
 
   it("porte la consigne propre à la raison de parler", () => {
-    expect(groupSystemPrompt("going_in_circles")).toContain("tourne en rond");
+    expect(groupSystemPrompt("going_in_circles", CLOCK)).toContain("tourne en rond");
   });
 });

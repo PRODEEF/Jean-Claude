@@ -1,6 +1,7 @@
 import type {
   CreateGroup,
   Group,
+  GroupEventSuggestion,
   GroupListSuggestion,
   GroupListSuggestionStatus,
   GroupMessage,
@@ -14,6 +15,15 @@ export type WorkspaceMemberName = { userId: string; displayName: string | null }
 export type ListProposal = {
   title: string;
   tasks: { title: string; assigneeId: string | null }[];
+};
+
+/** Événement proposé par Jean-Claude, déjà validé : instants canoniques, titre borné. */
+export type EventProposal = {
+  title: string;
+  startsAt: string;
+  endsAt: string | null;
+  allDay: boolean;
+  notes: string | null;
 };
 
 /** Réponse de Jean-Claude à inscrire dans le fil, avec le moteur qui l'a produite. */
@@ -91,6 +101,26 @@ export interface IGroupRepository {
   setSuggestionList(suggestionId: string, listId: string, accessToken: string): Promise<void>;
   /** Remet en attente une proposition dont l'acceptation a échoué en route. */
   reopenListSuggestion(suggestionId: string, accessToken: string): Promise<void>;
+  /** Fuseau du profil de `userId`, où le modèle lit et écrit les dates. */
+  findTimezone(userId: string, accessToken: string): Promise<string>;
+  /** Inscrit une proposition d'événement sous le message `messageId` de Jean-Claude. */
+  createEventSuggestion(
+    groupId: string,
+    messageId: string,
+    userId: string,
+    proposal: EventProposal,
+    accessToken: string,
+  ): Promise<GroupEventSuggestion>;
+  findEventSuggestions(groupId: string, accessToken: string): Promise<GroupEventSuggestion[]>;
+  /** Comme `resolveListSuggestion` : `null` si un autre membre a déjà tranché. */
+  resolveEventSuggestion(
+    suggestionId: string,
+    status: Exclude<GroupListSuggestionStatus, "pending">,
+    userId: string,
+    accessToken: string,
+  ): Promise<GroupEventSuggestion | null>;
+  setSuggestionEvent(suggestionId: string, eventId: string, accessToken: string): Promise<void>;
+  reopenEventSuggestion(suggestionId: string, accessToken: string): Promise<void>;
   /** Remet à zéro les non-lus de `userId` dans ce groupe. */
   markRead(groupId: string, userId: string, accessToken: string): Promise<void>;
 }

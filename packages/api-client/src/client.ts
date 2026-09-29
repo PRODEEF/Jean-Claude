@@ -53,6 +53,7 @@ import {
   type WorkspaceRole,
   type CreateGroup,
   type Group,
+  type GroupEventSuggestion,
   type GroupListSuggestion,
   type GroupMessage,
   type SendGroupMessage,
@@ -265,6 +266,21 @@ export class JeanClaudeClient {
       }),
 
     markRead: (id: string) => this.http.request<Group>(`/groups/${id}/read`, { method: "POST" }),
+
+    eventSuggestions: (id: string) =>
+      this.http.request<GroupEventSuggestion[]>(`/groups/${id}/event-suggestions`),
+
+    acceptEventSuggestion: (id: string, suggestionId: string) =>
+      this.http.request<GroupEventSuggestion>(
+        `/groups/${id}/event-suggestions/${suggestionId}/accept`,
+        { method: "POST" },
+      ),
+
+    dismissEventSuggestion: (id: string, suggestionId: string) =>
+      this.http.request<GroupEventSuggestion>(
+        `/groups/${id}/event-suggestions/${suggestionId}/dismiss`,
+        { method: "POST" },
+      ),
 
     /** « Convertir en todoliste » : Jean-Claude propose une liste dans le fil. */
     extractList: (id: string) =>

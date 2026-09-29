@@ -331,7 +331,8 @@ export const SUGGEST_UPDATE_TASK_ITEMS: LlmTool = {
             },
             done: {
               type: "boolean",
-              description: "true pour cocher, false pour décocher. Omettre si l'état ne change pas.",
+              description:
+                "true pour cocher, false pour décocher. Omettre si l'état ne change pas.",
             },
             remove: {
               type: "boolean",
@@ -868,6 +869,41 @@ export const SUGGEST_SHARED_LIST: LlmTool = {
       },
     },
     required: ["title", "tasks"],
+    additionalProperties: false,
+  },
+};
+
+/**
+ * Événement proposé dans une conversation d'espace (lot 8) : quand le groupe
+ * fixe une date. L'appel ne crée rien (§12.1) ; le premier membre qui accepte
+ * l'ajoute au calendrier de tous les membres de la conversation.
+ */
+export const SUGGEST_SHARED_EVENT: LlmTool = {
+  name: "suggest_shared_event",
+  description:
+    "À appeler quand le groupe vient de fixer une date — une réunion, un rendez-vous, " +
+    "une échéance commune — ou quand un membre te demande de l'ajouter au calendrier. " +
+    "L'appel ne crée rien : les membres voient la proposition et l'acceptent ou " +
+    "l'ignorent. Un seul événement par appel, dont la date et l'heure sont dites dans " +
+    "le fil : n'en invente aucune. Si le jour est fixé mais pas l'heure, `allDay` à true.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: { type: "string", minLength: 1, maxLength: 120 },
+      startsAt: {
+        type: "string",
+        description:
+          "Début, en heure locale du groupe, ISO 8601 sans fuseau ni « Z » — ex. " +
+          "2026-10-02T18:00 pour « vendredi à 18h », 2026-10-02 pour la journée.",
+      },
+      endsAt: {
+        type: "string",
+        description: "Fin, même format ; à omettre quand le fil ne la dit pas.",
+      },
+      allDay: { type: "boolean" },
+      notes: { type: "string", maxLength: 1000, description: "Lieu ou précision tirés du fil." },
+    },
+    required: ["title", "startsAt"],
     additionalProperties: false,
   },
 };
