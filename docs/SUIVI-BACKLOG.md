@@ -7,6 +7,39 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (suite)** — revue des retours
+réservée aux admins de bout en bout, et analyse des nouveaux retours depuis le
+bandeau (demandes de Clarisse), sur la branche `feat/zen-allen-ch2smh`.
+Vérifié par les tests et le typecheck, la migration rejouée sur Postgres 16,
+et l'écran dans Chromium sur un build web branché sur une fausse API — grand
+écran et 390 pt, admin et non-admin.
+
+**Un testeur ne relit plus ses propres retours.** La policy de lecture du
+propriétaire disparaît de `feedback` : seuls les admins lisent les retours.
+L'envoi reste possible, mais la ligne n'est plus relue après insertion — le
+Repository compose le retour renvoyé. Les notations gardent leur lecture
+propriétaire, sans quoi renoter un message échouerait ; aucun écran ne les
+montre à leur auteur.
+
+**« Retours des testeurs » n'existe que pour les admins.** L'entrée de la
+barre latérale leur était déjà réservée ; l'adresse `/feedback` tapée à la
+main renvoie désormais un non-admin aux conversations, au lieu d'afficher un
+message.
+
+**« Analyser » passe dans le bandeau, à droite du titre, et n'existe plus
+que là.** Il ne synthétise plus un testeur, mais les retours au statut
+« Nouveau » de tous les testeurs : problèmes à traiter en priorité, regroupés
+avec le nombre de testeurs concernés, idées, réclamations. Chaque testeur y
+est un numéro — ni nom ni adresse ne partent au modèle. Les notations n'y
+entrent pas : elles n'ont pas de statut. Le bouton est grisé quand rien n'est
+nouveau.
+
+**Migration `20260929120000_feedback_admin_only_read.sql` à appliquer en
+production APRÈS le déploiement de ce code sur `main`**, jamais avant : le
+code aujourd'hui en ligne relit la ligne qu'il insère, et l'envoi d'un avis
+échouerait. Vérifié sur Postgres 16 : après la migration, un envoi avec
+relecture est refusé, un envoi sans relecture passe.
+
 Dernière mise à jour : **29 septembre 2026** — revue des retours testeurs
 par l'équipe, et canal permanent ouvert aux idées et réclamations, sur la
 branche `feat/zen-allen-ch2smh`. Vérifié par les tests (API et domaine), le
