@@ -2,13 +2,10 @@ import { useState } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { Slot } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  AppSidebar,
-  SIDEBAR_MAX_WIDTH,
-  SIDEBAR_MIN_WIDTH,
-} from "@/features/navigation/AppSidebar";
+import { AppSidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "@/features/navigation/AppSidebar";
 import { useAssistantChannel } from "@/features/navigation/use-sidebar-data";
 import { AppBanner } from "@/features/navigation/AppBanner";
+import { InvitationBanner } from "@/features/workspace/InvitationBanner";
 import { useGroupMessageFeed } from "@/features/group/hooks/use-group-realtime";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useSyncDeviceTimezone } from "@/shared/hooks/use-profile";
@@ -58,6 +55,7 @@ export default function AppLayout() {
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
       <AppBanner onToggleSidebar={() => setPreference(!visible)} />
+      <InvitationBanner />
 
       <View className="flex-1 flex-row">
         {/* Le tiroir ne reçoit pas `onResize` : superposé au contenu et refermé

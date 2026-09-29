@@ -1,8 +1,11 @@
 import { Fragment, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { MoreHorizontal } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
+import { Check, Copy, MoreHorizontal } from "lucide-react-native";
 import type { Workspace, WorkspaceInvitation, WorkspaceMember } from "@jc/domain";
+import { CreateGroupDialog } from "@/features/group/CreateGroupDialog";
+import { useGroups } from "@/features/group/hooks/use-groups";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
@@ -20,6 +23,7 @@ import {
   useWorkspaces,
   workspaceErrorMessage,
 } from "./hooks/use-workspaces";
+import { invitationMessage } from "./invitation-message";
 import { WorkspaceNameDialog } from "./WorkspaceNameDialog";
 
 /**
@@ -71,8 +75,9 @@ export function WorkspaceScreen() {
       }
     >
       <View className="gap-8 pb-8">
+        <GettingStarted workspace={workspace} />
         <MembersSection workspace={workspace} />
-        {isAdmin ? <InvitationsSection workspaceId={workspace.id} /> : null}
+        {isAdmin ? <InvitationsSection workspace={workspace} /> : null}
         <LeaveSection workspace={workspace} />
       </View>
 
@@ -82,6 +87,91 @@ export function WorkspaceScreen() {
         onDone={() => setRenaming(false)}
       />
     </ScreenShell>
+  );
+}
+
+/**
+ * Les étapes d'un espace neuf, tant qu'il n'a aucune conversation.
+ *
+ * Une conversation exige une autre personne, et l'invitation ne s'accepte que
+ * plus tard, hors de l'application : sans ce fil, la première visite tombait
+ * sur une liste de membres réduite à soi-même et un bouton qui renvoyait
+ * dessus. Un simple membre n'invite personne, il n'a donc que la dernière
+ * étape.
+ */
+function GettingStarted({ workspace }: { workspace: Workspace }) {
+  const router = useRouter();
+  const isAdmin = workspace.role === "admin";
+  const groups = useGroups(workspace.id);
+  const members = useWorkspaceMembers(workspace.id);
+  const invitations = useWorkspaceInvitations(workspace.id, isAdmin);
+  const [creating, setCreating] = useState(false);
+
+  // Rien à afficher tant qu'on ignore si des conversations existent.
+  if (!groups.data || groups.data.length > 0) return null;
+
+  const joined = (members.data?.length ?? 0) > 1;
+  const invited = joined || (invitations.data?.length ?? 0) > 0;
+
+  return (
+    <View className="gap-3 rounded-xl border border-border bg-card px-4 py-4">
+      <SectionTitle>Pour démarrer</SectionTitle>
+      <View className="gap-3">
+        {isAdmin ? (
+          <>
+            <Step
+              done={invited}
+              title="Invitez une personne"
+              detail="Saisissez son adresse dans « Inviter », puis copiez le message pour le lui envoyer."
+            />
+            <Step
+              done={joined}
+              title="Elle rejoint l'espace"
+              detail="Elle voit l'invitation en se connectant avec cette adresse."
+            />
+          </>
+        ) : null}
+        <Step
+          done={false}
+          title="Lancez la première conversation"
+          detail="Une conversation réunit les membres que vous choisissez ; Jean-Claude s'y joint."
+        />
+      </View>
+      <View className="items-start">
+        <Button disabled={!joined} onPress={() => setCreating(true)}>
+          <Text>Démarrer une conversation</Text>
+        </Button>
+      </View>
+
+      <CreateGroupDialog
+        workspaceId={creating ? workspace.id : null}
+        onClose={() => setCreating(false)}
+        onCreated={(group) => {
+          setCreating(false);
+          router.push(`/workspace/${workspace.id}/group/${group.id}`);
+        }}
+      />
+    </View>
+  );
+}
+
+function Step({ done, title, detail }: { done: boolean; title: string; detail: string }) {
+  return (
+    <View className="flex-row items-start gap-3">
+      <View
+        className={
+          done
+            ? "mt-0.5 size-5 items-center justify-center rounded-full bg-primary"
+            : "mt-0.5 size-5 items-center justify-center rounded-full border border-border"
+        }
+      >
+        {done ? <Icon as={Check} size={12} className="text-primary-foreground" /> : null}
+      </View>
+      <View className="min-w-0 flex-1 gap-0.5">
+        <Text className="text-sm font-medium">{title}</Text>
+        <Text className="text-xs text-muted-foreground">{detail}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -248,7 +338,8 @@ function MemberRow({
   );
 }
 
-function InvitationsSection({ workspaceId }: { workspaceId: string }) {
+function InvitationsSection({ workspace }: { workspace: Workspace }) {
+  const workspaceId = workspace.id;
   const invitations = useWorkspaceInvitations(workspaceId, true);
   const { invite, revoke } = useWorkspaceActions();
   const [email, setEmail] = useState("");
@@ -267,8 +358,8 @@ function InvitationsSection({ workspaceId }: { workspaceId: string }) {
     <View className="gap-3">
       <SectionTitle>Inviter</SectionTitle>
       <Text className="text-sm text-muted-foreground">
-        Aucun e-mail n'est envoyé : prévenez la personne. Elle verra l'invitation en se connectant
-        avec cette adresse.
+        Aucun e-mail n'est envoyé : copiez le message d'invitation et envoyez-le vous-même. La
+        personne verra l'invitation en se connectant avec cette adresse.
       </Text>
 
       <View className="flex-row items-center gap-2">
@@ -300,6 +391,7 @@ function InvitationsSection({ workspaceId }: { workspaceId: string }) {
               {index > 0 ? <Separator /> : null}
               <InvitationRow
                 invitation={invitation}
+                workspaceName={workspace.name}
                 disabled={revoke.isPending}
                 onRevoke={() => revoke.mutate({ workspaceId, invitationId: invitation.id })}
               />
@@ -313,13 +405,30 @@ function InvitationsSection({ workspaceId }: { workspaceId: string }) {
 
 function InvitationRow({
   invitation,
+  workspaceName,
   disabled,
   onRevoke,
 }: {
   invitation: WorkspaceInvitation;
+  workspaceName: string;
   disabled: boolean;
   onRevoke: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    Clipboard.setStringAsync(invitationMessage(workspaceName, invitation.email))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2_000);
+      })
+      .catch((error: unknown) => {
+        // Le navigateur peut refuser l'accès au presse-papier : rien à dire à
+        // l'utilisateur, mais l'échec ne doit pas disparaître.
+        console.warn("Copie du message d'invitation refusée", error);
+      });
+  };
+
   return (
     <View className="min-h-14 flex-row items-center gap-3 px-4 py-3">
       <View className="min-w-0 flex-1">
@@ -328,6 +437,17 @@ function InvitationRow({
         </Text>
         <Text className="text-xs text-muted-foreground">En attente</Text>
       </View>
+      <Button
+        variant="ghost"
+        onPress={copy}
+        accessibilityLabel={`Copier le message d'invitation pour ${invitation.email}`}
+        className="gap-2"
+      >
+        <Icon as={copied ? Check : Copy} size={14} className="text-muted-foreground" />
+        <Text className="text-sm text-muted-foreground">
+          {copied ? "Copié" : "Copier le message"}
+        </Text>
+      </Button>
       <Button
         variant="ghost"
         onPress={onRevoke}

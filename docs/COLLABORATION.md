@@ -438,6 +438,23 @@ deviner ce que fait l'IA, ce qu'elle voit, ni si son appel a fonctionné.
 **Limite.** Les annonces sont écrites en français dans la base : une
 traduction demandera de stocker un code plutôt qu'un texte.
 
+### Amorçage et invitations (29 septembre, suite)
+
+Issu de la même revue : la première visite d'un espace aboutissait à une
+impasse, et une invitation passait inaperçue.
+
+- **Bannière d'invitation** (`InvitationBanner`, montée dans la coquille) :
+  tient la promesse du §2, « Vous êtes invité dans… » à la connexion. « Plus
+  tard » masque l'invitation jusqu'au prochain chargement.
+- **« Pour démarrer »** sur l'écran de l'espace tant qu'il n'a aucune
+  conversation. L'étape « invité » se déduit des invitations en attente, lisibles
+  des seuls admins.
+- **« Copier le message »** par invitation en attente (`invitationMessage`).
+  Le lien de l'app n'est connu que sur le web.
+
+**Limite.** Le message se copie, il ne s'envoie pas : le partage natif du
+téléphone serait plus direct, et l'envoi par e-mail reste hors V1 (§8).
+
 ### Livré au lot 3
 
 Groupes de bout en bout : API, temps réel, non-lus, « en train d'écrire », et

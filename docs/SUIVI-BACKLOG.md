@@ -7,6 +7,30 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, amorçage et
+invitations)** — sur la branche `feat/collaboration`, suite de la revue de la
+fonctionnalité. Vérifié par le typecheck et le build web ; **non joué dans un
+navigateur, ni sur iOS et Android**. Aucune règle serveur touchée : pas de
+test nouveau.
+
+**Un espace neuf dit quoi faire.** Tant qu'il n'a aucune conversation, l'écran
+de l'espace affiche « Pour démarrer » : inviter une personne, attendre qu'elle
+rejoigne, lancer la première conversation. Le dernier bouton reste grisé
+jusqu'à l'arrivée d'un second membre. Un simple membre ne voit que la dernière
+étape. Dans la fenêtre « Nouvelle conversation », seul dans l'espace, le bouton
+principal devient « Inviter quelqu'un » au lieu d'un message sans issue.
+
+**Prévenir la personne n'est plus laborieux.** Chaque invitation en attente
+porte un bouton « Copier le message », qui prépare le texte à envoyer. Sur le
+web il contient le lien de l'app ; sur mobile, aucune variable n'en porte
+l'adresse publique, il n'en a donc pas (une `EXPO_PUBLIC_APP_URL` le
+réglerait).
+
+**L'invitation se voit dès la connexion.** Une bannière sous celle de
+l'application, sur tous les écrans : « Vous êtes invité dans… », Refuser,
+Rejoindre, et une croix pour répondre plus tard (refuser est définitif). Le
+point rouge du sélecteur d'espace reste.
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, clarté de
 Jean-Claude dans les conversations)** — sur la branche `feat/collaboration`,
 suite de la revue de la fonctionnalité. Vérifié par les tests (une dizaine de
