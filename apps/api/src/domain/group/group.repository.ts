@@ -99,10 +99,12 @@ function toMessage(row: GroupMessageRow): GroupMessage {
 const MEMBERSHIP_COLUMNS =
   "unread_count, conversations!inner(id, workspace_id, title, ai_muted, last_message_at, created_at, conversation_folders(folder_id))";
 // Le message cité voyage avec la réponse : il peut être hors de la page
-// chargée. `!reply_to_id` désigne la clé à suivre, la table se référençant
-// elle-même.
+// chargée. La table se référence elle-même : on embarque par la colonne
+// `reply_to_id` (message cité, un objet ou `null`). `messages!reply_to_id`
+// suivrait le lien à l'envers et rendrait les réponses à ce message, en
+// tableau — vérifié contre PostgREST 12.
 const MESSAGE_COLUMNS =
-  "id, conversation_id, user_id, role, content, created_at, reply_to:messages!reply_to_id(id, user_id, role, content)";
+  "id, conversation_id, user_id, role, content, created_at, reply_to:reply_to_id(id, user_id, role, content)";
 
 export const groupRepository: IGroupRepository = {
   async findWorkspaceMembers(workspaceId, accessToken) {

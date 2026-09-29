@@ -650,7 +650,7 @@ livrées dans cet ordre, du plus petit au plus lourd.
 - **API** : `replyToId` facultatif sur `POST /api/groups/:id/messages` ; 400
   « Le message cité n'appartient pas à cette conversation. » sinon. Chaque
   message revient avec `replyTo`, lu par une jointure de `messages` sur
-  elle-même (`messages!reply_to_id`).
+  elle-même, par la colonne (`reply_to:reply_to_id(…)`).
 - **Jean-Claude** : répondre à l'un de ses messages vaut mention. Le fil qu'il
   lit porte « Bruno, en réponse à Jean-Claude (« extrait ») : … », extrait
   tronqué à 80 caractères.
@@ -667,8 +667,16 @@ Parcours joué dans Chromium sur une fausse API, clair et sombre, 1280 pt et
 390 pt au doigt : répondre, bandeau, envoi avec `replyToId`, bandeau refermé,
 citation affichée.
 
-**Non vérifié.** La jointure `messages!reply_to_id` contre un vrai PostgREST.
-Le défilement vers le message cité d'un appui sur la citation. Jean-Claude
+**Corrigé après essai par Clarisse.** La première version écrivait la
+jointure `messages!reply_to_id`. PostgREST la suit à l'envers : elle rendait
+les réponses au message, en tableau, et chaque message du fil affichait une
+citation vide signée « Ancien membre ». La référence enregistrée était juste,
+seule la relecture était fausse. Requêtes du repository rejouées depuis contre
+PostgREST 12.2 en local (fil paginé, message seul, insertion avec et sans
+citation). La fausse API des tests d'écran rendait la forme attendue, pas celle
+du serveur : elle ne pouvait pas le voir.
+
+**Non vérifié.** Le défilement vers le message cité d'un appui sur la citation. Jean-Claude
 réveillé par une réponse, hors des doubles de test. iOS et Android.
 
 ### Lot 7 — fichiers d'espace
