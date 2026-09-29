@@ -7,6 +7,30 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, clarté de
+Jean-Claude dans les conversations)** — sur la branche `feat/collaboration`,
+suite de la revue de la fonctionnalité. Vérifié par les tests (11 nouveaux) et
+le typecheck ; **non joué dans un navigateur ni sur iOS et Android**.
+
+**Jean-Claude se présente.** Toute nouvelle conversation s'ouvre sur un mot
+d'accueil : comment l'appeler, dans quels cas il parle de lui-même, ce qu'il ne
+voit pas. Le bouton de l'en-tête ouvre un choix à deux options décrites
+(« Il intervient de lui-même » / « Seulement si on l'appelle ») ; chaque
+changement est annoncé dans le fil avec le nom de son auteur. Une ligne fixe
+sous l'en-tête dit qui lit la conversation et que Jean-Claude ne voit jamais
+les échanges privés — elle couvre aussi les conversations créées avant le mot
+d'accueil.
+
+**On sait quand Jean-Claude répond.** Après une mention, « Jean-Claude
+réfléchit… » s'affiche chez tous les membres jusqu'à sa réponse (60 s au plus).
+Si le quota de la personne qui l'a appelé est atteint, ou si le moteur échoue,
+le fil l'écrit au lieu de rester muet. Une intervention spontanée manquée ne
+l'annonce pas.
+
+**À vérifier en usage.** L'indicateur passe par le canal Realtime : à éprouver
+sur un vrai Supabase avec deux comptes. Le nom du bouton et le texte du mot
+d'accueil restent à faire relire par Clarisse.
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, dossiers)** —
 sur la branche `feat/collaboration`. Vérifié par la migration rejouée sur
 Postgres 16 avec un scénario RLS dédié, les tests, le typecheck, et dans

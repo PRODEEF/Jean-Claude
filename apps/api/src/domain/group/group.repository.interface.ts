@@ -45,6 +45,16 @@ export interface IGroupRepository {
     reply: AssistantReply,
     accessToken: string,
   ): Promise<GroupMessage>;
+  /**
+   * Annonce du fil (`role = 'system'`), signée de `userId` : la RLS n'accepte
+   * un message que signé de l'appelant. Ne compte pas dans les non-lus.
+   */
+  appendSystemMessage(
+    groupId: string,
+    userId: string,
+    content: string,
+    accessToken: string,
+  ): Promise<GroupMessage>;
   /** Modèle choisi par `userId` dans ses réglages (§5.1), `null` s'il n'en a pas choisi. */
   findAssistantModel(userId: string, accessToken: string): Promise<string | null>;
   /** Remet à zéro les non-lus de `userId` dans ce groupe. */

@@ -14,6 +14,12 @@ import { refreshGroup } from "./use-groups";
 
 /** Une personne qui cesse de taper disparaît de l'indicateur après ce délai. */
 const TYPING_TTL_MS = 4_000;
+/**
+ * Jean-Claude est réputé rédiger pendant ce délai : c'est la durée maximale de
+ * l'API (`vercel.json`). Passé ce délai sans réponse, l'indicateur s'éteint
+ * seul plutôt que de laisser croire à une réponse qui ne viendra pas.
+ */
+const ASSISTANT_THINKING_TTL_MS = 60_000;
 /** Un signal au plus par intervalle : taper une phrase n'émet pas un signal par touche. */
 const TYPING_THROTTLE_MS = 2_500;
 
@@ -54,7 +60,8 @@ export function useGroupMessageFeed() {
 }
 
 /**
- * Indicateur « en train d'écrire » d'un groupe.
+ * Indicateurs éphémères d'un groupe : « en train d'écrire », et Jean-Claude qui
+ * rédige une réponse à une mention.
  *
  * Canal `broadcast` privé : la policy de `realtime.messages` n'y laisse entrer
  * que les membres du groupe. Rien n'est écrit en base.
@@ -64,6 +71,8 @@ export function useGroupTyping(groupId: string) {
   const selfId = session?.user.id ?? null;
   /** Personne qui écrit → instant où l'on cesse de l'afficher. */
   const [typing, setTyping] = useState<Record<string, number>>({});
+  /** Instant où l'on cesse d'afficher que Jean-Claude rédige, `null` s'il ne rédige pas. */
+  const [thinkingUntil, setThinkingUntil] = useState<number | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const lastSentAt = useRef(0);
 
@@ -75,12 +84,16 @@ export function useGroupTyping(groupId: string) {
         if (typeof userId !== "string") return;
         setTyping((current) => ({ ...current, [userId]: Date.now() + TYPING_TTL_MS }));
       })
+      .on("broadcast", { event: "assistant_thinking" }, () => {
+        setThinkingUntil(Date.now() + ASSISTANT_THINKING_TTL_MS);
+      })
       .subscribe();
     channelRef.current = channel;
 
     return () => {
       channelRef.current = null;
       setTyping({});
+      setThinkingUntil(null);
       void supabase.removeChannel(channel);
     };
   }, [groupId]);
@@ -102,6 +115,13 @@ export function useGroupTyping(groupId: string) {
     return () => clearTimeout(timer);
   }, [typing]);
 
+  useEffect(() => {
+    if (thinkingUntil === null) return;
+
+    const timer = setTimeout(() => setThinkingUntil(null), Math.max(0, thinkingUntil - Date.now()));
+    return () => clearTimeout(timer);
+  }, [thinkingUntil]);
+
   const notifyTyping = useCallback(() => {
     const channel = channelRef.current;
     if (!selfId || !channel) return;
@@ -121,5 +141,29 @@ export function useGroupTyping(groupId: string) {
     });
   }, []);
 
-  return { typingUserIds: Object.keys(typing), notifyTyping, clearTyping };
+  /**
+   * L'appelant vient de mentionner Jean-Claude : lui et les autres membres le
+   * voient rédiger. Le serveur ne peut pas le signaler (il ne diffuse rien) ;
+   * l'indicateur est donc posé par le client qui a envoyé la mention.
+   */
+  const notifyAssistantThinking = useCallback(() => {
+    setThinkingUntil(Date.now() + ASSISTANT_THINKING_TTL_MS);
+    void channelRef.current?.send({
+      type: "broadcast",
+      event: "assistant_thinking",
+      payload: {},
+    });
+  }, []);
+
+  /** Sa réponse, ou l'annonce de son échec, est arrivée. */
+  const clearAssistantThinking = useCallback(() => setThinkingUntil(null), []);
+
+  return {
+    typingUserIds: Object.keys(typing),
+    assistantThinking: thinkingUntil !== null,
+    notifyTyping,
+    clearTyping,
+    notifyAssistantThinking,
+    clearAssistantThinking,
+  };
 }

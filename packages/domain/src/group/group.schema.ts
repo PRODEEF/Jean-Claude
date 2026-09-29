@@ -36,7 +36,11 @@ export const createGroupSchema = z.object({
 });
 export type CreateGroup = z.infer<typeof createGroupSchema>;
 
-export const groupMessageRoleSchema = z.enum(["user", "assistant"]);
+/**
+ * `system` : une annonce du fil (réglage de Jean-Claude changé, réponse
+ * impossible), rendue au centre et jamais remise au modèle.
+ */
+export const groupMessageRoleSchema = z.enum(["user", "assistant", "system"]);
 export type GroupMessageRole = z.infer<typeof groupMessageRoleSchema>;
 
 export const groupMessageSchema = z.object({
@@ -44,7 +48,8 @@ export const groupMessageSchema = z.object({
   groupId: uuidSchema,
   /**
    * Auteur d'un message `user`. Pour un message `assistant`, le membre dont le
-   * message a déclenché l'intervention de Jean-Claude.
+   * message a déclenché l'intervention de Jean-Claude. Pour un message
+   * `system`, le membre dont le geste l'a produit.
    */
   authorId: uuidSchema,
   role: groupMessageRoleSchema,

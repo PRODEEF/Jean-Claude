@@ -354,6 +354,30 @@ jamais de lui-même — c'est le premier point à vérifier après déploiement.
 bouton silence basculé par un membre n'apparaît chez les autres qu'au
 rechargement du groupe : Realtime ne diffuse que les messages.
 
+### Clarté de Jean-Claude dans le fil (29 septembre, suite)
+
+Issu de la revue de la fonctionnalité : l'utilisateur ne devait pas avoir à
+deviner ce que fait l'IA, ce qu'elle voit, ni si son appel a fonctionné.
+
+- **Messages `system`.** Le fil porte un troisième rôle, rendu au centre, jamais
+  remis au modèle (`describeThread` l'écarte) et sans effet sur les non-lus (le
+  trigger ne compte que `user` et `assistant`) : aucune migration.
+- **Mot d'accueil** écrit à la création (`GROUP_WELCOME`), signé du créateur.
+- **Annonce d'un changement de réglage** : « Bruno a limité Jean-Claude aux
+  mentions… », avec « Un membre » si l'auteur n'a pas de nom affiché.
+- **Réponse impossible sur une mention** (quota atteint, moteur en échec, texte
+  vide) : une annonce générique, jamais l'erreur du fournisseur. Rien pour une
+  intervention spontanée : personne ne l'attendait.
+- **« Jean-Claude réfléchit… »** : le client qui envoie une mention diffuse un
+  signal `assistant_thinking` sur le canal privé du groupe, comme « en train
+  d'écrire ». Il s'éteint à l'arrivée d'une réponse ou d'une annonce, ou après
+  60 s. Le serveur ne diffuse rien, l'exception à l'invariant 3 ne bouge pas.
+- **Bouton de l'en-tête** : deux options décrites dans une fenêtre, plutôt
+  qu'une bascule à libellé court.
+
+**Limite.** Les annonces sont écrites en français dans la base : une
+traduction demandera de stocker un code plutôt qu'un texte.
+
 ### Livré au lot 3
 
 Groupes de bout en bout : API, temps réel, non-lus, « en train d'écrire », et

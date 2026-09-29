@@ -8,6 +8,9 @@ import type { IGroupRepository } from "./group.repository.interface.js";
 import {
   describeThread,
   GROUP_PAUSE_MS,
+  GROUP_QUOTA_REACHED,
+  GROUP_REPLY_FAILED,
+  GROUP_WELCOME,
   GroupService,
   groupSystemPrompt,
   type GroupAssistantDeps,
@@ -62,6 +65,7 @@ function makeRepository(overrides: Partial<IGroupRepository> = {}): IGroupReposi
     findLatestMessageId: jest.fn().mockResolvedValue(null),
     appendMessage: jest.fn().mockResolvedValue(makeMessage()),
     appendAssistantMessage: jest.fn().mockResolvedValue(makeMessage({ role: "assistant" })),
+    appendSystemMessage: jest.fn().mockResolvedValue(makeMessage({ role: "system" })),
     findAssistantModel: jest.fn().mockResolvedValue(null),
     markRead: jest.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -164,6 +168,39 @@ describe("GroupService", () => {
       );
     });
 
+    it("ouvre la conversation par un mot d'accueil qui présente Jean-Claude", async () => {
+      const repo = inWorkspace();
+
+      const group = await service(repo).create(
+        "alice",
+        { workspaceId: WORKSPACE_ID, title: "Bureau", memberIds: ["bruno"] },
+        TOKEN,
+      );
+
+      expect(repo.appendSystemMessage).toHaveBeenCalledWith(
+        group.id,
+        "alice",
+        GROUP_WELCOME,
+        TOKEN,
+      );
+      expect(GROUP_WELCOME).toContain("@Jean-Claude");
+      expect(GROUP_WELCOME).toContain("jamais vos échanges privés");
+    });
+
+    it("n'écrit pas de mot d'accueil quand la création est refusée", async () => {
+      const repo = inWorkspace();
+
+      await expect(
+        service(repo).create(
+          "alice",
+          { workspaceId: WORKSPACE_ID, title: "Bureau", memberIds: [] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+
+      expect(repo.appendSystemMessage).not.toHaveBeenCalled();
+    });
+
     it("ne compte ni le créateur coché ni une personne cochée deux fois", async () => {
       const repo = inWorkspace();
 
@@ -229,12 +266,54 @@ describe("GroupService", () => {
       expect(repo.setAiMuted).toHaveBeenCalledWith("group-1", true, TOKEN);
     });
 
+    it("annonce dans le fil qui a limité Jean-Claude aux mentions", async () => {
+      const repo = inWorkspace({ findById: jest.fn().mockResolvedValue(makeGroup()) });
+
+      await service(repo).update("group-1", "bruno", { aiMuted: true }, TOKEN);
+
+      expect(repo.appendSystemMessage).toHaveBeenCalledWith(
+        "group-1",
+        "bruno",
+        "Bruno a limité Jean-Claude aux mentions : il ne répond plus que si on l'appelle.",
+        TOKEN,
+      );
+    });
+
+    it("annonce dans le fil qui a rendu la parole à Jean-Claude", async () => {
+      const repo = inWorkspace({
+        findById: jest.fn().mockResolvedValue(makeGroup({ aiMuted: true })),
+      });
+
+      await service(repo).update("group-1", "alice", { aiMuted: false }, TOKEN);
+
+      expect(repo.appendSystemMessage).toHaveBeenCalledWith(
+        "group-1",
+        "alice",
+        "Alice a autorisé Jean-Claude à intervenir de lui-même.",
+        TOKEN,
+      );
+    });
+
+    it("nomme « Un membre » celui qui n'a pas choisi de nom", async () => {
+      const repo = inWorkspace({ findById: jest.fn().mockResolvedValue(makeGroup()) });
+
+      await service(repo).update("group-1", "chloe", { aiMuted: true }, TOKEN);
+
+      expect(repo.appendSystemMessage).toHaveBeenCalledWith(
+        "group-1",
+        "chloe",
+        expect.stringContaining("Un membre a limité"),
+        TOKEN,
+      );
+    });
+
     it("n'écrit rien quand le réglage est déjà le bon", async () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeGroup()) });
 
       await service(repo).update("group-1", "bruno", { aiMuted: false }, TOKEN);
 
       expect(repo.setAiMuted).not.toHaveBeenCalled();
+      expect(repo.appendSystemMessage).not.toHaveBeenCalled();
     });
 
     it("refuse le réglage à qui n'est pas membre du groupe", async () => {
@@ -427,7 +506,7 @@ describe("GroupService", () => {
       expect(repo.appendAssistantMessage).toHaveBeenCalledTimes(1);
     });
 
-    it("se tait quand le quota du membre est atteint", async () => {
+    it("explique dans le fil pourquoi il ne répond pas à une mention quand le quota est atteint", async () => {
       const { llm } = makeLlm(response({ text: "Réponse" }));
       const repo = inWorkspace();
       const deps = makeDeps(llm, { consumeLlmCall: jest.fn().mockResolvedValue(false) });
@@ -436,15 +515,70 @@ describe("GroupService", () => {
 
       expect(deps.consumeLlmCall).toHaveBeenCalledWith("bruno", TOKEN);
       expect(repo.appendAssistantMessage).not.toHaveBeenCalled();
+      expect(repo.appendSystemMessage).toHaveBeenCalledWith(
+        "group-1",
+        "bruno",
+        GROUP_QUOTA_REACHED,
+        TOKEN,
+      );
     });
 
-    it("n'écrit rien quand le modèle ne produit aucun texte", async () => {
+    it("se tait sans rien annoncer quand le quota est atteint sur une intervention spontanée", async () => {
+      const { llm } = makeLlm(verdict(true, "unanswered_question"));
+      const repo = inWorkspace({ findLatestMessageId: jest.fn().mockResolvedValue("msg-9") });
+      const deps = makeDeps(llm, { consumeLlmCall: jest.fn().mockResolvedValue(false) });
+
+      await service(repo, deps).considerSpeaking(makeGroup(), message, false, TOKEN);
+
+      expect(repo.appendAssistantMessage).not.toHaveBeenCalled();
+      expect(repo.appendSystemMessage).not.toHaveBeenCalled();
+    });
+
+    it("annonce l'échec quand le modèle ne produit aucun texte pour une mention", async () => {
       const { llm } = makeLlm(response({ text: "   " }));
       const repo = inWorkspace();
 
       await service(repo, makeDeps(llm)).considerSpeaking(makeGroup(), message, true, TOKEN);
 
       expect(repo.appendAssistantMessage).not.toHaveBeenCalled();
+      expect(repo.appendSystemMessage).toHaveBeenCalledWith(
+        "group-1",
+        "bruno",
+        GROUP_REPLY_FAILED,
+        TOKEN,
+      );
+    });
+
+    it("annonce l'échec sans en livrer la cause quand le moteur plante sur une mention", async () => {
+      const llm: LlmProvider = {
+        name: "fake",
+        isSovereign: true,
+        model: "mistral/ministral-14b",
+        // eslint-disable-next-line require-yield -- le moteur échoue avant tout morceau
+        async *stream() {
+          throw new Error("SELECT * FROM messages");
+        },
+      };
+      const repo = inWorkspace();
+
+      await service(repo, makeDeps(llm)).considerSpeaking(makeGroup(), message, true, TOKEN);
+
+      expect(repo.appendSystemMessage).toHaveBeenCalledWith(
+        "group-1",
+        "bruno",
+        GROUP_REPLY_FAILED,
+        TOKEN,
+      );
+    });
+
+    it("n'écrit rien quand le modèle ne produit aucun texte pour une intervention spontanée", async () => {
+      const { llm } = makeLlm(verdict(true, "unanswered_question"), response({ text: "   " }));
+      const repo = inWorkspace({ findLatestMessageId: jest.fn().mockResolvedValue("msg-9") });
+
+      await service(repo, makeDeps(llm)).considerSpeaking(makeGroup(), message, false, TOKEN);
+
+      expect(repo.appendAssistantMessage).not.toHaveBeenCalled();
+      expect(repo.appendSystemMessage).not.toHaveBeenCalled();
     });
   });
 
@@ -506,6 +640,18 @@ describe("describeThread", () => {
     );
 
     expect(thread).toBe("Alice : Réunion jeudi ?\nJean-Claude : Jeudi convient.");
+  });
+
+  it("laisse les annonces du fil hors de ce que lit le modèle", () => {
+    const thread = describeThread(
+      [
+        makeMessage({ authorId: "alice", role: "system", content: "Alice a limité Jean-Claude." }),
+        makeMessage({ authorId: "bruno", content: "Bonjour" }),
+      ],
+      MEMBERS,
+    );
+
+    expect(thread).toBe("Bruno : Bonjour");
   });
 
   it("numérote les membres sans nom plutôt que de livrer leur adresse", () => {

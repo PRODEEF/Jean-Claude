@@ -228,7 +228,7 @@ export const groupRepository: IGroupRepository = {
       .from("messages")
       .select(MESSAGE_COLUMNS)
       .eq("conversation_id", groupId)
-      .in("role", ["user", "assistant"])
+      .in("role", ["user", "assistant", "system"])
       .order("created_at", { ascending: false })
       .limit(options.limit + 1);
 
@@ -268,6 +268,16 @@ export const groupRepository: IGroupRepository = {
       input_mode: "text",
       provider: reply.provider,
       model: reply.model,
+    });
+  },
+
+  appendSystemMessage(groupId, userId, content, accessToken) {
+    return insertMessage(forUser(accessToken), {
+      conversation_id: groupId,
+      user_id: userId,
+      role: "system",
+      content,
+      input_mode: "text",
     });
   },
 

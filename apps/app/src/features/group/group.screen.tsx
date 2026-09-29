@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowUp, Bell, BellOff, FolderInput } from "lucide-react-native";
-import type { GroupMessage, WorkspaceMember } from "@jc/domain";
+import { ArrowUp, AtSign, FolderInput, Lock, Sparkles } from "lucide-react-native";
+import { mentionsAssistant, type GroupMessage, type WorkspaceMember } from "@jc/domain";
 import { useWorkspaceMembers } from "@/features/workspace/hooks/use-workspaces";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useAssistantName } from "@/shared/hooks/use-profile";
@@ -14,6 +14,7 @@ import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { contentColumn, READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Text } from "@/shared/ui/text";
+import { GroupAssistantDialog } from "./GroupAssistantDialog";
 import { GroupFoldersDialog } from "./GroupFoldersDialog";
 import { useGroupTyping } from "./hooks/use-group-realtime";
 import {
@@ -21,7 +22,6 @@ import {
   useGroupMessages,
   useMarkGroupRead,
   useSendGroupMessage,
-  useSetGroupMuted,
 } from "./hooks/use-groups";
 
 /**
@@ -46,11 +46,18 @@ export function GroupScreen() {
   const members = useWorkspaceMembers(workspaceId);
   const markRead = useMarkGroupRead(groupId);
   const send = useSendGroupMessage(groupId);
-  const setMuted = useSetGroupMuted(groupId);
   const muted = group.data?.aiMuted ?? false;
-  const { typingUserIds, notifyTyping, clearTyping } = useGroupTyping(groupId);
+  const {
+    typingUserIds,
+    assistantThinking,
+    notifyTyping,
+    clearTyping,
+    notifyAssistantThinking,
+    clearAssistantThinking,
+  } = useGroupTyping(groupId);
   const [draft, setDraft] = useState("");
   const [filing, setFiling] = useState(false);
+  const [configuring, setConfiguring] = useState(false);
 
   const names = useMemo(
     () => new Map((members.data ?? []).map((member) => [member.userId, memberName(member)])),
@@ -68,12 +75,21 @@ export function GroupScreen() {
   const last = messages.data?.items.at(-1);
   useEffect(() => {
     if (last?.role === "user") clearTyping(last.authorId);
-  }, [last?.id, last?.role, last?.authorId, clearTyping]);
+    // Sa réponse, ou l'annonce qu'il n'a pas pu répondre, clôt l'attente.
+    if (last && last.role !== "user") clearAssistantThinking();
+  }, [last?.id, last?.role, last?.authorId, clearTyping, clearAssistantThinking]);
 
   const submit = () => {
     const content = draft.trim();
     if (!content || send.isPending) return;
-    send.mutate(content, { onSuccess: () => setDraft("") });
+    send.mutate(content, {
+      onSuccess: () => {
+        setDraft("");
+        // Une mention promet une réponse : sans ce signal, l'auteur attend sans
+        // savoir si Jean-Claude a été appelé.
+        if (mentionsAssistant(content)) notifyAssistantThinking();
+      },
+    });
   };
 
   // `inverted` pose le plus récent en bas sans calcul de défilement : la liste
@@ -109,20 +125,19 @@ export function GroupScreen() {
               qui choisit si Jean-Claude intervient de lui-même. */}
             <Button
               variant="ghost"
-              onPress={() => setMuted.mutate(!muted)}
-              disabled={setMuted.isPending}
+              onPress={() => setConfiguring(true)}
               accessibilityLabel={
                 muted
-                  ? `${assistantName} ne répond que si on le mentionne. Le laisser intervenir de lui-même`
-                  : `${assistantName} intervient de lui-même. Le limiter aux mentions`
+                  ? `${assistantName} ne répond que si on le mentionne. Modifier`
+                  : `${assistantName} intervient de lui-même. Modifier`
               }
               className="gap-2"
             >
-              <Icon as={muted ? BellOff : Bell} size={16} className="text-muted-foreground" />
+              <Icon as={muted ? AtSign : Sparkles} size={16} className="text-muted-foreground" />
               {/* Icône seule sur téléphone : le libellé mangerait le titre du groupe. */}
               {compact ? null : (
                 <Text className="text-sm text-muted-foreground">
-                  {muted ? "Sur mention" : `${assistantName} actif`}
+                  {muted ? "Sur mention" : "Intervient seul"}
                 </Text>
               )}
             </Button>
@@ -134,10 +149,29 @@ export function GroupScreen() {
         group={filing ? (group.data ?? null) : null}
         onClose={() => setFiling(false)}
       />
+      <GroupAssistantDialog
+        group={configuring ? (group.data ?? null) : null}
+        assistantName={assistantName}
+        onClose={() => setConfiguring(false)}
+      />
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: palette.background }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
+        {group.data ? (
+          // Dit ce que le fil ne montre pas : qui lit, et ce que l'IA ignore.
+          // Toujours affiché, et non seulement au mot d'accueil, qui remonte
+          // hors de l'écran et manque aux conversations créées avant lui.
+          <View
+            className="flex-row items-start gap-2 border-b border-border py-2"
+            style={contentColumn(compact, READING_MAX_WIDTH)}
+          >
+            <Icon as={Lock} size={12} className="mt-0.5 text-muted-foreground" />
+            <Text className="flex-1 text-xs text-muted-foreground">
+              {`Visible par les ${group.data.memberIds.length} membres de cette conversation. ${assistantName} ne voit que ce fil, jamais vos échanges privés.`}
+            </Text>
+          </View>
+        ) : null}
         {group.error || messages.error ? (
           <View className="flex-1 items-center justify-center px-6">
             <Text className="text-center text-sm text-muted-foreground">
@@ -189,7 +223,9 @@ export function GroupScreen() {
           style={contentColumn(compact, READING_MAX_WIDTH)}
         >
           <Text className="h-5 px-1 text-xs text-muted-foreground" numberOfLines={1}>
-            {typingLabel(typingNames)}
+            {[typingLabel(typingNames), assistantThinking ? `${assistantName} réfléchit…` : ""]
+              .filter(Boolean)
+              .join(" · ")}
           </Text>
           <View className="flex-row items-center gap-2">
             <Input
@@ -237,6 +273,14 @@ function MessageBubble({
   author: string | null;
 }) {
   const { palette } = useTheme();
+
+  if (message.role === "system") {
+    return (
+      <View className="mt-2 items-center px-4">
+        <Text className="text-center text-xs text-muted-foreground">{message.content}</Text>
+      </View>
+    );
+  }
 
   return (
     <View className={cn("max-w-[85%] gap-0.5", mine ? "self-end" : "self-start", author && "mt-2")}>

@@ -26,12 +26,34 @@ const SCOPE = "group.service";
  */
 export const GROUP_PAUSE_MS = 6_000;
 
+/**
+ * Premier message d'une conversation : ce que Jean-Claude fait ici, et ce qu'il
+ * ne voit pas. Un groupe est un lieu où l'on ne s'attend pas à ce qu'une IA
+ * prenne la parole seule ; mieux vaut le dire avant qu'elle ne le fasse.
+ */
+export const GROUP_WELCOME =
+  "Jean-Claude fait partie de cette conversation. Appelez-le avec @Jean-Claude : il répond " +
+  "toujours. Il peut aussi intervenir de lui-même pour répondre à une question restée sans " +
+  "réponse, corriger une information inexacte, récapituler une décision ou proposer une " +
+  "synthèse quand la discussion tourne en rond. Le bouton en haut permet de le limiter aux " +
+  "mentions. Il ne voit que cette conversation, jamais vos échanges privés.";
+
+export const GROUP_QUOTA_REACHED =
+  "Jean-Claude ne peut pas répondre pour le moment : la limite d'utilisation de la personne " +
+  "qui l'a appelé est atteinte.";
+
+export const GROUP_REPLY_FAILED = "Jean-Claude n'a pas pu répondre. Réessayez dans un instant.";
+
 /** Messages remis au modèle : assez pour suivre l'échange, pas tout l'historique. */
 const CONTEXT_SIZE = 30;
 
 /** Pourquoi Jean-Claude prend la parole — la mention, ou l'un des quatre cas. */
 export type InterventionReason =
-  "mention" | "unanswered_question" | "factual_error" | "decision_or_task" | "going_in_circles";
+  | "mention"
+  | "unanswered_question"
+  | "factual_error"
+  | "decision_or_task"
+  | "going_in_circles";
 
 const SPONTANEOUS_REASONS: ReadonlySet<string> = new Set<InterventionReason>([
   "unanswered_question",
@@ -83,7 +105,9 @@ export class GroupService {
       throw httpError(400, "Une des personnes choisies ne fait pas partie de l'espace.");
     }
 
-    return this.groups.create(userId, { ...input, memberIds: others }, accessToken);
+    const group = await this.groups.create(userId, { ...input, memberIds: others }, accessToken);
+    await this.groups.appendSystemMessage(group.id, userId, GROUP_WELCOME, accessToken);
+    return group;
   }
 
   async get(id: string, userId: string, accessToken: string): Promise<Group> {
@@ -103,6 +127,20 @@ export class GroupService {
     if (group.aiMuted === input.aiMuted) return group;
 
     await this.groups.setAiMuted(id, input.aiMuted, accessToken);
+
+    // Le réglage vaut pour tout le groupe : les autres membres doivent voir qui
+    // l'a changé, sans quoi le comportement de Jean-Claude bascule sans cause.
+    const members = await this.groups.findWorkspaceMembers(group.workspaceId, accessToken);
+    const author = members.find((member) => member.userId === userId)?.displayName?.trim();
+    const who = author || "Un membre";
+    await this.groups.appendSystemMessage(
+      id,
+      userId,
+      input.aiMuted
+        ? `${who} a limité Jean-Claude aux mentions : il ne répond plus que si on l'appelle.`
+        : `${who} a autorisé Jean-Claude à intervenir de lui-même.`,
+      accessToken,
+    );
     return { ...group, aiMuted: input.aiMuted };
   }
 
@@ -207,18 +245,36 @@ export class GroupService {
     // modèle, ne l'est pas — question ouverte du coût (docs/COLLABORATION.md).
     if (!(await this.assistant.consumeLlmCall(message.authorId, accessToken))) {
       logger.warn(SCOPE, "Quota du membre atteint, Jean-Claude se tait");
+      // Seule une mention attend une réponse : une intervention spontanée
+      // manquée ne se remarque pas, et l'annoncer serait du bruit.
+      if (mentioned) await this.announce(group, message, GROUP_QUOTA_REACHED, accessToken);
       return;
     }
 
     const model = await this.groups.findAssistantModel(message.authorId, accessToken);
-    const reply = await collect(
-      this.assistant.llm.stream({
-        system: groupSystemPrompt(reason),
-        messages: [{ role: "user", content: transcript }],
-        ...(model ? { model } : {}),
-      }),
-    );
-    if (!reply || !reply.text.trim()) return;
+    let reply: LlmCompletionResponse | null = null;
+    try {
+      reply = await collect(
+        this.assistant.llm.stream({
+          system: groupSystemPrompt(reason),
+          messages: [{ role: "user", content: transcript }],
+          ...(model ? { model } : {}),
+        }),
+      );
+    } catch (error) {
+      if (!mentioned) throw error;
+      // Le fil reçoit un message générique : l'erreur brute du fournisseur peut
+      // porter des fragments du fil, donc des propos de membres.
+      logger.error(
+        SCOPE,
+        "Le moteur a échoué sur une mention",
+        error instanceof Error ? error.stack : error,
+      );
+    }
+    if (!reply || !reply.text.trim()) {
+      if (mentioned) await this.announce(group, message, GROUP_REPLY_FAILED, accessToken);
+      return;
+    }
 
     await this.groups.appendAssistantMessage(
       group.id,
@@ -226,6 +282,16 @@ export class GroupService {
       { content: reply.text.trim(), provider: reply.provider, model: reply.model },
       accessToken,
     );
+  }
+
+  /** Annonce dans le fil, signée du membre qui a appelé Jean-Claude. */
+  private async announce(
+    group: Group,
+    message: GroupMessage,
+    content: string,
+    accessToken: string,
+  ): Promise<void> {
+    await this.groups.appendSystemMessage(group.id, message.authorId, content, accessToken);
   }
 
   /** Verdict du petit modèle : la raison de parler, ou `null` pour se taire. */
@@ -290,6 +356,7 @@ export function describeThread(messages: GroupMessage[], members: WorkspaceMembe
   }
 
   return messages
+    .filter((message) => message.role !== "system")
     .map((message) => {
       const author =
         message.role === "assistant"
