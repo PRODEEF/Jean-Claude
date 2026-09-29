@@ -276,6 +276,48 @@ complet et 620 tests du dépôt au vert, scénario RLS rejoué avec la fonction
 modifiée. Les requêtes du Repository n'ont pas été jouées contre un vrai
 PostgREST : l'environnement n'a pas d'instance Supabase.
 
+### Livré au lot 3
+
+Groupes de bout en bout : API, temps réel, non-lus, « en train d'écrire », et
+le fil de groupe à l'écran (reste du lot 5). Jean-Claude n'y parle pas encore :
+c'est le lot 4.
+
+- **API** (`apps/api/src/domain/group/`) : `GET /api/groups?workspaceId=`,
+  `POST /api/groups`, `GET /api/groups/:id`, `GET` et `POST
+/api/groups/:id/messages`, `POST /api/groups/:id/read`. Le créateur est
+  membre d'office ; il faut au moins une autre personne, et toutes doivent
+  appartenir à l'espace. Un non-membre reçoit un 404.
+- **Les routes personnelles refusent un groupe.** `/api/conversations/:id…`
+  passe désormais par une garde qui rend un 404 pour un groupe : sans elle, un
+  membre aurait pu écrire dans un groupe par le tour personnel, qui remet au
+  modèle son contexte privé. `findById` écarte aussi les groupes.
+- **Temps réel** (migration `20260929160000_group_realtime.sql`) : `messages`
+  entre dans la publication Realtime, et une policy sur `realtime.messages`
+  réserve le canal `group:<id>` aux membres du groupe. Les deux blocs sont
+  sans effet sur un Postgres sans Supabase (portabilité UE, §8).
+- **Côté app** : un abonnement unique, monté dans la coquille, invalide le fil
+  et les compteurs à chaque message reçu — le message est relu par l'API. Le
+  fil de groupe (`features/group/group.screen.tsx`) signe les messages des
+  autres, marque le groupe lu à l'ouverture et à chaque message reçu, et
+  affiche « Bruno écrit… ». La barre latérale d'un espace liste ses groupes
+  avec leur pastille de non-lus, et permet d'en créer un.
+- **Exception à l'invariant 3** consignée dans `docs/ARCHITECTURE.md` §2.2,
+  `CLAUDE.md` et `.claude/rules/200-app.md`.
+
+**Vérification.** 12 tests du service des groupes ; typecheck, et tests du
+dépôt. Migrations rejouées sur Postgres 16 : le scénario RLS (46 vérifications),
+et un scénario du canal privé contre une doublure du schéma `realtime` (un
+membre y émet et écoute, une personne extérieure non, un sujet malformé est
+refusé sans erreur). Parcours joué dans Chromium sur une fausse API, en clair
+et en sombre, grand écran et 390 pt : liste des groupes et pastille, fil,
+envoi, création d'un groupe.
+
+**Non vérifié.** Le temps réel lui-même : la fausse API n'a pas de serveur
+Realtime, et la doublure SQL ne rejoue pas le service. La réception des
+messages, les compteurs qui avancent et l'indicateur « en train d'écrire »
+restent à éprouver sur un vrai Supabase, avec deux comptes. iOS et Android non
+plus.
+
 ### Livré au lot 5 (partie sans groupes)
 
 Le lot 5 a été avancé avant le lot 3 pour avoir une interface à montrer. Seul

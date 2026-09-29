@@ -9,6 +9,7 @@ import {
 } from "@/features/navigation/AppSidebar";
 import { useAssistantChannel } from "@/features/navigation/use-sidebar-data";
 import { AppBanner } from "@/features/navigation/AppBanner";
+import { useGroupMessageFeed } from "@/features/group/hooks/use-group-realtime";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useSyncDeviceTimezone } from "@/shared/hooks/use-profile";
 
@@ -35,6 +36,10 @@ export default function AppLayout() {
   // Posé ici plutôt que dans un écran : le fuseau sert à dater côté serveur,
   // bien avant qu'on ouvre les réglages ou le calendrier.
   useSyncDeviceTimezone();
+
+  // Ici et non dans la barre latérale : sur téléphone, le tiroir fermé est
+  // démonté, et les non-lus des groupes cesseraient d'avancer.
+  useGroupMessageFeed();
 
   // `null` = l'utilisateur n'a pas encore tranché : la barre suit alors la
   // taille d'écran, ouverte sur desktop et fermée sur téléphone.

@@ -108,6 +108,25 @@ unique portée par `core/http.ts`.
 appels, ou un endpoint dédié dans `feature/` — c'est précisément le rôle de
 cette couche.
 
+**Une exception : Supabase Realtime, en lecture.** Les discussions de groupe
+(docs/COLLABORATION.md) exigent que les messages des autres arrivent sans
+rechargement. L'app s'abonne donc à Supabase Realtime, et à rien d'autre :
+
+- `postgres_changes` sur `messages` — Realtime applique la RLS de l'abonné,
+  qui ne reçoit que ce qu'il a le droit de lire. L'événement sert seulement à
+  invalider le cache React Query : le message est relu par l'API, jamais
+  exploité tel qu'il arrive ;
+- un canal `broadcast` privé par groupe (`group:<id>`) pour l'indicateur « en
+  train d'écrire », réservé aux membres par une policy sur
+  `realtime.messages`. Rien n'y est écrit en base.
+
+Toute écriture en base reste l'affaire de l'API. Deux autres voies ont été
+écartées : interroger l'API toutes les 2 à 3 secondes (latence visible, appels
+multipliés par le nombre de membres) et un flux SSE servi par l'API (les
+fonctions Vercel ont une durée de vie bornée, `maxDuration` à 60 s). Le code
+qui s'abonne vit dans `features/group/hooks/use-group-realtime.ts`, et nulle
+part ailleurs.
+
 ---
 
 ### 2.3 Le moteur IA est derrière un port, lui-même branché sur un routeur

@@ -175,6 +175,9 @@ export const conversationRepository: IConversationRepository = {
       .from("conversations")
       .select(CONVERSATION_COLUMNS)
       .eq("id", id)
+      // Un groupe n'est pas une conversation personnelle : il a ses propres
+      // routes (`/api/groups`), et la RLS le rend lisible à tous ses membres.
+      .is("workspace_id", null)
       .maybeSingle();
 
     if (error) throw new Error(error.message);

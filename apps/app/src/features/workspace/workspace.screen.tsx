@@ -26,7 +26,7 @@ import { WorkspaceNameDialog } from "./WorkspaceNameDialog";
 /**
  * Un espace d'équipe : ses membres, et pour un admin les invitations.
  *
- * Les discussions de groupe viendront ici avec le lot 3 (docs/COLLABORATION.md).
+ * Les discussions de groupe s'ouvrent depuis la barre latérale.
  * Les droits sont vérifiés par le serveur ; l'écran ne fait que masquer les
  * gestes qu'un simple membre n'a pas.
  */
@@ -73,10 +73,10 @@ export function WorkspaceScreen() {
     >
       <View className="gap-8 pb-8">
         <NotBuiltYet
-          phase="lot 3"
+          phase="lot 4"
           items={[
-            "Discussions de groupe en temps réel",
-            "Non-lus par discussion, indicateur « en train d'écrire »",
+            "Jean-Claude dans les groupes : il répond quand on le mentionne",
+            "et prend la parole de lui-même quand c'est utile, sauf bouton silence",
           ]}
         />
 

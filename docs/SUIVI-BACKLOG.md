@@ -7,6 +7,28 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 3)** —
+discussions de groupe, sur la branche `feat/collaboration`. Vérifié par les
+tests (dont 12 nouveaux pour les groupes), le typecheck, les migrations
+rejouées sur Postgres 16, et dans Chromium sur une fausse API, en clair et en
+sombre, grand écran et 390 pt. **Le temps réel n'est pas vérifié** : il
+demande un vrai Supabase et deux comptes.
+
+**Les membres d'un espace discutent en groupe.** On crée un groupe depuis la
+barre latérale de l'espace en cochant les personnes ; le fil signe les
+messages de chacun, les pastilles comptent les non-lus par personne, et
+« Bruno écrit… » s'affiche pendant la saisie. Les messages des autres arrivent
+par Supabase Realtime — première exception à l'invariant 3, en lecture
+seulement, consignée dans `docs/ARCHITECTURE.md` §2.2. Jean-Claude ne parle pas
+encore dans les groupes : c'est le lot 4.
+
+**Au passage, les routes personnelles refusent un groupe.** Sans cette garde,
+un membre aurait pu écrire dans un groupe par le tour personnel, qui remet au
+modèle son contexte privé.
+
+**Migration `20260929160000_group_realtime.sql`** à appliquer après celle des
+espaces. Sans effet sur un Postgres sans Supabase.
+
 Dernière mise à jour : **29 septembre 2026 (modales en thème sombre)** —
 correctif sur la branche `feat/collaboration`. Vérifié par le typecheck, et
 dans Chromium sur un build web, en clair et en sombre, grand écran et 390 pt :

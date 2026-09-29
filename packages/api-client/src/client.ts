@@ -47,6 +47,9 @@ import {
   type WorkspaceInvitation,
   type WorkspaceMember,
   type WorkspaceRole,
+  type CreateGroup,
+  type Group,
+  type GroupMessage,
 } from "@jc/domain";
 import { ApiError, HttpClient, type ApiClientOptions, type RequestOptions } from "./http";
 
@@ -184,6 +187,28 @@ export class JeanClaudeClient {
           method: "POST",
         }),
     },
+  };
+
+  /** Discussions de groupe d'un espace — voir docs/COLLABORATION.md. */
+  readonly groups = {
+    list: (workspaceId: string) =>
+      this.http.request<Group[]>("/groups", { query: { workspaceId } }),
+
+    get: (id: string) => this.http.request<Group>(`/groups/${id}`),
+
+    create: (input: CreateGroup) =>
+      this.http.request<Group>("/groups", { method: "POST", body: input }),
+
+    messages: (id: string, params: { cursor?: string; limit?: number } = {}) =>
+      this.http.request<Paginated<GroupMessage>>(`/groups/${id}/messages`, { query: params }),
+
+    send: (id: string, content: string) =>
+      this.http.request<GroupMessage>(`/groups/${id}/messages`, {
+        method: "POST",
+        body: { content },
+      }),
+
+    markRead: (id: string) => this.http.request<Group>(`/groups/${id}/read`, { method: "POST" }),
   };
 
   readonly folders = {
