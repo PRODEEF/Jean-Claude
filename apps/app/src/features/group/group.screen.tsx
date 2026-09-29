@@ -83,6 +83,9 @@ export function GroupScreen() {
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const listRef = useRef<FlatList<GroupMessage>>(null);
   const inputRef = useRef<TextInput>(null);
+  // Relances d'un appui sur une citation. Chacune peut échouer à son tour et
+  // rappeler le gestionnaire d'échec : sans borne, le fil défilait sans fin.
+  const scrollRetries = useRef(0);
 
   const names = useMemo(
     () => new Map((members.data ?? []).map((member) => [member.userId, memberName(member)])),
@@ -120,7 +123,9 @@ export function GroupScreen() {
   // page ouverte n'est rappelé que par sa citation.
   const scrollToMessage = (messageId: string) => {
     const index = items.findIndex((message) => message.id === messageId);
-    if (index >= 0) listRef.current?.scrollToIndex({ index, viewPosition: 0.5 });
+    if (index < 0) return;
+    scrollRetries.current = 0;
+    listRef.current?.scrollToIndex({ index, viewPosition: 0.5 });
   };
 
   const submit = () => {
@@ -209,12 +214,15 @@ export function GroupScreen() {
             data={items}
             keyExtractor={(message) => message.id}
             // Hauteurs variables, donc inconnues d'avance : on approche la
-            // position, puis on réessaie une fois la zone dessinée.
+            // position, puis on réessaie, la zone dessinée. Chaque essai
+            // mesure un peu plus du fil et rapproche du message visé.
             onScrollToIndexFailed={(info) => {
               listRef.current?.scrollToOffset({
                 offset: info.averageItemLength * info.index,
                 animated: true,
               });
+              if (scrollRetries.current >= QUOTE_SCROLL_RETRIES) return;
+              scrollRetries.current += 1;
               setTimeout(
                 () => listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0.5 }),
                 100,
@@ -416,6 +424,9 @@ function ReplyBanner({
     </View>
   );
 }
+
+/** Au-delà, le message cité reste hors d'atteinte : on s'arrête où l'on est. */
+const QUOTE_SCROLL_RETRIES = 8;
 
 /**
  * Texte d'un message cité. Une réponse de Jean-Claude est du Markdown : sur

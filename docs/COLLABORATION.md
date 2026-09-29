@@ -676,8 +676,14 @@ PostgREST 12.2 en local (fil paginé, message seul, insertion avec et sans
 citation). La fausse API des tests d'écran rendait la forme attendue, pas celle
 du serveur : elle ne pouvait pas le voir.
 
-**Non vérifié.** Le défilement vers le message cité d'un appui sur la citation. Jean-Claude
-réveillé par une réponse, hors des doubles de test. iOS et Android.
+**Corrigé ensuite.** Un appui sur une citation remontait bien au message, puis
+recommençait sans fin quand le message visé n'était pas encore mesuré : la
+relance de `scrollToIndex` échouait et se relançait elle-même. Les relances
+sont bornées à 8. Rejoué dans Chromium : fil court et fil de 60 messages, le
+message cité est atteint et le défilement s'arrête.
+
+**Non vérifié.** Jean-Claude réveillé par une réponse, hors des doubles de
+test. iOS et Android.
 
 ### Lot 7 — fichiers d'espace
 
