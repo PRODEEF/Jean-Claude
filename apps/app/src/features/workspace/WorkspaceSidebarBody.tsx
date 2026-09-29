@@ -1,13 +1,31 @@
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
-import { MessagesSquare, Plus, Users } from "lucide-react-native";
-import type { Group } from "@jc/domain";
+import { ListChecks, Plus } from "lucide-react-native";
+import type { Group, WorkspaceTaskList } from "@jc/domain";
 import { CreateGroupDialog } from "@/features/group/CreateGroupDialog";
-import { useGroups } from "@/features/group/hooks/use-groups";
-import { cn } from "@/shared/lib/utils";
+import {
+  ConversationContextMenu,
+  type ConversationMenuTarget,
+} from "@/features/conversation/ConversationContextMenu";
+import { GroupFoldersDialog } from "@/features/group/GroupFoldersDialog";
+import { useExtractGroupList, useGroups } from "@/features/group/hooks/use-groups";
+import {
+  contextMenuProps,
+  RowMenuButton,
+  rowLabel,
+  SectionLabel,
+  selected,
+  UnreadBadge,
+} from "@/features/navigation/SidebarSection";
+import { useWorkspaceLists } from "@/features/workspace-list/hooks/use-workspace-lists";
+import {
+  WorkspaceListDialog,
+  type WorkspaceListTarget,
+} from "@/features/workspace-list/WorkspaceListDialog";
 import { WorkspaceFolderDialog, type WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
 import { WorkspaceFolderTree } from "./WorkspaceFolderTree";
-import { useWorkspaceFolders } from "./hooks/use-workspace-folders";
+import { useFileNewGroup, useWorkspaceFolders } from "./hooks/use-workspace-folders";
+import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
@@ -19,12 +37,13 @@ export type WorkspaceSidebarBodyProps = {
 };
 
 /**
- * Corps de la barre latérale quand un espace d'équipe est sélectionné.
+ * Corps de la barre latérale quand un espace collaboratif est sélectionné.
  *
- * Les dossiers et conversations personnels s'effacent, comme les canaux d'un
- * autre espace dans Slack : on ne mêle pas ce qui est à soi et ce qui est à
- * l'équipe. Même structure que l'espace personnel : les dossiers d'abord, avec
- * ce qui y est rangé, puis toutes les conversations à plat.
+ * Même structure que l'espace personnel, dans le même ordre : les dossiers avec
+ * ce qui y est rangé, puis toutes les conversations et listes à plat. Les
+ * dossiers et conversations personnels s'effacent, comme les canaux d'un autre
+ * espace dans Slack : on ne mêle pas ce qui est à soi et ce qui est à l'équipe.
+ * Les membres se gèrent depuis le sélecteur d'espace.
  */
 export function WorkspaceSidebarBody({
   workspaceId,
@@ -33,46 +52,41 @@ export function WorkspaceSidebarBody({
 }: WorkspaceSidebarBodyProps) {
   const groups = useGroups(workspaceId);
   const folders = useWorkspaceFolders(workspaceId);
-  const [creating, setCreating] = useState(false);
+  const lists = useWorkspaceLists(workspaceId);
+  const [listDialog, setListDialog] = useState<WorkspaceListTarget | null>(null);
   const [editing, setEditing] = useState<WorkspaceFolderTarget | null>(null);
+  /** Dossier d'où l'on crée une conversation, qui y naîtra rangée. */
+  const [creatingIn, setCreatingIn] = useState<string | null>(null);
+  const fileNewGroup = useFileNewGroup();
+  const [groupMenu, setGroupMenu] = useState<ConversationMenuTarget<Group> | null>(null);
+  const [filing, setFiling] = useState<Group | null>(null);
+  const extractList = useExtractGroupList();
 
   const renderGroup = (group: Group) => {
     const href = `/workspace/${workspaceId}/group/${group.id}`;
-    return <GroupRow group={group} active={pathname === href} onPress={() => onNavigate(href)} />;
+    return (
+      <GroupRow
+        group={group}
+        active={pathname === href}
+        onPress={() => onNavigate(href)}
+        onMenu={setGroupMenu}
+      />
+    );
   };
-  const membersHref = `/workspace/${workspaceId}`;
+  const renderList = (list: WorkspaceTaskList) => {
+    const href = `/workspace/${workspaceId}/list/${list.id}`;
+    return <ListRow list={list} active={pathname === href} onPress={() => onNavigate(href)} />;
+  };
+  const createFolder = () => setEditing({ kind: "create", parentId: null });
 
   return (
-    <ScrollView className="flex-1" contentContainerClassName="gap-0.5 px-3 pb-4">
-      <Button
-        variant="ghost"
-        onPress={() => onNavigate(membersHref)}
-        className={cn("justify-start gap-3 px-2", pathname === membersHref && "bg-accent")}
-      >
-        <Icon as={Users} size={16} className="text-muted-foreground" />
-        <Text
-          className={cn(
-            "text-sm text-foreground",
-            pathname === membersHref ? "font-medium" : "font-normal",
-          )}
-        >
-          Membres et invitations
-        </Text>
-      </Button>
+    <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
+      <SectionLabel action={{ label: "Créer un dossier", onPress: createFolder }}>
+        Dossiers
+      </SectionLabel>
 
-      <View className="mt-3 flex-row items-center justify-between px-2 py-1">
-        <Text className="text-xs font-medium text-muted-foreground">Dossiers</Text>
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={() => setEditing({ kind: "create", parentId: null })}
-          accessibilityLabel="Créer un dossier dans l'espace"
-          className="size-7"
-        >
-          <Icon as={Plus} size={14} className="text-muted-foreground" />
-        </Button>
-      </View>
-
+      {/* Message fixe, et non `error.message` : une erreur brute peut porter
+          des fragments de requête. */}
       {folders.error ? (
         <Text className="px-2 py-1 text-xs text-destructive">
           Dossiers indisponibles pour le moment.
@@ -80,11 +94,7 @@ export function WorkspaceSidebarBody({
       ) : null}
 
       {folders.data?.length === 0 ? (
-        <Button
-          variant="ghost"
-          onPress={() => setEditing({ kind: "create", parentId: null })}
-          className="justify-start gap-2 px-2"
-        >
+        <Button variant="ghost" onPress={createFolder} className="justify-start gap-2 px-2">
           <Icon as={Plus} size={14} className="text-muted-foreground" />
           <Text className="text-xs font-normal text-muted-foreground">
             Créer un premier dossier
@@ -95,106 +105,155 @@ export function WorkspaceSidebarBody({
       <WorkspaceFolderTree
         nodes={folders.data ?? []}
         groups={groups.data ?? []}
+        lists={lists.data ?? []}
         onEdit={setEditing}
         renderGroup={renderGroup}
+        renderList={renderList}
+        onNewConversation={setCreatingIn}
+        onNewList={(folderId) => setListDialog({ kind: "create", workspaceId, folderId })}
       />
 
-      <View className="mt-3 flex-row items-center justify-between px-2 py-1">
-        <Text className="text-xs font-medium text-muted-foreground">Conversations</Text>
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={() => setCreating(true)}
-          accessibilityLabel="Démarrer une conversation d'espace"
-          className="size-7"
-        >
-          <Icon as={Plus} size={14} className="text-muted-foreground" />
-        </Button>
-      </View>
+      {/* Pas de « + », comme dans l'espace personnel : une liste partagée naît
+          d'un dossier (« Nouvelle todoliste ») ou d'une proposition de
+          Jean-Claude dans une conversation. */}
+      <SectionLabel>Conversations et tâches</SectionLabel>
 
-      {/* Message fixe, et non `error.message` : une erreur brute peut porter
-          des fragments de requête. */}
-      {groups.error ? (
+      {/* Un 4xx dit pourquoi la conversion a été refusée, dans un message
+          écrit pour l'utilisateur ; au-delà, message fixe. */}
+      {extractList.error ? (
+        <Text className="px-2 py-1 text-xs text-destructive">
+          {extractList.error instanceof ApiError && extractList.error.status < 500
+            ? extractList.error.message
+            : "La conversion en todoliste a échoué. Réessayez dans un instant."}
+        </Text>
+      ) : null}
+
+      {groups.error || lists.error ? (
         <Text className="px-2 py-1 text-xs text-destructive">
           Conversations indisponibles pour le moment.
         </Text>
       ) : null}
 
-      {groups.data?.length === 0 ? (
-        <Button
-          variant="ghost"
-          onPress={() => setCreating(true)}
-          className="justify-start gap-2 px-2"
-        >
-          <Icon as={Plus} size={14} className="text-muted-foreground" />
-          <Text className="text-xs font-normal text-muted-foreground">
-            Démarrer une première conversation
-          </Text>
-        </Button>
-      ) : null}
-
       {groups.data?.map((group) => (
         <View key={group.id}>{renderGroup(group)}</View>
       ))}
+      {lists.data?.map((list) => (
+        <View key={list.id}>{renderList(list)}</View>
+      ))}
+
+      <WorkspaceListDialog
+        target={listDialog}
+        onClose={() => setListDialog(null)}
+        onDone={(list) => {
+          setListDialog(null);
+          if (list) onNavigate(`/workspace/${workspaceId}/list/${list.id}`);
+        }}
+      />
+
+      <ConversationContextMenu<Group>
+        target={groupMenu}
+        onClose={() => setGroupMenu(null)}
+        onFile={({ conversation }) => {
+          setGroupMenu(null);
+          setFiling(conversation);
+        }}
+        onConvertToTaskList={({ conversation }) => {
+          setGroupMenu(null);
+          // La carte se lit dans le fil de la conversation, comme en personnel.
+          extractList.mutate(conversation.id, {
+            onSuccess: () => onNavigate(`/workspace/${workspaceId}/group/${conversation.id}`),
+          });
+        }}
+      />
+      <GroupFoldersDialog group={filing} onClose={() => setFiling(null)} />
+
+      <CreateGroupDialog
+        workspaceId={creatingIn ? workspaceId : null}
+        onClose={() => setCreatingIn(null)}
+        onCreated={(group) => {
+          const folderId = creatingIn;
+          setCreatingIn(null);
+          if (folderId) fileNewGroup.mutate({ groupId: group.id, folderId });
+          onNavigate(`/workspace/${workspaceId}/group/${group.id}`);
+        }}
+      />
 
       <WorkspaceFolderDialog
         workspaceId={workspaceId}
         target={editing}
         onClose={() => setEditing(null)}
       />
-
-      <CreateGroupDialog
-        workspaceId={creating ? workspaceId : null}
-        onClose={() => setCreating(false)}
-        onCreated={(group) => {
-          setCreating(false);
-          onNavigate(`/workspace/${workspaceId}/group/${group.id}`);
-        }}
-      />
     </ScrollView>
   );
 }
 
+/** Même rangée qu'une conversation personnelle : clic droit, « … » au survol, appui long. */
 function GroupRow({
   group,
   active,
   onPress,
+  onMenu,
 }: {
   group: Group;
   active: boolean;
   onPress: () => void;
+  onMenu: (target: ConversationMenuTarget<Group>) => void;
 }) {
-  // Le groupe ouvert est marqué lu : sa pastille n'a pas à clignoter le temps
-  // que l'écran s'en charge.
+  // La conversation ouverte est marquée lue : sa pastille n'a pas à clignoter
+  // le temps que l'écran s'en charge.
   const unread = active ? 0 : group.unreadCount;
+
+  return (
+    <View className={selected("group flex-row items-center rounded-md", active)}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onPress={onPress}
+        onLongPress={(event) =>
+          onMenu({ conversation: group, x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+        }
+        {...contextMenuProps((x, y) => onMenu({ conversation: group, x, y }))}
+        accessibilityLabel={unread > 0 ? `${group.title}, ${unread} non lu(s)` : group.title}
+        className="min-w-0 flex-1 justify-start px-2"
+      >
+        <Text className={rowLabel(active)} numberOfLines={1}>
+          {group.title}
+        </Text>
+      </Button>
+      <UnreadBadge count={unread} />
+      <RowMenuButton
+        label={`Actions pour ${group.title}`}
+        onOpen={(x, y) => onMenu({ conversation: group, x, y })}
+      />
+    </View>
+  );
+}
+
+/** Une liste partagée, avec ce qu'il reste à faire. */
+function ListRow({
+  list,
+  active,
+  onPress,
+}: {
+  list: WorkspaceTaskList;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const remaining = list.tasks.filter((task) => !task.done).length;
 
   return (
     <Button
       variant="ghost"
+      size="sm"
       onPress={onPress}
-      accessibilityLabel={unread > 0 ? `${group.title}, ${unread} non lu(s)` : group.title}
-      className={cn("justify-start gap-3 px-2", active && "bg-accent")}
+      accessibilityLabel={`${list.title}, ${remaining} tâche(s) à faire`}
+      className={selected("w-full justify-start gap-2 px-2", active)}
     >
-      <Icon as={MessagesSquare} size={16} className="text-muted-foreground" />
-      <Text
-        className={cn(
-          "flex-1 text-sm text-foreground",
-          active || unread > 0 ? "font-medium" : "font-normal",
-        )}
-        numberOfLines={1}
-      >
-        {group.title}
+      <Icon as={ListChecks} size={14} className="text-muted-foreground" />
+      <Text className={rowLabel(active)} numberOfLines={1}>
+        {list.title}
       </Text>
-      {unread > 0 ? (
-        <View
-          className="min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5"
-          style={{ height: 18 }}
-        >
-          <Text className="text-[10px] font-semibold leading-none text-primary-foreground">
-            {unread}
-          </Text>
-        </View>
-      ) : null}
+      {remaining > 0 ? <Text className="text-xs text-muted-foreground">{remaining}</Text> : null}
     </Button>
   );
 }

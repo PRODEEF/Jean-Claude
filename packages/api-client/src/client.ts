@@ -1,7 +1,11 @@
 import {
   messageStreamEventSchema,
   type AssignFolders,
+  type CalendarEntry,
   type CalendarEvent,
+  type CreateWorkspaceEvent,
+  type UpdateWorkspaceEvent,
+  type WorkspaceEvent,
   type CalendarRange,
   type Conversation,
   type CreateCalendarEvent,
@@ -49,8 +53,18 @@ import {
   type WorkspaceRole,
   type CreateGroup,
   type Group,
+  type GroupEventSuggestion,
+  type GroupListSuggestion,
   type GroupMessage,
+  type SendGroupMessage,
+  type WorkspaceFile,
   type UpdateGroup,
+  type CreateWorkspaceTask,
+  type CreateWorkspaceTaskList,
+  type UpdateWorkspaceTask,
+  type UpdateWorkspaceTaskList,
+  type WorkspaceTask,
+  type WorkspaceTaskList,
 } from "@jc/domain";
 import { ApiError, HttpClient, type ApiClientOptions, type RequestOptions } from "./http";
 
@@ -190,6 +204,40 @@ export class JeanClaudeClient {
     },
   };
 
+  /** Listes partagées d'un espace — une tâche s'écrit à part, sans écraser les autres. */
+  readonly workspaceLists = {
+    list: (workspaceId: string) =>
+      this.http.request<WorkspaceTaskList[]>("/workspace-lists", { query: { workspaceId } }),
+
+    get: (id: string) => this.http.request<WorkspaceTaskList>(`/workspace-lists/${id}`),
+
+    create: (input: CreateWorkspaceTaskList) =>
+      this.http.request<WorkspaceTaskList>("/workspace-lists", { method: "POST", body: input }),
+
+    update: (id: string, patch: UpdateWorkspaceTaskList) =>
+      this.http.request<WorkspaceTaskList>(`/workspace-lists/${id}`, {
+        method: "PATCH",
+        body: patch,
+      }),
+
+    remove: (id: string) => this.http.request<void>(`/workspace-lists/${id}`, { method: "DELETE" }),
+
+    addTask: (listId: string, input: CreateWorkspaceTask) =>
+      this.http.request<WorkspaceTask>(`/workspace-lists/${listId}/tasks`, {
+        method: "POST",
+        body: input,
+      }),
+
+    updateTask: (listId: string, taskId: string, patch: UpdateWorkspaceTask) =>
+      this.http.request<WorkspaceTask>(`/workspace-lists/${listId}/tasks/${taskId}`, {
+        method: "PATCH",
+        body: patch,
+      }),
+
+    removeTask: (listId: string, taskId: string) =>
+      this.http.request<void>(`/workspace-lists/${listId}/tasks/${taskId}`, { method: "DELETE" }),
+  };
+
   /** Discussions de groupe d'un espace — voir docs/COLLABORATION.md. */
   readonly groups = {
     list: (workspaceId: string) =>
@@ -211,19 +259,55 @@ export class JeanClaudeClient {
     messages: (id: string, params: { cursor?: string; limit?: number } = {}) =>
       this.http.request<Paginated<GroupMessage>>(`/groups/${id}/messages`, { query: params }),
 
-    send: (id: string, content: string) =>
+    send: (id: string, input: SendGroupMessage) =>
       this.http.request<GroupMessage>(`/groups/${id}/messages`, {
         method: "POST",
-        body: { content },
+        body: input,
       }),
 
     markRead: (id: string) => this.http.request<Group>(`/groups/${id}/read`, { method: "POST" }),
+
+    eventSuggestions: (id: string) =>
+      this.http.request<GroupEventSuggestion[]>(`/groups/${id}/event-suggestions`),
+
+    acceptEventSuggestion: (id: string, suggestionId: string) =>
+      this.http.request<GroupEventSuggestion>(
+        `/groups/${id}/event-suggestions/${suggestionId}/accept`,
+        { method: "POST" },
+      ),
+
+    dismissEventSuggestion: (id: string, suggestionId: string) =>
+      this.http.request<GroupEventSuggestion>(
+        `/groups/${id}/event-suggestions/${suggestionId}/dismiss`,
+        { method: "POST" },
+      ),
+
+    /** « Convertir en todoliste » : Jean-Claude propose une liste dans le fil. */
+    extractList: (id: string) =>
+      this.http.request<GroupListSuggestion>(`/groups/${id}/extract-list`, { method: "POST" }),
+
+    /** Listes proposées par Jean-Claude dans la conversation, à accepter ou ignorer (§12.1). */
+    suggestions: (id: string) =>
+      this.http.request<GroupListSuggestion[]>(`/groups/${id}/suggestions`),
+
+    acceptSuggestion: (id: string, suggestionId: string) =>
+      this.http.request<GroupListSuggestion>(`/groups/${id}/suggestions/${suggestionId}/accept`, {
+        method: "POST",
+      }),
+
+    dismissSuggestion: (id: string, suggestionId: string) =>
+      this.http.request<GroupListSuggestion>(`/groups/${id}/suggestions/${suggestionId}/dismiss`, {
+        method: "POST",
+      }),
   };
 
   readonly folders = {
     /** Sans argument, l'arborescence personnelle ; sinon celle d'un espace d'équipe. */
     tree: (workspaceId?: string) =>
-      this.http.request<FolderTreeNode[]>("/folders", workspaceId ? { query: { workspaceId } } : {}),
+      this.http.request<FolderTreeNode[]>(
+        "/folders",
+        workspaceId ? { query: { workspaceId } } : {},
+      ),
 
     create: (input: CreateFolder) =>
       this.http.request<Folder>("/folders", { method: "POST", body: input }),
@@ -241,8 +325,9 @@ export class JeanClaudeClient {
    * n'appellent pas deux routes différentes, elles demandent deux fenêtres.
    */
   readonly calendar = {
+    /** Événements personnels et ceux des conversations d'espace, marqués par `space`. */
     list: (range: CalendarRange) =>
-      this.http.request<CalendarEvent[]>("/calendar", { query: range }),
+      this.http.request<CalendarEntry[]>("/calendar", { query: range }),
 
     create: (input: CreateCalendarEvent) =>
       this.http.request<CalendarEvent>("/calendar", { method: "POST", body: input }),
@@ -251,6 +336,24 @@ export class JeanClaudeClient {
       this.http.request<CalendarEvent>(`/calendar/${id}`, { method: "PATCH", body: patch }),
 
     remove: (id: string) => this.http.request<void>(`/calendar/${id}`, { method: "DELETE" }),
+  };
+
+  /**
+   * Événements d'espace (lot 8). Leur lecture passe par `calendar.list` ;
+   * chaque geste laisse une ligne dans le fil de la conversation.
+   */
+  readonly workspaceEvents = {
+    create: (input: CreateWorkspaceEvent) =>
+      this.http.request<WorkspaceEvent>("/workspace-events", { method: "POST", body: input }),
+
+    update: (id: string, patch: UpdateWorkspaceEvent) =>
+      this.http.request<WorkspaceEvent>(`/workspace-events/${id}`, {
+        method: "PATCH",
+        body: patch,
+      }),
+
+    remove: (id: string) =>
+      this.http.request<void>(`/workspace-events/${id}`, { method: "DELETE" }),
   };
 
   /**
@@ -362,8 +465,19 @@ export class JeanClaudeClient {
         ...(signal ? { signal } : {}),
       }),
 
-    /** Retire une pièce jointe pas encore envoyée. */
+    /**
+     * Retire une pièce jointe pas encore envoyée, ou supprime un fichier
+     * d'espace déjà envoyé (son auteur ou un admin).
+     */
     remove: (id: string) => this.http.request<void>(`/attachments/${id}`, { method: "DELETE" }),
+
+    /** Page « Fichiers » d'un espace, du plus récent au plus ancien. */
+    listWorkspaceFiles: (params: {
+      workspaceId: string;
+      folderId?: string;
+      cursor?: string;
+      limit?: number;
+    }) => this.http.request<Paginated<WorkspaceFile>>("/attachments", { query: params }),
   };
 
   readonly conversations = {

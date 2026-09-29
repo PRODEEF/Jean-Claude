@@ -15,6 +15,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
     id: WORKSPACE_ID,
     name: "Association X",
     role: "admin",
+    memberCount: 2,
     createdAt: "2026-09-29T08:00:00.000Z",
     ...overrides,
   };

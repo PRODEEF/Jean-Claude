@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { PanResponder, Platform, ScrollView, View } from "react-native";
+import { PanResponder, ScrollView, View } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
 import { vars } from "nativewind";
@@ -10,13 +10,13 @@ import {
   Inbox,
   ListChecks,
   MessageCircle,
-  MoreHorizontal,
   Plus,
+  FileText,
+  Users,
 } from "lucide-react-native";
 import { ApiError } from "@jc/api-client";
 import type { Conversation, Folder, FolderTreeNode, TaskList } from "@jc/domain";
 import { api } from "@/shared/lib/api";
-import { cn } from "@/shared/lib/utils";
 import {
   ConversationContextMenu,
   type ConversationMenuTarget,
@@ -34,6 +34,9 @@ import { FolderDeleteDialog } from "@/features/folder/FolderDeleteDialog";
 import { moveErrorMessage, useFolderActions } from "@/features/folder/hooks/use-folder-actions";
 import { FolderNameRow, type FolderNameTarget } from "@/features/folder/FolderNameRow";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
+import { CreateGroupDialog } from "@/features/group/CreateGroupDialog";
+import { useHasWorkspaceFiles } from "@/features/workspace/hooks/use-workspace-files";
+import { useActiveWorkspaceId } from "@/features/workspace/hooks/use-active-workspace";
 import { WorkspaceSidebarBody } from "@/features/workspace/WorkspaceSidebarBody";
 import { WorkspaceSwitcher } from "@/features/workspace/WorkspaceSwitcher";
 import {
@@ -49,6 +52,15 @@ import { Text } from "@/shared/ui/text";
 import { useAssistantName, useProfile } from "@/shared/hooks/use-profile";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { useSidebarData, type SidebarGroup } from "./use-sidebar-data";
+import {
+  contextMenuProps,
+  NewConversationRow,
+  RowMenuButton,
+  rowLabel,
+  SectionLabel,
+  selected,
+  UnreadBadge,
+} from "./SidebarSection";
 import { UTILITY_LINKS } from "./utility-links";
 
 /** Largeur de la barre latérale avant tout ajustement — les 256 pt de `w-64`. */
@@ -116,8 +128,11 @@ export function AppSidebar({
   const [extractError, setExtractError] = useState<string | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const { move } = useFolderActions();
-  /** Espace d'équipe ouvert, lu dans l'adresse ; `null` dans l'espace personnel. */
-  const activeWorkspaceId = /^\/workspace\/([^/]+)/.exec(pathname)?.[1] ?? null;
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  /** Espace collaboratif ouvert ; `null` dans l'espace personnel. */
+  const activeWorkspaceId = useActiveWorkspaceId(pathname);
+  const hasFiles = useHasWorkspaceFiles(activeWorkspaceId);
+  const filesHref = `/workspace/${activeWorkspaceId ?? ""}/files`;
 
   const go = (href: string) => {
     router.push(href as never);
@@ -194,8 +209,6 @@ export function AppSidebar({
       style={[{ width }, vars({ "--accent": palette.border })]}
     >
       <View className="gap-2 p-3">
-        <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onNavigate={go} />
-
         {/* Signalement direct, distinct des suggestions du modèle (§12.1) : un
             geste utilisateur, jamais une proposition (A.10). Même traitement
             visuel que le canal permanent, en rouge, pour rester aussi visible. */}
@@ -235,19 +248,55 @@ export function AppSidebar({
           />
         </Button>
 
-        {/* Une conversation naît personnelle : dans un espace d'équipe, on
-            créera un groupe (lot 3). */}
-        {activeWorkspaceId ? null : (
-          <Button
-            variant="outline"
-            onPress={() => go("/chat")}
-            accessibilityLabel="Démarrer une nouvelle conversation"
-            className="justify-start gap-2"
-          >
-            <Icon as={Plus} size={16} />
-            <Text>Nouvelle conversation</Text>
-          </Button>
-        )}
+        {/* Sous le canal, hors de la zone qui défile : le canal et le signalement
+            restent au-dessus de l'espace, car ils ne dépendent pas de lui. */}
+        <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onNavigate={go} />
+
+        {/* Même bouton dans les deux espaces : dans un espace collaboratif, il
+            ouvre la création d'une conversation partagée. */}
+        <Button
+          variant="outline"
+          onPress={() => (activeWorkspaceId ? setCreatingGroup(true) : go("/chat"))}
+          accessibilityLabel="Démarrer une nouvelle conversation"
+          className="justify-start gap-2"
+        >
+          <Icon as={Plus} size={16} />
+          <Text>Nouvelle conversation</Text>
+        </Button>
+
+        {/* Serrées comme la liste du bas de la barre : ce sont deux entrées
+            d'une même liste, pas deux blocs. */}
+        <View className="gap-0.5">
+          {activeWorkspaceId ? (
+            <Button
+              variant="ghost"
+              onPress={() => go(`/workspace/${activeWorkspaceId}`)}
+              accessibilityLabel="Membres et invitations"
+              className={selected(
+                "justify-start gap-3 px-2",
+                pathname === `/workspace/${activeWorkspaceId}`,
+              )}
+            >
+              <Icon as={Users} size={16} className="text-muted-foreground" />
+              <Text className="text-sm font-normal text-foreground">Membres et invitations</Text>
+            </Button>
+          ) : null}
+
+          {/* Hors de la zone qui défile, comme « Membres et invitations » : ce
+            n'est ni un dossier ni une conversation, mais ce qu'elles
+            contiennent. Rien à montrer tant que l'espace n'a aucun fichier. */}
+          {activeWorkspaceId && (hasFiles || pathname === filesHref) ? (
+            <Button
+              variant="ghost"
+              onPress={() => go(filesHref)}
+              accessibilityLabel="Fichiers de l'espace"
+              className={selected("justify-start gap-3 px-2", pathname === filesHref)}
+            >
+              <Icon as={FileText} size={16} className="text-muted-foreground" />
+              <Text className="text-sm font-normal text-foreground">Fichiers</Text>
+            </Button>
+          ) : null}
+        </View>
       </View>
 
       {activeWorkspaceId ? (
@@ -312,14 +361,14 @@ export function AppSidebar({
             <FolderNameRow target={naming} onDone={() => setNaming(null)} />
           ) : null}
 
-          {/* Discussions et tâches : toutes les conversations à plat, y compris
+          {/* Conversations et tâches : toutes les conversations à plat, y compris
             celles déjà rangées dans un dossier. Ce n'est pas une duplication :
             la même conversation reste visible depuis son dossier, ci-dessus, et
             depuis cette vue chronologique (§5.2, A.1). Les conversations non
             rangées, elles, n'apparaissent plus qu'ici — une section « Sans
             dossier » à part aurait fait doublon avec cette liste, qui les
             contient déjà. */}
-          <SectionLabel>Discussions et tâches</SectionLabel>
+          <SectionLabel>Conversations et tâches</SectionLabel>
 
           {all.map((conversation) =>
             renaming?.id === conversation.id ? (
@@ -458,6 +507,14 @@ export function AppSidebar({
       {/* Créer depuis un dossier est le seul moment où le rangement précède la
           capture (§13.4.1) : l'utilisateur l'a déjà exprimé en partant de là. */}
       <TaskListDialog target={listTarget} onClose={() => setListTarget(null)} />
+      <CreateGroupDialog
+        workspaceId={creatingGroup ? activeWorkspaceId : null}
+        onClose={() => setCreatingGroup(false)}
+        onCreated={(group) => {
+          setCreatingGroup(false);
+          go(`/workspace/${group.workspaceId}/group/${group.id}`);
+        }}
+      />
       <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
 
       {onResize ? <ResizeHandle width={width} onResize={onResize} /> : null}
@@ -515,140 +572,9 @@ function ResizeHandle({ width, onResize }: { width: number; onResize: (width: nu
   );
 }
 
-/**
- * Ouverture au clic droit.
- *
- * `onContextMenu` est transmis par react-native-web mais absent des types
- * React Native, qui ne décrivent que le tactile : il est donc déclaré ici, et
- * n'est posé que sur web — ailleurs il n'existe pas d'événement à recevoir.
- * `preventDefault` évite que le menu du navigateur se superpose au nôtre.
- */
-type WebContextMenuProps = {
-  onContextMenu?: (event: { preventDefault: () => void; clientX: number; clientY: number }) => void;
-};
-
-function contextMenuProps(open: (x: number, y: number) => void): WebContextMenuProps {
-  if (Platform.OS !== "web") return {};
-  return {
-    onContextMenu: (event) => {
-      event.preventDefault();
-      open(event.clientX, event.clientY);
-    },
-  };
-}
-
 /** Ajoute le fond de survol shadcn quand la rangée est survolée par un glisser. */
 function cx(base: string, active: boolean): string {
   return active ? `${base} bg-accent` : base;
-}
-
-/**
- * Surligne la rangée de la route courante (demande de Yann).
- *
- * `bg-accent-soft` et non le `bg-accent` de shadcn : celui-ci est le gris du
- * survol, et la conversation ouverte se confondrait avec celle que le curseur
- * ne fait que traverser — la confusion déjà corrigée dans la bannière. La
- * teinte atténuée de l'assistant est celle de la bulle de l'utilisateur :
- * visible dans les deux thèmes, et qui suit la couleur choisie dans les
- * réglages.
- */
-function selected(base: string, active: boolean): string {
-  return active ? `${base} bg-accent-soft` : base;
-}
-
-/**
- * Libellé d'une rangée de la barre : gris tant que la sélection est ailleurs,
- * pour que l'œil trouve d'un coup la branche ouverte au milieu de
- * l'arborescence. Dossiers et conversations suivent la même règle.
- *
- * `font-normal` est explicite et non omis : `Button` publie `font-medium` par
- * son `TextClassContext`, dont toute rangée hériterait sinon — l'arborescence
- * entière paraissait alors sélectionnée.
- */
-function rowLabel(active: boolean): string {
-  return active
-    ? "flex-1 text-sm font-medium text-foreground"
-    : "flex-1 text-sm font-normal text-muted-foreground";
-}
-
-function SectionLabel({
-  children,
-  action,
-}: {
-  children: string;
-  action?: { label: string; onPress: () => void };
-}) {
-  return (
-    <View className="flex-row items-center justify-between pb-1 pt-3">
-      <Text className="px-2 text-xs font-medium text-muted-foreground">{children}</Text>
-      {action ? <RowAction icon={Plus} label={action.label} onPress={action.onPress} /> : null}
-    </View>
-  );
-}
-
-/**
- * Bouton d'action d'une rangée.
- *
- * 32 pt de côté pour ne pas épaissir la barre, plus 8 pt de `hitSlop` de
- * chaque côté : la zone réellement touchable atteint les 44 pt de
- * `MIN_TOUCH_TARGET` sans que la rangée ne grandisse.
- */
-function RowAction({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: typeof Plus;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onPress={onPress}
-      hitSlop={8}
-      accessibilityLabel={label}
-      className="size-8"
-    >
-      <Icon as={icon} size={16} className="text-muted-foreground" />
-    </Button>
-  );
-}
-
-/**
- * Le menu d'une rangée, atteignable à la souris.
- *
- * Le clic droit reste le geste principal, mais il ne s'apprend pas : rien
- * n'indique qu'une rangée en porte un. Ce bouton le montre au survol, et ouvre
- * exactement le même menu — c'est ce que font Notion et Apple Notes (§4.2).
- *
- * Web seulement, et l'opacité plutôt que le montage : un bouton qui
- * n'existerait qu'au survol de la rangée disparaîtrait à l'instant où le
- * curseur le vise. Au doigt, où il n'y a pas de survol, il volerait 32 pt au
- * nom de la conversation — l'appui long y tient déjà ce rôle.
- */
-function RowMenuButton({
-  label,
-  onOpen,
-}: {
-  label: string;
-  onOpen: (x: number, y: number) => void;
-}) {
-  if (Platform.OS !== "web") return null;
-
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      hitSlop={8}
-      onPress={(event) => onOpen(event.nativeEvent.pageX, event.nativeEvent.pageY)}
-      accessibilityLabel={label}
-      className={cn("size-8 opacity-0", Platform.select({ web: "group-hover:opacity-100" }))}
-    >
-      <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
-    </Button>
-  );
 }
 
 /**
@@ -937,23 +863,6 @@ function containsPath(group: SidebarGroup, pathname: string): boolean {
   );
 }
 
-/**
- * Ce que montre un dossier vide.
- *
- * « Vide » constatait sans rien proposer. L'invitation à écrire, elle, range la
- * conversation dans ce dossier d'entrée de jeu : c'est le seul endroit où le
- * choix du rangement précède la capture (§13.4.1), et il ne demande rien —
- * l'utilisateur l'a déjà exprimé en partant de ce dossier.
- */
-function NewConversationRow({ onPress }: { onPress: () => void }) {
-  return (
-    <Button variant="ghost" size="sm" onPress={onPress} className="justify-start gap-2 px-2">
-      <Icon as={Plus} size={14} className="text-muted-foreground" />
-      <Text className="text-xs font-normal text-muted-foreground">Nouvelle conversation</Text>
-    </Button>
-  );
-}
-
 /** Vide au sens de la barre : ni conversation, ni todoliste, ni sous-dossier. */
 function isFolderEmpty(group: SidebarGroup): boolean {
   return (
@@ -1034,26 +943,6 @@ function ConversationRow({
         label={`Actions pour ${conversation.title}`}
         onOpen={(x, y) => onMenu({ conversation, x, y })}
       />
-    </View>
-  );
-}
-
-/**
- * Pastille de non-lu — messages de l'assistant depuis la dernière ouverture,
- * ou un « ? » quand une question reste sans réponse malgré une ouverture déjà
- * faite (0 message non lu au sens strict, mais rien n'y a répondu).
- */
-function UnreadBadge({ count, pendingQuestion }: { count: number; pendingQuestion: boolean }) {
-  if (count === 0 && !pendingQuestion) return null;
-
-  return (
-    <View
-      className="min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5"
-      style={{ height: 18 }}
-    >
-      <Text className="text-[10px] font-semibold leading-none text-primary-foreground">
-        {count > 0 ? count : "?"}
-      </Text>
     </View>
   );
 }

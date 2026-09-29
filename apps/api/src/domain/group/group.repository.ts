@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
-import type { Group, GroupMessage } from "@jc/domain";
+import type {
+  Group,
+  GroupEventSuggestion,
+  GroupListSuggestion,
+  GroupMessage,
+  MessageAttachmentMimeType,
+} from "@jc/domain";
+import { signAttachmentUrls } from "../../core/storage/attachment-storage.js";
 import { forUser } from "../../core/supabase/supabase.js";
 import type {
   AssistantReply,
+  EventProposal,
   IGroupRepository,
+  ListProposal,
   WorkspaceMemberName,
 } from "./group.repository.interface.js";
 
@@ -23,14 +32,87 @@ type MembershipRow = { unread_count: number; conversations: GroupRow | null };
 
 type MemberRow = { conversation_id: string; user_id: string };
 
+type QuotedMessageRow = { id: string; user_id: string; role: string; content: string };
+
+type AttachmentSubRow = {
+  id: string;
+  storage_path: string;
+  mime_type: string;
+  byte_size: number;
+  file_name: string;
+  extracted_text: string | null;
+  created_at: string;
+  deleted_at: string | null;
+};
+
 type GroupMessageRow = {
   id: string;
   conversation_id: string;
   user_id: string;
   role: string;
   content: string;
+  provider: string | null;
+  created_at: string;
+  reply_to: QuotedMessageRow | null;
+  message_attachments: AttachmentSubRow[] | null;
+};
+
+type SuggestionRow = {
+  id: string;
+  conversation_id: string;
+  message_id: string;
+  payload: ListProposal;
+  status: string;
+  list_id: string | null;
   created_at: string;
 };
+
+function toSuggestion(row: SuggestionRow): GroupListSuggestion {
+  return {
+    id: row.id,
+    groupId: row.conversation_id,
+    messageId: row.message_id,
+    title: row.payload.title,
+    tasks: row.payload.tasks,
+    status: row.status as GroupListSuggestion["status"],
+    listId: row.list_id,
+    createdAt: row.created_at,
+  };
+}
+
+const SUGGESTION_COLUMNS = "id, conversation_id, message_id, payload, status, list_id, created_at";
+
+type EventSuggestionRow = Omit<SuggestionRow, "payload" | "list_id"> & {
+  payload: EventProposal;
+  event_id: string | null;
+};
+
+const EVENT_SUGGESTION_COLUMNS =
+  "id, conversation_id, message_id, payload, status, event_id, created_at";
+
+function toEventSuggestion(row: EventSuggestionRow): GroupEventSuggestion {
+  return {
+    id: row.id,
+    groupId: row.conversation_id,
+    messageId: row.message_id,
+    title: row.payload.title,
+    startsAt: row.payload.startsAt,
+    endsAt: row.payload.endsAt,
+    allDay: row.payload.allDay,
+    notes: row.payload.notes,
+    status: row.status as GroupEventSuggestion["status"],
+    eventId: row.event_id,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Marque les annonces (`GROUP_WELCOME`, réglage changé, réponse impossible) qui
+ * partagent le rôle `system` avec les lignes du calendrier. Le modèle lit les
+ * secondes, pas les premières ; la colonne `provider`, vide pour tout autre
+ * message système, évite une migration pour un seul drapeau.
+ */
+const ANNOUNCEMENT_MARK = "announcement";
 
 function toGroup(row: GroupRow, unreadCount: number, memberIds: string[]): Group {
   return {
@@ -46,13 +128,47 @@ function toGroup(row: GroupRow, unreadCount: number, memberIds: string[]): Group
   };
 }
 
-function toMessage(row: GroupMessageRow): GroupMessage {
+/**
+ * Mappe une ligne à partir d'URLs déjà signées, en lot par `signMessages`.
+ * Une pièce supprimée, ou dont l'objet a disparu, ne rend que son nom.
+ */
+function toMessage(row: GroupMessageRow, urlByPath: ReadonlyMap<string, string>): GroupMessage {
+  const attachments: GroupMessage["attachments"] = [];
+  const removedAttachments: GroupMessage["removedAttachments"] = [];
+  for (const a of row.message_attachments ?? []) {
+    const url = a.deleted_at ? undefined : urlByPath.get(a.storage_path);
+    if (!url) {
+      removedAttachments.push({ id: a.id, fileName: a.file_name });
+      continue;
+    }
+    attachments.push({
+      id: a.id,
+      url,
+      fileName: a.file_name,
+      mimeType: a.mime_type as MessageAttachmentMimeType,
+      byteSize: a.byte_size,
+      extractedText: a.extracted_text,
+      createdAt: a.created_at,
+    });
+  }
+
   return {
     id: row.id,
     groupId: row.conversation_id,
     authorId: row.user_id,
     role: row.role as GroupMessage["role"],
     content: row.content,
+    announcement: row.role === "system" && row.provider === ANNOUNCEMENT_MARK,
+    replyTo: row.reply_to
+      ? {
+          id: row.reply_to.id,
+          authorId: row.reply_to.user_id,
+          role: row.reply_to.role as GroupMessage["role"],
+          content: row.reply_to.content,
+        }
+      : null,
+    attachments,
+    removedAttachments,
     createdAt: row.created_at,
   };
 }
@@ -61,7 +177,26 @@ function toMessage(row: GroupMessageRow): GroupMessage {
 // d'autres espaces avec un groupe `null` au lieu de les écarter.
 const MEMBERSHIP_COLUMNS =
   "unread_count, conversations!inner(id, workspace_id, title, ai_muted, last_message_at, created_at, conversation_folders(folder_id))";
-const MESSAGE_COLUMNS = "id, conversation_id, user_id, role, content, created_at";
+// Le message cité voyage avec la réponse : il peut être hors de la page
+// chargée. La table se référence elle-même : on embarque par la colonne
+// `reply_to_id` (message cité, un objet ou `null`). `messages!reply_to_id`
+// suivrait le lien à l'envers et rendrait les réponses à ce message, en
+// tableau — vérifié contre PostgREST 12.
+const MESSAGE_COLUMNS =
+  "id, conversation_id, user_id, role, content, provider, created_at, reply_to:reply_to_id(id, user_id, role, content), " +
+  "message_attachments(id, storage_path, mime_type, byte_size, file_name, extracted_text, created_at, deleted_at)";
+
+/** Signe en un seul aller-retour les fichiers de toute une page de messages. */
+async function signMessages(
+  client: ReturnType<typeof forUser>,
+  rows: GroupMessageRow[],
+): Promise<GroupMessage[]> {
+  const paths = rows.flatMap((row) =>
+    (row.message_attachments ?? []).filter((a) => a.deleted_at === null).map((a) => a.storage_path),
+  );
+  const urlByPath = await signAttachmentUrls(client, paths);
+  return rows.map((row) => toMessage(row, urlByPath));
+}
 
 export const groupRepository: IGroupRepository = {
   async findWorkspaceMembers(workspaceId, accessToken) {
@@ -224,7 +359,8 @@ export const groupRepository: IGroupRepository = {
   },
 
   async findMessages(groupId, options, accessToken) {
-    let query = forUser(accessToken)
+    const client = forUser(accessToken);
+    let query = client
       .from("messages")
       .select(MESSAGE_COLUMNS)
       .eq("conversation_id", groupId)
@@ -233,6 +369,7 @@ export const groupRepository: IGroupRepository = {
       .limit(options.limit + 1);
 
     if (options.cursor) query = query.lt("created_at", options.cursor);
+    if (options.forModel) query = query.or(`provider.is.null,provider.neq.${ANNOUNCEMENT_MARK}`);
 
     const { data, error } = await query;
     if (error) throw new Error(error.message);
@@ -244,18 +381,35 @@ export const groupRepository: IGroupRepository = {
     // Même geste que le fil personnel : on pagine depuis le plus récent, puis
     // on remet la page dans l'ordre de lecture.
     return {
-      items: page.map(toMessage).reverse(),
+      items: (await signMessages(client, page)).reverse(),
       nextCursor: hasMore ? (page[page.length - 1]?.created_at ?? null) : null,
     };
   },
 
-  appendMessage(groupId, userId, content, accessToken) {
+  async findMessage(groupId, messageId, accessToken) {
+    const client = forUser(accessToken);
+    const { data, error } = await client
+      .from("messages")
+      .select(MESSAGE_COLUMNS)
+      .eq("conversation_id", groupId)
+      .eq("id", messageId)
+      .in("role", ["user", "assistant"])
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    const [message] = await signMessages(client, [data as unknown as GroupMessageRow]);
+    return message ?? null;
+  },
+
+  appendMessage(groupId, userId, content, replyToId, accessToken) {
     return insertMessage(forUser(accessToken), {
       conversation_id: groupId,
       user_id: userId,
       role: "user",
       content,
       input_mode: "text",
+      reply_to_id: replyToId,
     });
   },
 
@@ -278,6 +432,7 @@ export const groupRepository: IGroupRepository = {
       role: "system",
       content,
       input_mode: "text",
+      provider: ANNOUNCEMENT_MARK,
     });
   },
 
@@ -290,6 +445,132 @@ export const groupRepository: IGroupRepository = {
 
     if (error) throw new Error(error.message);
     return (data as { llm_model: string | null } | null)?.llm_model ?? null;
+  },
+
+  async createListSuggestion(groupId, messageId, userId, proposal, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_list_suggestions")
+      .insert({
+        conversation_id: groupId,
+        message_id: messageId,
+        payload: proposal,
+        created_by: userId,
+      })
+      .select(SUGGESTION_COLUMNS)
+      .single();
+
+    if (error) throw new Error(error.message);
+    return toSuggestion(data as unknown as SuggestionRow);
+  },
+
+  async findListSuggestions(groupId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_list_suggestions")
+      .select(SUGGESTION_COLUMNS)
+      .eq("conversation_id", groupId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return (data as unknown as SuggestionRow[]).map(toSuggestion);
+  },
+
+  async resolveListSuggestion(suggestionId, status, userId, accessToken) {
+    // Conditionnée à `pending` : c'est la base qui départage deux réponses
+    // simultanées, pas une lecture préalable.
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_list_suggestions")
+      .update({ status, resolved_by: userId, resolved_at: new Date().toISOString() })
+      .eq("id", suggestionId)
+      .eq("status", "pending")
+      .select(SUGGESTION_COLUMNS)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data ? toSuggestion(data as unknown as SuggestionRow) : null;
+  },
+
+  async setSuggestionList(suggestionId, listId, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("workspace_list_suggestions")
+      .update({ list_id: listId })
+      .eq("id", suggestionId);
+    if (error) throw new Error(error.message);
+  },
+
+  async reopenListSuggestion(suggestionId, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("workspace_list_suggestions")
+      .update({ status: "pending", resolved_by: null, resolved_at: null })
+      .eq("id", suggestionId);
+    if (error) throw new Error(error.message);
+  },
+
+  async findTimezone(userId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("profiles")
+      .select("timezone")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return (data as { timezone: string } | null)?.timezone ?? "Europe/Paris";
+  },
+
+  async createEventSuggestion(groupId, messageId, userId, proposal, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_event_suggestions")
+      .insert({
+        conversation_id: groupId,
+        message_id: messageId,
+        payload: proposal,
+        created_by: userId,
+      })
+      .select(EVENT_SUGGESTION_COLUMNS)
+      .single();
+
+    if (error) throw new Error(error.message);
+    return toEventSuggestion(data as unknown as EventSuggestionRow);
+  },
+
+  async findEventSuggestions(groupId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_event_suggestions")
+      .select(EVENT_SUGGESTION_COLUMNS)
+      .eq("conversation_id", groupId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+    return (data as unknown as EventSuggestionRow[]).map(toEventSuggestion);
+  },
+
+  async resolveEventSuggestion(suggestionId, status, userId, accessToken) {
+    // Conditionnée à `pending`, comme pour les listes : la base départage.
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_event_suggestions")
+      .update({ status, resolved_by: userId, resolved_at: new Date().toISOString() })
+      .eq("id", suggestionId)
+      .eq("status", "pending")
+      .select(EVENT_SUGGESTION_COLUMNS)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data ? toEventSuggestion(data as unknown as EventSuggestionRow) : null;
+  },
+
+  async setSuggestionEvent(suggestionId, eventId, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("workspace_event_suggestions")
+      .update({ event_id: eventId })
+      .eq("id", suggestionId);
+    if (error) throw new Error(error.message);
+  },
+
+  async reopenEventSuggestion(suggestionId, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("workspace_event_suggestions")
+      .update({ status: "pending", resolved_by: null, resolved_at: null })
+      .eq("id", suggestionId);
+    if (error) throw new Error(error.message);
   },
 
   async markRead(groupId, userId, accessToken) {
@@ -314,7 +595,9 @@ async function insertMessage(
     .single();
 
   if (error) throw new Error(error.message);
-  const message = toMessage(data as unknown as GroupMessageRow);
+  // Un message tout juste inséré n'a pas encore de fichier : ils le rejoignent
+  // après (`linkAttachments`), et le service les ajoute à ce qu'il rend.
+  const message = toMessage(data as unknown as GroupMessageRow, new Map());
 
   // `last_message_at` ordonne la liste des groupes, comme celle des
   // conversations personnelles.

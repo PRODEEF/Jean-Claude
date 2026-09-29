@@ -42,6 +42,21 @@ export function attachmentPath(
   return `${userId}/${attachmentId}.${EXTENSION_BY_MIME[mimeType]}`;
 }
 
+/**
+ * Chemin Storage d'un fichier d'espace : `workspaces/{workspaceId}/{attachmentId}.{ext}`.
+ *
+ * Le dépôt se juge sur le deuxième segment (membre de l'espace) ; la lecture,
+ * elle, suit la ligne de `message_attachments` — seuls les membres de la
+ * conversation où le fichier a été envoyé l'ouvrent.
+ */
+export function workspaceAttachmentPath(
+  workspaceId: string,
+  attachmentId: string,
+  mimeType: MessageAttachmentMimeType,
+): string {
+  return `workspaces/${workspaceId}/${attachmentId}.${EXTENSION_BY_MIME[mimeType]}`;
+}
+
 /** URL signée à courte durée de vie pour une pièce jointe. */
 export async function signAttachmentUrl(
   client: SupabaseClient<Database>,

@@ -237,7 +237,7 @@ développement.
   pas » tient dans le service, pas face à une suppression de compte.
 - **Pièces jointes de groupe.** `message_attachments` reste lisible de son
   seul propriétaire. Une pièce jointe envoyée dans un groupe ne serait pas
-  visible des autres membres. Hors V1.
+  visible des autres membres. Traité au lot 7 (§10).
 
 ### Livré au lot 2
 
@@ -278,6 +278,61 @@ attente. Si la seconde écriture échoue, rejouer l'acceptation aboutit.
 complet et 620 tests du dépôt au vert, scénario RLS rejoué avec la fonction
 modifiée. Les requêtes du Repository n'ont pas été jouées contre un vrai
 PostgREST : l'environnement n'a pas d'instance Supabase.
+
+### Listes proposées par Jean-Claude (29 septembre, suite)
+
+Quand une conversation d'espace fait émerger qui fait quoi — le cas
+`decision_or_task` — ou quand on le lui demande par mention, Jean-Claude peut
+proposer une liste partagée par l'outil `suggest_shared_list`. L'appel ne crée
+rien (§12.1) : une carte s'affiche sous son message, et n'importe quel membre
+de la conversation l'accepte (la liste rejoint l'espace, rattachée à la
+conversation) ou l'ignore. La décision vaut pour tous, une seule fois.
+
+- **Migration `20260929200000_workspace_list_suggestions.sql`** : table à
+  part, lisible et tranchable par les membres de la conversation — et non
+  `assistant_suggestions`, personnelle.
+- **Responsables** : le modèle les nomme comme le fil les lui montre ; l'API
+  les retrouve par ce nom, et laisse la tâche libre pour un nom inconnu.
+  À l'acceptation, un responsable parti de l'espace entre-temps est retiré
+  plutôt que de faire échouer la liste.
+- **Deux membres qui répondent en même temps** : la mise à jour est
+  conditionnée à l'état « en attente », un seul l'emporte, l'autre lit
+  « Cette proposition a déjà été traitée ». Si la création de la liste
+  échoue, la proposition redevient disponible.
+
+**Vérification.** Scénario RLS (5 vérifications), 17 nouveaux tests du service
+des conversations d'espace, typecheck, parcours Chromium sur une fausse API
+en clair et en sombre, grand écran et 390 pt. Aucun appel à un vrai modèle :
+la pertinence des propositions reste à éprouver.
+
+### Listes partagées (29 septembre, suite)
+
+Des listes simples, communes à l'espace : un titre, des tâches cochables par
+tous, un responsable par tâche. Ni échéance, ni sous-tâche, ni calendrier
+(décision de Clarisse).
+
+- **Migration `20260929190000_workspace_task_lists.sql`** : tables à part,
+  `workspace_task_lists` et `workspace_tasks`, et non une colonne de plus sur
+  `task_lists` — les requêtes des listes personnelles s'en remettent à la RLS,
+  qui leur aurait alors mêlé les listes d'espace. Réservées aux membres ;
+  triggers qui gardent la liste, son dossier et sa conversation d'origine dans
+  l'espace, et le responsable parmi les membres. Quitter l'espace libère ses
+  tâches. `created_by` en `set null` : supprimer son compte n'efface pas ce
+  que l'équipe partage.
+- **Une tâche s'écrit à part** (`POST`, `PATCH`, `DELETE
+/api/workspace-lists/:id/tasks/:taskId`) : deux membres qui cochent en même
+  temps ne s'écrasent pas, contrairement à `PUT /tasks/:id/items`.
+- **App** : section « Listes » dans la barre latérale de l'espace, avec ce qui
+  reste à faire ; listes rangées sous leur dossier (un seul, comme en
+  personnel) ; écran de liste pour cocher, confier, ajouter, supprimer, et
+  menu « … » pour renommer, ranger, supprimer.
+
+**Vérification.** Scénario RLS à trois comptes (13 vérifications), 16 tests du
+service, typecheck, parcours Chromium sur une fausse API en clair et en
+sombre, grand écran et 390 pt.
+
+**Limite.** Pas de temps réel sur les listes : un membre voit les gestes des
+autres en rouvrant la liste.
 
 ### Dossiers d'espace (29 septembre, suite)
 
@@ -331,9 +386,9 @@ Jean-Claude prend part aux discussions de groupe.
   adresse. Aucune source personnelle : la consigne de groupe
   (`groupSystemPrompt`) est construite à part de `buildSystemPrompt`.
 - **Il propose, il n'exécute rien** : sur une décision ou une répartition du
-  travail, il récapitule qui fait quoi et demande si c'est juste. Aucune
-  suggestion en attente n'est créée tant que la question 1 du §9 n'est pas
-  tranchée.
+  travail, il récapitule qui fait quoi et demande si c'est juste. Depuis, il
+  peut aussi proposer une liste à valider (voir « Listes proposées par
+  Jean-Claude »).
 - **Bouton silence** dans l'en-tête du fil (`PATCH /api/groups/:id`), réglage
   du groupe entier, modifiable par tout membre.
 - **Traitement après réponse** : `core/after-response.ts`, sur `waitUntil` de
@@ -359,9 +414,14 @@ rechargement du groupe : Realtime ne diffuse que les messages.
 Issu de la revue de la fonctionnalité : l'utilisateur ne devait pas avoir à
 deviner ce que fait l'IA, ce qu'elle voit, ni si son appel a fonctionné.
 
-- **Messages `system`.** Le fil porte un troisième rôle, rendu au centre, jamais
-  remis au modèle (`describeThread` l'écarte) et sans effet sur les non-lus (le
-  trigger ne compte que `user` et `assistant`) : aucune migration.
+- **Annonces.** Elles réutilisent le rôle `system` des lignes du calendrier
+  (lot 8), sans effet sur les non-lus (le trigger ne compte que `user` et
+  `assistant`) : aucune migration. Une annonce se reconnaît à `provider =
+'announcement'`, exposé par `GroupMessage.announcement` : le fil l'affiche
+  sans l'icône du calendrier, et `findMessages(…, { forModel: true })` l'écarte
+  de ce que lit le modèle, qui lit en revanche les lignes du calendrier. Une
+  colonne dédiée serait plus propre ; elle demanderait une migration pour un
+  seul drapeau.
 - **Mot d'accueil** écrit à la création (`GROUP_WELCOME`), signé du créateur.
 - **Annonce d'un changement de réglage** : « Bruno a limité Jean-Claude aux
   mentions… », avec « Un membre » si l'auteur n'a pas de nom affiché.
@@ -492,15 +552,79 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
 
 ---
 
+### Refonte de la barre latérale
+
+- **Ordre** : signalement, canal Jean-Claude, sélecteur d'espace, puis
+  « Nouvelle conversation ». Le canal et le signalement sont personnels : ils
+  ne dépendent pas de l'espace et passent au-dessus.
+- **Même structure dans les deux espaces** : Dossiers, puis « Conversations et
+  tâches » (conversations et listes à plat). Rangées, retraits et pastilles
+  partagés via `features/navigation/SidebarSection.tsx`. Le « + » de « Conversations et
+  tâches » en espace collaboratif a été retiré le 30 septembre (demande de
+  Clarisse) : comme en personnel, une liste partagée naît d'un dossier ou
+  d'une proposition de Jean-Claude.
+- **Menu d'une conversation d'espace** (30 septembre) : le même
+  `ConversationContextMenu` que le personnel — clic droit, « … » au survol,
+  appui long — avec « Ranger dans des dossiers » et « Convertir en
+  todoliste ». Renommer et supprimer n'existent pas encore pour une
+  conversation d'espace (ni route, ni règle de droits). La conversion (`POST
+/api/groups/:id/extract-list`, quota du membre) fait proposer par
+  Jean-Claude une liste partagée, en carte dans le fil ; rien n'est créé
+  avant qu'un membre l'accepte (§12.1). Conversation vide ou rien à en tirer :
+  422, message affiché sous la liste des conversations.
+- **L'espace actif est mémorisé** (`use-active-workspace.ts`), en plus de
+  l'adresse : ouvrir le canal, le calendrier ou les réglages depuis un espace
+  collaboratif ne ramène plus au personnel. Il ne change que par le sélecteur
+  ou une adresse `/workspace/:id`. Mémoire en mémoire vive seulement : un
+  rechargement retombe sur l'adresse. Remplace « l'espace actif se lit dans
+  l'adresse » du lot 5.
+- **Membres et invitations** : bouton sous « Nouvelle conversation », en
+  espace collaboratif seulement (déplacé le 30 septembre, à la demande de
+  Clarisse : il était entre le sélecteur d'espace et ce bouton).
+- **Fichiers** : sous « Membres et invitations », dans la même zone fixe et
+  serrée contre lui, affiché seulement si l'espace a au moins un fichier.
+- **Dossiers d'espace rendus comme les dossiers personnels** (30 septembre,
+  demande de Clarisse) : mêmes composants partagés via `SidebarSection.tsx` —
+  menu `FolderContextMenu` (Renommer, Ajouter un sous-dossier, Nouvelle
+  todoliste, Supprimer), clic droit, « … » au survol seulement, appui long au
+  doigt. Un dossier vide est replié et propose « Nouvelle conversation » : la
+  conversation créée d'ici y naît rangée. « Nouvelle todoliste » crée une
+  liste partagée rangée dans le dossier. Le compteur à droite du nom
+  disparaît, absent des dossiers personnels.
+- **Fenêtre « Mes espaces »** : « Espace collaboratif · x membre(s) » pour tous
+  (`Workspace.memberCount`, agrégat PostgREST côté API).
+
+**Vérification.** Typecheck et tests API passent. **Non vérifié à l'écran** :
+aucun parcours joué dans un navigateur, ni iOS ni Android.
+
+- **Complétion de la mention** : en tapant `@` dans une conversation d'espace,
+  `@Jean-Claude` est proposé au-dessus du champ ; Tab (web) ou un appui sur la
+  pastille le complète. Règle dans `completeAssistantMention` (`@jc/domain`).
+  Seul Jean-Claude est proposé ; les membres viendront s'ils deviennent
+  mentionnables.
+- **Même barre de saisie que le fil personnel** : la conversation d'espace
+  réutilise `Composer` (champ qui grandit, dictée, flèche) et la mention sous le
+  champ. Différences : le placeholder, pas de trombone (les pièces jointes ne
+  sont pas prises en charge en groupe) et pas de commandes « / ».
+- **Rangée de message** : la conversation d'espace réutilise `MessageRow` du fil
+  personnel (réponses de Jean-Claude sans bulle, commandes au survol : heure,
+  copier, écouter, utile / pas utile). « Réessayer » et « Modifier » n'y sont
+  pas : ils rejouent un tour de modèle, ce qu'un fil partagé ne permet pas. La
+  notation d'un message de groupe n'a pas été éprouvée sur une vraie base.
+- **Nom de l'assistant en groupe** : toujours « Jean-Claude », quel que soit le
+  nom choisi dans les réglages. Ce nom est personnel ; le serveur, lui, nomme et
+  reconnaît Jean-Claude seul dans un groupe (mention, consigne, fil transmis au
+  modèle). Non vérifié à l'écran.
+
 ## 8. Hors V1
 
 - Envoi de l'e-mail d'invitation (Supabase `inviteUserByEmail` imposerait le
   client `admin` dans une route HTTP ; un service d'envoi ajouterait une
   dépendance et un secret)
-- Dossiers, listes et calendrier partagés — les listes demanderont de régler
-  l'écrasement de `PUT /tasks/:id/items` (dernier qui écrit gagne)
+- Échéances, sous-tâches et calendrier sur les listes partagées (le calendrier
+  d'espace est traité au §10)
 - Réglages de l'IA propres à l'espace (nom, couleur, modèle)
-- Messages directs distincts des groupes, réponse à un message cité, réactions
+- Messages directs distincts des groupes, réactions
 - Notifications push
 - Résumé « ce que vous avez manqué », aparté privé avec l'IA sur un fil de groupe
 
@@ -508,10 +632,10 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
 
 ## 9. Questions ouvertes
 
-1. **Suggestions de groupe.** Sans listes partagées en V1, que produit une
-   suggestion « tâche détectée » acceptée ? Proposition : une liste dans
-   l'espace personnel de qui l'accepte, en attendant les listes d'espace. Et
-   qui peut l'accepter — tout membre, ou seulement l'auteur du message ?
+1. ~~**Suggestions de groupe.**~~ Tranché le 29 septembre : la proposition
+   acceptée devient une liste partagée de l'espace, et tout membre de la
+   conversation peut l'accepter ou l'ignorer (voir « Listes proposées par
+   Jean-Claude »).
 2. **Coût.** Seule la réponse rédigée est imputée, au membre qui l'a
    déclenchée ; le verdict du petit modèle n'est décompté nulle part. Un membre
    bavard épuise son quota pour tout le groupe. Un quota par espace
@@ -521,3 +645,224 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
 4. **Retrait d'un groupe.** Chacun quitte un groupe de lui-même. Qui peut en
    retirer un autre membre : le créateur du groupe, un admin de l'espace, tout
    membre ? Aucun des trois n'est ouvert par la migration du lot 1.
+
+---
+
+## 10. Réponse citée, fichiers et événements d'espace (lots 6 à 8)
+
+Demandés par Clarisse le 29 septembre, validés par Yann. Trois fonctions,
+livrées dans cet ordre, du plus petit au plus lourd.
+
+### Décisions
+
+| Sujet                  | Décision                                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Réponse à un message   | Citation façon WhatsApp : bloc cité au-dessus du message, un appui ramène à l'original. Même fil, pas de fil secondaire           |
+| Où répondre            | Conversations d'espace seulement. Pas dans le fil personnel                                                                       |
+| Répondre à l'IA        | Répondre à un message de Jean-Claude vaut mention : il intervient toujours, même en silence                                       |
+| Fichiers               | Joints dans une conversation d'espace, lisibles des membres de cette conversation, listés dans une page « Fichiers » de l'espace  |
+| Rangement des fichiers | Aucun geste propre : un fichier suit les dossiers de sa conversation (§13.4.1)                                                    |
+| Types de fichiers      | Ceux du fil personnel : images, PDF, texte, Markdown, CSV, 10 Mo au plus                                                          |
+| Supprimer un fichier   | L'auteur ou un admin de l'espace. Le message reste, avec « Fichier supprimé »                                                     |
+| Événement d'espace     | Rattaché à une conversation d'espace, affiché dans le calendrier de chacun de ses membres, avec un marqueur d'espace. Pas de RSVP |
+| Qui crée               | Un membre, depuis la conversation. Jean-Claude le propose quand le groupe fixe une date ; un membre valide (§12.1)                |
+| Qui modifie            | Tout membre de la conversation. Chaque modification laisse une ligne dans le fil (« Marie a déplacé Réunion au 14 »)              |
+| Rappel                 | Un seul, commun à tous les membres                                                                                                |
+
+### Lot 6 — réponse citée
+
+- **Base** : `messages.reply_to_id`, en `on delete set null`. Un trigger refuse
+  une réponse à un message d'une autre conversation, quel que soit le chemin
+  d'écriture.
+- **API** : `POST /api/groups/:id/messages` accepte `replyToId`. Le service
+  vérifie que le message cité appartient au groupe (400 sinon). Chaque message
+  revient avec `replyTo` (identifiant, auteur, rôle, texte) : le message cité
+  peut être hors de la page chargée, l'app ne doit pas avoir à le chercher.
+- **Jean-Claude** : une réponse à l'un de ses messages déclenche son
+  intervention comme une mention. Le fil transmis au modèle signale les
+  réponses (« Bruno, en réponse à Jean-Claude : … »).
+- **App** : commande « Répondre » parmi celles du message (survol sur web,
+  appui long sur mobile, comme les autres commandes de `MessageRow`). Un
+  bandeau au-dessus du champ rappelle le message cité, avec une croix pour
+  renoncer. Dans le fil, le bloc cité est posé dans la bulle ; un appui fait
+  défiler jusqu'à l'original s'il est chargé.
+- **Hors lot** : le glissement de la bulle vers la droite (WhatsApp) sur
+  mobile. Il demande un gestionnaire de gestes ; l'appui long suffit à la
+  démonstration.
+
+### Livré au lot 6
+
+- **Migration `20260930100000_message_reply.sql`** : `messages.reply_to_id`
+  en `on delete set null`, index partiel, et trigger `check_message_reply`
+  qui refuse un message cité absent du fil, d'un autre fil ou le message
+  lui-même, à l'insertion comme à la modification.
+- **API** : `replyToId` facultatif sur `POST /api/groups/:id/messages` ; 400
+  « Le message cité n'appartient pas à cette conversation. » sinon. Chaque
+  message revient avec `replyTo`, lu par une jointure de `messages` sur
+  elle-même, par la colonne (`reply_to:reply_to_id(…)`).
+- **Jean-Claude** : répondre à l'un de ses messages vaut mention. Le fil qu'il
+  lit porte « Bruno, en réponse à Jean-Claude (« extrait ») : … », extrait
+  tronqué à 80 caractères.
+- **App** : commande « Répondre » dans `MessageRow` (prop `onReply`, absente du
+  fil personnel), bloc cité en tête de bulle, bandeau au-dessus du champ. La
+  citation d'une réponse de Jean-Claude est aplatie en texte
+  (`markdownToSpeech`).
+
+**Vérification.** 6 nouveaux tests du service des groupes (54 au total), 705
+tests du dépôt, typecheck. Migrations rejouées sur Postgres 16 : même fil
+accepté ; autre fil, soi-même, identifiant inconnu et déplacement par `update`
+refusés ; suppression du message cité qui laisse la réponse sans citation.
+Parcours joué dans Chromium sur une fausse API, clair et sombre, 1280 pt et
+390 pt au doigt : répondre, bandeau, envoi avec `replyToId`, bandeau refermé,
+citation affichée.
+
+**Corrigé après essai par Clarisse.** La première version écrivait la
+jointure `messages!reply_to_id`. PostgREST la suit à l'envers : elle rendait
+les réponses au message, en tableau, et chaque message du fil affichait une
+citation vide signée « Ancien membre ». La référence enregistrée était juste,
+seule la relecture était fausse. Requêtes du repository rejouées depuis contre
+PostgREST 12.2 en local (fil paginé, message seul, insertion avec et sans
+citation). La fausse API des tests d'écran rendait la forme attendue, pas celle
+du serveur : elle ne pouvait pas le voir.
+
+**Corrigé ensuite.** Un appui sur une citation remontait bien au message, puis
+recommençait sans fin quand le message visé n'était pas encore mesuré : la
+relance de `scrollToIndex` échouait et se relançait elle-même. Les relances
+sont bornées à 8. Rejoué dans Chromium : fil court et fil de 60 messages, le
+message cité est atteint et le défilement s'arrête.
+
+**Non vérifié.** Jean-Claude réveillé par une réponse, hors des doubles de
+test. iOS et Android.
+
+### Lot 7 — fichiers d'espace
+
+**Écart avec la première version de ce paragraphe.** Un fichier devait être
+lisible de tous les membres de l'espace. Or une conversation d'espace n'est lue
+que de ses membres : un PDF posé dans une conversation à deux se serait ouvert
+chez toute l'équipe. Il est lisible des membres de la conversation où il a été
+envoyé, et la page « Fichiers » liste ceux des conversations dont on fait
+partie. De même, les fichiers ne s'affichent pas sous chaque dossier de la
+barre latérale, qu'ils auraient encombrée : la page « Fichiers » se filtre par
+dossier, sous-dossiers compris.
+
+### Livré au lot 7
+
+- **Migration `20260930110000_workspace_attachments.sql`** :
+  `message_attachments.workspace_id` et `deleted_at`. Lecture par les membres
+  de la conversation du message ; dépôt réservé aux membres de l'espace ;
+  suppression ouverte aux admins. Un trigger tient les invariants quel que
+  soit le chemin : une pièce ne rejoint qu'un message du même espace (un
+  fichier personnel n'entre pas dans un groupe, ni l'inverse), ne change pas
+  d'espace, ne se restaure pas, et un admin ne fait que la supprimer. Une
+  pièce supprimée perd son texte (contrainte) et son objet Storage. Côté
+  `storage.objects`, dépôt jugé sur le chemin `workspaces/{espace}/…`, lecture
+  et effacement sur la ligne. `message_attachments` entre dans la
+  publication Realtime.
+- **API** : `workspaceId` facultatif sur `POST /api/attachments` ;
+  `attachmentIds` sur `POST /api/groups/:id/messages` (fichiers de l'appelant,
+  de cet espace, pas encore envoyés — sinon 404, 400 ou 409 avant toute
+  écriture) ; `GET /api/attachments?workspaceId=&folderId=` paginé par
+  curseur, avec `canDelete` décidé par le serveur ; `DELETE
+/api/attachments/:id` supprime un fichier d'espace envoyé pour son auteur
+  ou un admin (403 sinon). Le fil personnel refuse un fichier d'espace.
+- **Jean-Claude** : lit le texte des fichiers du fil, balisé et tronqué à
+  4 000 caractères par fichier ; la consigne dit que ce texte est un document,
+  jamais une consigne. Il ne voit pas les images d'un groupe, seulement leur
+  nom, et le sait.
+- **App** : trombone dans la barre de saisie de la conversation d'espace ;
+  « Fichier supprimé : nom » dans la bulle ; entrée « Fichiers » en tête de la
+  barre latérale de l'espace ; page avec filtre par dossier, ouverture du
+  fichier, lien vers sa conversation, suppression avec confirmation. Realtime
+  relit les fils ouverts quand un fichier rejoint son message ou disparaît :
+  sans cela, les autres membres voyaient le message avant son fichier.
+
+**Vérification.** Scénario d'accès à quatre comptes sur Postgres 16 (20 cas :
+extérieur, membre de l'espace hors conversation, membre de la conversation,
+admin, fil personnel inchangé). Requêtes du repository jouées telles quelles
+contre PostgREST 12.2 en local, Storage simulé : visibilité par conversation,
+filtre par dossier et sous-dossiers, pagination, dépôt sous le chemin
+d'espace, envoi puis relecture, suppression qui efface l'objet. 610 tests de
+l'API, 119 des paquets, typecheck. Parcours Chromium sur une fausse API, clair
+et sombre, 1280 pt et 390 pt : joindre, envoyer un fichier seul, page
+Fichiers, filtre, suppression.
+
+**Non vérifié.** Le vrai Storage Supabase (dépôt, URL signée, effacement) et
+le temps réel du rattachement : ni l'un ni l'autre n'existe sur le banc local.
+Jean-Claude lisant un vrai fichier. iOS et Android, dont le sélecteur de
+fichiers natif.
+
+### Lot 8 — événements d'espace
+
+- **Base** : table à part `workspace_events`, sur le modèle des listes
+  partagées, plutôt qu'une colonne de plus sur `calendar_events`. Les requêtes
+  du calendrier personnel s'en remettent à la RLS, qui leur aurait mêlé les
+  événements d'espace ; et le prompt personnel lit le calendrier. Lecture et
+  écriture réservées aux membres de la conversation.
+- **API** : création, modification, suppression sous `/api/groups/:id/events`.
+  La vue calendrier (`GET /api/calendar`) fusionne les événements personnels
+  et ceux des conversations dont l'appelant est membre, marqués de leur espace.
+- **Trace dans le fil** : un message `role = 'system'` (déjà prévu par le
+  schéma) à chaque création, modification ou suppression. `findMessages` des
+  groupes ne lit aujourd'hui que `user` et `assistant` : à ouvrir.
+- **Jean-Claude** : outil `suggest_shared_event`, sur le modèle de
+  `suggest_shared_list`. La proposition vit dans une table de propositions
+  d'espace, pas dans `assistant_suggestions`, personnelle. Le premier membre
+  qui accepte crée l'événement pour tous.
+- **Dans une conversation d'espace, Jean-Claude ne voit toujours pas les
+  calendriers personnels** : il ne peut pas dire qui est disponible.
+
+### Livré au lot 8
+
+- **Migration `20260930120000_workspace_events.sql`** : table
+  `workspace_events` (ponctuelle, pas de récurrence), lisible et modifiable
+  par les membres de la conversation ; création signée de soi ; trigger qui
+  interdit de changer un événement de conversation. Table
+  `workspace_event_suggestions` sur le modèle des listes proposées, publiée
+  pour Realtime.
+- **API** : module `domain/workspace-event` — `POST /api/workspace-events`,
+  `PATCH` et `DELETE /api/workspace-events/:id`. `GET /api/calendar` rend des
+  `CalendarEntry` : les événements personnels (`space: null`) et ceux des
+  conversations dont on est membre, marqués de leur espace et conversation,
+  dans une seule chronologie. Chaque geste laisse une ligne `system` dans le
+  fil (« Bruno a déplacé « Réunion » au vendredi 2 octobre, 18 h. »), écrite
+  dans le fuseau de son auteur (`describeEventChange`, `@jc/domain`).
+- **Jean-Claude** : outil `suggest_shared_event` sur une mention ou une
+  décision du groupe. Sa consigne est désormais datée (« Nous sommes… »,
+  fuseau du membre) ; les heures murales du modèle sont posées dans ce fuseau
+  par `instantFromModel`, déplacé de `conversation.service` vers
+  `core/timezone` pour servir aux deux fils. Le premier membre qui accepte
+  crée l'événement pour tous ; la proposition se rouvre si la création échoue.
+  Il lit les lignes du calendrier du fil (« [Calendrier] … »).
+- **App** : bouton « Événement » dans l'en-tête de la conversation, qui ouvre
+  le formulaire du calendrier ; lignes du calendrier centrées dans le fil ;
+  carte de proposition ; au calendrier, icône « membres » devant un événement
+  d'espace, espace et conversation dans la fiche et la vue jour ; la
+  modification et la suppression depuis le calendrier vont à la bonne route.
+  Realtime relit le calendrier quand une ligne `system` arrive.
+
+**Vérification.** Scénario d'accès sur Postgres 16 (9 cas : membres,
+membre de l'espace hors conversation, extérieur, conversation personnelle,
+usurpation, changement de conversation, horaire inversé). Requêtes jouées
+telles quelles contre PostgREST 12.2 : création, déplacement, retrait et
+leurs lignes dans le fil, calendrier fusionné par membre, proposition puis
+acceptation, second geste refusé (409). 637 tests de l'API, 127 des
+paquets (dont 8 de `describeEventChange`), typecheck. Parcours Chromium sur
+une fausse API, clair et sombre, 1280 pt et 390 pt : accepter une
+proposition, créer depuis la conversation, marque au calendrier, fiche,
+modification envoyée à `/workspace-events`.
+
+**Non vérifié.** Un vrai modèle : la justesse des dates proposées reste à
+éprouver. Le temps réel. iOS et Android.
+
+**Limites.** Pas de récurrence. Rappel enregistré, non délivré (aucun
+rappel ne l'est encore, calendrier personnel compris). La ligne du fil est
+écrite dans le fuseau de son auteur : un membre à l'étranger la lirait dans
+un autre fuseau que le sien.
+
+### Lots
+
+| Lot | Contenu                                                            | Démonstration                                                                |
+| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| 6   | Réponse citée : migration, API, Jean-Claude, fil                   | Répondre à un membre, puis à Jean-Claude, qui répond                         |
+| 7   | Fichiers d'espace : stockage, RLS, API, page « Fichiers »          | Un membre joint un PDF, un autre l'ouvre et interroge Jean-Claude            |
+| 8   | Événements d'espace : table, API, calendrier fusionné, proposition | Le groupe fixe une date, Jean-Claude propose, l'événement apparaît chez tous |

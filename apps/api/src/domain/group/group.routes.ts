@@ -14,17 +14,31 @@ import { runAfterResponse } from "../../core/after-response.js";
 import { config } from "../../core/config.js";
 import { validate } from "../../core/http.js";
 import { llm } from "../../core/llm/providers/gateway.provider.js";
-import { consumeLlmCall } from "../../core/rate-limit/rate-limit.middleware.js";
+import { consumeLlmCall, rateLimit } from "../../core/rate-limit/rate-limit.middleware.js";
+import { attachmentRepository } from "../attachment/attachment.repository.js";
+import { workspaceEventRepository } from "../workspace-event/workspace-event.repository.js";
+import { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
+import { workspaceListRepository } from "../workspace-list/workspace-list.repository.js";
+import { WorkspaceListService } from "../workspace-list/workspace-list.service.js";
 import { groupRepository } from "./group.repository.js";
 import { GroupService } from "./group.service.js";
 
-const service = new GroupService(groupRepository, {
-  llm,
-  decisionModel: config.llmDecisionModel,
-  runAfterResponse,
-  consumeLlmCall,
-  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-});
+const service = new GroupService(
+  groupRepository,
+  {
+    llm,
+    decisionModel: config.llmDecisionModel,
+    runAfterResponse,
+    consumeLlmCall,
+    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: () => new Date(),
+  },
+  new WorkspaceListService(workspaceListRepository),
+  attachmentRepository,
+  new WorkspaceEventService(workspaceEventRepository),
+);
+
+const suggestionParam = validate("param", z.object({ id: uuidSchema, suggestionId: uuidSchema }));
 
 const idParam = validate("param", z.object({ id: uuidSchema }));
 
@@ -83,6 +97,57 @@ export const groupRoutes = new Hono<AuthEnv>()
     return c.json(
       await service.send(c.req.valid("param").id, user.id, c.req.valid("json"), user.accessToken),
       201,
+    );
+  })
+
+  // « Convertir en todoliste » : Jean-Claude propose, un membre accepte (§12.1).
+  .post("/:id/extract-list", idParam, rateLimit, async (c) => {
+    const user = c.get("user");
+    return c.json(
+      await service.extractList(c.req.valid("param").id, user.id, user.accessToken),
+      201,
+    );
+  })
+
+  // Listes proposées par Jean-Claude (§12.1) : tout membre accepte ou ignore.
+  .get("/:id/suggestions", idParam, async (c) => {
+    const user = c.get("user");
+    return c.json(
+      await service.listSuggestions(c.req.valid("param").id, user.id, user.accessToken),
+    );
+  })
+
+  .post("/:id/suggestions/:suggestionId/accept", suggestionParam, async (c) => {
+    const user = c.get("user");
+    const { id, suggestionId } = c.req.valid("param");
+    return c.json(await service.acceptSuggestion(id, suggestionId, user.id, user.accessToken));
+  })
+
+  .post("/:id/suggestions/:suggestionId/dismiss", suggestionParam, async (c) => {
+    const user = c.get("user");
+    const { id, suggestionId } = c.req.valid("param");
+    return c.json(await service.dismissSuggestion(id, suggestionId, user.id, user.accessToken));
+  })
+
+  // Événements proposés par Jean-Claude (§12.1) : tout membre accepte ou ignore.
+  .get("/:id/event-suggestions", idParam, async (c) => {
+    const user = c.get("user");
+    return c.json(
+      await service.listEventSuggestions(c.req.valid("param").id, user.id, user.accessToken),
+    );
+  })
+
+  .post("/:id/event-suggestions/:suggestionId/accept", suggestionParam, async (c) => {
+    const user = c.get("user");
+    const { id, suggestionId } = c.req.valid("param");
+    return c.json(await service.acceptEventSuggestion(id, suggestionId, user.id, user.accessToken));
+  })
+
+  .post("/:id/event-suggestions/:suggestionId/dismiss", suggestionParam, async (c) => {
+    const user = c.get("user");
+    const { id, suggestionId } = c.req.valid("param");
+    return c.json(
+      await service.dismissEventSuggestion(id, suggestionId, user.id, user.accessToken),
     );
   })
 

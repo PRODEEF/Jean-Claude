@@ -49,6 +49,43 @@ export function useGroupMessageFeed() {
           // Seul champ lu dans la ligne brute : de quoi savoir quel fil relire.
           const conversationId: unknown = payload.new["conversation_id"];
           if (typeof conversationId === "string") void refreshGroup(queryClient, conversationId);
+          // Une ligne `system` dit qu'un événement d'espace a changé : le
+          // calendrier des membres doit suivre (lot 8).
+          if (payload.new["role"] === "system") {
+            void queryClient.invalidateQueries({ queryKey: ["calendar"] });
+          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "workspace_event_suggestions" },
+        (payload) => {
+          const conversationId: unknown = payload.new["conversation_id"];
+          if (typeof conversationId === "string") void refreshGroup(queryClient, conversationId);
+        },
+      )
+      // La carte de proposition naît après le message de Jean-Claude : sans ce
+      // second signal, le fil relisait les propositions avant qu'elle existe.
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "workspace_list_suggestions" },
+        (payload) => {
+          const conversationId: unknown = payload.new["conversation_id"];
+          if (typeof conversationId === "string") void refreshGroup(queryClient, conversationId);
+        },
+      )
+      // Un fichier rejoint son message juste après lui, ou disparaît plus
+      // tard : la ligne ne dit pas de quelle conversation il s'agit, on relit
+      // les fils de groupe ouverts et les pages « Fichiers ».
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "message_attachments" },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ["group"] });
+          void queryClient.invalidateQueries({
+            predicate: (query) =>
+              query.queryKey[0] === "workspace" && query.queryKey[2] === "files",
+          });
         },
       )
       .subscribe();

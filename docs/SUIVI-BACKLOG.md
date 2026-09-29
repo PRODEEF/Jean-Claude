@@ -9,8 +9,8 @@ schéma prêts, comportement à écrire)
 
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, clarté de
 Jean-Claude dans les conversations)** — sur la branche `feat/collaboration`,
-suite de la revue de la fonctionnalité. Vérifié par les tests (11 nouveaux) et
-le typecheck ; **non joué dans un navigateur ni sur iOS et Android**.
+suite de la revue de la fonctionnalité. Vérifié par les tests (une dizaine de
+nouveaux) et le typecheck ; **non joué dans un navigateur ni sur iOS et Android**.
 
 **Jean-Claude se présente.** Toute nouvelle conversation s'ouvre sur un mot
 d'accueil : comment l'appeler, dans quels cas il parle de lui-même, ce qu'il ne
@@ -30,6 +30,76 @@ l'annonce pas.
 **À vérifier en usage.** L'indicateur passe par le canal Realtime : à éprouver
 sur un vrai Supabase avec deux comptes. Le nom du bouton et le texte du mot
 d'accueil restent à faire relire par Clarisse.
+Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 8 :
+événements)** — sur la branche `feat/collaboration`. Vérifié par un scénario
+d'accès sur Postgres 16, les requêtes jouées contre PostgREST en local, les
+tests, le typecheck, et dans Chromium sur une fausse API, en clair et en
+sombre, grand écran et 390 pt. **Aucun appel à un vrai modèle.**
+
+**Les conversations d'espace ont leurs événements.** Un membre ajoute un
+événement depuis la conversation ; il s'affiche au calendrier de chacun de ses
+membres, marqué de l'espace, et tous peuvent le modifier. Chaque geste laisse
+une ligne dans le fil. Quand le groupe fixe une date, Jean-Claude propose
+l'événement ; le premier membre qui accepte l'ajoute pour tous (§12.1).
+
+**Migration `20260930120000_workspace_events.sql`** à appliquer.
+
+Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 7 :
+fichiers)** — sur la branche `feat/collaboration`. Vérifié par un scénario
+d'accès sur Postgres 16, les requêtes jouées contre PostgREST en local, les
+tests, le typecheck, et dans Chromium sur une fausse API, en clair et en
+sombre, grand écran et 390 pt. **Ni vrai Storage, ni vrai modèle.**
+
+**On partage des fichiers dans une conversation d'espace.** Le trombone y
+joint images, PDF et fichiers texte, lus des seuls membres de la conversation.
+Une page « Fichiers » les rassemble, filtrable par dossier ; l'auteur ou un
+admin supprime un fichier, et le message indique « Fichier supprimé ».
+Jean-Claude lit le texte des fichiers du fil.
+
+**Migration `20260930110000_workspace_attachments.sql`** à appliquer.
+
+Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 6 :
+réponse citée)** — sur la branche `feat/collaboration`. Vérifié par la
+migration rejouée sur Postgres 16 avec un scénario dédié, les tests, le
+typecheck, et dans Chromium sur une fausse API, en clair et en sombre, grand
+écran et 390 pt. **Aucun appel à un vrai modèle.**
+
+**On répond à un message précis dans une conversation d'espace.** La commande
+« Répondre » (survol sur web, appui long sur téléphone) pose un bandeau
+au-dessus du champ ; le message envoyé rappelle en tête de bulle l'auteur et le
+début du message cité. Répondre à Jean-Claude le fait intervenir, même en
+silence. Spécification des lots 6 à 8 (réponse, fichiers, événements d'espace)
+au §10 de `docs/COLLABORATION.md`.
+
+**Migration `20260930100000_message_reply.sql`** à appliquer.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, listes
+proposées)** — sur la branche `feat/collaboration`. Vérifié par la migration
+rejouée sur Postgres 16, les tests, le typecheck, et dans Chromium sur une
+fausse API, en clair et en sombre, grand écran et 390 pt. **Aucun appel à un
+vrai modèle.**
+
+**Jean-Claude propose des listes dans les conversations d'espace.** Quand le
+groupe se répartit le travail, ou qu'on le lui demande, il propose une liste
+avec un responsable par tâche ; une carte s'affiche sous son message, et
+n'importe quel membre la crée pour l'espace ou l'ignore (§12.1). Tranche la
+question ouverte n°1 de `docs/COLLABORATION.md`.
+
+**Migration `20260929200000_workspace_list_suggestions.sql`** à appliquer
+après celle des listes.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, listes)** —
+sur la branche `feat/collaboration`. Vérifié par la migration rejouée sur
+Postgres 16 avec un scénario RLS dédié, les tests, le typecheck, et dans
+Chromium sur une fausse API, en clair et en sombre, grand écran et 390 pt.
+
+**Un espace a ses listes partagées.** Tout membre crée une liste, y ajoute des
+tâches, les coche et les confie à un membre ; chaque tâche s'enregistre à
+part, sans écraser le geste d'un autre. Une liste se range dans un dossier de
+l'espace. Plus simples que les todolistes personnelles : ni échéance ni
+calendrier.
+
+**Migration `20260929190000_workspace_task_lists.sql`** à appliquer.
 
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, dossiers)** —
 sur la branche `feat/collaboration`. Vérifié par la migration rejouée sur

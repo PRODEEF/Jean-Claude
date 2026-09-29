@@ -26,6 +26,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import {
+  completeAssistantMention,
   MESSAGE_ATTACHMENT_MAX_COUNT,
   MESSAGE_MAX_LENGTH,
   SLASH_COMMANDS,
@@ -80,10 +81,21 @@ export type ComposerProps = {
   inputRef?: RefObject<TextInput | null>;
   autoFocus?: boolean;
   /** Images et PDF en cours de composition, affichés au-dessus du champ (§13.4.1). */
-  attachments: ComposerAttachment[];
-  onRemoveAttachment: (localId: string) => void;
-  /** Résultat de `useAttachmentPicker`, instancié par l'appelant — voir ce hook. */
-  picker: { pick: () => void; dropRef: RefObject<View | null>; isOver: boolean };
+  attachments?: ComposerAttachment[];
+  onRemoveAttachment?: (localId: string) => void;
+  /**
+   * Résultat de `useAttachmentPicker`, instancié par l'appelant — voir ce hook.
+   * Absent là où les pièces jointes ne sont pas prises en charge (discussions
+   * de groupe) : le trombone disparaît plutôt que de rester sans effet.
+   */
+  picker?: { pick: () => void; dropRef: RefObject<View | null>; isOver: boolean };
+  /** Faux dans les discussions de groupe, où le serveur ne connaît pas les commandes. */
+  slashCommands?: boolean;
+  /**
+   * Nom à proposer quand l'utilisateur tape « @ » : Tab ou un appui le
+   * complète. Absent hors des discussions de groupe.
+   */
+  mentionName?: string;
 };
 
 /**
@@ -115,9 +127,11 @@ export function Composer({
   onStop,
   inputRef,
   autoFocus = false,
-  attachments,
+  attachments = [],
   onRemoveAttachment,
   picker,
+  slashCommands = true,
+  mentionName,
 }: ComposerProps) {
   const { palette } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
@@ -143,11 +157,14 @@ export function Composer({
    * pas de logique métier dans un écran).
    */
   const commandMatches = useMemo(() => {
+    if (!slashCommands) return [];
     const match = /^\/([a-z]*)$/i.exec(value);
     if (!match) return [];
     const typed = (match[1] ?? "").toLowerCase();
     return SLASH_COMMANDS.filter((command) => command.name.startsWith(typed));
-  }, [value]);
+  }, [value, slashCommands]);
+
+  const mentionCompletion = mentionName ? completeAssistantMention(value, mentionName) : null;
 
   const selectCommand = useCallback(
     (command: SlashCommandDefinition) => {
@@ -185,7 +202,11 @@ export function Composer({
   useEffect(() => {
     micPulse.value =
       dictation.listening && !reducedMotion
-        ? withRepeat(withTiming(1.3, { duration: 650, easing: Easing.inOut(Easing.ease) }), -1, true)
+        ? withRepeat(
+            withTiming(1.3, { duration: 650, easing: Easing.inOut(Easing.ease) }),
+            -1,
+            true,
+          )
         : withTiming(1, { duration: 150 });
   }, [dictation.listening, reducedMotion, micPulse]);
 
@@ -251,6 +272,26 @@ export function Composer({
         </View>
       ) : null}
 
+      {mentionCompletion ? (
+        <Pressable
+          onPress={() => {
+            onChangeText(mentionCompletion);
+            node.current?.focus();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`Mentionner ${mentionName}`}
+          style={[
+            styles.mention,
+            { backgroundColor: palette.surface, borderColor: palette.border },
+          ]}
+        >
+          <Text style={[styles.commandUsage, { color: palette.text }]}>@{mentionName}</Text>
+          {Platform.OS === "web" ? (
+            <Text style={[styles.commandDescription, { color: palette.textMuted }]}>Tab</Text>
+          ) : null}
+        </Pressable>
+      ) : null}
+
       {attachments.length > 0 ? (
         <View style={styles.attachmentsRow}>
           {attachments.map((attachment) =>
@@ -260,14 +301,14 @@ export function Composer({
                 fileName={attachment.fileName}
                 byteSize={attachment.byteSize}
                 status={attachment.status}
-                onRemove={() => onRemoveAttachment(attachment.localId)}
+                onRemove={() => onRemoveAttachment?.(attachment.localId)}
               />
             ) : (
               <AttachmentThumbnail
                 key={attachment.localId}
                 uri={attachment.previewUri}
                 status={attachment.status}
-                onRemove={() => onRemoveAttachment(attachment.localId)}
+                onRemove={() => onRemoveAttachment?.(attachment.localId)}
               />
             ),
           )}
@@ -275,7 +316,7 @@ export function Composer({
       ) : null}
 
       <Pressable
-        ref={picker.dropRef}
+        ref={picker?.dropRef}
         onPress={() => node.current?.focus()}
         // Rien à annoncer : le champ, le trombone et la flèche portent déjà
         // leurs libellés, et une cible de plus dans l'ordre de lecture ne
@@ -288,20 +329,22 @@ export function Composer({
             backgroundColor: palette.surface,
             // Web seulement : `isOver` reste toujours `false` côté natif,
             // aucun dépôt de fichier n'y étant possible.
-            borderColor: picker.isOver ? palette.accent : palette.border,
+            borderColor: picker?.isOver ? palette.accent : palette.border,
           },
         ]}
       >
-        <Pressable
-          onPress={picker.pick}
-          disabled={atAttachmentLimit}
-          accessibilityRole="button"
-          accessibilityLabel="Joindre un fichier"
-          hitSlop={8}
-          style={[styles.attach, { opacity: atAttachmentLimit ? 0.4 : 1 }]}
-        >
-          <Paperclip size={16} color={palette.textMuted} />
-        </Pressable>
+        {picker ? (
+          <Pressable
+            onPress={picker.pick}
+            disabled={atAttachmentLimit}
+            accessibilityRole="button"
+            accessibilityLabel="Joindre un fichier"
+            hitSlop={8}
+            style={[styles.attach, { opacity: atAttachmentLimit ? 0.4 : 1 }]}
+          >
+            <Paperclip size={16} color={palette.textMuted} />
+          </Pressable>
+        ) : null}
 
         <TextInput
           ref={attach}
@@ -315,6 +358,12 @@ export function Composer({
           // texte trop long partait au serveur, revenait en 400 générique, et
           // le brouillon était perdu en chemin.
           maxLength={MESSAGE_MAX_LENGTH}
+          onKeyPress={(event) => {
+            if (event.nativeEvent.key !== "Tab" || !mentionCompletion) return;
+            // Sans cela, Tab passe le focus au bouton d'envoi.
+            event.preventDefault();
+            onChangeText(mentionCompletion);
+          }}
           onSubmitEditing={handleSubmit}
           // `submit` sur web envoie avec Entrée ; sur mobile le clavier garde
           // un retour à la ligne, la saisie multiligne y étant la norme.
@@ -413,6 +462,16 @@ const styles = StyleSheet.create({
     gap: 2,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
+  },
+  mention: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.sm,
+    minHeight: MIN_TOUCH_TARGET,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.lg,
   },
   commandUsage: { fontFamily: FONT_FAMILY, fontSize: fontSize.md },
   commandDescription: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs },

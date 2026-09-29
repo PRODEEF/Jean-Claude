@@ -8,6 +8,7 @@ import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Modal } from "@/shared/ui/modal";
 import { Text } from "@/shared/ui/text";
+import { rememberWorkspace } from "./hooks/use-active-workspace";
 import {
   useReceivedInvitations,
   useWorkspaceActions,
@@ -103,7 +104,7 @@ function SpaceList({
     <Modal
       open={open}
       onClose={onClose}
-      title="Espaces"
+      title="Mes espaces"
       error={
         workspaces.error || invitations.error
           ? "Les espaces n'ont pas pu être chargés. Réessayez dans un instant."
@@ -118,7 +119,12 @@ function SpaceList({
         <SpaceRow
           workspace={null}
           active={activeWorkspaceId === null}
-          onPress={() => onNavigate("/chat")}
+          onPress={() => {
+            // Le choix explicite du personnel : l'adresse `/chat` ne dit rien
+            // de l'espace, c'est la mémoire qui doit le refléter.
+            rememberWorkspace(null);
+            onNavigate("/chat");
+          }}
         />
         {workspaces.data?.map((workspace) => (
           <SpaceRow
@@ -184,31 +190,28 @@ function SpaceRow({
   const name = workspace?.name ?? "Personnel";
 
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Ouvrir ${name}`}
-      accessibilityState={{ selected: active }}
-      className={cn(
-        "min-h-11 flex-row items-center gap-3 rounded-md px-2 py-2 active:bg-muted",
-        active && "bg-muted",
-      )}
-    >
-      <SpaceIcon workspace={workspace} />
-      <View className="min-w-0 flex-1">
-        <Text className="text-sm font-medium" numberOfLines={1}>
-          {name}
-        </Text>
-        <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-          {workspace
-            ? workspace.role === "admin"
-              ? "Espace d'équipe · admin"
-              : "Espace d'équipe"
-            : "Vos conversations, listes et calendrier"}
-        </Text>
-      </View>
-      {active ? <Icon as={Check} size={16} className="text-foreground" /> : null}
-    </Pressable>
+    <View className={cn("flex-row items-center rounded-md", active && "bg-muted")}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`Ouvrir ${name}`}
+        accessibilityState={{ selected: active }}
+        className="min-h-11 min-w-0 flex-1 flex-row items-center gap-3 rounded-md px-2 py-2 active:bg-muted"
+      >
+        <SpaceIcon workspace={workspace} />
+        <View className="min-w-0 flex-1">
+          <Text className="text-sm font-medium" numberOfLines={1}>
+            {name}
+          </Text>
+          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+            {workspace
+              ? `Espace collaboratif · ${workspace.memberCount} ${workspace.memberCount > 1 ? "membres" : "membre"}`
+              : "Vos conversations, listes et calendrier"}
+          </Text>
+        </View>
+        {active ? <Icon as={Check} size={16} className="text-foreground" /> : null}
+      </Pressable>
+    </View>
   );
 }
 

@@ -1,10 +1,11 @@
 import { Pressable, View } from "react-native";
 import { ListChecks } from "lucide-react-native";
-import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
+import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
 import { byDueDate, eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
+import { eventLabel } from "./MonthGrid";
 import { TaskRow } from "@/features/todo/TaskRow";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
@@ -12,10 +13,10 @@ import { groupByFolder } from "@/shared/lib/tasks";
 
 export type DayAgendaProps = {
   day: Date;
-  events: CalendarEvent[];
+  events: CalendarEntry[];
   /** Todolistes échues ce jour-là, listées sous les rendez-vous (A.2). */
   lists: TaskListWithTasks[];
-  onOpenEvent: (event: CalendarEvent) => void;
+  onOpenEvent: (event: CalendarEntry) => void;
   /** Ouvre le détail de la liste, à la façon de Google Calendar (§4.2). */
   onOpenList: (list: TaskListWithTasks) => void;
 };
@@ -56,7 +57,7 @@ export function DayAgenda({ day, events, lists, onOpenEvent, onOpenList }: DayAg
             key={event.id}
             onPress={() => onOpenEvent(event)}
             accessibilityRole="button"
-            accessibilityLabel={`Modifier ${event.title}`}
+            accessibilityLabel={eventLabel(event)}
             style={{ minHeight: MIN_TOUCH_TARGET }}
             className="border-border flex-row items-center gap-3 rounded-lg border px-3 py-2"
           >
@@ -67,6 +68,13 @@ export function DayAgenda({ day, events, lists, onOpenEvent, onOpenList }: DayAg
               <Text numberOfLines={1} className="text-sm font-medium">
                 {event.title}
               </Text>
+              {/* L'espace avant les notes : c'est ce qui distingue l'événement
+                  des siens. */}
+              {event.space ? (
+                <Text numberOfLines={1} className="text-muted-foreground text-xs">
+                  {event.space.workspaceName} · {event.space.groupTitle}
+                </Text>
+              ) : null}
               {event.notes ? (
                 <Text numberOfLines={1} className="text-muted-foreground text-xs">
                   {event.notes}

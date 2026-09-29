@@ -34,6 +34,19 @@ import type {
 import { TaskService } from "../../domain/task/task.service.js";
 import type { IUserRepository } from "../../domain/user/user.repository.interface.js";
 import { AssistantService } from "./assistant.service.js";
+import type { IWorkspaceEventRepository } from "../../domain/workspace-event/workspace-event.repository.interface.js";
+import { WorkspaceEventService } from "../../domain/workspace-event/workspace-event.service.js";
+
+const IDLE_WORKSPACE_EVENTS: IWorkspaceEventRepository = {
+  findSpace: jest.fn().mockResolvedValue(null),
+  findById: jest.fn().mockResolvedValue(null),
+  findInRange: jest.fn().mockResolvedValue([]),
+  create: jest.fn(),
+  update: jest.fn(),
+  delete: jest.fn(),
+  findAuthor: jest.fn(),
+  appendSystemMessage: jest.fn(),
+};
 
 const TOKEN = "access-token";
 const USER = "user-1";
@@ -210,6 +223,10 @@ const IDLE_ATTACHMENTS: IAttachmentRepository = {
   findByIds: jest.fn().mockResolvedValue([]),
   linkToMessage: jest.fn(),
   delete: jest.fn(),
+  softDelete: jest.fn(),
+  findWorkspaceRole: jest.fn(),
+  findWorkspaceFiles: jest.fn(),
+  findWorkspaceFolders: jest.fn(),
 };
 
 /**
@@ -346,7 +363,11 @@ function makeService(
 ): AssistantService {
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
-  const calendarService = new CalendarService(events, tasks);
+  const calendarService = new CalendarService(
+    events,
+    tasks,
+    new WorkspaceEventService(IDLE_WORKSPACE_EVENTS),
+  );
   const taskService = new TaskService(tasks, events, users);
 
   return new AssistantService(

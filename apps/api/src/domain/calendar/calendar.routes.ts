@@ -9,10 +9,16 @@ import {
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { validate } from "../../core/http.js";
 import { taskRepository } from "../task/task.repository.js";
+import { workspaceEventRepository } from "../workspace-event/workspace-event.repository.js";
+import { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
 import { calendarRepository } from "./calendar.repository.js";
 import { CalendarService } from "./calendar.service.js";
 
-const service = new CalendarService(calendarRepository, taskRepository);
+const service = new CalendarService(
+  calendarRepository,
+  taskRepository,
+  new WorkspaceEventService(workspaceEventRepository),
+);
 
 const idParam = validate("param", z.object({ id: uuidSchema }));
 
