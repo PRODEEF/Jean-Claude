@@ -40,8 +40,8 @@ nouveaux) et le typecheck ; **non joué dans un navigateur ni sur iOS et Android
 d'accueil : comment l'appeler, dans quels cas il parle de lui-même, ce qu'il ne
 voit pas. Le bouton de l'en-tête ouvre un choix à deux options décrites
 (« Il intervient de lui-même » / « Seulement si on l'appelle ») ; chaque
-changement est annoncé dans le fil avec le nom de son auteur. Une ligne fixe
-sous l'en-tête dit qui lit la conversation et que Jean-Claude ne voit jamais
+changement est annoncé dans le fil avec le nom de son auteur. Une ligne
+centrée en tête du fil, qui défile avec lui, dit qui lit la conversation et que Jean-Claude ne voit jamais
 les échanges privés — elle couvre aussi les conversations créées avant le mot
 d'accueil.
 

@@ -245,20 +245,6 @@ export function GroupScreen() {
         style={{ flex: 1, backgroundColor: palette.background }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        {group.data ? (
-          // Dit ce que le fil ne montre pas : qui lit, et ce que l'IA ignore.
-          // Toujours affiché, et non seulement au mot d'accueil, qui remonte
-          // hors de l'écran et manque aux conversations créées avant lui.
-          <View
-            className="flex-row items-start gap-2 border-b border-border py-2"
-            style={contentColumn(compact, READING_MAX_WIDTH)}
-          >
-            <Icon as={Lock} size={12} className="mt-0.5 text-muted-foreground" />
-            <Text className="flex-1 text-xs text-muted-foreground">
-              {`Visible par les ${group.data.memberIds.length} membres de cette conversation. ${assistantName} ne voit que ce fil, jamais vos échanges privés.`}
-            </Text>
-          </View>
-        ) : null}
         {group.error || messages.error ? (
           <View className="flex-1 items-center justify-center px-6">
             <Text className="text-center text-sm text-muted-foreground">
@@ -331,6 +317,20 @@ export function GroupScreen() {
                 />
               );
             }}
+            // Liste inversée : le pied est en haut du fil, et défile avec lui.
+            ListFooterComponent={
+              group.data ? (
+                // Dit ce que le fil ne montre pas : qui lit, et ce que l'IA
+                // ignore. Toujours présent en tête, et non seulement au mot
+                // d'accueil, qui manque aux conversations créées avant lui.
+                <View className="items-center gap-1 border-b border-border pb-3">
+                  <Icon as={Lock} size={12} className="text-muted-foreground" />
+                  <Text className="text-center text-xs text-muted-foreground">
+                    {`Visible par les ${group.data.memberIds.length} membres de cette conversation. ${assistantName} ne voit que ce fil, jamais vos échanges privés.`}
+                  </Text>
+                </View>
+              ) : null
+            }
             ListEmptyComponent={
               // La liste est inversée : son contenu vide l'est aussi.
               <View style={{ transform: [{ scaleY: -1 }] }} className="items-center py-10">
