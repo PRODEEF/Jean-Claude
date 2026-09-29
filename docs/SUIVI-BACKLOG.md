@@ -7,6 +7,19 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (modales en thème sombre)** —
+correctif sur la branche `feat/collaboration`. Vérifié par le typecheck, et
+dans Chromium sur un build web, en clair et en sombre, grand écran et 390 pt :
+fenêtre de formulaire, feuille mobile et confirmation.
+
+**Les fenêtres modales suivent enfin le thème sombre sur le web.** Elles
+s'affichaient sur fond blanc, texte sombre, au milieu d'un écran noir —
+toutes, confirmation standard comprise. Sur web, `@rn-primitives/dialog` rend
+la fenêtre dans `document.body`, hors de la vue où `ThemeProvider` pose les
+variables CSS de la palette : `bg-background` retombait sur le blanc par
+défaut. Le fournisseur expose désormais ces variables par `useTheme()`, et
+`Modal` les repose sur son contenu. Le rendu en clair est inchangé.
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 5
 partiel)** — interface des espaces, sur la branche `feat/collaboration`.
 Vérifié par le typecheck, et dans Chromium sur un build web branché sur une
@@ -22,7 +35,7 @@ Clarisse : le fil de groupe, qui dépend de l'API des groupes, reste à faire.
 Démonstration possible dès que la migration est appliquée sur un Supabase.
 
 **Constaté, hors de ce lot** : en thème sombre sur web, les fenêtres modales
-restent blanches — les variables du thème ne traversent pas le portail.
+restaient blanches. Corrigé dans l'entrée suivante.
 
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 2)** —
 API des espaces, invitations et membres, sur la branche `feat/collaboration`.

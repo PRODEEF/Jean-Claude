@@ -307,9 +307,10 @@ adresse déjà membre (message du serveur affiché) puis une nouvelle, nommer un
 admin, ouvrir la confirmation de départ, renommer, rejoindre un espace depuis
 une invitation. **Non vérifié sur iOS ni Android.**
 
-**Constaté au passage, hors de ce lot.** En thème sombre sur web, les fenêtres
-`Modal` s'affichent sur fond blanc, confirmation standard comprise : les
-variables du thème ne traversent pas le portail. Signalé à part.
+**Constaté au passage, corrigé depuis.** En thème sombre sur web, les fenêtres
+`Modal` s'affichaient sur fond blanc, confirmation standard comprise : les
+variables du thème ne traversaient pas le portail. Voir l'entrée du suivi du
+backlog sur les modales.
 
 ---
 
