@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import {
+  assignGroupFoldersSchema,
   createGroupSchema,
   cursorPaginationSchema,
   listGroupsQuerySchema,
@@ -50,6 +51,18 @@ export const groupRoutes = new Hono<AuthEnv>()
     const user = c.get("user");
     return c.json(
       await service.update(c.req.valid("param").id, user.id, c.req.valid("json"), user.accessToken),
+    );
+  })
+
+  .put("/:id/folders", idParam, validate("json", assignGroupFoldersSchema), async (c) => {
+    const user = c.get("user");
+    return c.json(
+      await service.assignFolders(
+        c.req.valid("param").id,
+        user.id,
+        c.req.valid("json").folderIds,
+        user.accessToken,
+      ),
     );
   })
 

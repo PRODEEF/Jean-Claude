@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowUp, Bell, BellOff } from "lucide-react-native";
+import { ArrowUp, Bell, BellOff, FolderInput } from "lucide-react-native";
 import type { GroupMessage, WorkspaceMember } from "@jc/domain";
 import { useWorkspaceMembers } from "@/features/workspace/hooks/use-workspaces";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
@@ -14,6 +14,7 @@ import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { contentColumn, READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Text } from "@/shared/ui/text";
+import { GroupFoldersDialog } from "./GroupFoldersDialog";
 import { useGroupTyping } from "./hooks/use-group-realtime";
 import {
   useGroup,
@@ -49,6 +50,7 @@ export function GroupScreen() {
   const muted = group.data?.aiMuted ?? false;
   const { typingUserIds, notifyTyping, clearTyping } = useGroupTyping(groupId);
   const [draft, setDraft] = useState("");
+  const [filing, setFiling] = useState(false);
 
   const names = useMemo(
     () => new Map((members.data ?? []).map((member) => [member.userId, memberName(member)])),
@@ -93,30 +95,45 @@ export function GroupScreen() {
       onBack={compact ? () => router.back() : undefined}
       action={
         group.data ? (
-          // Réglage du groupe entier et non de l'appelant : c'est le groupe qui
-          // choisit si Jean-Claude intervient de lui-même.
-          <Button
-            variant="ghost"
-            onPress={() => setMuted.mutate(!muted)}
-            disabled={setMuted.isPending}
-            accessibilityLabel={
-              muted
-                ? `${assistantName} ne répond que si on le mentionne. Le laisser intervenir de lui-même`
-                : `${assistantName} intervient de lui-même. Le limiter aux mentions`
-            }
-            className="gap-2"
-          >
-            <Icon as={muted ? BellOff : Bell} size={16} className="text-muted-foreground" />
-            {/* Icône seule sur téléphone : le libellé mangerait le titre du groupe. */}
-            {compact ? null : (
-              <Text className="text-sm text-muted-foreground">
-                {muted ? "Sur mention" : `${assistantName} actif`}
-              </Text>
-            )}
-          </Button>
+          <View className="flex-row items-center gap-1">
+            <Button
+              variant="ghost"
+              onPress={() => setFiling(true)}
+              accessibilityLabel="Ranger la conversation dans des dossiers de l'espace"
+              className="gap-2"
+            >
+              <Icon as={FolderInput} size={16} className="text-muted-foreground" />
+              {compact ? null : <Text className="text-sm text-muted-foreground">Ranger</Text>}
+            </Button>
+            {/* Réglage du groupe entier et non de l'appelant : c'est le groupe
+              qui choisit si Jean-Claude intervient de lui-même. */}
+            <Button
+              variant="ghost"
+              onPress={() => setMuted.mutate(!muted)}
+              disabled={setMuted.isPending}
+              accessibilityLabel={
+                muted
+                  ? `${assistantName} ne répond que si on le mentionne. Le laisser intervenir de lui-même`
+                  : `${assistantName} intervient de lui-même. Le limiter aux mentions`
+              }
+              className="gap-2"
+            >
+              <Icon as={muted ? BellOff : Bell} size={16} className="text-muted-foreground" />
+              {/* Icône seule sur téléphone : le libellé mangerait le titre du groupe. */}
+              {compact ? null : (
+                <Text className="text-sm text-muted-foreground">
+                  {muted ? "Sur mention" : `${assistantName} actif`}
+                </Text>
+              )}
+            </Button>
+          </View>
         ) : undefined
       }
     >
+      <GroupFoldersDialog
+        group={filing ? (group.data ?? null) : null}
+        onClose={() => setFiling(false)}
+      />
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: palette.background }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}

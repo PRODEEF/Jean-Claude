@@ -65,6 +65,7 @@ function makeFolder(overrides: Partial<Folder> & Pick<Folder, "id" | "name">): F
     color: null,
     position: 0,
     createdByAssistant: false,
+    workspaceId: null,
     createdAt: "2026-09-01T08:00:00.000Z",
     updatedAt: "2026-09-01T08:00:00.000Z",
     ...overrides,

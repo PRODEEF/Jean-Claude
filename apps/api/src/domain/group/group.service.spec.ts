@@ -22,6 +22,7 @@ function makeGroup(overrides: Partial<Group> = {}): Group {
     workspaceId: WORKSPACE_ID,
     title: "Bureau",
     memberIds: ["alice", "bruno"],
+    folderIds: [],
     aiMuted: false,
     unreadCount: 0,
     lastMessageAt: null,
@@ -55,6 +56,8 @@ function makeRepository(overrides: Partial<IGroupRepository> = {}): IGroupReposi
     findById: jest.fn().mockResolvedValue(null),
     create: jest.fn().mockImplementation(async (_userId, input) => makeGroup(input)),
     setAiMuted: jest.fn().mockResolvedValue(undefined),
+    findWorkspaceFolderIds: jest.fn().mockResolvedValue([]),
+    setFolders: jest.fn().mockResolvedValue(undefined),
     findMessages: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
     findLatestMessageId: jest.fn().mockResolvedValue(null),
     appendMessage: jest.fn().mockResolvedValue(makeMessage()),
@@ -237,6 +240,54 @@ describe("GroupService", () => {
     it("refuse le réglage à qui n'est pas membre du groupe", async () => {
       await expect(
         service(makeRepository()).update("group-1", "dora", { aiMuted: true }, TOKEN),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe("assignFolders", () => {
+    it("range la conversation dans plusieurs dossiers de l'espace", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeGroup()),
+        findWorkspaceFolderIds: jest.fn().mockResolvedValue(["f1", "f2", "f3"]),
+      });
+
+      const group = await service(repo).assignFolders(
+        "group-1",
+        "bruno",
+        ["f1", "f3", "f1"],
+        TOKEN,
+      );
+
+      expect(group.folderIds).toEqual(["f1", "f3"]);
+      expect(repo.setFolders).toHaveBeenCalledWith("group-1", ["f1", "f3"], TOKEN);
+    });
+
+    it("sort la conversation de tous ses dossiers avec une liste vide", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeGroup({ folderIds: ["f1"] })),
+      });
+
+      const group = await service(repo).assignFolders("group-1", "bruno", [], TOKEN);
+
+      expect(group.folderIds).toEqual([]);
+      expect(repo.setFolders).toHaveBeenCalledWith("group-1", [], TOKEN);
+    });
+
+    it("refuse un dossier qui n'appartient pas à l'espace", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeGroup()),
+        findWorkspaceFolderIds: jest.fn().mockResolvedValue(["f1"]),
+      });
+
+      await expect(
+        service(repo).assignFolders("group-1", "bruno", ["f1", "perso"], TOKEN),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.setFolders).not.toHaveBeenCalled();
+    });
+
+    it("refuse le rangement à qui n'est pas membre de la conversation", async () => {
+      await expect(
+        service(makeRepository()).assignFolders("group-1", "dora", [], TOKEN),
       ).rejects.toMatchObject({ status: 404 });
     });
   });

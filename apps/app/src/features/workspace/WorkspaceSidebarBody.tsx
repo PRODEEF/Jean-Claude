@@ -5,6 +5,9 @@ import type { Group } from "@jc/domain";
 import { CreateGroupDialog } from "@/features/group/CreateGroupDialog";
 import { useGroups } from "@/features/group/hooks/use-groups";
 import { cn } from "@/shared/lib/utils";
+import { WorkspaceFolderDialog, type WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
+import { WorkspaceFolderTree } from "./WorkspaceFolderTree";
+import { useWorkspaceFolders } from "./hooks/use-workspace-folders";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
@@ -20,7 +23,8 @@ export type WorkspaceSidebarBodyProps = {
  *
  * Les dossiers et conversations personnels s'effacent, comme les canaux d'un
  * autre espace dans Slack : on ne mêle pas ce qui est à soi et ce qui est à
- * l'équipe.
+ * l'équipe. Même structure que l'espace personnel : les dossiers d'abord, avec
+ * ce qui y est rangé, puis toutes les conversations à plat.
  */
 export function WorkspaceSidebarBody({
   workspaceId,
@@ -28,7 +32,14 @@ export function WorkspaceSidebarBody({
   onNavigate,
 }: WorkspaceSidebarBodyProps) {
   const groups = useGroups(workspaceId);
+  const folders = useWorkspaceFolders(workspaceId);
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<WorkspaceFolderTarget | null>(null);
+
+  const renderGroup = (group: Group) => {
+    const href = `/workspace/${workspaceId}/group/${group.id}`;
+    return <GroupRow group={group} active={pathname === href} onPress={() => onNavigate(href)} />;
+  };
   const membersHref = `/workspace/${workspaceId}`;
 
   return (
@@ -48,6 +59,45 @@ export function WorkspaceSidebarBody({
           Membres et invitations
         </Text>
       </Button>
+
+      <View className="mt-3 flex-row items-center justify-between px-2 py-1">
+        <Text className="text-xs font-medium text-muted-foreground">Dossiers</Text>
+        <Button
+          variant="ghost"
+          size="icon"
+          onPress={() => setEditing({ kind: "create", parentId: null })}
+          accessibilityLabel="Créer un dossier dans l'espace"
+          className="size-7"
+        >
+          <Icon as={Plus} size={14} className="text-muted-foreground" />
+        </Button>
+      </View>
+
+      {folders.error ? (
+        <Text className="px-2 py-1 text-xs text-destructive">
+          Dossiers indisponibles pour le moment.
+        </Text>
+      ) : null}
+
+      {folders.data?.length === 0 ? (
+        <Button
+          variant="ghost"
+          onPress={() => setEditing({ kind: "create", parentId: null })}
+          className="justify-start gap-2 px-2"
+        >
+          <Icon as={Plus} size={14} className="text-muted-foreground" />
+          <Text className="text-xs font-normal text-muted-foreground">
+            Créer un premier dossier
+          </Text>
+        </Button>
+      ) : null}
+
+      <WorkspaceFolderTree
+        nodes={folders.data ?? []}
+        groups={groups.data ?? []}
+        onEdit={setEditing}
+        renderGroup={renderGroup}
+      />
 
       <View className="mt-3 flex-row items-center justify-between px-2 py-1">
         <Text className="text-xs font-medium text-muted-foreground">Conversations</Text>
@@ -83,17 +133,15 @@ export function WorkspaceSidebarBody({
         </Button>
       ) : null}
 
-      {groups.data?.map((group) => {
-        const href = `/workspace/${workspaceId}/group/${group.id}`;
-        return (
-          <GroupRow
-            key={group.id}
-            group={group}
-            active={pathname === href}
-            onPress={() => onNavigate(href)}
-          />
-        );
-      })}
+      {groups.data?.map((group) => (
+        <View key={group.id}>{renderGroup(group)}</View>
+      ))}
+
+      <WorkspaceFolderDialog
+        workspaceId={workspaceId}
+        target={editing}
+        onClose={() => setEditing(null)}
+      />
 
       <CreateGroupDialog
         workspaceId={creating ? workspaceId : null}

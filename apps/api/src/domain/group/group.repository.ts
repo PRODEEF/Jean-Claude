@@ -15,6 +15,7 @@ type GroupRow = {
   ai_muted: boolean;
   last_message_at: string | null;
   created_at: string;
+  conversation_folders: { folder_id: string }[] | null;
 };
 
 /** Adhésion de l'appelant, avec le groupe embarqué. */
@@ -37,6 +38,7 @@ function toGroup(row: GroupRow, unreadCount: number, memberIds: string[]): Group
     workspaceId: row.workspace_id,
     title: row.title,
     memberIds,
+    folderIds: (row.conversation_folders ?? []).map((link) => link.folder_id),
     aiMuted: row.ai_muted,
     unreadCount,
     lastMessageAt: row.last_message_at,
@@ -58,7 +60,7 @@ function toMessage(row: GroupMessageRow): GroupMessage {
 // `!inner` : sans lui, le filtre sur l'espace laisserait passer les adhésions
 // d'autres espaces avec un groupe `null` au lieu de les écarter.
 const MEMBERSHIP_COLUMNS =
-  "unread_count, conversations!inner(id, workspace_id, title, ai_muted, last_message_at, created_at)";
+  "unread_count, conversations!inner(id, workspace_id, title, ai_muted, last_message_at, created_at, conversation_folders(folder_id))";
 const MESSAGE_COLUMNS = "id, conversation_id, user_id, role, content, created_at";
 
 export const groupRepository: IGroupRepository = {
@@ -126,6 +128,7 @@ export const groupRepository: IGroupRepository = {
       workspaceId: input.workspaceId,
       title: input.title,
       memberIds: [userId, ...input.memberIds],
+      folderIds: [],
       aiMuted: false,
       unreadCount: 0,
       lastMessageAt: null,
@@ -164,6 +167,47 @@ export const groupRepository: IGroupRepository = {
       .eq("id", groupId);
 
     if (error) throw new Error(error.message);
+  },
+
+  async findWorkspaceFolderIds(workspaceId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("folders")
+      .select("id")
+      .eq("workspace_id", workspaceId);
+
+    if (error) throw new Error(error.message);
+    return (data as { id: string }[]).map((row) => row.id);
+  },
+
+  async setFolders(groupId, folderIds, accessToken) {
+    const client = forUser(accessToken);
+    const { data, error } = await client
+      .from("conversation_folders")
+      .select("folder_id")
+      .eq("conversation_id", groupId);
+    if (error) throw new Error(error.message);
+
+    // Le différentiel plutôt que tout effacer : une liaison déjà posée garde
+    // sa date et son origine.
+    const current = (data as { folder_id: string }[]).map((row) => row.folder_id);
+    const removed = current.filter((id) => !folderIds.includes(id));
+    const added = folderIds.filter((id) => !current.includes(id));
+
+    if (removed.length > 0) {
+      const { error: deleteError } = await client
+        .from("conversation_folders")
+        .delete()
+        .eq("conversation_id", groupId)
+        .in("folder_id", removed);
+      if (deleteError) throw new Error(deleteError.message);
+    }
+
+    if (added.length > 0) {
+      const { error: insertError } = await client
+        .from("conversation_folders")
+        .insert(added.map((folderId) => ({ conversation_id: groupId, folder_id: folderId })));
+      if (insertError) throw new Error(insertError.message);
+    }
   },
 
   async findLatestMessageId(groupId, accessToken) {

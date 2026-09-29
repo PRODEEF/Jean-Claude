@@ -16,6 +16,10 @@ export interface IGroupRepository {
   /** Crée le groupe avec `userId` et `input.memberIds` pour membres. */
   create(userId: string, input: CreateGroup, accessToken: string): Promise<Group>;
   setAiMuted(groupId: string, aiMuted: boolean, accessToken: string): Promise<void>;
+  /** Identifiants des dossiers de l'espace ; vide pour qui n'en est pas membre. */
+  findWorkspaceFolderIds(workspaceId: string, accessToken: string): Promise<string[]>;
+  /** Aligne les rangements de la conversation sur `folderIds`. */
+  setFolders(groupId: string, folderIds: string[], accessToken: string): Promise<void>;
   /** Du plus ancien au plus récent ; `nextCursor` remonte vers les plus anciens. */
   findMessages(
     groupId: string,

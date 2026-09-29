@@ -17,6 +17,8 @@ export const groupSchema = z.object({
   title: z.string(),
   /** Membres du groupe, appelant compris. */
   memberIds: z.array(uuidSchema),
+  /** Dossiers de l'espace où la conversation est rangée — plusieurs possibles (A.1). */
+  folderIds: z.array(uuidSchema),
   /** Bouton silence : Jean-Claude ne parle que si on le mentionne (lot 4). */
   aiMuted: z.boolean(),
   /** Messages des autres reçus depuis la dernière lecture — propres à l'appelant. */
@@ -55,6 +57,10 @@ export const sendGroupMessageSchema = z.object({
   content: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
 });
 export type SendGroupMessage = z.infer<typeof sendGroupMessageSchema>;
+
+/** Rangement complet : la liste remplace celle d'avant. */
+export const assignGroupFoldersSchema = z.object({ folderIds: z.array(uuidSchema).max(50) });
+export type AssignGroupFolders = z.infer<typeof assignGroupFoldersSchema>;
 
 export const listGroupsQuerySchema = z.object({ workspaceId: uuidSchema });
 export type ListGroupsQuery = z.infer<typeof listGroupsQuerySchema>;

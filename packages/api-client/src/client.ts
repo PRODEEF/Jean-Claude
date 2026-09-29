@@ -197,6 +197,10 @@ export class JeanClaudeClient {
 
     get: (id: string) => this.http.request<Group>(`/groups/${id}`),
 
+    /** Range la conversation dans des dossiers de l'espace ; remplace le rangement précédent. */
+    assignFolders: (id: string, folderIds: string[]) =>
+      this.http.request<Group>(`/groups/${id}/folders`, { method: "PUT", body: { folderIds } }),
+
     /** Bouton silence : Jean-Claude ne parle plus que si on le mentionne. */
     update: (id: string, input: UpdateGroup) =>
       this.http.request<Group>(`/groups/${id}`, { method: "PATCH", body: input }),
@@ -217,7 +221,9 @@ export class JeanClaudeClient {
   };
 
   readonly folders = {
-    tree: () => this.http.request<FolderTreeNode[]>("/folders"),
+    /** Sans argument, l'arborescence personnelle ; sinon celle d'un espace d'équipe. */
+    tree: (workspaceId?: string) =>
+      this.http.request<FolderTreeNode[]>("/folders", workspaceId ? { query: { workspaceId } } : {}),
 
     create: (input: CreateFolder) =>
       this.http.request<Folder>("/folders", { method: "POST", body: input }),

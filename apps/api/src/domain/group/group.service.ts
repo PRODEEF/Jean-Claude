@@ -106,6 +106,28 @@ export class GroupService {
     return { ...group, aiMuted: input.aiMuted };
   }
 
+  /** Range la conversation dans des dossiers de son espace — plusieurs possibles (A.1). */
+  async assignFolders(
+    id: string,
+    userId: string,
+    folderIds: string[],
+    accessToken: string,
+  ): Promise<Group> {
+    const group = await this.get(id, userId, accessToken);
+    const unique = [...new Set(folderIds)];
+
+    const workspaceFolders = await this.groups.findWorkspaceFolderIds(
+      group.workspaceId,
+      accessToken,
+    );
+    if (unique.some((folderId) => !workspaceFolders.includes(folderId))) {
+      throw httpError(400, "Un des dossiers choisis n'appartient pas à l'espace.");
+    }
+
+    await this.groups.setFolders(id, unique, accessToken);
+    return { ...group, folderIds: unique };
+  }
+
   async listMessages(
     id: string,
     userId: string,

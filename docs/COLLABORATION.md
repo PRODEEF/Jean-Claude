@@ -279,6 +279,36 @@ complet et 620 tests du dépôt au vert, scénario RLS rejoué avec la fonction
 modifiée. Les requêtes du Repository n'ont pas été jouées contre un vrai
 PostgREST : l'environnement n'a pas d'instance Supabase.
 
+### Dossiers d'espace (29 septembre, suite)
+
+Demandés par Clarisse après le lot 4 : chaque espace a son arborescence
+commune, que tout membre peut modifier. On y range les conversations de
+l'espace, plusieurs dossiers par conversation (invariant 4).
+
+- **Migration `20260929180000_workspace_folders.sql`** : `folders.workspace_id`,
+  policies réservées aux membres, et deux policies restrictives — un dossier
+  d'espace n'est visible que de ses membres, et une conversation ne se range
+  que dans un dossier du même espace (`same_space`). Un trigger garde un
+  sous-dossier dans l'espace de son parent, et interdit à un dossier de
+  changer d'espace. L'unicité du nom par parent vaut désormais par espace ;
+  pour les dossiers personnels, elle reste par compte.
+- **API** : `GET /api/folders?workspaceId=` et `workspaceId` à la création ; le
+  module des dossiers filtre explicitement l'espace demandé, personnel
+  compris, puisque la RLS laisse désormais voir à un membre les dossiers de
+  ses espaces. `PUT /api/groups/:id/folders` range une conversation d'espace.
+- **App** : arborescence dans la barre latérale de l'espace, avec les
+  conversations rangées sous chaque dossier ; menu « … » (sous-dossier,
+  renommer, supprimer) ; action « Ranger » dans l'en-tête d'une conversation,
+  cases à cocher.
+
+**Vérification.** Scénario RLS à trois comptes (15 vérifications, plus le
+rangement personnel inchangé), tests des services, typecheck, parcours
+Chromium sur une fausse API en clair et en sombre, grand écran et 390 pt.
+
+**Limite.** Comme pour les conversations, `folders.user_id` est en `on delete
+cascade` : supprimer le compte du créateur d'un dossier d'espace le supprime
+pour tous.
+
 ### Livré au lot 4
 
 Jean-Claude prend part aux discussions de groupe.

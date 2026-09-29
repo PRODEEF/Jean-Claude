@@ -7,6 +7,22 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, dossiers)** —
+sur la branche `feat/collaboration`. Vérifié par la migration rejouée sur
+Postgres 16 avec un scénario RLS dédié, les tests, le typecheck, et dans
+Chromium sur une fausse API, en clair et en sombre, grand écran et 390 pt.
+
+**Un espace a ses dossiers, communs à tous ses membres.** On les crée, renomme
+et supprime depuis la barre latérale de l'espace, et on y range les
+conversations de l'espace — plusieurs dossiers par conversation, comme en
+personnel (A.1). Un dossier d'espace ne se mêle jamais aux dossiers
+personnels, dans un sens comme dans l'autre. Dans l'interface, « groupe » a
+disparu au profit de « conversation » (demande de Clarisse).
+
+**Migration `20260929180000_workspace_folders.sql`** à appliquer ; elle touche
+la contrainte d'unicité des noms de dossiers existants, sans effet sur les
+données personnelles.
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 4)** —
 Jean-Claude dans les groupes, sur la branche `feat/collaboration`. Vérifié
 par les tests (38 nouveaux ou repris), le typecheck, et dans Chromium sur une
