@@ -45,6 +45,16 @@ export function useGroupMessageFeed() {
           if (typeof conversationId === "string") void refreshGroup(queryClient, conversationId);
         },
       )
+      // La carte de proposition naît après le message de Jean-Claude : sans ce
+      // second signal, le fil relisait les propositions avant qu'elle existe.
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "workspace_list_suggestions" },
+        (payload) => {
+          const conversationId: unknown = payload.new["conversation_id"];
+          if (typeof conversationId === "string") void refreshGroup(queryClient, conversationId);
+        },
+      )
       .subscribe();
 
     return () => {
