@@ -183,10 +183,10 @@ export function GroupScreen() {
                 if (text.trim()) notifyTyping();
               }}
               onSubmitEditing={submit}
-              placeholder={`Écrire au groupe — @${assistantName} pour l'appeler`}
+              placeholder={`Écrire un message — @${assistantName} pour l'appeler`}
               returnKeyType="send"
               blurOnSubmit={false}
-              accessibilityLabel="Message au groupe"
+              accessibilityLabel="Message à la conversation"
             />
             <Button
               size="icon"

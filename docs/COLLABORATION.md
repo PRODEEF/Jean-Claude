@@ -28,8 +28,11 @@ Les références `§x` et `A.x` renvoient au cahier des charges v1.8 du 24 août
 | Partage          | Dossiers, listes et calendrier partagés retenus, **hors V1**. Le schéma les prévoit sans les livrer                                   |
 | Navigation       | Sélecteur d'espace en haut de la barre latérale — aligné sur Slack, Notion et ChatGPT Team (§4.2)                                     |
 
-Vocabulaire d'interface (§13.4.4) : « espace », « groupe », « membre ». Le mot
-`workspace` reste dans le code.
+Vocabulaire d'interface (§13.4.4) : « espace », « conversation », « membre ».
+Une conversation d'espace s'appelle `group` dans le code — un second module
+`conversation` entrerait en collision avec celui des conversations
+personnelles — mais jamais « groupe » à l'écran (décision de Clarisse, 29
+septembre). Le mot `workspace` reste lui aussi dans le code.
 
 ---
 

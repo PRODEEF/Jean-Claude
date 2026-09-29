@@ -88,7 +88,7 @@ export class GroupService {
 
   async get(id: string, userId: string, accessToken: string): Promise<Group> {
     const group = await this.groups.findById(id, userId, accessToken);
-    if (!group) throw httpError(404, "Groupe introuvable.");
+    if (!group) throw httpError(404, "Conversation introuvable.");
     return group;
   }
 

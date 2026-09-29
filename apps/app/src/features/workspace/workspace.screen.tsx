@@ -173,7 +173,7 @@ function MembersSection({ workspace }: { workspace: Workspace }) {
           onClose={() => setRemoving(null)}
           variant="confirm"
           title={`Retirer ${memberName(removing)} de l'espace ?`}
-          description="Cette personne perd l'accès à l'espace et à ses discussions de groupe. Ses messages restent."
+          description="Cette personne perd l'accès à l'espace et à ses conversations. Ses messages restent."
           error={workspaceErrorMessage(
             removeMember.error,
             "Le retrait a échoué. Réessayez dans un instant.",
@@ -360,7 +360,7 @@ function LeaveSection({ workspace }: { workspace: Workspace }) {
         onClose={() => setConfirming(false)}
         variant="confirm"
         title={`Quitter « ${workspace.name} » ?`}
-        description="Vous perdez l'accès à l'espace et à ses discussions de groupe. Seul un admin pourra vous réinviter."
+        description="Vous perdez l'accès à l'espace et à ses conversations. Seul un admin pourra vous réinviter."
         error={workspaceErrorMessage(
           removeMember.error,
           "Le départ a échoué. Réessayez dans un instant.",

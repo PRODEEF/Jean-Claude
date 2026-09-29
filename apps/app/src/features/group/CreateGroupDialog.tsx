@@ -61,11 +61,11 @@ function GroupForm({
     <Modal
       open
       onClose={onClose}
-      title="Nouveau groupe"
-      description="Une discussion avec les personnes de l'espace que vous choisissez."
+      title="Nouvelle conversation"
+      description="Une conversation avec les personnes de l'espace que vous choisissez."
       error={workspaceErrorMessage(
         create.error,
-        "Le groupe n'a pas pu être créé. Réessayez dans un instant.",
+        "La conversation n'a pas pu être créée. Réessayez dans un instant.",
       )}
       actions={[
         { label: "Annuler", onPress: onClose, disabled: create.isPending },
@@ -73,14 +73,14 @@ function GroupForm({
       ]}
     >
       <View className="gap-2">
-        <Text className="text-sm font-medium">Nom du groupe</Text>
+        <Text className="text-sm font-medium">Nom de la conversation</Text>
         <Input
           value={title}
           onChangeText={setTitle}
           placeholder="Bureau, Kermesse, Comptabilité…"
           maxLength={120}
           autoFocus
-          accessibilityLabel="Nom du groupe"
+          accessibilityLabel="Nom de la conversation"
         />
       </View>
 

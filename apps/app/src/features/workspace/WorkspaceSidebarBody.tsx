@@ -50,12 +50,12 @@ export function WorkspaceSidebarBody({
       </Button>
 
       <View className="mt-3 flex-row items-center justify-between px-2 py-1">
-        <Text className="text-xs font-medium text-muted-foreground">Groupes</Text>
+        <Text className="text-xs font-medium text-muted-foreground">Conversations</Text>
         <Button
           variant="ghost"
           size="icon"
           onPress={() => setCreating(true)}
-          accessibilityLabel="Créer un groupe"
+          accessibilityLabel="Démarrer une conversation d'espace"
           className="size-7"
         >
           <Icon as={Plus} size={14} className="text-muted-foreground" />
@@ -66,7 +66,7 @@ export function WorkspaceSidebarBody({
           des fragments de requête. */}
       {groups.error ? (
         <Text className="px-2 py-1 text-xs text-destructive">
-          Groupes indisponibles pour le moment.
+          Conversations indisponibles pour le moment.
         </Text>
       ) : null}
 
@@ -77,7 +77,9 @@ export function WorkspaceSidebarBody({
           className="justify-start gap-2 px-2"
         >
           <Icon as={Plus} size={14} className="text-muted-foreground" />
-          <Text className="text-xs font-normal text-muted-foreground">Créer un premier groupe</Text>
+          <Text className="text-xs font-normal text-muted-foreground">
+            Démarrer une première conversation
+          </Text>
         </Button>
       ) : null}
 
