@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   CreateFeedback,
   Feedback,
@@ -91,20 +92,30 @@ const REVIEW_LIMIT = 500;
 
 export const feedbackRepository: IFeedbackRepository = {
   async createGeneral(userId, input: CreateFeedback, accessToken) {
-    const { data, error } = await forUser(accessToken)
-      .from("feedback")
-      .insert({
-        user_id: userId,
-        category: input.category,
-        content: input.content,
-        platform: input.platform,
-        screen: input.screen,
-      })
-      .select(FEEDBACK_COLUMNS)
-      .single();
+    // Composé ici plutôt que relu : la RLS ne laisse plus l'auteur lire ses
+    // retours, et un `insert … returning` serait refusé.
+    const feedback: Feedback = {
+      id: randomUUID(),
+      category: input.category,
+      content: input.content,
+      platform: input.platform,
+      screen: input.screen,
+      status: "new",
+      createdAt: new Date().toISOString(),
+    };
+
+    const { error } = await forUser(accessToken).from("feedback").insert({
+      id: feedback.id,
+      user_id: userId,
+      category: feedback.category,
+      content: feedback.content,
+      platform: feedback.platform,
+      screen: feedback.screen,
+      created_at: feedback.createdAt,
+    });
 
     if (error) throw toPublicError(error);
-    return toFeedback(data as unknown as FeedbackRow);
+    return feedback;
   },
 
   async rateMessage(userId, messageId, input: RateMessage, accessToken) {

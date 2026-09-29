@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { ActivityIndicator, View } from "react-native";
+import { Redirect } from "expo-router";
 import { ApiError } from "@jc/api-client";
 import type {
   Feedback,
@@ -39,8 +40,8 @@ const STATUS_OPTIONS: { value: FeedbackStatus; label: string }[] = [
  * Revue des retours testeurs, un testeur par carte.
  *
  * Réservée à l'équipe : l'entrée n'apparaît dans la barre latérale que pour
- * un admin, et le serveur refuse la lecture à tout autre compte. Le message
- * ci-dessous ne couvre que l'adresse tapée à la main.
+ * un admin, le serveur refuse la lecture à tout autre compte, et l'adresse
+ * tapée à la main ramène un non-admin aux conversations.
  */
 export function FeedbackReviewScreen() {
   const { palette } = useTheme();
@@ -48,13 +49,11 @@ export function FeedbackReviewScreen() {
   const isAdmin = profile?.isAdmin === true;
   const review = useFeedbackReview(isAdmin);
 
+  if (profile && !isAdmin) return <Redirect href="/(app)/chat" />;
+
   return (
     <ScreenShell title="Retours des testeurs" maxWidth={READING_MAX_WIDTH}>
       <View className="gap-6 pb-8">
-        {profile && !isAdmin ? (
-          <Text className="text-sm text-muted-foreground">Réservé à l'équipe Jean-Claude.</Text>
-        ) : null}
-
         {review.isLoading ? <ActivityIndicator color={palette.accent} /> : null}
 
         {/* Message fixe, et non `error.message` : une erreur de fetch peut
