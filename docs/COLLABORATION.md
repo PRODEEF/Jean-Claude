@@ -175,6 +175,66 @@ policy actuelle, inchangée.
 l'espace : toujours par `conversation_folders`, jamais par une colonne
 `folder_id`.
 
+### Livré au lot 1
+
+Migration `supabase/migrations/20260929150000_workspaces.sql`.
+
+- **Accès.** Sept fonctions `security definer` qui ne répondent que pour
+  l'appelant : `is_workspace_member`, `is_workspace_admin`,
+  `has_pending_invitation`, `can_join_as_founder`, `is_conversation_member`,
+  `can_access_conversation`, `can_add_to_group`.
+- **Deux policies restrictives.** Elles s'ajoutent aux policies existantes au
+  lieu de les réécrire. Sur `conversations`, un groupe n'est lisible que de
+  ses membres, créateur compris. Sur `messages`, on n'écrit que dans une
+  conversation personnelle possédée ou un groupe dont on est membre.
+- **Faille corrigée au passage.** `messages_owner_access` ne vérifiait que
+  l'auteur. Elle laissait donc écrire dans la conversation d'un autre compte
+  pour peu qu'on en connaisse l'identifiant.
+- **Entrée dans un espace.** On n'y entre que par soi-même : comme fondateur
+  tant que l'espace est vide, ou en acceptant une invitation. La personne
+  invitée ne peut modifier que `accepted_at` et `declined_at` (privilège de
+  colonne), sans quoi elle pourrait déplacer son invitation vers un autre
+  espace.
+- **Noms des membres.** `workspace_member_profiles(workspace)` rend le nom
+  affiché et le rôle, jamais le reste du profil : la ligne porte la mémoire de
+  l'utilisateur.
+- **Invariants structurels en trigger.** Quitter un espace retire de tous ses
+  groupes. Une conversation ne change pas d'espace. Les non-lus de groupe sont
+  comptés par membre.
+- **Pas de policy `delete` sur `workspaces`**, en attendant la question 3 du §9.
+
+**Contraintes pour l'API (lots 2 et 3).**
+
+- Créer un espace ou un groupe se fait sans `insert … returning` : la ligne
+  n'est lisible qu'une fois le créateur inscrit comme membre. L'identifiant
+  est fourni par l'API, comme pour les retours (`feedback`).
+- Les requêtes personnelles ne filtrent pas par `user_id` et s'en remettent
+  à la RLS. Or un membre lit désormais les groupes. La liste latérale et la
+  recherche les écartent déjà (`kind = 'chat'`). En revanche, les routes
+  `/conversations/:id` lisent par identifiant seul : elles doivent refuser un
+  groupe. Sinon un membre pourrait y écrire par le tour personnel, qui remet
+  au modèle son contexte privé.
+
+**Vérification.** Toutes les migrations rejouées sur un Postgres 16 vierge.
+Un scénario à trois comptes (fondatrice, invité, personne extérieure) passe
+ses 40 vérifications, dont le comportement inchangé des conversations
+personnelles. `database.types.ts` n'est pas régénéré : `npm run db:types`
+demande une instance Supabase locale, absente de l'environnement de
+développement.
+
+### Limites connues
+
+- **Suppression du compte du créateur.** `conversations.user_id` est en
+  `on delete cascade` : supprimer le compte du créateur d'un groupe supprime
+  le groupe pour tous. À traiter avant une ouverture réelle, par transfert du
+  groupe ou par un `user_id` rendu facultatif pour les groupes.
+- **Suppression du compte du dernier admin.** L'espace reste alors sans
+  admin : plus personne ne peut inviter. La règle « le dernier admin ne part
+  pas » tient dans le service, pas face à une suppression de compte.
+- **Pièces jointes de groupe.** `message_attachments` reste lisible de son
+  seul propriétaire. Une pièce jointe envoyée dans un groupe ne serait pas
+  visible des autres membres. Hors V1.
+
 ---
 
 ## 6. Règles métier
@@ -187,8 +247,10 @@ testées (rule 300).
 - Une invitation n'est acceptée que par un compte dont l'adresse correspond,
   lue dans le jeton d'authentification, jamais dans le corps de la requête.
 - Le dernier admin ne quitte pas l'espace et ne perd pas son rôle.
-- Seul un membre de l'espace est ajouté à un groupe de cet espace.
-- Retirer un membre de l'espace le retire de tous ses groupes.
+
+Deux règles sont tenues par la base, quel que soit le chemin d'écriture :
+seul un membre de l'espace est ajouté à un groupe de cet espace (RLS), et
+retirer un membre de l'espace le retire de tous ses groupes (trigger).
 
 ---
 
@@ -234,3 +296,6 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
    serait plus juste ; il n'existe pas aujourd'hui.
 3. **Suppression d'un espace.** Réservée à l'admin, avec toutes ses discussions ?
    Ou archivage seulement ?
+4. **Retrait d'un groupe.** Chacun quitte un groupe de lui-même. Qui peut en
+   retirer un autre membre : le créateur du groupe, un admin de l'espace, tout
+   membre ? Aucun des trois n'est ouvert par la migration du lot 1.
