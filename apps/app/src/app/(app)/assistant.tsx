@@ -18,7 +18,8 @@ import { useTheme } from "@/shared/providers/theme-provider";
  */
 const CHANNEL_INTRO =
   "Ce fil reste ouvert en permanence pour vos rappels, le rangement de vos dossiers, " +
-  "l'organisation de vos projets et le signalement d'un problème avec l'application. " +
+  "l'organisation de vos projets et vos retours sur l'application : un problème, une " +
+  "idée, une remarque. " +
   "Pour tout autre sujet, ouvrez une nouvelle conversation.";
 
 /**

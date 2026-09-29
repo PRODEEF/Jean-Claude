@@ -12,6 +12,8 @@ import {
   type CreateTaskList,
   type EditMessage,
   type Feedback,
+  type FeedbackAnalysis,
+  type FeedbackStatus,
   type Folder,
   type FolderTreeNode,
   type Message,
@@ -27,6 +29,7 @@ import {
   type SendMessage,
   type Task,
   type TaskList,
+  type TesterFeedback,
   type TaskListWithTasks,
   type Suggestion,
   type UpdateCalendarEvent,
@@ -98,6 +101,22 @@ export class JeanClaudeClient {
         method: "POST",
         body: input,
       }),
+
+    /** Revue par l'équipe — 403 pour qui n'est pas admin (`UserProfile.isAdmin`). */
+    review: {
+      list: () => this.http.request<TesterFeedback[]>("/feedback/review"),
+
+      updateStatus: (id: string, status: FeedbackStatus) =>
+        this.http.request<Feedback>(`/feedback/review/${id}`, {
+          method: "PATCH",
+          body: { status },
+        }),
+
+      analyze: (testerId: string) =>
+        this.http.request<FeedbackAnalysis>(`/feedback/review/testers/${testerId}/analysis`, {
+          method: "POST",
+        }),
+    },
   };
 
   readonly folders = {
