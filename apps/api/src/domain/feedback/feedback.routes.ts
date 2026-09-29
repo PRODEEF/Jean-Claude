@@ -48,6 +48,10 @@ export const feedbackRoutes = new Hono<AuthEnv>()
     return c.json(await service.listByTester(c.get("user").accessToken));
   })
 
+  .post("/review/analysis", rateLimit, async (c) => {
+    return c.json(await service.analyzeNew(c.get("user").accessToken));
+  })
+
   .patch(
     "/review/:id",
     validate("param", z.object({ id: uuidSchema })),
@@ -56,15 +60,5 @@ export const feedbackRoutes = new Hono<AuthEnv>()
       const { id } = c.req.valid("param");
       const { status } = c.req.valid("json");
       return c.json(await service.updateStatus(id, status, c.get("user").accessToken));
-    },
-  )
-
-  .post(
-    "/review/testers/:testerId/analysis",
-    validate("param", z.object({ testerId: uuidSchema })),
-    rateLimit,
-    async (c) => {
-      const { testerId } = c.req.valid("param");
-      return c.json(await service.analyzeTester(testerId, c.get("user").accessToken));
     },
   );

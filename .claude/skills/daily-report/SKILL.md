@@ -100,10 +100,12 @@ de la montrer — voir skill [ui-decision](../ui-decision/SKILL.md).
 ## 4. Lire les retours utilisateurs
 
 Depuis l'app : **Retours des testeurs**, en bas de la barre latérale, visible
-des seuls comptes inscrits dans `public.admins`. Un testeur par carte, un
-statut par retour (nouveau, pris en compte, traité, écarté), et « Analyser »
-pour une synthèse du testeur par le modèle. Donner l'accès à un compte, depuis
-le SQL Editor :
+des seuls comptes inscrits dans `public.admins` — un testeur n'y a pas accès,
+pas même à ses propres retours. Un testeur par carte, un statut par retour
+(nouveau, pris en compte, traité, écarté), et « Analyser », dans le bandeau,
+pour une synthèse par le modèle des retours au statut « Nouveau » de tous les
+testeurs : c'est le point de départ du report. Donner l'accès à un compte,
+depuis le SQL Editor :
 
 ```sql
 insert into public.admins (user_id)

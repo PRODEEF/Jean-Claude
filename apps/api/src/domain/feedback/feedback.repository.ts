@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   CreateFeedback,
   Feedback,
@@ -91,20 +92,30 @@ const REVIEW_LIMIT = 500;
 
 export const feedbackRepository: IFeedbackRepository = {
   async createGeneral(userId, input: CreateFeedback, accessToken) {
-    const { data, error } = await forUser(accessToken)
-      .from("feedback")
-      .insert({
-        user_id: userId,
-        category: input.category,
-        content: input.content,
-        platform: input.platform,
-        screen: input.screen,
-      })
-      .select(FEEDBACK_COLUMNS)
-      .single();
+    // Composé ici plutôt que relu : la RLS ne laisse plus l'auteur lire ses
+    // retours, et un `insert … returning` serait refusé.
+    const feedback: Feedback = {
+      id: randomUUID(),
+      category: input.category,
+      content: input.content,
+      platform: input.platform,
+      screen: input.screen,
+      status: "new",
+      createdAt: new Date().toISOString(),
+    };
+
+    const { error } = await forUser(accessToken).from("feedback").insert({
+      id: feedback.id,
+      user_id: userId,
+      category: feedback.category,
+      content: feedback.content,
+      platform: feedback.platform,
+      screen: feedback.screen,
+      created_at: feedback.createdAt,
+    });
 
     if (error) throw toPublicError(error);
-    return toFeedback(data as unknown as FeedbackRow);
+    return feedback;
   },
 
   async rateMessage(userId, messageId, input: RateMessage, accessToken) {
@@ -135,16 +146,13 @@ export const feedbackRepository: IFeedbackRepository = {
     return data === true;
   },
 
-  async listFeedback(testerId, accessToken) {
-    let query = forUser(accessToken)
+  async listFeedback(accessToken) {
+    const { data, error } = await forUser(accessToken)
       .from("feedback")
       .select(`user_id, ${FEEDBACK_COLUMNS}`)
       .order("created_at", { ascending: false })
       .limit(REVIEW_LIMIT);
 
-    if (testerId !== null) query = query.eq("user_id", testerId);
-
-    const { data, error } = await query;
     if (error) throw new Error(error.message);
 
     return (data as unknown as (FeedbackRow & { user_id: string })[]).map(
@@ -152,16 +160,13 @@ export const feedbackRepository: IFeedbackRepository = {
     );
   },
 
-  async listRatings(testerId, accessToken) {
-    let query = forUser(accessToken)
+  async listRatings(accessToken) {
+    const { data, error } = await forUser(accessToken)
       .from("message_ratings")
       .select(`user_id, ${MESSAGE_RATING_COLUMNS}`)
       .order("created_at", { ascending: false })
       .limit(REVIEW_LIMIT);
 
-    if (testerId !== null) query = query.eq("user_id", testerId);
-
-    const { data, error } = await query;
     if (error) throw new Error(error.message);
 
     return (data as unknown as (MessageRatingRow & { user_id: string })[]).map(

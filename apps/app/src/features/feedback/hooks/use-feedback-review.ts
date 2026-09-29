@@ -23,7 +23,7 @@ export function useUpdateFeedbackStatus() {
   });
 }
 
-/** Synthèse d'un testeur, à la demande : rien n'est conservé côté serveur. */
-export function useAnalyzeTester() {
-  return useMutation({ mutationFn: (testerId: string) => api.feedback.review.analyze(testerId) });
+/** Synthèse des nouveaux retours, à la demande : rien n'est conservé côté serveur. */
+export function useAnalyzeNewFeedback() {
+  return useMutation({ mutationFn: () => api.feedback.review.analyzeNew() });
 }
