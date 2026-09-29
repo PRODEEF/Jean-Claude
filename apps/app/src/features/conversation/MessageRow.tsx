@@ -48,8 +48,27 @@ function rollback(
   return current === attempted ? null : current;
 }
 
+/**
+ * Ce que la rangée lit d'un message. Un `Message` personnel et un message de
+ * groupe y entrent tous deux : le second n'a pas de pièces jointes.
+ */
+export type RowMessage = Pick<Message, "id" | "role" | "content" | "createdAt"> & {
+  attachments?: MessageAttachment[];
+};
+
 export type MessageRowProps = {
-  message: Message;
+  message: RowMessage;
+  /**
+   * Nom de l'auteur, affiché au-dessus quand il change — discussions de groupe.
+   * `null` ou absent : rien.
+   */
+  author?: string | null;
+  /**
+   * Ce message est celui de l'utilisateur courant : aligné à droite, en bulle
+   * teintée. Par défaut, tout message `user` l'est — vrai dans le fil personnel,
+   * pas dans un groupe où les autres membres parlent aussi.
+   */
+  mine?: boolean;
   /**
    * Question de l'assistant à laquelle ce message répond, quand la réponse a
    * été choisie d'un appui plutôt qu'écrite. Le fil affiche alors les deux
@@ -63,9 +82,9 @@ export type MessageRowProps = {
    * peut ainsi transmettre la même référence à chaque ligne, condition pour
    * que la mémoïsation de ce composant serve à quelque chose.
    */
-  onRetry: (messageId: string) => void;
+  onRetry?: (messageId: string) => void;
   /** Remplace le texte du message et rejoue le tour. Même raison pour l'identifiant. */
-  onEdit: (messageId: string, content: string) => void;
+  onEdit?: (messageId: string, content: string) => void;
   /** Un tour est déjà en cours : les deux gestes sont neutralisés. */
   busy: boolean;
   /** Ce message est celui en cours de lecture à voix haute (§12.3, A.12). */
@@ -95,6 +114,8 @@ export type MessageRowProps = {
  */
 export const MessageRow = memo(function MessageRow({
   message,
+  author = null,
+  mine,
   answeredQuestion = null,
   onRetry,
   onEdit,
@@ -109,7 +130,11 @@ export const MessageRow = memo(function MessageRow({
   const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Le texte d'un membre reste brut, quel que soit son côté du fil ; `own`
+  // décide seulement de l'alignement et du droit de corriger.
   const isUser = message.role === "user";
+  const own = mine ?? isUser;
+  const attachments = message.attachments ?? [];
 
   // Notation d'une réponse (§12.1 — geste utilisateur direct, jamais une
   // suggestion de l'assistant). L'état du pouce sélectionné reste local à la
@@ -152,7 +177,7 @@ export const MessageRow = memo(function MessageRow({
             return;
           }
           setEditing(false);
-          onEdit(message.id, content);
+          onEdit?.(message.id, content);
         }}
       />
     );
@@ -164,17 +189,22 @@ export const MessageRow = memo(function MessageRow({
         onHoverIn={reveal}
         onHoverOut={scheduleHide}
         onLongPress={() => setRevealed((current) => !current)}
-        style={isUser ? styles.rowEnd : styles.rowStart}
+        style={own ? styles.rowEnd : styles.rowStart}
       >
+        {author ? (
+          <Text style={[styles.author, { color: palette.textMuted }]}>{author}</Text>
+        ) : null}
         <View
           style={[
             styles.bubble,
-            isUser
+            own
               ? { alignSelf: "flex-end", backgroundColor: palette.accentSoft }
-              : // La réponse de l'assistant n'a ni fond ni cadre : c'est le corps
-                // du texte, pas une pièce rapportée. Seule la parole de
-                // l'utilisateur est encadrée, ce que font ChatGPT et Claude.
-                styles.plain,
+              : isUser
+                ? { alignSelf: "flex-start", backgroundColor: palette.surface }
+                : // La réponse de l'assistant n'a ni fond ni cadre : c'est le corps
+                  // du texte, pas une pièce rapportée. Seule la parole de
+                  // l'utilisateur est encadrée, ce que font ChatGPT et Claude.
+                  styles.plain,
           ]}
         >
           {/* Le message de l'utilisateur reste du texte brut : c'est ce qu'il a
@@ -182,9 +212,9 @@ export const MessageRow = memo(function MessageRow({
               modèle est du Markdown, et se lit criblé de signes sans rendu. */}
           {isUser ? (
             <>
-              {message.attachments.length > 0 ? (
+              {attachments.length > 0 ? (
                 <View style={styles.attachmentsRow}>
-                  {message.attachments.map((attachment) =>
+                  {attachments.map((attachment) =>
                     !attachment.mimeType.startsWith("image/") ? (
                       <AttachmentFileCard
                         key={attachment.id}
@@ -222,25 +252,27 @@ export const MessageRow = memo(function MessageRow({
 
         {/* Emplacement toujours présent : rendu conditionnellement, il ferait
             sauter le fil d'une trentaine de points à chaque survol. */}
-        <View style={[styles.actions, isUser ? styles.actionsEnd : styles.actionsStart]}>
+        <View style={[styles.actions, own ? styles.actionsEnd : styles.actionsStart]}>
           {revealed ? (
             <>
               <Text style={[styles.elapsed, { color: palette.textMuted }]}>
                 {formatRelativeTime(message.createdAt)}
               </Text>
 
-              <IconAction
-                icon={RotateCcw}
-                label="Réessayer"
-                onPress={() => onRetry(message.id)}
-                disabled={busy}
-                onHoverIn={reveal}
-                onHoverOut={scheduleHide}
-              />
+              {onRetry ? (
+                <IconAction
+                  icon={RotateCcw}
+                  label="Réessayer"
+                  onPress={() => onRetry(message.id)}
+                  disabled={busy}
+                  onHoverIn={reveal}
+                  onHoverOut={scheduleHide}
+                />
+              ) : null}
 
               {/* Corriger n'a de sens que sur sa propre parole : le fil est la
                   trace de ce que l'assistant a répondu, pas un brouillon. */}
-              {isUser ? (
+              {own && onEdit ? (
                 <IconAction
                   icon={Pencil}
                   label="Modifier"
@@ -341,7 +373,7 @@ export const MessageRow = memo(function MessageRow({
           texte n'y montre jamais le fichier lui-même, seulement le texte
           qu'on en a extrait — c'est la même donnée que celle relue par le
           modèle. */}
-      {message.attachments.length > 0 ? (
+      {attachments.length > 0 ? (
         <Modal
           open={previewAttachment !== null}
           onClose={() => setPreviewAttachment(null)}
@@ -357,7 +389,11 @@ export const MessageRow = memo(function MessageRow({
               {previewAttachment.extractedText}
             </Text>
           ) : previewAttachment ? (
-            <Image source={{ uri: previewAttachment.url }} style={styles.previewImage} resizeMode="contain" />
+            <Image
+              source={{ uri: previewAttachment.url }}
+              style={styles.previewImage}
+              resizeMode="contain"
+            />
           ) : null}
         </Modal>
       ) : null}
@@ -567,6 +603,7 @@ function RatingCommentBox({
 const styles = StyleSheet.create({
   rowStart: { alignItems: "flex-start" },
   rowEnd: { alignItems: "flex-end" },
+  author: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, marginBottom: 2, paddingHorizontal: 4 },
   attachmentsRow: {
     flexDirection: "row",
     flexWrap: "wrap",

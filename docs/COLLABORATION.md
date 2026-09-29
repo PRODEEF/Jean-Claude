@@ -557,6 +557,11 @@ aucun parcours joué dans un navigateur, ni iOS ni Android.
   réutilise `Composer` (champ qui grandit, dictée, flèche) et la mention sous le
   champ. Différences : le placeholder, pas de trombone (les pièces jointes ne
   sont pas prises en charge en groupe) et pas de commandes « / ».
+- **Rangée de message** : la conversation d'espace réutilise `MessageRow` du fil
+  personnel (réponses de Jean-Claude sans bulle, commandes au survol : heure,
+  copier, écouter, utile / pas utile). « Réessayer » et « Modifier » n'y sont
+  pas : ils rejouent un tour de modèle, ce qu'un fil partagé ne permet pas. La
+  notation d'un message de groupe n'a pas été éprouvée sur une vraie base.
 - **Nom de l'assistant en groupe** : toujours « Jean-Claude », quel que soit le
   nom choisi dans les réglages. Ce nom est personnel ; le serveur, lui, nomme et
   reconnaît Jean-Claude seul dans un groupe (mention, consigne, fil transmis au

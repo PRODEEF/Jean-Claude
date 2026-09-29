@@ -9,18 +9,18 @@ import {
   type WorkspaceMember,
 } from "@jc/domain";
 import { useWorkspaceMembers } from "@/features/workspace/hooks/use-workspaces";
+import { MessageRow } from "@/features/conversation/MessageRow";
+import { useSpeech } from "@/features/conversation/hooks/use-speech";
 import { Composer } from "@/features/conversation/Composer";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
-import { cn } from "@/shared/lib/utils";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { contentColumn, READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
-import { Markdown } from "@/shared/ui/Markdown";
 import { Text } from "@/shared/ui/text";
 import { GroupFoldersDialog } from "./GroupFoldersDialog";
 import { GroupListSuggestionCard } from "./GroupListSuggestionCard";
@@ -67,6 +67,7 @@ export function GroupScreen() {
   const send = useSendGroupMessage(groupId);
   const setMuted = useSetGroupMuted(groupId);
   const muted = group.data?.aiMuted ?? false;
+  const { speakingId, toggle: toggleSpeech } = useSpeech();
   const { typingUserIds, notifyTyping, clearTyping } = useGroupTyping(groupId);
   const [draft, setDraft] = useState("");
   const [filing, setFiling] = useState(false);
@@ -173,7 +174,7 @@ export function GroupScreen() {
             data={items}
             keyExtractor={(message) => message.id}
             contentContainerStyle={[
-              { paddingVertical: 16, gap: 4 },
+              { padding: spacing.lg, gap: spacing.md },
               contentColumn(compact, READING_MAX_WIDTH),
             ]}
             renderItem={({ item, index }) => {
@@ -187,7 +188,9 @@ export function GroupScreen() {
               return (
                 <MessageBubble
                   message={item}
-                  mine={item.role === "user" && item.authorId === selfId}
+                  selfId={selfId}
+                  speaking={speakingId === item.id}
+                  onToggleSpeech={toggleSpeech}
                   author={showAuthor ? authorLabel(item) : null}
                   suggestion={suggestionByMessage.get(item.id) ?? null}
                   workspaceId={workspaceId}
@@ -249,15 +252,19 @@ export function GroupScreen() {
 
 function MessageBubble({
   message,
-  mine,
+  selfId,
   author,
+  speaking,
+  onToggleSpeech,
   suggestion,
   workspaceId,
   nameOf,
   onOpenList,
 }: {
   message: GroupMessage;
-  mine: boolean;
+  selfId: string | null;
+  speaking: boolean;
+  onToggleSpeech: (messageId: string, content: string) => void;
   /** `null` quand le message précédent vient déjà de la même personne. */
   author: string | null;
   /** Liste proposée par Jean-Claude dans ce message, s'il y en a une. */
@@ -266,27 +273,21 @@ function MessageBubble({
   nameOf: (userId: string) => string;
   onOpenList: (listId: string) => void;
 }) {
-  const { palette } = useTheme();
+  const mine = message.role === "user" && message.authorId === selfId;
 
   return (
-    <View className={cn("max-w-[85%] gap-0.5", mine ? "self-end" : "self-start", author && "mt-2")}>
-      {author && !mine ? (
-        <Text className="px-1 text-xs font-medium text-muted-foreground">{author}</Text>
-      ) : null}
-      <View
-        className="rounded-2xl px-3.5 py-2"
-        style={{ backgroundColor: mine ? palette.accentSoft : palette.surface }}
-      >
-        {/* Comme dans le fil personnel : la parole de l'assistant est du
-            Markdown, celle d'un membre reste le texte qu'il a tapé. */}
-        {message.role === "assistant" ? (
-          <Markdown>{message.content}</Markdown>
-        ) : (
-          <Text style={{ color: mine ? palette.accentSoftText : palette.text }}>
-            {message.content}
-          </Text>
-        )}
-      </View>
+    <View style={{ gap: spacing.md }}>
+      {/* La même rangée que le fil personnel, avec ses commandes au survol.
+          « Réessayer » et « Modifier » n'y sont pas : ils rejouent un tour de
+          modèle, ce qu'un fil partagé ne permet pas. */}
+      <MessageRow
+        message={message}
+        author={mine ? null : author}
+        mine={mine}
+        busy={false}
+        speaking={speaking}
+        onToggleSpeech={onToggleSpeech}
+      />
       {suggestion ? (
         <GroupListSuggestionCard
           suggestion={suggestion}
