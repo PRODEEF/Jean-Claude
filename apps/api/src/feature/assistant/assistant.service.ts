@@ -377,15 +377,18 @@ export class AssistantService {
   }
 
   /**
-   * Transmet le signalement à `feedback`, catégorie bug (§12.1, A.10).
+   * Transmet le retour à `feedback`, dans la catégorie choisie par le modèle
+   * (§12.1, A.10).
    *
    * `platform` et `screen` n'arrivent qu'à l'acceptation, fusionnés dans la
    * charge utile par `withBugReportContext` : une acceptation reçue sans eux —
    * client ancien, appel direct à l'API — rend la charge utile illisible
-   * plutôt que d'insérer un signalement à moitié renseigné.
+   * plutôt que d'insérer un signalement à moitié renseigné. Une proposition
+   * antérieure à l'ouverture du canal aux idées ne porte pas de catégorie :
+   * elle reste un bug.
    */
   private async reportBug(userId: string, suggestion: Suggestion, accessToken: string): Promise<void> {
-    const payload = createFeedbackSchema.safeParse({ ...suggestion.payload, category: "bug" });
+    const payload = createFeedbackSchema.safeParse({ category: "bug", ...suggestion.payload });
 
     if (!payload.success) {
       logger.error(SCOPE, "Charge utile de signalement illisible", suggestion.id);

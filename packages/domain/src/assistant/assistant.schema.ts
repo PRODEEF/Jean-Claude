@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { rruleSchema } from "../calendar/calendar.schema";
-import { feedbackPlatformSchema, FEEDBACK_CONTENT_MAX_LENGTH } from "../feedback/feedback.schema";
+import {
+  feedbackCategorySchema,
+  feedbackPlatformSchema,
+  FEEDBACK_CONTENT_MAX_LENGTH,
+} from "../feedback/feedback.schema";
 import { folderPurposeSchema } from "../folder/folder.schema";
 import { calendarDateSchema } from "../shared/search.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
@@ -58,7 +62,7 @@ export const suggestionKindSchema = z.enum([
   "update_task_list_due_date",
   /** « Je coche le pain et je remplace Légumes par tomates et courgettes ? » (§12.1, A.2) */
   "update_task_list_items",
-  /** « On dirait un bug, je le signale ? » (A.10) */
+  /** « On dirait un bug, je le signale ? » — ou une idée, une réclamation (A.10) */
   "report_bug",
 ]);
 
@@ -381,13 +385,23 @@ export type UpdateTaskListItemsPayload = z.infer<typeof updateTaskListItemsPaylo
 /**
  * Charge utile d'une suggestion `report_bug` (A.10).
  *
- * `content` seul à la capture : c'est tout ce que le modèle peut renseigner,
- * rédigé à partir de ce que l'utilisateur a décrit. `platform` et `screen`
- * n'arrivent qu'à l'acceptation, via `bugReportContext` — c'est alors ce
- * triplet complet qui devient la charge utile stockée, dans la forme
- * qu'attend `createFeedbackSchema` une fois `category: "bug"` ajoutée.
+ * Nature et texte à la capture : c'est tout ce que le modèle peut renseigner,
+ * à partir de ce que l'utilisateur a décrit. `platform` et `screen`
+ * n'arrivent qu'à l'acceptation, via `bugReportContext` — c'est alors
+ * l'ensemble qui devient la charge utile stockée, dans la forme qu'attend
+ * `createFeedbackSchema`.
+ *
+ * Le nom `report_bug` date du temps où le canal ne recueillait que les bugs ;
+ * il reste, les propositions déjà stockées le portant.
  */
 export const reportBugPayloadSchema = z.object({
+  /**
+   * Bug, idée ou réclamation (`other`). Absente des propositions antérieures
+   * à l'ouverture du canal aux idées, et illisible si le modèle en invente
+   * une : c'est alors un bug, plutôt que de perdre un retour que
+   * l'utilisateur relira de toute façon avant de l'envoyer.
+   */
+  category: feedbackCategorySchema.catch("bug"),
   content: z.string().trim().min(1).max(FEEDBACK_CONTENT_MAX_LENGTH),
 });
 

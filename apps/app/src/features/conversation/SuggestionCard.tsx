@@ -16,6 +16,7 @@ import {
   updateTaskListItemsPayloadSchema,
   type AssignFoldersPayload,
   type CreateTaskListsPayload,
+  type FeedbackCategory,
   type FeedbackPlatform,
   type ResolveSuggestion,
   type Suggestion,
@@ -532,6 +533,21 @@ export function ResolvedSuggestionNote({ suggestion }: { suggestion: Suggestion 
   );
 }
 
+/**
+ * Libellés d'un retour transmis depuis le canal, selon sa nature (A.10). Une
+ * proposition illisible retombe sur le bug, comme le fait le serveur.
+ */
+const REPORT_LABELS: Record<FeedbackCategory, { accept: string; outcome: string }> = {
+  bug: { accept: "Signaler le bug", outcome: "Bug signalé, merci pour le retour !" },
+  idea: { accept: "Transmettre l'idée", outcome: "Idée transmise, merci !" },
+  other: { accept: "Transmettre", outcome: "Retour transmis, merci !" },
+};
+
+function reportLabels(suggestion: Suggestion): { accept: string; outcome: string } {
+  const proposed = reportBugPayloadSchema.safeParse(suggestion.payload);
+  return REPORT_LABELS[proposed.success ? proposed.data.category : "bug"];
+}
+
 /** Ce qui est arrivé à la proposition, dit du point de vue de l'utilisateur. */
 function outcomeLabel(suggestion: Suggestion): string {
   if (suggestion.status === "dismissed") return "Proposition ignorée";
@@ -559,7 +575,7 @@ function outcomeLabel(suggestion: Suggestion): string {
     case "update_task_list_items":
       return "Liste mise à jour";
     case "report_bug":
-      return "Bug signalé, merci pour le retour !";
+      return reportLabels(suggestion).outcome;
     default: {
       // Exhaustivité vérifiée à la compilation : un `kind` ajouté à
       // `suggestionKindSchema` sans mise à jour de ce switch fait échouer le
@@ -762,7 +778,7 @@ function useSuggestionPreview(suggestion: Suggestion): {
     const proposed = reportBugPayloadSchema.safeParse(suggestion.payload);
 
     return {
-      acceptLabel: "Signaler le bug",
+      acceptLabel: reportLabels(suggestion).accept,
       lines: proposed.success
         ? [{ key: "content", label: proposed.data.content, nested: false }]
         : [],

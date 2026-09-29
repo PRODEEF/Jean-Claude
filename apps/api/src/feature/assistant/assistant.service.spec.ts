@@ -1845,6 +1845,44 @@ describe("AssistantService", () => {
       );
     });
 
+    it("transmet une idée dans sa catégorie, sans la ranger parmi les bugs", async () => {
+      const feedback = makeFeedbackRepository();
+      const suggestions = makeSuggestionRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeReportBugSuggestion({
+            category: "idea",
+            content: "Pouvoir archiver plusieurs conversations d'un coup.",
+          }),
+        ),
+      });
+
+      await makeService(
+        suggestions,
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        makeCalendarRepository(),
+        IDLE_USERS,
+        feedback,
+      ).resolve(
+        USER,
+        "sug-1",
+        { action: "accept", bugReportContext: { platform: "ios", screen: "/assistant" } },
+        TOKEN,
+      );
+
+      expect(feedback.createGeneral).toHaveBeenCalledWith(
+        USER,
+        {
+          category: "idea",
+          content: "Pouvoir archiver plusieurs conversations d'un coup.",
+          platform: "ios",
+          screen: "/assistant",
+        },
+        TOKEN,
+      );
+    });
+
     it("refuse un signalement accepté sans le contexte de plateforme", async () => {
       jest.spyOn(console, "error").mockImplementation(() => undefined);
       const feedback = makeFeedbackRepository();

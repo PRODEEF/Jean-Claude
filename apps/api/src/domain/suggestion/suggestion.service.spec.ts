@@ -575,7 +575,63 @@ describe("SuggestionService", () => {
         expect.objectContaining({
           kind: "report_bug",
           message: "On dirait un bug, je le signale ?",
-          payload: { content: "Le bouton d'envoi reste grisé après une erreur réseau." },
+          payload: {
+            category: "bug",
+            content: "Le bouton d'envoi reste grisé après une erreur réseau.",
+          },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("retient la catégorie d'une idée proposée depuis le canal", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Bonne idée, je la transmets à l'équipe ?",
+            category: "idea",
+            content: "Pouvoir archiver plusieurs conversations d'un coup.",
+          },
+          "report_bug",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "report_bug",
+          payload: { category: "idea", content: "Pouvoir archiver plusieurs conversations d'un coup." },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("range parmi les bugs un retour dont la catégorie est inventée", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je transmets ta remarque ?",
+            category: "complaint",
+            content: "Les réponses sont trop longues.",
+          },
+          "report_bug",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          payload: { category: "bug", content: "Les réponses sont trop longues." },
         }),
         TOKEN,
       );
