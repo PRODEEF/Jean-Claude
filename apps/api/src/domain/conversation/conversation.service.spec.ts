@@ -27,6 +27,19 @@ import { TaskService } from "../task/task.service.js";
 import type { IUserRepository, ProfileRecord } from "../user/user.repository.interface.js";
 import { ConversationService } from "./conversation.service.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
+import type { IWorkspaceEventRepository } from "../workspace-event/workspace-event.repository.interface.js";
+import { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
+
+const IDLE_WORKSPACE_EVENTS: IWorkspaceEventRepository = {
+  findSpace: jest.fn().mockResolvedValue(null),
+  findById: jest.fn().mockResolvedValue(null),
+  findInRange: jest.fn().mockResolvedValue([]),
+  create: jest.fn(),
+  update: jest.fn(),
+  delete: jest.fn(),
+  findAuthor: jest.fn(),
+  appendSystemMessage: jest.fn(),
+};
 
 const TOKEN = "access-token";
 const USER = "user-1";
@@ -243,6 +256,7 @@ function makeFolder(overrides: Partial<Folder> & Pick<Folder, "id" | "name">): F
     color: null,
     position: 0,
     createdByAssistant: false,
+    workspaceId: null,
     createdAt: "2026-09-01T08:00:00.000Z",
     updatedAt: "2026-09-01T08:00:00.000Z",
     ...overrides,
@@ -368,6 +382,9 @@ function makeAttachment(overrides: Partial<AttachmentRecord> = {}): AttachmentRe
   return {
     id: "att-1",
     messageId: null,
+    userId: "user-1",
+    workspaceId: null,
+    deletedAt: null,
     url: "https://storage.example/att-1.png",
     fileName: "photo.png",
     mimeType: "image/png",
@@ -387,6 +404,10 @@ function makeAttachmentRepository(
     findByIds: jest.fn().mockResolvedValue([]),
     linkToMessage: jest.fn().mockResolvedValue(undefined),
     delete: jest.fn().mockResolvedValue(undefined),
+    softDelete: jest.fn().mockResolvedValue(undefined),
+    findWorkspaceRole: jest.fn().mockResolvedValue(null),
+    findWorkspaceFiles: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    findWorkspaceFolders: jest.fn().mockResolvedValue([]),
     ...overrides,
   };
 }
@@ -442,7 +463,7 @@ function makeService(
     new SuggestionService(suggestions),
     new FolderService(folders),
     users,
-    new CalendarService(calendar, tasks),
+    new CalendarService(calendar, tasks, new WorkspaceEventService(IDLE_WORKSPACE_EVENTS)),
     new TaskService(tasks, calendar, users),
     attachments,
   );
@@ -1900,6 +1921,22 @@ describe("ConversationService", () => {
             attachmentIds: ["att-1"],
           }),
         ).rejects.toMatchObject({ status: 409 });
+        expect(repo.appendMessage).not.toHaveBeenCalled();
+      });
+
+      it("refuse un fichier déposé dans un espace d'équipe", async () => {
+        const repo = makeRepository();
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([makeAttachment({ workspaceId: "ws-1" })]),
+        });
+
+        await expect(
+          drain(withAttachments(attachments, repo), {
+            content: "",
+            inputMode: "text",
+            attachmentIds: ["att-1"],
+          }),
+        ).rejects.toMatchObject({ status: 400 });
         expect(repo.appendMessage).not.toHaveBeenCalled();
       });
 

@@ -1,16 +1,17 @@
 import { Pressable, StyleSheet, View, type GestureResponderEvent } from "react-native";
-import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
+import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
 import { eventsOfDay, layoutDayEvents, layoutDayLists, listsOfDay } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
+import { eventLabel, SharedMark } from "./MonthGrid";
 import { formatDayLabel, formatTime, isSameDay } from "@/shared/lib/dates";
 
 export type TimeGridProps = {
   /** Les jours à mettre en colonnes : un seul en vue jour, sept en vue semaine. */
   days: Date[];
-  events: CalendarEvent[];
+  events: CalendarEntry[];
   /** Todolistes échues, en bandeau au-dessus de la grille : elles chargent le jour. */
   lists: TaskListWithTasks[];
-  onOpenEvent: (event: CalendarEvent) => void;
+  onOpenEvent: (event: CalendarEntry) => void;
   /** Ouvre le détail cochable d'une liste posée dans le bandeau ou la grille. */
   onOpenList: (list: TaskListWithTasks) => void;
   /**
@@ -100,12 +101,13 @@ export function TimeGrid({
                   key={event.id}
                   onPress={() => onOpenEvent(event)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Modifier ${event.title}`}
-                  className="bg-accent-soft rounded px-1 py-0.5"
+                  accessibilityLabel={eventLabel(event)}
+                  className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
                 >
+                  {event.space ? <SharedMark /> : null}
                   <Text
                     numberOfLines={1}
-                    className="text-accent-soft-foreground text-[11px] leading-4"
+                    className="text-accent-soft-foreground flex-1 text-[11px] leading-4"
                   >
                     {event.title}
                   </Text>
@@ -215,7 +217,7 @@ export function TimeGrid({
                 key={box.event.id}
                 onPress={() => onOpenEvent(box.event)}
                 accessibilityRole="button"
-                accessibilityLabel={`Modifier ${box.event.title}`}
+                accessibilityLabel={eventLabel(box.event)}
                 className="bg-accent-soft border-primary absolute overflow-hidden rounded border-l-2 px-1 py-0.5"
                 style={{
                   top: (box.startMinute / 60) * HOUR_HEIGHT,
@@ -227,12 +229,15 @@ export function TimeGrid({
                   width: `${100 / box.laneCount}%`,
                 }}
               >
-                <Text
-                  numberOfLines={1}
-                  className="text-accent-soft-foreground text-[11px] leading-4"
-                >
-                  {box.event.title}
-                </Text>
+                <View className="flex-row items-center gap-0.5">
+                  {box.event.space ? <SharedMark /> : null}
+                  <Text
+                    numberOfLines={1}
+                    className="text-accent-soft-foreground flex-1 text-[11px] leading-4"
+                  >
+                    {box.event.title}
+                  </Text>
+                </View>
                 <Text numberOfLines={1} className="text-muted-foreground text-[10px] leading-3">
                   {formatTime(box.event.startsAt)}
                 </Text>

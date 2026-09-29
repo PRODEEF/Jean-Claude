@@ -43,7 +43,13 @@ import type {
 } from "../../core/llm/llm.port.js";
 import { logger } from "../../core/logger.js";
 import { parseRelativeDateFr } from "../../core/relative-date.js";
-import { calendarDateIn, fromWall, toWall } from "../../core/timezone.js";
+import {
+  calendarDateIn,
+  formatInstant,
+  fromWall,
+  instantFromModel,
+  toWall,
+} from "../../core/timezone.js";
 import type { IAttachmentRepository } from "../attachment/attachment.repository.interface.js";
 import {
   ASK_QUESTION,
@@ -408,6 +414,11 @@ export class ConversationService {
       }
       if (resolved.some((a) => a.messageId !== null)) {
         throw httpError(409, "Une pièce jointe a déjà été envoyée dans un autre message.");
+      }
+      // Un fichier d'espace n'entre pas dans le fil personnel : la base le
+      // refuserait aussi, mais après l'envoi du message.
+      if (resolved.some((a) => a.workspaceId !== null)) {
+        throw httpError(400, "Ce fichier a été déposé dans un espace d'équipe.");
       }
       attachments = resolved;
     }
@@ -2210,39 +2221,6 @@ function withCorrectedRescheduleDueDate(
   return { ...toolCall, input };
 }
 
-/** Date ISO sans décalage : `2026-09-30`, `2026-09-30T14:00`, `2026-09-30T14:00:00.000`. */
-const NAIVE_ISO = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?$/;
-
-/**
- * Instant qu'un `startsAt` du modèle désigne, en ISO canonique — `null` s'il
- * est illisible.
- *
- * Une date sans décalage (`2026-09-30T14:00`) est l'heure murale de
- * l'utilisateur : c'est ce qu'il a dit (« à 14h ») et ce que la consigne de
- * l'outil demande. `new Date` la lisait dans le fuseau du serveur — UTC sur
- * Vercel —, et le rendez-vous tombait à 16h à Paris. Elle est donc posée dans
- * le fuseau du profil. Une valeur qui porte son décalage (`Z`, `+02:00`) est
- * prise telle quelle : le modèle a alors dit lui-même de quelle heure il parle.
- */
-function instantFromModel(value: string, timeZone: string): string | null {
-  const naive = NAIVE_ISO.exec(value.trim());
-  if (naive) {
-    const [, year, month, day, hours = "0", minutes = "0", seconds = "0"] = naive;
-    const wallMs = Date.UTC(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hours),
-      Number(minutes),
-      Number(seconds),
-    );
-    return Number.isNaN(wallMs) ? null : fromWall(wallMs, timeZone).toISOString();
-  }
-
-  const instant = new Date(value);
-  return Number.isNaN(instant.getTime()) ? null : instant.toISOString();
-}
-
 /**
  * Fiabilise `startsAt` d'un `suggest_recurring_event` avant capture (A.11).
  *
@@ -3193,35 +3171,6 @@ function isPending(suggestions: Suggestion[], kind: Suggestion["kind"]): boolean
 function agendaWindow(now: Date): CalendarRange {
   const to = new Date(now.getTime() + AGENDA_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   return { from: now.toISOString(), to: to.toISOString() };
-}
-
-/**
- * Instant rendu en français dans le fuseau de l'utilisateur.
- *
- * Un fuseau invalide en base ferait lever `Intl` et emporterait le tour de
- * dialogue avec lui : on retombe alors sur le fuseau par défaut du schéma, en
- * le signalant.
- */
-function formatInstant(
-  instant: Date,
-  timezone: string,
-  precision: "date" | "full" = "full",
-): string {
-  const options: Intl.DateTimeFormatOptions =
-    precision === "date" ? { dateStyle: "full" } : { dateStyle: "full", timeStyle: "short" };
-
-  try {
-    return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: timezone }).format(instant);
-  } catch (error) {
-    logger.warn(
-      SCOPE,
-      "Fuseau horaire illisible, repli sur le défaut :",
-      error instanceof Error ? error.message : error,
-    );
-    return new Intl.DateTimeFormat("fr-FR", { ...options, timeZone: DEFAULT_TIMEZONE }).format(
-      instant,
-    );
-  }
 }
 
 /**

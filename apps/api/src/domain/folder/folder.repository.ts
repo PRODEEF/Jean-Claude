@@ -13,6 +13,7 @@ type FolderRow = {
   color: string | null;
   position: number;
   created_by_assistant: boolean;
+  workspace_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -51,19 +52,23 @@ function toEntity(row: FolderRow): Folder {
     color: row.color,
     position: row.position,
     createdByAssistant: row.created_by_assistant,
+    workspaceId: row.workspace_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
 const COLUMNS =
-  "id, name, parent_id, category, purpose, color, position, created_by_assistant, created_at, updated_at";
+  "id, name, parent_id, category, purpose, color, position, created_by_assistant, workspace_id, created_at, updated_at";
 
 export const folderRepository: IFolderRepository = {
-  async findAll(accessToken) {
-    const { data, error } = await forUser(accessToken)
-      .from("folders")
-      .select(COLUMNS)
+  async findAll(workspaceId, accessToken) {
+    // La RLS laisse voir à un membre les dossiers de ses espaces en plus des
+    // siens : l'espace demandé se filtre ici, personnel compris.
+    const query = forUser(accessToken).from("folders").select(COLUMNS);
+    const { data, error } = await (
+      workspaceId ? query.eq("workspace_id", workspaceId) : query.is("workspace_id", null)
+    )
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
 
@@ -93,6 +98,7 @@ export const folderRepository: IFolderRepository = {
         purpose: input.purpose ?? "generic",
         color: input.color ?? null,
         created_by_assistant: input.createdByAssistant ?? false,
+        workspace_id: input.workspaceId ?? null,
       })
       .select(COLUMNS)
       .single();
@@ -130,10 +136,13 @@ export const folderRepository: IFolderRepository = {
     if (error) throw new Error(error.message);
   },
 
-  async countConversations(accessToken) {
-    const { data, error } = await forUser(accessToken)
+  async countConversations(workspaceId, accessToken) {
+    const query = forUser(accessToken)
       .from("conversation_folders")
-      .select("folder_id");
+      .select("folder_id, folders!inner(workspace_id)");
+    const { data, error } = await (workspaceId
+      ? query.eq("folders.workspace_id", workspaceId)
+      : query.is("folders.workspace_id", null));
 
     if (error) throw new Error(error.message);
 

@@ -1,7 +1,11 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { MESSAGE_ATTACHMENT_MAX_BYTES, uuidSchema } from "@jc/domain";
+import {
+  listWorkspaceFilesQuerySchema,
+  MESSAGE_ATTACHMENT_MAX_BYTES,
+  uuidSchema,
+} from "@jc/domain";
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { httpError, validate, type ApiErrorBody } from "../../core/http.js";
 import { attachmentRepository } from "./attachment.repository.js";
@@ -32,12 +36,30 @@ export const attachmentRoutes = new Hono<AuthEnv>()
       const file = body["file"];
       if (!(file instanceof File)) throw httpError(400, "Fichier manquant.");
 
+      // Champ facultatif : absent, le fichier va au fil personnel.
+      const rawWorkspaceId = body["workspaceId"];
+      let workspaceId: string | null = null;
+      if (rawWorkspaceId !== undefined) {
+        const parsed = uuidSchema.safeParse(rawWorkspaceId);
+        if (!parsed.success) throw httpError(400, "Espace invalide.");
+        workspaceId = parsed.data;
+      }
+
       const user = c.get("user");
-      return c.json(await service.upload(user.id, file, user.accessToken), 201);
+      return c.json(await service.upload(user.id, file, workspaceId, user.accessToken), 201);
     },
   )
 
+  // Page « Fichiers » d'un espace.
+  .get("/", validate("query", listWorkspaceFilesQuerySchema), async (c) => {
+    const user = c.get("user");
+    return c.json(
+      await service.listWorkspaceFiles(user.id, c.req.valid("query"), user.accessToken),
+    );
+  })
+
   .delete("/:id", idParam, async (c) => {
-    await service.remove(c.req.valid("param").id, c.get("user").accessToken);
+    const user = c.get("user");
+    await service.remove(c.req.valid("param").id, user.id, user.accessToken);
     return c.body(null, 204);
   });

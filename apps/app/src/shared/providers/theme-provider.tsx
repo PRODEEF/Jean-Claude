@@ -20,6 +20,12 @@ import type { Theme } from "@jc/domain";
 type ThemeContextValue = {
   palette: Palette;
   scheme: ColorScheme;
+  /**
+   * Les variables CSS de la palette, à reposer sur une vue rendue hors de
+   * l'arbre : sur web, une fenêtre modale s'affiche dans `document.body` et
+   * n'hérite pas de celles que ce fournisseur pose sur ses enfants.
+   */
+  cssVariables: ReturnType<typeof vars>;
 };
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -54,7 +60,7 @@ export function ThemeProvider({
   const [hydrated, setHydrated] = useState(false);
   useLayoutEffect(() => setHydrated(true), []);
 
-  const value = useMemo<ThemeContextValue>(() => {
+  const { scheme, palette } = useMemo(() => {
     const deviceScheme: ColorScheme = hydrated && systemScheme === "dark" ? "dark" : "light";
     const scheme: ColorScheme = preference === "system" ? deviceScheme : preference;
     return { scheme, palette: buildPalette(scheme, accent) };
@@ -72,34 +78,39 @@ export function ThemeProvider({
   const cssVariables = useMemo(
     () =>
       vars({
-        "--background": value.palette.background,
-        "--foreground": value.palette.text,
-        "--card": value.palette.surfaceElevated,
-        "--card-foreground": value.palette.text,
-        "--popover": value.palette.surfaceElevated,
-        "--popover-foreground": value.palette.text,
+        "--background": palette.background,
+        "--foreground": palette.text,
+        "--card": palette.surfaceElevated,
+        "--card-foreground": palette.text,
+        "--popover": palette.surfaceElevated,
+        "--popover-foreground": palette.text,
         // La couleur de marque de `@jc/design` s'appelle `accent` ; chez
         // shadcn elle s'appelle `primary`, `accent` y désignant le fond de
         // survol. Le croisement se fait ici, une fois pour toutes.
-        "--primary": value.palette.accent,
-        "--primary-foreground": value.palette.accentText,
+        "--primary": palette.accent,
+        "--primary-foreground": palette.accentText,
         // Hors nomenclature shadcn, qui n'a pas d'équivalent : la teinte
         // atténuée des larges aplats — bulle de l'utilisateur, bannière.
-        "--accent-soft": value.palette.accentSoft,
-        "--accent-soft-foreground": value.palette.accentSoftText,
-        "--secondary": value.palette.surface,
-        "--secondary-foreground": value.palette.text,
-        "--muted": value.palette.surface,
-        "--muted-foreground": value.palette.textMuted,
-        "--accent": value.palette.surface,
-        "--accent-foreground": value.palette.text,
-        "--destructive": value.palette.danger,
-        "--destructive-foreground": readableTextOn(value.palette.danger),
-        "--border": value.palette.border,
-        "--input": value.palette.border,
-        "--ring": value.palette.accent,
+        "--accent-soft": palette.accentSoft,
+        "--accent-soft-foreground": palette.accentSoftText,
+        "--secondary": palette.surface,
+        "--secondary-foreground": palette.text,
+        "--muted": palette.surface,
+        "--muted-foreground": palette.textMuted,
+        "--accent": palette.surface,
+        "--accent-foreground": palette.text,
+        "--destructive": palette.danger,
+        "--destructive-foreground": readableTextOn(palette.danger),
+        "--border": palette.border,
+        "--input": palette.border,
+        "--ring": palette.accent,
       }),
-    [value.palette],
+    [palette],
+  );
+
+  const value = useMemo<ThemeContextValue>(
+    () => ({ scheme, palette, cssVariables }),
+    [scheme, palette, cssVariables],
   );
 
   return (

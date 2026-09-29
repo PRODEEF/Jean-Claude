@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react-native";
-import type { CalendarEvent } from "@jc/domain";
+import type { CalendarEntry } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Modal } from "@/shared/ui/modal";
 import { useCalendarActions } from "./hooks/use-calendar-events";
@@ -8,10 +8,10 @@ import { formatFullDay, formatTime } from "@/shared/lib/dates";
 
 export type EventDetailDialogProps = {
   /** `null` = fenêtre fermée. */
-  event: CalendarEvent | null;
+  event: CalendarEntry | null;
   onClose: () => void;
   /** Ouvre le formulaire de modification complet — un pas de plus, jamais le premier. */
-  onEdit: (event: CalendarEvent) => void;
+  onEdit: (event: CalendarEntry) => void;
 };
 
 /**
@@ -29,9 +29,9 @@ function Detail({
   onClose,
   onEdit,
 }: {
-  event: CalendarEvent;
+  event: CalendarEntry;
   onClose: () => void;
-  onEdit: (event: CalendarEvent) => void;
+  onEdit: (event: CalendarEntry) => void;
 }) {
   const { remove } = useCalendarActions();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -44,16 +44,24 @@ function Detail({
         onClose={onClose}
         variant="confirm"
         title={`Supprimer « ${event.title} » ?`}
-        description="Cette suppression est définitive."
+        description={
+          event.space
+            ? "Il disparaît du calendrier de tous les membres de la conversation."
+            : "Cette suppression est définitive."
+        }
         error={error}
         actions={[
-          { label: "Annuler", onPress: () => setConfirmingDelete(false), disabled: remove.isPending },
+          {
+            label: "Annuler",
+            onPress: () => setConfirmingDelete(false),
+            disabled: remove.isPending,
+          },
           {
             label: "Supprimer",
             variant: "destructive",
             disabled: remove.isPending,
             onPress: () =>
-              remove.mutate(event.id, {
+              remove.mutate(event, {
                 onSuccess: onClose,
                 onError: (cause) => setError(toMessage(cause)),
               }),
@@ -87,7 +95,7 @@ function Detail({
 }
 
 /** Date, horaire et notes réunis dans la description — la modale reste une simple lecture. */
-function describeEvent(event: CalendarEvent): string {
+function describeEvent(event: CalendarEntry): string {
   const day = formatFullDay(new Date(event.startsAt));
   const when = event.allDay
     ? `${day} · journée entière`
@@ -95,7 +103,9 @@ function describeEvent(event: CalendarEvent): string {
   // Les séries ne sont pas encore expansées (A.11) : sans ce mot, la fiche
   // ferait passer un rendez-vous hebdomadaire pour un créneau unique.
   const recurrence = event.rrule ? " · récurrent" : "";
-  const header = `${when}${recurrence}`;
+  // Un événement d'espace dit d'où il vient : il n'a pas été posé par soi seul.
+  const space = event.space ? `\n${event.space.workspaceName} · ${event.space.groupTitle}` : "";
+  const header = `${when}${recurrence}${space}`;
 
   return event.notes ? `${header}\n\n${event.notes}` : header;
 }

@@ -7,6 +7,257 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, amorçage et
+invitations)** — sur la branche `feat/collaboration`, suite de la revue de la
+fonctionnalité. Vérifié par le typecheck et le build web ; **non joué dans un
+navigateur, ni sur iOS et Android**. Aucune règle serveur touchée : pas de
+test nouveau.
+
+**Un espace neuf dit quoi faire.** Tant qu'il n'a aucune conversation, l'écran
+de l'espace affiche « Pour démarrer » : inviter une personne, attendre qu'elle
+rejoigne, lancer la première conversation. Le dernier bouton reste grisé
+jusqu'à l'arrivée d'un second membre. Un simple membre ne voit que la dernière
+étape. Dans la fenêtre « Nouvelle conversation », seul dans l'espace, le bouton
+principal devient « Inviter quelqu'un » au lieu d'un message sans issue.
+
+**Prévenir la personne n'est plus laborieux.** Chaque invitation en attente
+porte un bouton « Copier le message », qui prépare le texte à envoyer. Sur le
+web il contient le lien de l'app ; sur mobile, aucune variable n'en porte
+l'adresse publique, il n'en a donc pas (une `EXPO_PUBLIC_APP_URL` le
+réglerait).
+
+**L'invitation se voit dès la connexion.** Une bannière sous celle de
+l'application, sur tous les écrans : « Vous êtes invité dans… », Refuser,
+Rejoindre, et une croix pour répondre plus tard (refuser est définitif). Le
+point rouge du sélecteur d'espace reste.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, clarté de
+Jean-Claude dans les conversations)** — sur la branche `feat/collaboration`,
+suite de la revue de la fonctionnalité. Vérifié par les tests (une dizaine de
+nouveaux) et le typecheck ; **non joué dans un navigateur ni sur iOS et Android**.
+
+**Jean-Claude se présente.** Toute nouvelle conversation s'ouvre sur un mot
+d'accueil : comment l'appeler, dans quels cas il parle de lui-même, ce qu'il ne
+voit pas. Le bouton de l'en-tête ouvre un choix à deux options décrites
+(« Il intervient de lui-même » / « Seulement si on l'appelle ») ; chaque
+changement est annoncé dans le fil avec le nom de son auteur. Une ligne
+centrée en tête du fil, qui défile avec lui, dit qui lit la conversation et que Jean-Claude ne voit jamais
+les échanges privés — elle couvre aussi les conversations créées avant le mot
+d'accueil.
+
+**On sait quand Jean-Claude répond.** Après une mention, « Jean-Claude
+réfléchit… » s'affiche chez tous les membres jusqu'à sa réponse (60 s au plus).
+Si le quota de la personne qui l'a appelé est atteint, ou si le moteur échoue,
+le fil l'écrit au lieu de rester muet. Une intervention spontanée manquée ne
+l'annonce pas.
+
+**À vérifier en usage.** L'indicateur passe par le canal Realtime : à éprouver
+sur un vrai Supabase avec deux comptes. Le nom du bouton et le texte du mot
+d'accueil restent à faire relire par Clarisse.
+Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 8 :
+événements)** — sur la branche `feat/collaboration`. Vérifié par un scénario
+d'accès sur Postgres 16, les requêtes jouées contre PostgREST en local, les
+tests, le typecheck, et dans Chromium sur une fausse API, en clair et en
+sombre, grand écran et 390 pt. **Aucun appel à un vrai modèle.**
+
+**Les conversations d'espace ont leurs événements.** Un membre ajoute un
+événement depuis la conversation ; il s'affiche au calendrier de chacun de ses
+membres, marqué de l'espace, et tous peuvent le modifier. Chaque geste laisse
+une ligne dans le fil. Quand le groupe fixe une date, Jean-Claude propose
+l'événement ; le premier membre qui accepte l'ajoute pour tous (§12.1).
+
+**Migration `20260930120000_workspace_events.sql`** à appliquer.
+
+Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 7 :
+fichiers)** — sur la branche `feat/collaboration`. Vérifié par un scénario
+d'accès sur Postgres 16, les requêtes jouées contre PostgREST en local, les
+tests, le typecheck, et dans Chromium sur une fausse API, en clair et en
+sombre, grand écran et 390 pt. **Ni vrai Storage, ni vrai modèle.**
+
+**On partage des fichiers dans une conversation d'espace.** Le trombone y
+joint images, PDF et fichiers texte, lus des seuls membres de la conversation.
+Une page « Fichiers » les rassemble, filtrable par dossier ; l'auteur ou un
+admin supprime un fichier, et le message indique « Fichier supprimé ».
+Jean-Claude lit le texte des fichiers du fil.
+
+**Migration `20260930110000_workspace_attachments.sql`** à appliquer.
+
+Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 6 :
+réponse citée)** — sur la branche `feat/collaboration`. Vérifié par la
+migration rejouée sur Postgres 16 avec un scénario dédié, les tests, le
+typecheck, et dans Chromium sur une fausse API, en clair et en sombre, grand
+écran et 390 pt. **Aucun appel à un vrai modèle.**
+
+**On répond à un message précis dans une conversation d'espace.** La commande
+« Répondre » (survol sur web, appui long sur téléphone) pose un bandeau
+au-dessus du champ ; le message envoyé rappelle en tête de bulle l'auteur et le
+début du message cité. Répondre à Jean-Claude le fait intervenir, même en
+silence. Spécification des lots 6 à 8 (réponse, fichiers, événements d'espace)
+au §10 de `docs/COLLABORATION.md`.
+
+**Migration `20260930100000_message_reply.sql`** à appliquer.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, listes
+proposées)** — sur la branche `feat/collaboration`. Vérifié par la migration
+rejouée sur Postgres 16, les tests, le typecheck, et dans Chromium sur une
+fausse API, en clair et en sombre, grand écran et 390 pt. **Aucun appel à un
+vrai modèle.**
+
+**Jean-Claude propose des listes dans les conversations d'espace.** Quand le
+groupe se répartit le travail, ou qu'on le lui demande, il propose une liste
+avec un responsable par tâche ; une carte s'affiche sous son message, et
+n'importe quel membre la crée pour l'espace ou l'ignore (§12.1). Tranche la
+question ouverte n°1 de `docs/COLLABORATION.md`.
+
+**Migration `20260929200000_workspace_list_suggestions.sql`** à appliquer
+après celle des listes.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, listes)** —
+sur la branche `feat/collaboration`. Vérifié par la migration rejouée sur
+Postgres 16 avec un scénario RLS dédié, les tests, le typecheck, et dans
+Chromium sur une fausse API, en clair et en sombre, grand écran et 390 pt.
+
+**Un espace a ses listes partagées.** Tout membre crée une liste, y ajoute des
+tâches, les coche et les confie à un membre ; chaque tâche s'enregistre à
+part, sans écraser le geste d'un autre. Une liste se range dans un dossier de
+l'espace. Plus simples que les todolistes personnelles : ni échéance ni
+calendrier.
+
+**Migration `20260929190000_workspace_task_lists.sql`** à appliquer.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, dossiers)** —
+sur la branche `feat/collaboration`. Vérifié par la migration rejouée sur
+Postgres 16 avec un scénario RLS dédié, les tests, le typecheck, et dans
+Chromium sur une fausse API, en clair et en sombre, grand écran et 390 pt.
+
+**Un espace a ses dossiers, communs à tous ses membres.** On les crée, renomme
+et supprime depuis la barre latérale de l'espace, et on y range les
+conversations de l'espace — plusieurs dossiers par conversation, comme en
+personnel (A.1). Un dossier d'espace ne se mêle jamais aux dossiers
+personnels, dans un sens comme dans l'autre. Dans l'interface, « groupe » a
+disparu au profit de « conversation » (demande de Clarisse).
+
+**Migration `20260929180000_workspace_folders.sql`** à appliquer ; elle touche
+la contrainte d'unicité des noms de dossiers existants, sans effet sur les
+données personnelles.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 4)** —
+Jean-Claude dans les groupes, sur la branche `feat/collaboration`. Vérifié
+par les tests (38 nouveaux ou repris), le typecheck, et dans Chromium sur une
+fausse API, en clair et en sombre, grand écran et 390 pt. **Aucun appel à un
+vrai modèle, et `waitUntil` non observé sur Vercel.**
+
+**Jean-Claude parle dans les groupes.** Mentionné (`@Jean-Claude`), il répond
+toujours. Sinon, sauf bouton silence, il attend une pause de 6 secondes, puis
+un petit modèle Mistral juge s'il y a une question sans réponse, une erreur
+factuelle, une décision à récapituler ou une discussion qui tourne en rond.
+La réponse est rédigée par le modèle que le membre qui l'a déclenchée a choisi
+dans ses réglages (§5.1). Jean-Claude ne voit que le fil du groupe, jamais les
+données personnelles des membres, et ne fait que proposer (§12.1).
+
+**Migration `20260929160000_group_realtime.sql` appliquée** au projet
+Supabase Jean-Claude le 29 septembre : `messages` publiée pour Realtime, canal
+privé réservé aux membres. Le schéma des espaces (`20260929150000`) était déjà
+en place, sans trace dans l'historique des migrations.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 3)** —
+discussions de groupe, sur la branche `feat/collaboration`. Vérifié par les
+tests (dont 12 nouveaux pour les groupes), le typecheck, les migrations
+rejouées sur Postgres 16, et dans Chromium sur une fausse API, en clair et en
+sombre, grand écran et 390 pt. **Le temps réel n'est pas vérifié** : il
+demande un vrai Supabase et deux comptes.
+
+**Les membres d'un espace discutent en groupe.** On crée un groupe depuis la
+barre latérale de l'espace en cochant les personnes ; le fil signe les
+messages de chacun, les pastilles comptent les non-lus par personne, et
+« Bruno écrit… » s'affiche pendant la saisie. Les messages des autres arrivent
+par Supabase Realtime — première exception à l'invariant 3, en lecture
+seulement, consignée dans `docs/ARCHITECTURE.md` §2.2. Jean-Claude ne parle pas
+encore dans les groupes : c'est le lot 4.
+
+**Au passage, les routes personnelles refusent un groupe.** Sans cette garde,
+un membre aurait pu écrire dans un groupe par le tour personnel, qui remet au
+modèle son contexte privé.
+
+**Migration `20260929160000_group_realtime.sql`** à appliquer après celle des
+espaces. Sans effet sur un Postgres sans Supabase.
+
+Dernière mise à jour : **29 septembre 2026 (modales en thème sombre)** —
+correctif sur la branche `feat/collaboration`. Vérifié par le typecheck, et
+dans Chromium sur un build web, en clair et en sombre, grand écran et 390 pt :
+fenêtre de formulaire, feuille mobile et confirmation.
+
+**Les fenêtres modales suivent enfin le thème sombre sur le web.** Elles
+s'affichaient sur fond blanc, texte sombre, au milieu d'un écran noir —
+toutes, confirmation standard comprise. Sur web, `@rn-primitives/dialog` rend
+la fenêtre dans `document.body`, hors de la vue où `ThemeProvider` pose les
+variables CSS de la palette : `bg-background` retombait sur le blanc par
+défaut. Le fournisseur expose désormais ces variables par `useTheme()`, et
+`Modal` les repose sur son contenu. Le rendu en clair est inchangé.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 5
+partiel)** — interface des espaces, sur la branche `feat/collaboration`.
+Vérifié par le typecheck, et dans Chromium sur un build web branché sur une
+fausse API, en clair et en sombre, grand écran et 390 pt. **Non vérifié sur
+iOS ni Android.**
+
+**Les espaces se voient et se gèrent dans l'app.** Un sélecteur en tête de la
+barre latérale bascule entre l'espace personnel et les espaces d'équipe, et
+porte les invitations reçues. L'écran d'un espace liste ses membres ; l'admin
+y invite, nomme un autre admin, retire un membre, renomme l'espace. Chacun
+peut le quitter. Le lot 5 a été avancé avant le lot 3 à la demande de
+Clarisse : le fil de groupe, qui dépend de l'API des groupes, reste à faire.
+Démonstration possible dès que la migration est appliquée sur un Supabase.
+
+**Constaté, hors de ce lot** : en thème sombre sur web, les fenêtres modales
+restaient blanches. Corrigé dans l'entrée suivante.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 2)** —
+API des espaces, invitations et membres, sur la branche `feat/collaboration`.
+Vérifié par 29 tests du service, le typecheck et les 620 tests du dépôt, et
+le scénario RLS rejoué. **Pas d'écran : la démonstration passe par des appels
+HTTP, et les requêtes du Repository n'ont pas été jouées contre un vrai
+Supabase.**
+
+**On crée un espace, on invite, on accepte.** Douze routes sous
+`/api/workspaces`, et la section `workspaces` de `@jc/api-client`. Le service
+vérifie les droits avant la RLS pour rendre un message clair, et tient la
+règle que la base ne voit pas : un espace garde toujours un admin. Un
+non-membre reçoit un 404, pas un 403. Détail des routes dans
+`docs/COLLABORATION.md`.
+
+**Deux écarts à la spécification, à confirmer.** Les membres voient l'adresse
+de leurs collègues — sans elle, on ne peut ni refuser d'inviter un membre
+existant ni reconnaître un membre sans nom. L'admin peut annuler une
+invitation, seul recours après une faute de frappe. La fonction
+`workspace_member_profiles` a été modifiée en conséquence dans la migration
+du lot 1, appliquée nulle part à ce jour.
+
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe)** — lot 1 des
+espaces d'équipe et discussions de groupe (demande de Clarisse, hors cahier
+des charges — le §1 fixe une V1 mono-utilisateur), sur la branche
+`feat/collaboration`. Spécification et décisions dans `docs/COLLABORATION.md`.
+Vérifié en rejouant toutes les migrations sur un Postgres 16 vierge, avec un
+scénario RLS à trois comptes (46 vérifications). **Aucun code applicatif :
+rien à démontrer à l'écran à ce stade.**
+
+**Le schéma accueille plusieurs comptes dans un même espace.** Nouvelles
+tables `workspaces`, `workspace_members` (admin ou membre),
+`workspace_invitations` (par adresse, sans e-mail envoyé en V1) et
+`conversation_members`. Un groupe est une conversation `kind = 'group'`
+rattachée à un espace. Il garde le fil, la recherche et le rangement en
+dossiers des conversations, et ses non-lus sont comptés par membre. Les
+données personnelles gardent leurs policies : deux policies restrictives
+bornent l'ensemble. Au passage, écrire dans la conversation d'un autre compte
+n'est plus possible — l'ancienne policy de `messages` ne vérifiait que
+l'auteur.
+
+**Migration `20260929150000_workspaces.sql` sans effet sur le code en
+ligne** : sur une conversation personnelle, création avec relecture, envoi
+de message et compteur de non-lus se comportent comme avant — le scénario le
+vérifie. Aucun groupe ne peut exister tant que l'API des lots 2 et 3 n'est
+pas écrite.
+
 Dernière mise à jour : **29 septembre 2026 (suite)** — revue des retours
 réservée aux admins de bout en bout, et analyse des nouveaux retours depuis le
 bandeau (demandes de Clarisse), sur la branche `feat/zen-allen-ch2smh`.
@@ -332,8 +583,8 @@ sans outils, et c'est cette relance qui recopiait `ask_question` : son texte ne
 passait par aucun filtre. Il passe désormais par le même filtre ; une question
 recopiée qui ne tient pas en boutons (réponse de plus de 80 caractères) reste
 affichée en texte, sans le nom de l'outil. Une ligne entière en italique qui
-annonce ce que le modèle va faire (« *Je vais proposer la création de ces
-listes…* ») est retirée : dix relances sur dix l'écrivaient, avec ou sans
+annonce ce que le modèle va faire (« _Je vais proposer la création de ces
+listes…_ ») est retirée : dix relances sur dix l'écrivaient, avec ou sans
 consigne contraire. Enfin, un tour dont la seule proposition est écartée
 signale l'échec au lieu de se clore sans rien afficher.
 
@@ -1913,7 +2164,7 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 | Réf.         | Exigence                                                | Statut | Note                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------ | ------------------------------------------------------- | :----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| §5.1         | Moteur IA Claude en V1                                  |   ✅   | Défaut serveur ramené à `mistral/mistral-medium-3.5` (8 sept.), puis à `mistral/ministral-14b` (28 sept.) : `anthropic/claude-opus-5`, hors catalogue utilisateur, laissait le sélecteur des réglages sans rien coché tant que rien n'était choisi. Claude reste joignable via `LLM_MODEL`, hors défaut                                                                                                                              |
+| §5.1         | Moteur IA Claude en V1                                  |   ✅   | Défaut serveur ramené à `mistral/mistral-medium-3.5` (8 sept.), puis à `mistral/ministral-14b` (28 sept.) : `anthropic/claude-opus-5`, hors catalogue utilisateur, laissait le sélecteur des réglages sans rien coché tant que rien n'était choisi. Claude reste joignable via `LLM_MODEL`, hors défaut                                                                                   |
 | §5.1         | Abstraction multi-modèle                                |   ✅   | Port `LlmProvider` + Vercel AI Gateway. **Changer de modèle = changer `LLM_MODEL`**, zéro ligne de code                                                                                                                                                                                                                                                                                   |
 | §5.1         | Timeouts, quotas et erreurs                             |   ✅   | Timeout de 60 s (15 s au premier jeton en flux) ; 429 et 402 distingués d'une panne, testés                                                                                                                                                                                                                                                                                               |
 | §5.1         | Choix du modèle par l'utilisateur                       |   ✅   | Catalogue de trois modèles dans `@jc/domain`, choisi dans les réglages et porté par `profiles.llm_model`. `LLM_MODEL` devient le repli, servi tant que rien n'est choisi                                                                                                                                                                                                                  |
@@ -1948,12 +2199,12 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | A.0  | Regroupement Perso / Pro                              |   🔵   | Colonne `category` posée, non exploitée — volontaire (option à activer plus tard)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | A.1  | Conversations multi-dossiers, rangement matriciel     |   ✅   | Schéma, `PUT /conversations/:id/folders`, rangement manuel par cases à cocher multiples, glisser-déposer d'une conversation sur un dossier (ajouter ou déplacer, au choix) **et d'un dossier dans un autre**, et proposition de rangement par l'assistant pour un fil non classé                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | A.2  | Conversion conversation → todoliste                   |   ✅   | `domain/task` et `/api/tasks` écrits : listes et tâches se créent, se cochent, se datent et se rangent. Onglet Mes listes (une seule lecture, filtrable par dossier, cherchable à la loupe ; la lecture par semaine vit désormais dans le calendrier, vue Todo — mois complet), todolistes visibles dans leur dossier, cartes repliables portant leurs actions dans un menu. Le contenu s'édite comme un texte — une ligne par tâche, deux niveaux d'indentation, réécrit en un appel. Listes groupées par dossier dans l'agenda du calendrier, où « + Tâches » en ouvre une sur le jour affiché. L'assistant propose les listes de lui-même et les crée d'un geste, rangées dans le dossier de la conversation ; l'utilisateur peut aussi la demander (menu contextuel ou message tapé) et corriger les tâches extraites avant validation (#17) |
-| A.3  | Détection de tâches datées                            |   ✅   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte sur la **liste**, et une tâche peut en outre porter son propre jour (`due_on`, 28 septembre) : le modèle date la liste ou chacune de ses lignes, puis une seconde proposition bloque un créneau d'agenda par liste datée, avec une durée par défaut plutôt que sans fin. Le calcul de date relative du modèle est doublé d'un filet de sécurité déterministe sur les tournures les plus sujettes à erreur — jours de semaine, demain/après-demain, dans N jours/semaines, week-end (#18)                                                                                                                                                                                                                                                                                                    |
+| A.3  | Détection de tâches datées                            |   ✅   | `dueAt` se saisit et se lit de bout en bout — semaine, calendrier — et se déduit de la conversation. L'échéance porte sur la **liste**, et une tâche peut en outre porter son propre jour (`due_on`, 28 septembre) : le modèle date la liste ou chacune de ses lignes, puis une seconde proposition bloque un créneau d'agenda par liste datée, avec une durée par défaut plutôt que sans fin. Le calcul de date relative du modèle est doublé d'un filet de sécurité déterministe sur les tournures les plus sujettes à erreur — jours de semaine, demain/après-demain, dans N jours/semaines, week-end (#18)                                                                                                                                                                                                                                   |
 | A.4  | Sous-dossiers automatiques de projet                  |   🟡   | L'assistant propose une arborescence (`suggest_project_folders`), l'utilisateur la crée d'un geste — consigne de détection reprise, avec un critère explicite (#19). Une todoliste acceptée rejoint son sous-dossier typé (ACHAT, TODO) quand il existe, au lieu du dossier de projet. Restent PRENDRE RDV — `calendar_events` ne porte aucun dossier — et IDÉE, faute de concept de note dans le produit                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | A.5  | Gestion multi-dimensionnelle d'un projet              |   ⬜   | Phase C ou au-delà                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | A.6  | Recherche avancée par filtres                         |   ✅   | `feature/search` et `GET /api/search` : mot-clé plein texte sur les titres **et** le contenu des messages, filtres par dossiers, par période (6 raccourcis) ou par dates saisies, conversations archivées incluses au choix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | A.7  | Adaptation à la logique de rangement de l'utilisateur |   🔵   | Colonne `source` désormais réellement alimentée par les rangements acceptés — la matière première est capturée, rien ne l'exploite encore                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées — et que le modèle relit au tour suivant, pour ne reproposer ni ce qui a été écarté ni ce qui a été accepté. Natures branchées : dossiers de projet, rangement, todolistes, complétion **et modification** d'une todoliste existante (cocher, renommer), créneaux, échéance, rendez-vous récurrent (`suggest_recurring_event` → `create_recurring_event`), **plusieurs rendez-vous ponctuels en un seul geste** (`suggest_events` → `create_events`). Reste l'expansion des occurrences (A.11)                                                                                                                                                                                                                                                                              |
+| A.8  | Assistant proactif                                    |   🟡   | `feature/assistant` écrit : les appels d'outils deviennent des propositions acceptées ou ignorées d'un geste, dont le fil garde la trace une fois tranchées — et que le modèle relit au tour suivant, pour ne reproposer ni ce qui a été écarté ni ce qui a été accepté. Natures branchées : dossiers de projet, rangement, todolistes, complétion **et modification** d'une todoliste existante (cocher, renommer), créneaux, échéance, rendez-vous récurrent (`suggest_recurring_event` → `create_recurring_event`), **plusieurs rendez-vous ponctuels en un seul geste** (`suggest_events` → `create_events`). Reste l'expansion des occurrences (A.11)                                                                                                                                                                                       |
 | A.9  | Multi-plateforme                                      |   🟡   | Web / iOS / Android depuis un codebase, fil de conversation en flux compris. Desktop (Tauri) en Phase C                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | A.10 | Bornage du mode assistant                             |   ✅   | Canal unique, jeu d'outils propre au canal, bascule hors périmètre proposée puis validée par l'utilisateur (et retirée du contexte une fois faite), et périmètre `assistant_scope` appliqué côté serveur. Interrupteurs des cinq capacités dans la page Réglages. Le canal reçoit l'agenda des 7 jours et les dossiers existants — il peut enfin répondre sur le premier de ses trois sujets ; délivrance des rappels → #26                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | A.11 | Rendez-vous récurrents + alerte                       |   🔵   | `domain/calendar` et les quatre vues écrits : `rrule` et `reminder_minutes_before` se saisissent et se stockent. Restent l'expansion des occurrences et la délivrance des rappels                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -1986,10 +2237,11 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | **Profondeur d'arborescence portée de 2 à 5**     | §3      | Yann — écart assumé au cahier des charges, à valider                                                                                                                                                                 |
 | Jeu d'icônes de la navigation                     | §4.2    | — lucide-react-native en place (défaut react-native-reusables)                                                                                                                                                       |
 | Distinguer dossier et « projet »                  | A.4/A.5 | Yann — un projet gagnerait à être un format de dossier à part, avec mémoire globale et structure propre, plutôt qu'un dossier ordinaire portant des sous-dossiers typés. Piste soulevée pendant #19, non implémentée |
-| Instructions par dossier (retour de Nicolas, 01)  | A.1/A.4 | Yann — contexte de projet remis au modèle, cumulé sur les dossiers d'une conversation. Non implémenté, voir l'entrée du 28 septembre                                                                                  |
+| Instructions par dossier (retour de Nicolas, 01)  | A.1/A.4 | Yann — contexte de projet remis au modèle, cumulé sur les dossiers d'une conversation. Non implémenté, voir l'entrée du 28 septembre                                                                                 |
 | Aperçu calendrier / listes en conversation (07)   | A.2/A.3 | Yann — panneau latéral pendant une proposition, écran large seulement. Non implémenté                                                                                                                                |
 | Glisser-déposer des tâches au calendrier (09)     | A.3     | Yann — changer le jour d'une liste ou d'une tâche au geste, web d'abord. Non implémenté                                                                                                                              |
-| Retrait du bouton « Signaler un problème »        | A.10    | Clarisse — le canal permanent recueille désormais bugs, idées et réclamations ; le bouton et la fenêtre d'avis restent en attendant la décision |
+| **Espaces d'équipe et discussions de groupe**     | §1      | Yann — hors cahier des charges (V1 mono-utilisateur), à valider avant le lot 2. Spécification et questions ouvertes dans `docs/COLLABORATION.md`                                                                     |
+| Retrait du bouton « Signaler un problème »        | A.10    | Clarisse — le canal permanent recueille désormais bugs, idées et réclamations ; le bouton et la fenêtre d'avis restent en attendant la décision                                                                      |
 
 ## Points nécessitant un A/B testing humain (§4.3)
 
@@ -2000,25 +2252,25 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 
 ## Dette technique connue
 
-| Point                                                    | Détail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pagination remontante du fil absente                     | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Rappels du matin non délivrés                            | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26)                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| RDV de projet non rattaché à PRENDRE RDV                 | `calendar_events` ne porte aucun `folder_id`, contrairement à `task_lists` : un rendez-vous créé depuis un projet ne peut pas rejoindre son sous-dossier typé comme le font déjà les todolistes vers ACHAT et TODO (A.4). Demanderait une migration, écartée pour l'itération de #19                                                                                                                                                                                                                                                                                                  |
-| Sauvegarde de liste en écrasement                        | `PUT /tasks/:id/items` réécrit la liste entière depuis ce que l'éditeur tient. Deux appareils ouverts sur la même liste se recouvrent donc l'un l'autre — le dernier à écrire gagne. Sans effet à un seul utilisateur, à revoir si l'édition partagée arrive                                                                                                                                                                                                                                                                                                                          |
-| Séries récurrentes non déployées                         | Une `rrule` se saisit et se stocke, mais les occurrences ne sont pas calculées : l'événement n'apparaît qu'à son premier créneau. La dépendance `rrule` est déjà au `package.json` de l'API (A.11)                                                                                                                                                                                                                                                                                                                                                                                    |
-| Dates saisies au clavier                                 | Le formulaire d'événement demande `JJ/MM/AAAA` et `HH:MM` en texte, faute de sélecteur natif partagé par les trois cibles. Fonctionnel, mais en deçà des références du §4.2                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Node ≥ 22.12 requis                                      | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Aucun modèle de repli                                    | `llm-error.ts` distingue proprement 429 et 402, mais il n'y a qu'un `LLM_MODEL` : un quota atteint tue le tour au lieu de basculer sur un second moteur                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Un timeout se présente en panne                          | Les délais de `gateway.provider.ts` (60 s, 15 s au premier jeton) retombent dans le `default` de `toHttpException` : l'utilisateur lit « moteur indisponible » et attend une panne qui n'existe pas                                                                                                                                                                                                                                                                                                                                                                                   |
-| Historique ouvert par un tour assistant                  | Le canal commence par le message d'accueil, donc l'historique remis au modèle débute par un tour `assistant`. Toléré ou refusé selon le moteur routé par le Gateway — à couvrir avant de changer `LLM_MODEL`                                                                                                                                                                                                                                                                                                                                                                          |
-| Rattrapage de réponse au prix d'un tour                  | Un modèle qui s'en tient à son appel d'outil déclenche un second appel : la réponse arrive, mais l'attente double. La consigne cherche à rendre ce cas rare — reste à mesurer sa fréquence par moteur                                                                                                                                                                                                                                                                                                                                                                                 |
+| Point                                                    | Détail                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pagination remontante du fil absente                     | Le fil charge les 50 derniers messages ; au-delà, l'historique n'est pas atteignable. `nextCursor` est déjà renvoyé par l'API                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Rappels du matin non délivrés                            | La capacité `morningReminders` est réglable et lue, mais aucun planificateur n'existe : l'assistant ne peut rien proposer qu'on saurait délivrer (→ #26)                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| RDV de projet non rattaché à PRENDRE RDV                 | `calendar_events` ne porte aucun `folder_id`, contrairement à `task_lists` : un rendez-vous créé depuis un projet ne peut pas rejoindre son sous-dossier typé comme le font déjà les todolistes vers ACHAT et TODO (A.4). Demanderait une migration, écartée pour l'itération de #19                                                                                                                                                                                                                                                                                                                                             |
+| Sauvegarde de liste en écrasement                        | `PUT /tasks/:id/items` réécrit la liste entière depuis ce que l'éditeur tient. Deux appareils ouverts sur la même liste se recouvrent donc l'un l'autre — le dernier à écrire gagne. Sans effet à un seul utilisateur, à revoir si l'édition partagée arrive                                                                                                                                                                                                                                                                                                                                                                     |
+| Séries récurrentes non déployées                         | Une `rrule` se saisit et se stocke, mais les occurrences ne sont pas calculées : l'événement n'apparaît qu'à son premier créneau. La dépendance `rrule` est déjà au `package.json` de l'API (A.11)                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Dates saisies au clavier                                 | Le formulaire d'événement demande `JJ/MM/AAAA` et `HH:MM` en texte, faute de sélecteur natif partagé par les trois cibles. Fonctionnel, mais en deçà des références du §4.2                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Node ≥ 22.12 requis                                      | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Aucun modèle de repli                                    | `llm-error.ts` distingue proprement 429 et 402, mais il n'y a qu'un `LLM_MODEL` : un quota atteint tue le tour au lieu de basculer sur un second moteur                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Un timeout se présente en panne                          | Les délais de `gateway.provider.ts` (60 s, 15 s au premier jeton) retombent dans le `default` de `toHttpException` : l'utilisateur lit « moteur indisponible » et attend une panne qui n'existe pas                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Historique ouvert par un tour assistant                  | Le canal commence par le message d'accueil, donc l'historique remis au modèle débute par un tour `assistant`. Toléré ou refusé selon le moteur routé par le Gateway — à couvrir avant de changer `LLM_MODEL`                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Rattrapage de réponse au prix d'un tour                  | Un modèle qui s'en tient à son appel d'outil déclenche un second appel : la réponse arrive, mais l'attente double. La consigne cherche à rendre ce cas rare — reste à mesurer sa fréquence par moteur                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `suggest_events` parfois incomplet sur plusieurs rdv     | Signalé en usage réel : un message citant plusieurs rendez-vous ponctuels distincts peut ne produire qu'une entrée dans `events` au lieu d'une par rendez-vous, malgré la consigne « un seul appel, une entrée par rendez-vous ». La chaîne outil → suggestion → acceptation gère déjà un tableau de 1 à 8 (testé), donc la perte se joue au moment où le modèle construit l'appel. Consigne renforcée le 10 septembre (comptage explicite + exemple à deux rendez-vous dans `buildSystemPrompt`), sans garantie de correction totale — dépend du moteur routé par le Gateway. À surveiller par moteur, comme la ligne ci-dessus |
-| `listPending` sans appelant                              | `ConversationService` lit `listForConversation` et en déduit les propositions en attente. La méthode du Repository n'a plus d'appelant : à retirer, ou à consommer là où la déduction se fait                                                                                                                                                                                                                                                                                                                                                                                         |
-| État visuel de la notation par message                   | Le pouce sélectionné n'est pas restauré après un rechargement : la notation n'est pas renvoyée avec les messages aujourd'hui. La donnée est bien persistée (`message_ratings`), seul l'indicateur visuel est local à la session                                                                                                                                                                                                                                                                                                                                                       |
-| Pagination des dossiers absente, décision assumée        | `GET /api/folders` rend toujours l'arborescence complète, contrairement aux tâches et aux conversations. `FolderService.getTree()` doit de toute façon recharger tous les dossiers en mémoire pour vérifier profondeur et acyclicité, y compris à l'écriture (`create`/`update`) : paginer la réponse réduirait la taille du JSON renvoyé, pas la charge réelle du serveur, pour un coût de développement réel (reprendre l'agrégation des compteurs par dossier). Aucun compte n'approche aujourd'hui un volume de dossiers qui le justifie — à revisiter si un vrai volume apparaît |
-| Compteur de non-lu sur-compte après édition ou reprise   | `unread_count` est incrémenté par trigger à l'insertion d'un message assistant, jamais décrémenté à la suppression. Une correction de message ou une reprise de tour supprime des messages déjà comptés puis en insère de nouveaux : le compteur peut monter sans qu'aucun message ne reste réellement non lu. Sans conséquence observée — ces deux gestes supposent la conversation déjà ouverte, et `markRead` la remet à zéro dans le même geste                                                                                                                                   |
-| `--experimental-vm-modules` requis pour `npm test` (API) | `unpdf` charge son moteur PDF.js par un `import()` dynamique interne, y compris depuis son propre build CommonJS — sans ce flag Node, Jest échoue avec `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG` dès qu'un test touche réellement `core/pdf-text.ts`. Ajouté au script `test` de `apps/api/package.json`, pas seulement en local : sans lui la CI casserait aussi                                                                                                                                                                                                                 |
+| `listPending` sans appelant                              | `ConversationService` lit `listForConversation` et en déduit les propositions en attente. La méthode du Repository n'a plus d'appelant : à retirer, ou à consommer là où la déduction se fait                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| État visuel de la notation par message                   | Le pouce sélectionné n'est pas restauré après un rechargement : la notation n'est pas renvoyée avec les messages aujourd'hui. La donnée est bien persistée (`message_ratings`), seul l'indicateur visuel est local à la session                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Pagination des dossiers absente, décision assumée        | `GET /api/folders` rend toujours l'arborescence complète, contrairement aux tâches et aux conversations. `FolderService.getTree()` doit de toute façon recharger tous les dossiers en mémoire pour vérifier profondeur et acyclicité, y compris à l'écriture (`create`/`update`) : paginer la réponse réduirait la taille du JSON renvoyé, pas la charge réelle du serveur, pour un coût de développement réel (reprendre l'agrégation des compteurs par dossier). Aucun compte n'approche aujourd'hui un volume de dossiers qui le justifie — à revisiter si un vrai volume apparaît                                            |
+| Compteur de non-lu sur-compte après édition ou reprise   | `unread_count` est incrémenté par trigger à l'insertion d'un message assistant, jamais décrémenté à la suppression. Une correction de message ou une reprise de tour supprime des messages déjà comptés puis en insère de nouveaux : le compteur peut monter sans qu'aucun message ne reste réellement non lu. Sans conséquence observée — ces deux gestes supposent la conversation déjà ouverte, et `markRead` la remet à zéro dans le même geste                                                                                                                                                                              |
+| `--experimental-vm-modules` requis pour `npm test` (API) | `unpdf` charge son moteur PDF.js par un `import()` dynamique interne, y compris depuis son propre build CommonJS — sans ce flag Node, Jest échoue avec `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG` dès qu'un test touche réellement `core/pdf-text.ts`. Ajouté au script `test` de `apps/api/package.json`, pas seulement en local : sans lui la CI casserait aussi                                                                                                                                                                                                                                                            |
 
 Le `.env` racine est chargé par l'API (`ConfigModule`) et par Expo
 (`app.config.js` / `metro.config.js`).

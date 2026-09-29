@@ -31,6 +31,15 @@ export const rateLimit = createMiddleware<AuthEnv>(async (c, next) => {
   await next();
 });
 
+/**
+ * Même décompte que le middleware, pour un appel au modèle qui ne vient pas
+ * d'une requête HTTP — Jean-Claude qui répond dans un groupe, après coup.
+ * `true` si l'appel est permis ; une panne technique le laisse passer.
+ */
+export async function consumeLlmCall(userId: string, accessToken: string): Promise<boolean> {
+  return (await safeEvaluate(userId, accessToken))?.allowed ?? true;
+}
+
 /** `null` sur panne technique : le message est alors laissé passer. */
 async function safeEvaluate(
   userId: string,

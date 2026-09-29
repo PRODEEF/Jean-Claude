@@ -13,10 +13,22 @@ export class FolderService {
    * tiroir mobile et le desktop doivent présenter exactement le même ordre et
    * les mêmes compteurs (§5.3 — pas de logique métier dupliquée).
    */
-  async getTree(accessToken: string): Promise<FolderTreeNode[]> {
+  getTree(accessToken: string): Promise<FolderTreeNode[]> {
+    return this.buildTree(null, accessToken);
+  }
+
+  /** Arborescence commune d'un espace d'équipe ; vide pour qui n'en est pas membre. */
+  getWorkspaceTree(workspaceId: string, accessToken: string): Promise<FolderTreeNode[]> {
+    return this.buildTree(workspaceId, accessToken);
+  }
+
+  private async buildTree(
+    workspaceId: string | null,
+    accessToken: string,
+  ): Promise<FolderTreeNode[]> {
     const [all, counts] = await Promise.all([
-      this.folders.findAll(accessToken),
-      this.folders.countConversations(accessToken),
+      this.folders.findAll(workspaceId, accessToken),
+      this.folders.countConversations(workspaceId, accessToken),
     ]);
 
     const childrenByParent = new Map<string | null, Folder[]>();
@@ -47,7 +59,9 @@ export class FolderService {
     accessToken: string,
   ): Promise<Folder> {
     if (input.parentId) {
-      const all = await this.folders.findAll(accessToken);
+      // Le parent se cherche dans l'espace du dossier créé : un sous-dossier
+      // ne franchit pas la frontière entre personnel et équipe.
+      const all = await this.folders.findAll(input.workspaceId ?? null, accessToken);
       const parentOf = parentMap(all);
 
       if (!parentOf.has(input.parentId)) throw httpError(404, "Dossier parent introuvable.");
@@ -71,7 +85,9 @@ export class FolderService {
   async update(id: string, patch: UpdateFolder, accessToken: string): Promise<Folder> {
     // `null` remonte le dossier à la racine : ni boucle ni dépassement possible.
     if (patch.parentId) {
-      const all = await this.folders.findAll(accessToken);
+      const folder = await this.folders.findById(id, accessToken);
+      if (!folder) throw httpError(404, "Dossier introuvable.");
+      const all = await this.folders.findAll(folder.workspaceId, accessToken);
       const parentOf = parentMap(all);
 
       if (!parentOf.has(patch.parentId)) throw httpError(404, "Dossier parent introuvable.");

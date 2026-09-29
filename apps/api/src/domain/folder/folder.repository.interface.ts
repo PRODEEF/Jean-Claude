@@ -1,7 +1,8 @@
 import type { CreateFolder, Folder, UpdateFolder } from "@jc/domain";
 
 export interface IFolderRepository {
-  findAll(accessToken: string): Promise<Folder[]>;
+  /** Les dossiers d'un espace : `null` pour l'espace personnel. */
+  findAll(workspaceId: string | null, accessToken: string): Promise<Folder[]>;
   findById(id: string, accessToken: string): Promise<Folder | null>;
   /**
    * `createdByAssistant` n'appartient pas à `CreateFolder` : le drapeau est
@@ -16,5 +17,5 @@ export interface IFolderRepository {
   update(id: string, patch: UpdateFolder, accessToken: string): Promise<Folder>;
   delete(id: string, accessToken: string): Promise<void>;
   /** Compte les conversations rattachées, par dossier — alimente la sidebar. */
-  countConversations(accessToken: string): Promise<Map<string, number>>;
+  countConversations(workspaceId: string | null, accessToken: string): Promise<Map<string, number>>;
 }

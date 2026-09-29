@@ -1,5 +1,5 @@
 import { MESSAGE_ATTACHMENT_MAX_BYTES } from "@jc/domain";
-import { AttachmentService } from "./attachment.service.js";
+import { AttachmentService, withDescendants } from "./attachment.service.js";
 import type { AttachmentRecord, IAttachmentRepository } from "./attachment.repository.interface.js";
 
 const TOKEN = "access-token";
@@ -8,6 +8,9 @@ function makeAttachment(overrides: Partial<AttachmentRecord> = {}): AttachmentRe
   return {
     id: "att-1",
     messageId: null,
+    userId: "user-1",
+    workspaceId: null,
+    deletedAt: null,
     url: "https://storage.example/att-1.png",
     fileName: "photo.png",
     mimeType: "image/png",
@@ -25,6 +28,10 @@ function makeRepository(overrides: Partial<IAttachmentRepository> = {}): IAttach
     findByIds: jest.fn().mockResolvedValue([]),
     linkToMessage: jest.fn().mockResolvedValue(undefined),
     delete: jest.fn().mockResolvedValue(undefined),
+    softDelete: jest.fn().mockResolvedValue(undefined),
+    findWorkspaceRole: jest.fn().mockResolvedValue(null),
+    findWorkspaceFiles: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    findWorkspaceFolders: jest.fn().mockResolvedValue([]),
     ...overrides,
   };
 }
@@ -71,7 +78,12 @@ describe("AttachmentService", () => {
       const attachment = makeAttachment();
       const repo = makeRepository({ create: jest.fn().mockResolvedValue(attachment) });
 
-      const result = await new AttachmentService(repo).upload("user-1", makeFile(1024), TOKEN);
+      const result = await new AttachmentService(repo).upload(
+        "user-1",
+        makeFile(1024),
+        null,
+        TOKEN,
+      );
 
       expect(result).toEqual(attachment);
       expect(repo.create).toHaveBeenCalledWith(
@@ -82,6 +94,7 @@ describe("AttachmentService", () => {
           fileName: "photo.png",
           extractedText: null,
           file: expect.any(File),
+          workspaceId: null,
         },
         TOKEN,
       );
@@ -93,6 +106,7 @@ describe("AttachmentService", () => {
       await new AttachmentService(repo).upload(
         "user-1",
         makeFile(MESSAGE_ATTACHMENT_MAX_BYTES),
+        null,
         TOKEN,
       );
 
@@ -103,7 +117,7 @@ describe("AttachmentService", () => {
       const repo = makeRepository();
 
       await expect(
-        new AttachmentService(repo).upload("user-1", makeFile(0), TOKEN),
+        new AttachmentService(repo).upload("user-1", makeFile(0), null, TOKEN),
       ).rejects.toMatchObject({ status: 400 });
       expect(repo.create).not.toHaveBeenCalled();
     });
@@ -112,7 +126,12 @@ describe("AttachmentService", () => {
       const repo = makeRepository();
 
       await expect(
-        new AttachmentService(repo).upload("user-1", makeFile(MESSAGE_ATTACHMENT_MAX_BYTES + 1), TOKEN),
+        new AttachmentService(repo).upload(
+          "user-1",
+          makeFile(MESSAGE_ATTACHMENT_MAX_BYTES + 1),
+          null,
+          TOKEN,
+        ),
       ).rejects.toMatchObject({ status: 413 });
       expect(repo.create).not.toHaveBeenCalled();
     });
@@ -121,7 +140,7 @@ describe("AttachmentService", () => {
       const repo = makeRepository();
 
       await expect(
-        new AttachmentService(repo).upload("user-1", makeFile(1024, "audio/mpeg"), TOKEN),
+        new AttachmentService(repo).upload("user-1", makeFile(1024, "audio/mpeg"), null, TOKEN),
       ).rejects.toMatchObject({ status: 400 });
       expect(repo.create).not.toHaveBeenCalled();
     });
@@ -135,7 +154,7 @@ describe("AttachmentService", () => {
       const repo = makeRepository({ create: jest.fn().mockResolvedValue(attachment) });
       const file = makePdfFile("Hello World");
 
-      const result = await new AttachmentService(repo).upload("user-1", file, TOKEN);
+      const result = await new AttachmentService(repo).upload("user-1", file, null, TOKEN);
 
       expect(result).toEqual(attachment);
       expect(repo.create).toHaveBeenCalledWith(
@@ -146,6 +165,7 @@ describe("AttachmentService", () => {
           fileName: "document.pdf",
           extractedText: "Hello World",
           file: expect.any(File),
+          workspaceId: null,
         },
         TOKEN,
       );
@@ -157,7 +177,9 @@ describe("AttachmentService", () => {
         type: "application/pdf",
       });
 
-      await expect(new AttachmentService(repo).upload("user-1", file, TOKEN)).rejects.toMatchObject({
+      await expect(
+        new AttachmentService(repo).upload("user-1", file, null, TOKEN),
+      ).rejects.toMatchObject({
         status: 422,
       });
       expect(repo.create).not.toHaveBeenCalled();
@@ -174,7 +196,7 @@ describe("AttachmentService", () => {
         type: "text/plain",
       });
 
-      const result = await new AttachmentService(repo).upload("user-1", file, TOKEN);
+      const result = await new AttachmentService(repo).upload("user-1", file, null, TOKEN);
 
       expect(result).toEqual(attachment);
       expect(repo.create).toHaveBeenCalledWith(
@@ -185,6 +207,7 @@ describe("AttachmentService", () => {
           fileName: "notes.txt",
           extractedText: "Liste de courses : pain, lait, œufs.",
           file: expect.any(File),
+          workspaceId: null,
         },
         TOKEN,
       );
@@ -195,7 +218,7 @@ describe("AttachmentService", () => {
 
       for (const type of ["text/markdown", "text/csv"]) {
         const file = new File(["contenu"], "fichier", { type });
-        await new AttachmentService(repo).upload("user-1", file, TOKEN);
+        await new AttachmentService(repo).upload("user-1", file, null, TOKEN);
       }
 
       expect(repo.create).toHaveBeenCalledTimes(2);
@@ -205,7 +228,9 @@ describe("AttachmentService", () => {
       const repo = makeRepository();
       const file = new File(["   \n\t  "], "vide.txt", { type: "text/plain" });
 
-      await expect(new AttachmentService(repo).upload("user-1", file, TOKEN)).rejects.toMatchObject({
+      await expect(
+        new AttachmentService(repo).upload("user-1", file, null, TOKEN),
+      ).rejects.toMatchObject({
         status: 422,
       });
       expect(repo.create).not.toHaveBeenCalled();
@@ -216,7 +241,7 @@ describe("AttachmentService", () => {
     it("supprime une pièce jointe encore en attente d'envoi", async () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeAttachment()) });
 
-      await new AttachmentService(repo).remove("att-1", TOKEN);
+      await new AttachmentService(repo).remove("att-1", "user-1", TOKEN);
 
       expect(repo.delete).toHaveBeenCalledWith("att-1", TOKEN);
     });
@@ -227,21 +252,209 @@ describe("AttachmentService", () => {
     it("refuse de supprimer une pièce jointe introuvable", async () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(null) });
 
-      await expect(new AttachmentService(repo).remove("inconnu", TOKEN)).rejects.toMatchObject({
+      await expect(
+        new AttachmentService(repo).remove("inconnu", "user-1", TOKEN),
+      ).rejects.toMatchObject({
         status: 404,
       });
       expect(repo.delete).not.toHaveBeenCalled();
     });
 
-    it("refuse de supprimer une pièce jointe déjà liée à un message envoyé", async () => {
+    it("refuse de supprimer une pièce du fil personnel déjà envoyée", async () => {
       const repo = makeRepository({
         findById: jest.fn().mockResolvedValue(makeAttachment({ messageId: "msg-1" })),
       });
 
-      await expect(new AttachmentService(repo).remove("att-1", TOKEN)).rejects.toMatchObject({
+      await expect(
+        new AttachmentService(repo).remove("att-1", "user-1", TOKEN),
+      ).rejects.toMatchObject({
         status: 409,
       });
       expect(repo.delete).not.toHaveBeenCalled();
     });
+
+    it("laisse l'auteur supprimer son fichier d'espace envoyé, sans effacer la ligne", async () => {
+      const repo = makeRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeAttachment({ messageId: "msg-1", workspaceId: "ws-1" })),
+      });
+
+      await new AttachmentService(repo).remove("att-1", "user-1", TOKEN);
+
+      expect(repo.softDelete).toHaveBeenCalledWith("att-1", TOKEN);
+      expect(repo.delete).not.toHaveBeenCalled();
+    });
+
+    it("laisse un admin supprimer le fichier d'un autre membre", async () => {
+      const repo = makeRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeAttachment({ messageId: "msg-1", workspaceId: "ws-1" })),
+        findWorkspaceRole: jest.fn().mockResolvedValue("admin"),
+      });
+
+      await new AttachmentService(repo).remove("att-1", "admin-1", TOKEN);
+
+      expect(repo.findWorkspaceRole).toHaveBeenCalledWith("ws-1", "admin-1", TOKEN);
+      expect(repo.softDelete).toHaveBeenCalledWith("att-1", TOKEN);
+    });
+
+    it("refuse qu'un simple membre supprime le fichier d'un autre", async () => {
+      const repo = makeRepository({
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeAttachment({ messageId: "msg-1", workspaceId: "ws-1" })),
+        findWorkspaceRole: jest.fn().mockResolvedValue("member"),
+      });
+
+      await expect(
+        new AttachmentService(repo).remove("att-1", "bruno", TOKEN),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(repo.softDelete).not.toHaveBeenCalled();
+    });
+
+    it("ne refait rien sur un fichier déjà supprimé", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeAttachment({
+            messageId: "msg-1",
+            workspaceId: "ws-1",
+            deletedAt: "2026-09-30T08:00:00.000Z",
+          }),
+        ),
+      });
+
+      await new AttachmentService(repo).remove("att-1", "user-1", TOKEN);
+
+      expect(repo.softDelete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("upload dans un espace", () => {
+    it("dépose le fichier dans l'espace d'un membre", async () => {
+      const repo = makeRepository({ findWorkspaceRole: jest.fn().mockResolvedValue("member") });
+
+      await new AttachmentService(repo).upload("user-1", makeFile(1024), "ws-1", TOKEN);
+
+      expect(repo.create).toHaveBeenCalledWith(
+        "user-1",
+        expect.objectContaining({ workspaceId: "ws-1" }),
+        TOKEN,
+      );
+    });
+
+    it("refuse un dépôt dans un espace dont on n'est pas membre", async () => {
+      const repo = makeRepository();
+
+      await expect(
+        new AttachmentService(repo).upload("user-1", makeFile(1024), "ws-1", TOKEN),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("listWorkspaceFiles", () => {
+    const file = {
+      id: "att-1",
+      url: "https://storage.example/a.pdf",
+      fileName: "budget.pdf",
+      mimeType: "application/pdf" as const,
+      byteSize: 10,
+      groupId: "group-1",
+      groupTitle: "Bureau",
+      createdAt: "2026-09-30T08:00:00.000Z",
+    };
+
+    it("n'autorise un simple membre à supprimer que ses propres fichiers", async () => {
+      const repo = makeRepository({
+        findWorkspaceRole: jest.fn().mockResolvedValue("member"),
+        findWorkspaceFiles: jest.fn().mockResolvedValue({
+          items: [
+            { ...file, authorId: "user-1" },
+            { ...file, id: "att-2", authorId: "bruno" },
+          ],
+          nextCursor: null,
+        }),
+      });
+
+      const page = await new AttachmentService(repo).listWorkspaceFiles(
+        "user-1",
+        { workspaceId: "ws-1", limit: 50 },
+        TOKEN,
+      );
+
+      expect(page.items.map((item) => item.canDelete)).toEqual([true, false]);
+    });
+
+    it("autorise un admin à supprimer tous les fichiers", async () => {
+      const repo = makeRepository({
+        findWorkspaceRole: jest.fn().mockResolvedValue("admin"),
+        findWorkspaceFiles: jest.fn().mockResolvedValue({
+          items: [{ ...file, authorId: "bruno" }],
+          nextCursor: null,
+        }),
+      });
+
+      const page = await new AttachmentService(repo).listWorkspaceFiles(
+        "admin-1",
+        { workspaceId: "ws-1", limit: 50 },
+        TOKEN,
+      );
+
+      expect(page.items[0]?.canDelete).toBe(true);
+    });
+
+    it("filtre par dossier, sous-dossiers compris", async () => {
+      const repo = makeRepository({
+        findWorkspaceRole: jest.fn().mockResolvedValue("member"),
+        findWorkspaceFolders: jest.fn().mockResolvedValue([
+          { id: "folder-1", parentId: null },
+          { id: "folder-2", parentId: "folder-1" },
+          { id: "folder-3", parentId: "folder-2" },
+          { id: "folder-4", parentId: null },
+        ]),
+      });
+
+      await new AttachmentService(repo).listWorkspaceFiles(
+        "user-1",
+        { workspaceId: "ws-1", folderId: "folder-1", limit: 20 },
+        TOKEN,
+      );
+
+      expect(repo.findWorkspaceFiles).toHaveBeenCalledWith(
+        "ws-1",
+        { folderIds: ["folder-1", "folder-2", "folder-3"], limit: 20 },
+        TOKEN,
+      );
+    });
+
+    it("rend un 404 à qui n'est pas membre de l'espace", async () => {
+      const repo = makeRepository();
+
+      await expect(
+        new AttachmentService(repo).listWorkspaceFiles(
+          "dora",
+          { workspaceId: "ws-1", limit: 50 },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(repo.findWorkspaceFiles).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("withDescendants", () => {
+  it("rend le dossier seul quand il n'a pas d'enfant", () => {
+    expect(withDescendants("a", [{ id: "a", parentId: null }])).toEqual(["a"]);
+  });
+
+  it("ne boucle pas sur une arborescence malformée", () => {
+    expect(
+      withDescendants("a", [
+        { id: "a", parentId: "b" },
+        { id: "b", parentId: "a" },
+      ]).sort(),
+    ).toEqual(["a", "b"]);
   });
 });

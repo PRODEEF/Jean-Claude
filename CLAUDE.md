@@ -22,8 +22,9 @@ Ne jamais les violer, quelle que soit la tâche.
    web et mobile.
 
 3. **L'app cliente n'écrit jamais en base directement.**
-   Supabase côté client sert uniquement à l'authentification. Tout le reste
-   passe par l'API (§5.3).
+   Supabase côté client sert uniquement à l'authentification, et à Realtime
+   en lecture pour les discussions de groupe (exception consignée dans
+   `docs/ARCHITECTURE.md` §2.2). Tout le reste passe par l'API (§5.3).
 
 4. **Une conversation n'a pas de dossier parent unique.**
    Toujours passer par `conversation_folders`. Ne jamais ajouter de colonne

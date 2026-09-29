@@ -2,6 +2,8 @@ import type { CalendarEvent, TaskList } from "@jc/domain";
 import { CalendarService } from "./calendar.service.js";
 import type { ICalendarRepository } from "./calendar.repository.interface.js";
 import type { ITaskRepository } from "../task/task.repository.interface.js";
+import type { IWorkspaceEventRepository } from "../workspace-event/workspace-event.repository.interface.js";
+import { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
 
 const TOKEN = "access-token";
 const USER = "user-1";
@@ -71,11 +73,28 @@ function makeTaskRepository(overrides: Partial<ITaskRepository> = {}): ITaskRepo
   };
 }
 
+function makeWorkspaceEventRepository(
+  overrides: Partial<IWorkspaceEventRepository> = {},
+): IWorkspaceEventRepository {
+  return {
+    findSpace: jest.fn().mockResolvedValue(null),
+    findById: jest.fn().mockResolvedValue(null),
+    findInRange: jest.fn().mockResolvedValue([]),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    findAuthor: jest.fn(),
+    appendSystemMessage: jest.fn(),
+    ...overrides,
+  };
+}
+
 function makeService(
   repo: ICalendarRepository = makeRepository(),
   tasks: ITaskRepository = makeTaskRepository(),
+  shared: IWorkspaceEventRepository = makeWorkspaceEventRepository(),
 ): CalendarService {
-  return new CalendarService(repo, tasks);
+  return new CalendarService(repo, tasks, new WorkspaceEventService(shared));
 }
 
 describe("CalendarService", () => {
@@ -85,8 +104,55 @@ describe("CalendarService", () => {
       const repo = makeRepository({ findInRange: jest.fn().mockResolvedValue(events) });
       const range = { from: "2026-09-01T00:00:00.000Z", to: "2026-10-01T00:00:00.000Z" };
 
-      await expect(makeService(repo).list(range, TOKEN)).resolves.toEqual(events);
+      await expect(makeService(repo).list(range, TOKEN)).resolves.toEqual(
+        events.map((event) => ({ ...event, space: null })),
+      );
       expect(repo.findInRange).toHaveBeenCalledWith(range, TOKEN);
+    });
+
+    it("mêle aux siens, dans l'ordre du temps, les événements de ses conversations d'espace", async () => {
+      const repo = makeRepository({
+        findInRange: jest
+          .fn()
+          .mockResolvedValue([
+            makeEvent({ id: "evt-1", startsAt: "2026-09-08T16:00:00.000Z" }),
+            makeEvent({ id: "evt-3", startsAt: "2026-09-12T09:00:00.000Z" }),
+          ]),
+      });
+      const space = {
+        workspaceId: "ws-1",
+        workspaceName: "Club de jardinage",
+        groupId: "group-1",
+        groupTitle: "Bureau",
+      };
+      const shared = makeWorkspaceEventRepository({
+        findInRange: jest.fn().mockResolvedValue([
+          {
+            id: "wev-1",
+            groupId: "group-1",
+            title: "Réunion",
+            notes: null,
+            startsAt: "2026-09-10T16:00:00.000Z",
+            endsAt: null,
+            allDay: false,
+            reminderMinutesBefore: null,
+            createdBy: "alice",
+            createdByAssistant: false,
+            createdAt: "2026-09-01T08:00:00.000Z",
+            updatedAt: "2026-09-01T08:00:00.000Z",
+            space,
+          },
+        ]),
+      });
+
+      const found = await makeService(repo, undefined, shared).list(
+        { from: "2026-09-01T00:00:00.000Z", to: "2026-10-01T00:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(found.map((entry) => entry.id)).toEqual(["evt-1", "wev-1", "evt-3"]);
+      expect(found[1]).toMatchObject({ conversationId: "group-1", rrule: null, space });
+      expect(found[0]?.space).toBeNull();
     });
 
     it("rend une liste vide sur un mois sans rendez-vous", async () => {

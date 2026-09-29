@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronLeft, ChevronRight, ListPlus, Plus } from "lucide-react-native";
-import type { CalendarEvent, CalendarRange, TaskList, TaskListWithTasks } from "@jc/domain";
+import type { CalendarEntry, CalendarRange, TaskList, TaskListWithTasks } from "@jc/domain";
 import { datedLists, listsOfDay, listsWithoutVisibleEvent, todoDays } from "@jc/domain";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
@@ -72,7 +72,7 @@ export function CalendarScreen() {
   const [dialogTarget, setDialogTarget] = useState<EventDialogTarget | null>(null);
   const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
   /** Détail d'un événement au clic, avant tout formulaire de modification (§4.2). */
-  const [eventDetail, setEventDetail] = useState<CalendarEvent | null>(null);
+  const [eventDetail, setEventDetail] = useState<CalendarEntry | null>(null);
   /** Détail d'une todoliste échue, au clic depuis l'agenda du jour. */
   const [listDetail, setListDetail] = useState<TaskListWithTasks | null>(null);
   const router = useRouter();
@@ -160,7 +160,7 @@ export function CalendarScreen() {
   // grille l'affiche comme n'importe quel rendez-vous, mais le clic doit rouvrir
   // le détail de la liste — cochable — et non un détail de rendez-vous générique
   // qui ne montrerait rien de ce qu'il y a à faire.
-  const openEvent = (event: CalendarEvent) => {
+  const openEvent = (event: CalendarEntry) => {
     const linkedList = allLists?.find((list) => list.eventId === event.id);
     if (linkedList) {
       setListDetail(linkedList);
@@ -168,7 +168,7 @@ export function CalendarScreen() {
     }
     setEventDetail(event);
   };
-  const editEvent = (event: CalendarEvent) => {
+  const editEvent = (event: CalendarEntry) => {
     setEventDetail(null);
     setDialogTarget({ mode: "edit", event });
   };

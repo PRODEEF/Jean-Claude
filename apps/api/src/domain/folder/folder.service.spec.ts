@@ -12,6 +12,7 @@ function makeFolder(overrides: Partial<Folder> & Pick<Folder, "id" | "name">): F
     color: null,
     position: 0,
     createdByAssistant: false,
+    workspaceId: null,
     createdAt: "2026-08-31T08:00:00.000Z",
     updatedAt: "2026-08-31T08:00:00.000Z",
     ...overrides,
@@ -32,7 +33,11 @@ function makeChain(depth: number): Folder[] {
 function makeRepository(overrides: Partial<IFolderRepository> = {}): IFolderRepository {
   return {
     findAll: jest.fn().mockResolvedValue([]),
-    findById: jest.fn().mockResolvedValue(null),
+    // Un dossier personnel pour tout identifiant : c'est ce qu'un déplacement
+    // relit pour connaître l'arborescence où il se joue.
+    findById: jest
+      .fn()
+      .mockImplementation(async (id: string) => makeFolder({ id, name: `Dossier ${id}` })),
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn().mockResolvedValue(undefined),
@@ -142,7 +147,43 @@ describe("FolderService", () => {
     });
   });
 
+  describe("getWorkspaceTree", () => {
+    it("ne lit que les dossiers et les rangements de l'espace demandé", async () => {
+      const repo = makeRepository();
+
+      await new FolderService(repo).getWorkspaceTree("ws-1", TOKEN);
+
+      expect(repo.findAll).toHaveBeenCalledWith("ws-1", TOKEN);
+      expect(repo.countConversations).toHaveBeenCalledWith("ws-1", TOKEN);
+    });
+
+    it("lit l'espace personnel quand aucun espace n'est demandé", async () => {
+      const repo = makeRepository();
+
+      await new FolderService(repo).getTree(TOKEN);
+
+      expect(repo.findAll).toHaveBeenCalledWith(null, TOKEN);
+    });
+  });
+
   describe("create", () => {
+    it("cherche le parent dans l'arborescence de l'espace du dossier créé", async () => {
+      const repo = makeRepository({
+        findAll: jest
+          .fn()
+          .mockResolvedValue([makeFolder({ id: "k", name: "Kermesse", workspaceId: "ws-1" })]),
+        create: jest.fn().mockResolvedValue(makeFolder({ id: "s", name: "Stands", parentId: "k" })),
+      });
+
+      await new FolderService(repo).create(
+        "user-1",
+        { name: "Stands", parentId: "k", workspaceId: "ws-1" },
+        TOKEN,
+      );
+
+      expect(repo.findAll).toHaveBeenCalledWith("ws-1", TOKEN);
+    });
+
     it("accepte un sous-dossier sous un dossier racine", async () => {
       const created = makeFolder({ id: "assur", name: "Assurances", parentId: "admin" });
       const repo = makeRepository({

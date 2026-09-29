@@ -25,3 +25,7 @@ export * from "./assistant/assistant.schema";
 export * from "./user/preferences.schema";
 export * from "./feedback/feedback.schema";
 export * from "./command/command.schema";
+export * from "./workspace/workspace.schema";
+export * from "./group/group.schema";
+export * from "./workspace-list/workspace-list.schema";
+export * from "./workspace-event/workspace-event.schema";

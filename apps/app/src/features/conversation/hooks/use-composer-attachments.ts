@@ -21,7 +21,10 @@ let nextLocalId = 0;
  * conversation à quoi se rattacher, il ne dépend que de l'utilisateur
  * authentifié.
  */
-export function useComposerAttachments() {
+export function useComposerAttachments(
+  /** Espace où déposer les fichiers — conversation d'espace (lot 7). Absent : fil personnel. */
+  workspaceId?: string,
+) {
   const [items, setItems] = useState<ComposerAttachment[]>([]);
   // Lu par `add`/`remove` pour connaître l'état courant sans en dépendre : un
   // `setState` doit rester pur, l'upload et la suppression distante ne
@@ -32,6 +35,7 @@ export function useComposerAttachments() {
   const upload = useCallback((localId: string, file: PickedFile) => {
     const formData = new FormData();
     file.appendTo(formData);
+    if (workspaceId) formData.append("workspaceId", workspaceId);
 
     api.attachments
       .upload(formData)
@@ -55,7 +59,7 @@ export function useComposerAttachments() {
           ),
         );
       });
-  }, []);
+  }, [workspaceId]);
 
   const add = useCallback(
     (files: PickedFile[]) => {
