@@ -276,6 +276,41 @@ complet et 620 tests du dépôt au vert, scénario RLS rejoué avec la fonction
 modifiée. Les requêtes du Repository n'ont pas été jouées contre un vrai
 PostgREST : l'environnement n'a pas d'instance Supabase.
 
+### Livré au lot 5 (partie sans groupes)
+
+Le lot 5 a été avancé avant le lot 3 pour avoir une interface à montrer. Seul
+ce qui repose sur l'API du lot 2 est fait ; le fil de groupe attend le lot 3.
+
+- **Sélecteur d'espace** en tête de la barre latérale
+  (`features/workspace/WorkspaceSwitcher.tsx`) : nom de l'espace courant,
+  pastille rouge quand une invitation attend. Au clic, une fenêtre liste
+  « Personnel » et les espaces, les invitations reçues (Refuser, Rejoindre) et
+  « Nouvel espace ». Feuille remontant du bas sur téléphone, comme toutes les
+  fenêtres de l'app.
+- **L'espace actif se lit dans l'adresse** (`/workspace/:id`), pas dans un
+  état local : un lien partagé ou un rechargement retombe sur le bon espace.
+- **Barre latérale d'un espace** : les dossiers et conversations personnels
+  s'effacent, comme les canaux d'un autre espace dans Slack. Elle ne porte
+  pour l'instant que « Membres et invitations ». « Nouvelle conversation »
+  disparaît aussi : dans un espace, on créera un groupe. Le canal permanent
+  reste, il est personnel et suit l'utilisateur partout.
+- **Écran de l'espace** (`/workspace/:id`) : membres (nom, sinon adresse ;
+  rôle), menu « … » de l'admin (nommer admin, retirer le rôle, retirer de
+  l'espace avec confirmation), invitation par adresse et invitations en
+  attente, renommage, « Quitter l'espace » avec confirmation. Un encart
+  « À développer — lot 3 » annonce les discussions de groupe.
+
+**Vérification.** Typecheck de l'app. Parcours joué dans Chromium sur un build
+web branché sur une fausse API, en thème clair et en thème sombre, à
+1280 pt et à 390 pt : ouvrir le sélecteur, entrer dans un espace, inviter une
+adresse déjà membre (message du serveur affiché) puis une nouvelle, nommer un
+admin, ouvrir la confirmation de départ, renommer, rejoindre un espace depuis
+une invitation. **Non vérifié sur iOS ni Android.**
+
+**Constaté au passage, hors de ce lot.** En thème sombre sur web, les fenêtres
+`Modal` s'affichent sur fond blanc, confirmation standard comprise : les
+variables du thème ne traversent pas le portail. Signalé à part.
+
 ---
 
 ## 6. Règles métier

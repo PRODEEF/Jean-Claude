@@ -7,6 +7,23 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 5
+partiel)** — interface des espaces, sur la branche `feat/collaboration`.
+Vérifié par le typecheck, et dans Chromium sur un build web branché sur une
+fausse API, en clair et en sombre, grand écran et 390 pt. **Non vérifié sur
+iOS ni Android.**
+
+**Les espaces se voient et se gèrent dans l'app.** Un sélecteur en tête de la
+barre latérale bascule entre l'espace personnel et les espaces d'équipe, et
+porte les invitations reçues. L'écran d'un espace liste ses membres ; l'admin
+y invite, nomme un autre admin, retire un membre, renomme l'espace. Chacun
+peut le quitter. Le lot 5 a été avancé avant le lot 3 à la demande de
+Clarisse : le fil de groupe, qui dépend de l'API des groupes, reste à faire.
+Démonstration possible dès que la migration est appliquée sur un Supabase.
+
+**Constaté, hors de ce lot** : en thème sombre sur web, les fenêtres modales
+restent blanches — les variables du thème ne traversent pas le portail.
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 2)** —
 API des espaces, invitations et membres, sur la branche `feat/collaboration`.
 Vérifié par 29 tests du service, le typecheck et les 620 tests du dépôt, et

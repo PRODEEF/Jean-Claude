@@ -34,6 +34,8 @@ import { FolderDeleteDialog } from "@/features/folder/FolderDeleteDialog";
 import { moveErrorMessage, useFolderActions } from "@/features/folder/hooks/use-folder-actions";
 import { FolderNameRow, type FolderNameTarget } from "@/features/folder/FolderNameRow";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
+import { WorkspaceSidebarBody } from "@/features/workspace/WorkspaceSidebarBody";
+import { WorkspaceSwitcher } from "@/features/workspace/WorkspaceSwitcher";
 import {
   useConversationDragSource,
   useFolderDragSource,
@@ -114,6 +116,8 @@ export function AppSidebar({
   const [extractError, setExtractError] = useState<string | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const { move } = useFolderActions();
+  /** Espace d'équipe ouvert, lu dans l'adresse ; `null` dans l'espace personnel. */
+  const activeWorkspaceId = /^\/workspace\/([^/]+)/.exec(pathname)?.[1] ?? null;
 
   const go = (href: string) => {
     router.push(href as never);
@@ -190,6 +194,8 @@ export function AppSidebar({
       style={[{ width }, vars({ "--accent": palette.border })]}
     >
       <View className="gap-2 p-3">
+        <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onNavigate={go} />
+
         {/* Signalement direct, distinct des suggestions du modèle (§12.1) : un
             geste utilisateur, jamais une proposition (A.10). Même traitement
             visuel que le canal permanent, en rouge, pour rester aussi visible. */}
@@ -229,101 +235,111 @@ export function AppSidebar({
           />
         </Button>
 
-        <Button
-          variant="outline"
-          onPress={() => go("/chat")}
-          accessibilityLabel="Démarrer une nouvelle conversation"
-          className="justify-start gap-2"
-        >
-          <Icon as={Plus} size={16} />
-          <Text>Nouvelle conversation</Text>
-        </Button>
+        {/* Une conversation naît personnelle : dans un espace d'équipe, on
+            créera un groupe (lot 3). */}
+        {activeWorkspaceId ? null : (
+          <Button
+            variant="outline"
+            onPress={() => go("/chat")}
+            accessibilityLabel="Démarrer une nouvelle conversation"
+            className="justify-start gap-2"
+          >
+            <Icon as={Plus} size={16} />
+            <Text>Nouvelle conversation</Text>
+          </Button>
+        )}
       </View>
 
-      <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
-        {/* L'en-tête fait office de zone racine : y déposer un dossier le sort
+      {activeWorkspaceId ? (
+        <WorkspaceSidebarBody workspaceId={activeWorkspaceId} pathname={pathname} onNavigate={go} />
+      ) : (
+        <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
+          {/* L'en-tête fait office de zone racine : y déposer un dossier le sort
             de son parent. Sans elle, le geste serait à sens unique — on saurait
             ranger un dossier, jamais l'en ressortir. */}
-        <View ref={rootDropRef} className={cx("rounded-md", isOverRoot)}>
-          <SectionLabel action={{ label: "Créer un dossier", onPress: createRootFolder }}>
-            Dossiers
-          </SectionLabel>
-        </View>
+          <View ref={rootDropRef} className={cx("rounded-md", isOverRoot)}>
+            <SectionLabel action={{ label: "Créer un dossier", onPress: createRootFolder }}>
+              Dossiers
+            </SectionLabel>
+          </View>
 
-        {moveError ? <Text className="text-destructive px-2 py-1 text-xs">{moveError}</Text> : null}
+          {moveError ? (
+            <Text className="text-destructive px-2 py-1 text-xs">{moveError}</Text>
+          ) : null}
 
-        {extractError ? (
-          <Text className="text-destructive px-2 py-1 text-xs">{extractError}</Text>
-        ) : null}
+          {extractError ? (
+            <Text className="text-destructive px-2 py-1 text-xs">{extractError}</Text>
+          ) : null}
 
-        {/* Message fixe, et non `error.message` : une erreur brute de fetch ou
+          {/* Message fixe, et non `error.message` : une erreur brute de fetch ou
             du serveur peut porter des fragments de requête, donc des données
             de l'utilisateur. */}
-        {error ? (
-          <Text className="px-2 py-1 text-xs text-destructive">
-            Dossiers indisponibles pour le moment.
-          </Text>
-        ) : null}
-
-        {!error && !isLoading && groups.length === 0 && naming === null ? (
-          <Button variant="ghost" onPress={createRootFolder} className="justify-start gap-2 px-2">
-            <Icon as={Plus} size={14} className="text-muted-foreground" />
-            <Text className="text-xs font-normal text-muted-foreground">
-              Créer un premier dossier
+          {error ? (
+            <Text className="px-2 py-1 text-xs text-destructive">
+              Dossiers indisponibles pour le moment.
             </Text>
-          </Button>
-        ) : null}
+          ) : null}
 
-        {groups.map((group) => (
-          <FolderGroup
-            key={group.folder.id}
-            group={group}
-            depth={1}
-            pathname={pathname}
-            naming={naming}
-            renamedConversation={renaming}
-            onOpen={go}
-            onMenu={setMenuTarget}
-            onCloseNaming={() => setNaming(null)}
-            onNewConversation={(folderId) => go(`/chat?folderId=${folderId}`)}
-            onConversationMenu={setConversationMenu}
-            onCloseRenaming={() => setRenaming(null)}
-            onDropConversation={dropOnFolder}
-            onDropFolder={moveFolder}
-          />
-        ))}
+          {!error && !isLoading && groups.length === 0 && naming === null ? (
+            <Button variant="ghost" onPress={createRootFolder} className="justify-start gap-2 px-2">
+              <Icon as={Plus} size={14} className="text-muted-foreground" />
+              <Text className="text-xs font-normal text-muted-foreground">
+                Créer un premier dossier
+              </Text>
+            </Button>
+          ) : null}
 
-        {naming?.kind === "create" && naming.parentId === null ? (
-          <FolderNameRow target={naming} onDone={() => setNaming(null)} />
-        ) : null}
+          {groups.map((group) => (
+            <FolderGroup
+              key={group.folder.id}
+              group={group}
+              depth={1}
+              pathname={pathname}
+              naming={naming}
+              renamedConversation={renaming}
+              onOpen={go}
+              onMenu={setMenuTarget}
+              onCloseNaming={() => setNaming(null)}
+              onNewConversation={(folderId) => go(`/chat?folderId=${folderId}`)}
+              onConversationMenu={setConversationMenu}
+              onCloseRenaming={() => setRenaming(null)}
+              onDropConversation={dropOnFolder}
+              onDropFolder={moveFolder}
+            />
+          ))}
 
-        {/* Discussions et tâches : toutes les conversations à plat, y compris
+          {naming?.kind === "create" && naming.parentId === null ? (
+            <FolderNameRow target={naming} onDone={() => setNaming(null)} />
+          ) : null}
+
+          {/* Discussions et tâches : toutes les conversations à plat, y compris
             celles déjà rangées dans un dossier. Ce n'est pas une duplication :
             la même conversation reste visible depuis son dossier, ci-dessus, et
             depuis cette vue chronologique (§5.2, A.1). Les conversations non
             rangées, elles, n'apparaissent plus qu'ici — une section « Sans
             dossier » à part aurait fait doublon avec cette liste, qui les
             contient déjà. */}
-        <SectionLabel>Discussions et tâches</SectionLabel>
+          <SectionLabel>Discussions et tâches</SectionLabel>
 
-        {all.map((conversation) =>
-          renaming?.id === conversation.id ? (
-            <ConversationNameRow
-              key={conversation.id}
-              conversation={conversation}
-              onDone={() => setRenaming(null)}
-            />
-          ) : (
-            <ConversationRow
-              key={conversation.id}
-              conversation={conversation}
-              pathname={pathname}
-              onOpen={go}
-              onMenu={setConversationMenu}
-            />
-          ),
-        )}
-      </ScrollView>
+          {all.map((conversation) =>
+            renaming?.id === conversation.id ? (
+              <ConversationNameRow
+                key={conversation.id}
+                conversation={conversation}
+                onDone={() => setRenaming(null)}
+              />
+            ) : (
+              <ConversationRow
+                key={conversation.id}
+                conversation={conversation}
+                pathname={pathname}
+                onOpen={go}
+                onMenu={setConversationMenu}
+              />
+            ),
+          )}
+        </ScrollView>
+      )}
 
       <Separator />
 
@@ -1031,7 +1047,10 @@ function UnreadBadge({ count, pendingQuestion }: { count: number; pendingQuestio
   if (count === 0 && !pendingQuestion) return null;
 
   return (
-    <View className="min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5" style={{ height: 18 }}>
+    <View
+      className="min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5"
+      style={{ height: 18 }}
+    >
       <Text className="text-[10px] font-semibold leading-none text-primary-foreground">
         {count > 0 ? count : "?"}
       </Text>
