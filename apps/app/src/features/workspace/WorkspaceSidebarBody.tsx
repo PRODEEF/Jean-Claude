@@ -95,17 +95,10 @@ export function WorkspaceSidebarBody({
         onNewList={(folderId) => setListDialog({ kind: "create", workspaceId, folderId })}
       />
 
-      {/* Le « + » n'existe pas dans l'espace personnel, où une liste naît d'une
-          conversation ou d'un dossier. Il reste ici : sans lui, une liste
-          partagée n'aurait plus aucun point d'entrée. */}
-      <SectionLabel
-        action={{
-          label: "Créer une liste partagée",
-          onPress: () => setListDialog({ kind: "create", workspaceId }),
-        }}
-      >
-        Conversations et tâches
-      </SectionLabel>
+      {/* Pas de « + », comme dans l'espace personnel : une liste partagée naît
+          d'un dossier (« Nouvelle todoliste ») ou d'une proposition de
+          Jean-Claude dans une conversation. */}
+      <SectionLabel>Conversations et tâches</SectionLabel>
 
       {groups.error || lists.error ? (
         <Text className="px-2 py-1 text-xs text-destructive">

@@ -530,10 +530,10 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
   ne dépendent pas de l'espace et passent au-dessus.
 - **Même structure dans les deux espaces** : Dossiers, puis « Conversations et
   tâches » (conversations et listes à plat). Rangées, retraits et pastilles
-  partagés via `features/navigation/SidebarSection.tsx`. Écart assumé : un
-  « + » reste sur « Conversations et tâches » en espace collaboratif, seul
-  point d'entrée d'une liste partagée. Dans l'espace personnel, elle naît d'une
-  conversation ou d'un dossier.
+  partagés via `features/navigation/SidebarSection.tsx`. Le « + » de « Conversations et
+  tâches » en espace collaboratif a été retiré le 30 septembre (demande de
+  Clarisse) : comme en personnel, une liste partagée naît d'un dossier ou
+  d'une proposition de Jean-Claude.
 - **L'espace actif est mémorisé** (`use-active-workspace.ts`), en plus de
   l'adresse : ouvrir le canal, le calendrier ou les réglages depuis un espace
   collaboratif ne ramène plus au personnel. Il ne change que par le sélecteur
