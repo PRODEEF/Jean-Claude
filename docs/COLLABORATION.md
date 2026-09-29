@@ -540,9 +540,9 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
   ou une adresse `/workspace/:id`. Mémoire en mémoire vive seulement : un
   rechargement retombe sur l'adresse. Remplace « l'espace actif se lit dans
   l'adresse » du lot 5.
-- **Membres et invitations** : plus de rangée dans la barre, un bouton sur la
-  ligne de l'espace ouvert dans la fenêtre des espaces.
-- **Fenêtre des espaces** : « Espace collaboratif · x membre(s) » pour tous
+- **Membres et invitations** : bouton entre le sélecteur d'espace et
+  « Nouvelle conversation », en espace collaboratif seulement.
+- **Fenêtre « Mes espaces »** : « Espace collaboratif · x membre(s) » pour tous
   (`Workspace.memberCount`, agrégat PostgREST côté API).
 
 **Vérification.** Typecheck et tests API passent. **Non vérifié à l'écran** :

@@ -104,7 +104,7 @@ function SpaceList({
     <Modal
       open={open}
       onClose={onClose}
-      title="Espaces"
+      title="Mes espaces"
       error={
         workspaces.error || invitations.error
           ? "Les espaces n'ont pas pu être chargés. Réessayez dans un instant."
@@ -132,7 +132,6 @@ function SpaceList({
             workspace={workspace}
             active={workspace.id === activeWorkspaceId}
             onPress={() => onNavigate(`/workspace/${workspace.id}`)}
-            onManageMembers={() => onNavigate(`/workspace/${workspace.id}`)}
           />
         ))}
       </View>
@@ -183,13 +182,10 @@ function SpaceRow({
   workspace,
   active,
   onPress,
-  onManageMembers,
 }: {
   workspace: Workspace | null;
   active: boolean;
   onPress: () => void;
-  /** Absent pour l'espace personnel, qui n'a pas de membres. */
-  onManageMembers?: () => void;
 }) {
   const name = workspace?.name ?? "Personnel";
 
@@ -215,21 +211,6 @@ function SpaceRow({
         </View>
         {active ? <Icon as={Check} size={16} className="text-foreground" /> : null}
       </Pressable>
-
-      {/* Frère du Pressable et non son enfant : un bouton dans un bouton n'est
-          pas un DOM valide sur le web. Seulement pour l'espace ouvert, comme le
-          reste de la barre le montre. */}
-      {workspace && active && onManageMembers ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={onManageMembers}
-          accessibilityLabel={`Membres et invitations de ${name}`}
-          className="mr-1 size-8"
-        >
-          <Icon as={Users} size={16} className="text-muted-foreground" />
-        </Button>
-      ) : null}
     </View>
   );
 }

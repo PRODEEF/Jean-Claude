@@ -12,6 +12,7 @@ import {
   MessageCircle,
   MoreHorizontal,
   Plus,
+  Users,
 } from "lucide-react-native";
 import { ApiError } from "@jc/api-client";
 import type { Conversation, Folder, FolderTreeNode, TaskList } from "@jc/domain";
@@ -240,6 +241,21 @@ export function AppSidebar({
         {/* Sous le canal, hors de la zone qui défile : le canal et le signalement
             restent au-dessus de l'espace, car ils ne dépendent pas de lui. */}
         <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onNavigate={go} />
+
+        {activeWorkspaceId ? (
+          <Button
+            variant="ghost"
+            onPress={() => go(`/workspace/${activeWorkspaceId}`)}
+            accessibilityLabel="Membres et invitations"
+            className={selected(
+              "justify-start gap-3 px-2",
+              pathname === `/workspace/${activeWorkspaceId}`,
+            )}
+          >
+            <Icon as={Users} size={16} className="text-muted-foreground" />
+            <Text className="text-sm font-normal text-foreground">Membres et invitations</Text>
+          </Button>
+        ) : null}
 
         {/* Même bouton dans les deux espaces : dans un espace collaboratif, il
             ouvre la création d'une conversation partagée. */}
