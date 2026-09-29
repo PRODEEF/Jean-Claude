@@ -17,25 +17,26 @@ import type {
 } from "./feedback.repository.interface.js";
 
 /**
- * Consigne de la synthèse d'un testeur.
+ * Consigne de la synthèse des nouveaux retours.
  *
- * Elle s'adresse à l'équipe, pas au testeur : le registre est celui d'un
+ * Elle s'adresse à l'équipe, pas aux testeurs : le registre est celui d'un
  * compte rendu, et le modèle ne doit rien ajouter que les retours ne disent.
  */
 const ANALYSIS_PROMPT = [
   "Tu aides l'équipe qui développe Jean-Claude, un assistant d'organisation",
-  "personnelle en bêta, à exploiter les retours d'un de ses testeurs. Tu reçois",
-  "ses retours (bugs, idées, réclamations) avec leur statut de traitement, et",
-  "ses notations des réponses de l'assistant.",
+  "personnelle en bêta, à traiter les nouveaux retours de ses testeurs : bugs,",
+  "idées et réclamations que personne n'a encore pris en compte. Chaque testeur",
+  "est désigné par un numéro.",
   "",
   "Rédige en français une synthèse courte, en Markdown, avec ces sections —",
   "omets celles qui seraient vides :",
-  "## En bref — deux phrases sur l'expérience de ce testeur.",
-  "## À traiter en priorité — les problèmes encore ouverts (statut « nouveau »",
-  "ou « pris en compte »), du plus bloquant au moins bloquant. Regroupe ceux qui",
-  "décrivent la même chose, et cite l'écran quand il éclaire le problème.",
-  "## Idées et attentes — ce qu'il souhaite voir évoluer.",
-  "## Déjà traité — une ligne, seulement si des retours sont traités ou écartés.",
+  "## En bref — deux phrases sur ce qui ressort.",
+  "## Problèmes à traiter en priorité — du plus bloquant au moins bloquant.",
+  "Regroupe les retours qui décrivent la même chose, indique combien de testeurs",
+  "sont concernés, et cite l'écran quand il éclaire le problème.",
+  "## Idées et attentes — ce que les testeurs souhaitent voir évoluer, regroupé",
+  "de même.",
+  "## Réclamations — les mécontentements qui ne relèvent ni d'un bug ni d'une idée.",
   "",
   "Ne t'appuie que sur les retours fournis : n'invente ni cause technique ni",
   "détail qu'ils ne donnent pas.",
@@ -45,13 +46,6 @@ const CATEGORY_LABELS: Record<Feedback["category"], string> = {
   bug: "Bug",
   idea: "Idée",
   other: "Réclamation ou autre",
-};
-
-const STATUS_LABELS: Record<FeedbackStatus, string> = {
-  new: "nouveau",
-  acknowledged: "pris en compte",
-  resolved: "traité",
-  dismissed: "écarté",
 };
 
 export class FeedbackService {
@@ -88,8 +82,8 @@ export class FeedbackService {
     await this.requireAdmin(accessToken);
 
     const [feedback, ratings, authors] = await Promise.all([
-      this.feedback.listFeedback(null, accessToken),
-      this.feedback.listRatings(null, accessToken),
+      this.feedback.listFeedback(accessToken),
+      this.feedback.listRatings(accessToken),
       this.feedback.listAuthors(accessToken),
     ]);
 
@@ -105,27 +99,28 @@ export class FeedbackService {
   }
 
   /**
-   * Synthèse des retours d'un testeur par le modèle, à la demande.
+   * Synthèse par le modèle des retours encore au statut « nouveau », tous
+   * testeurs confondus — ce qui attend que l'équipe s'en saisisse.
    *
    * Non conservée : elle se relit en quelques secondes, et une synthèse
-   * stockée vieillirait dès le retour suivant.
+   * stockée vieillirait dès le retour suivant. Les notations n'y entrent pas :
+   * elles n'ont pas de statut, rien n'y distingue le neuf du déjà vu.
    */
-  async analyzeTester(testerId: string, accessToken: string): Promise<FeedbackAnalysis> {
+  async analyzeNew(accessToken: string): Promise<FeedbackAnalysis> {
     await this.requireAdmin(accessToken);
 
-    const [feedback, ratings] = await Promise.all([
-      this.feedback.listFeedback(testerId, accessToken),
-      this.feedback.listRatings(testerId, accessToken),
-    ]);
+    const fresh = (await this.feedback.listFeedback(accessToken)).filter(
+      (item) => item.status === "new",
+    );
 
-    if (feedback.length === 0 && ratings.length === 0) {
-      throw httpError(404, "Aucun retour pour ce testeur.");
+    if (fresh.length === 0) {
+      throw httpError(404, "Aucun nouveau retour à analyser.");
     }
 
     let summary = "";
     const stream = this.llm.stream({
       system: ANALYSIS_PROMPT,
-      messages: [{ role: "user", content: describeForAnalysis(feedback, ratings) }],
+      messages: [{ role: "user", content: describeForAnalysis(fresh) }],
     });
 
     for await (const chunk of stream) {
@@ -187,38 +182,24 @@ function groupByTester(
 }
 
 /**
- * Retours d'un testeur, mis en texte pour le modèle.
+ * Nouveaux retours, mis en texte pour le modèle.
  *
- * Les notations sans commentaire ne disent rien d'autre que leur sens : elles
- * sont comptées plutôt qu'énumérées.
+ * Chaque testeur y est un numéro, dans l'ordre d'apparition : assez pour
+ * compter qui est concerné par un même problème, sans remettre au modèle ni
+ * nom ni adresse (§8).
  */
-function describeForAnalysis(feedback: AuthoredFeedback[], ratings: AuthoredRating[]): string {
-  const lines: string[] = [];
+function describeForAnalysis(feedback: AuthoredFeedback[]): string {
+  const testers = new Map<string, number>();
 
-  if (feedback.length > 0) {
-    lines.push("Retours :");
-    for (const item of feedback) {
-      lines.push(
-        `- [${CATEGORY_LABELS[item.category]}, ${STATUS_LABELS[item.status]}, ` +
-          `${item.createdAt.slice(0, 10)}, ${item.platform}, écran ${item.screen}] ${item.content}`,
+  return feedback
+    .map((item) => {
+      const tester = testers.get(item.userId) ?? testers.size + 1;
+      testers.set(item.userId, tester);
+
+      return (
+        `- [Testeur ${tester}, ${CATEGORY_LABELS[item.category]}, ` +
+        `${item.createdAt.slice(0, 10)}, ${item.platform}, écran ${item.screen}] ${item.content}`
       );
-    }
-  }
-
-  if (ratings.length > 0) {
-    const up = ratings.filter((rating) => rating.rating === "up").length;
-    const down = ratings.length - up;
-    lines.push(
-      "",
-      `Notations des réponses de l'assistant : ${up} pouce(s) haut, ${down} pouce(s) bas.`,
-    );
-
-    for (const rating of ratings) {
-      if (rating.comment === null) continue;
-      const sense = rating.rating === "up" ? "Pouce haut" : "Pouce bas";
-      lines.push(`- [${sense}, ${rating.createdAt.slice(0, 10)}] ${rating.comment}`);
-    }
-  }
-
-  return lines.join("\n").trim();
+    })
+    .join("\n");
 }

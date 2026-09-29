@@ -112,10 +112,9 @@ export class JeanClaudeClient {
           body: { status },
         }),
 
-      analyze: (testerId: string) =>
-        this.http.request<FeedbackAnalysis>(`/feedback/review/testers/${testerId}/analysis`, {
-          method: "POST",
-        }),
+      /** Synthèse des retours encore au statut « nouveau », tous testeurs confondus. */
+      analyzeNew: () =>
+        this.http.request<FeedbackAnalysis>("/feedback/review/analysis", { method: "POST" }),
     },
   };
 

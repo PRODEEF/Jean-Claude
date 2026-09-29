@@ -18,7 +18,7 @@ import { Select } from "@/shared/ui/select";
 import { Separator } from "@/shared/ui/separator";
 import { Text } from "@/shared/ui/text";
 import {
-  useAnalyzeTester,
+  useAnalyzeNewFeedback,
   useFeedbackReview,
   useUpdateFeedbackStatus,
 } from "./hooks/use-feedback-review";
@@ -48,13 +48,46 @@ export function FeedbackReviewScreen() {
   const { data: profile } = useProfile();
   const isAdmin = profile?.isAdmin === true;
   const review = useFeedbackReview(isAdmin);
+  const analyze = useAnalyzeNewFeedback();
 
   if (profile && !isAdmin) return <Redirect href="/(app)/chat" />;
 
+  const fresh =
+    review.data?.reduce(
+      (count, tester) => count + tester.feedback.filter((item) => item.status === "new").length,
+      0,
+    ) ?? 0;
+
   return (
-    <ScreenShell title="Retours des testeurs" maxWidth={READING_MAX_WIDTH}>
+    <ScreenShell
+      title="Retours des testeurs"
+      maxWidth={READING_MAX_WIDTH}
+      action={
+        <Button
+          variant="outline"
+          onPress={() => analyze.mutate()}
+          disabled={analyze.isPending || fresh === 0}
+          accessibilityLabel="Analyser les nouveaux retours de tous les testeurs"
+        >
+          <Text>{analyze.isPending ? "Analyse en cours…" : "Analyser"}</Text>
+        </Button>
+      }
+    >
       <View className="gap-6 pb-8">
-        {review.isLoading ? <ActivityIndicator color={palette.accent} /> : null}
+        {!profile || review.isLoading ? <ActivityIndicator color={palette.accent} /> : null}
+
+        {analyze.data ? (
+          <View className="gap-2 rounded-xl border border-border bg-muted px-4 py-3">
+            <Text className="text-xs text-muted-foreground">
+              Synthèse des retours au statut « Nouveau », tous testeurs confondus
+            </Text>
+            <Markdown>{analyze.data.summary}</Markdown>
+          </View>
+        ) : null}
+
+        {analyze.error ? (
+          <Text className="text-sm text-destructive">{analysisErrorMessage(analyze.error)}</Text>
+        ) : null}
 
         {/* Message fixe, et non `error.message` : une erreur de fetch peut
             porter des fragments de requête. */}
@@ -77,7 +110,6 @@ export function FeedbackReviewScreen() {
 }
 
 function TesterCard({ tester }: { tester: TesterFeedback }) {
-  const analyze = useAnalyzeTester();
   const { author } = tester;
   const name = author.displayName ?? author.email ?? "Compte supprimé";
   const open = tester.feedback.filter(
@@ -86,40 +118,20 @@ function TesterCard({ tester }: { tester: TesterFeedback }) {
 
   return (
     <View className="gap-3">
-      <View className="flex-row flex-wrap items-center gap-3 px-1">
-        <View className="min-w-0 flex-1 gap-0.5">
-          <Text className="text-base font-semibold" role="heading" numberOfLines={1}>
-            {name}
-          </Text>
-          <Text className="text-sm text-muted-foreground">
-            {[
-              author.displayName ? author.email : null,
-              `${tester.feedback.length} retour(s), dont ${open} à traiter`,
-              `actif le ${formatDate(tester.lastActivityAt)}`,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </Text>
-        </View>
-        <Button
-          variant="outline"
-          onPress={() => analyze.mutate(author.id)}
-          disabled={analyze.isPending}
-          accessibilityLabel={`Analyser les retours de ${name}`}
-        >
-          <Text>{analyze.isPending ? "Analyse en cours…" : "Analyser"}</Text>
-        </Button>
+      <View className="min-w-0 gap-0.5 px-1">
+        <Text className="text-base font-semibold" role="heading" numberOfLines={1}>
+          {name}
+        </Text>
+        <Text className="text-sm text-muted-foreground">
+          {[
+            author.displayName ? author.email : null,
+            `${tester.feedback.length} retour(s), dont ${open} à traiter`,
+            `actif le ${formatDate(tester.lastActivityAt)}`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </Text>
       </View>
-
-      {analyze.data ? (
-        <View className="rounded-xl border border-border bg-muted px-4 py-3">
-          <Markdown>{analyze.data.summary}</Markdown>
-        </View>
-      ) : null}
-
-      {analyze.error ? (
-        <Text className="px-1 text-sm text-destructive">{analysisErrorMessage(analyze.error)}</Text>
-      ) : null}
 
       <View className="overflow-hidden rounded-xl border border-border bg-card">
         {tester.feedback.map((item, index) => (

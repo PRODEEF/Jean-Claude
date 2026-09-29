@@ -230,46 +230,73 @@ describe("FeedbackService", () => {
     });
   });
 
-  describe("analyzeTester", () => {
-    it("remet au modèle les retours du testeur et rend sa synthèse", async () => {
+  describe("analyzeNew", () => {
+    it("remet au modèle les seuls nouveaux retours, tous testeurs confondus", async () => {
       const llm = makeLlm();
       const repo = makeRepository({
         listFeedback: jest.fn().mockResolvedValue([
+          authored(LEA, {
+            id: "fb-3",
+            content: "Le bouton d'envoi reste grisé après une erreur réseau.",
+            platform: "ios",
+          }),
           authored(NICOLAS, {
+            id: "fb-2",
             category: "idea",
-            status: "acknowledged",
             content: "Pouvoir glisser une tâche d'un jour à l'autre.",
             screen: "/calendar",
           }),
+          authored(NICOLAS, { id: "fb-1", status: "resolved", content: "Contraste trop fort." }),
+          authored(LEA, { id: "fb-0", status: "acknowledged", content: "Réponses trop longues." }),
         ]),
-        listRatings: jest
-          .fn()
-          .mockResolvedValue([
-            authoredRating(NICOLAS, { rating: "down", comment: "Réponse trop longue." }),
-            authoredRating(NICOLAS, { id: "mr-2", rating: "up" }),
-          ]),
       });
 
-      const analysis = await makeService(repo, llm).analyzeTester(NICOLAS, TOKEN);
+      const analysis = await makeService(repo, llm).analyzeNew(TOKEN);
 
-      expect(repo.listFeedback).toHaveBeenCalledWith(NICOLAS, TOKEN);
-      expect(repo.listRatings).toHaveBeenCalledWith(NICOLAS, TOKEN);
       expect(analysis).toEqual({ summary: "## En bref\nUn testeur assidu." });
 
       const request = (llm.stream as jest.Mock).mock.calls[0][0];
       const content = request.messages[0].content as string;
-      expect(content).toContain("[Idée, pris en compte, 2026-09-04, web, écran /calendar]");
-      expect(content).toContain("Pouvoir glisser une tâche d'un jour à l'autre.");
-      expect(content).toContain("1 pouce(s) haut, 1 pouce(s) bas");
-      expect(content).toContain("[Pouce bas, 2026-09-04] Réponse trop longue.");
+      expect(content).toBe(
+        "- [Testeur 1, Bug, 2026-09-04, ios, écran /assistant] " +
+          "Le bouton d'envoi reste grisé après une erreur réseau.\n" +
+          "- [Testeur 2, Idée, 2026-09-04, web, écran /calendar] " +
+          "Pouvoir glisser une tâche d'un jour à l'autre.",
+      );
     });
 
-    it("n'appelle pas le modèle pour un testeur sans retour", async () => {
+    it("ne remet au modèle ni nom, ni adresse, ni notation", async () => {
       const llm = makeLlm();
+      const repo = makeRepository({
+        listFeedback: jest.fn().mockResolvedValue([authored(NICOLAS)]),
+        listRatings: jest
+          .fn()
+          .mockResolvedValue([authoredRating(NICOLAS, { comment: "Réponse trop longue." })]),
+        listAuthors: jest
+          .fn()
+          .mockResolvedValue([
+            { id: NICOLAS, displayName: "Nicolas", email: "nicolas@example.fr" },
+          ]),
+      });
 
-      await expect(
-        makeService(makeRepository(), llm).analyzeTester(NICOLAS, TOKEN),
-      ).rejects.toMatchObject({ status: 404 });
+      await makeService(repo, llm).analyzeNew(TOKEN);
+
+      const request = (llm.stream as jest.Mock).mock.calls[0][0];
+      const content = request.messages[0].content as string;
+      expect(content).not.toContain("Nicolas");
+      expect(content).not.toContain("nicolas@example.fr");
+      expect(content).not.toContain("Réponse trop longue.");
+    });
+
+    it("n'appelle pas le modèle quand aucun retour n'est nouveau", async () => {
+      const llm = makeLlm();
+      const repo = makeRepository({
+        listFeedback: jest.fn().mockResolvedValue([authored(NICOLAS, { status: "resolved" })]),
+      });
+
+      await expect(makeService(repo, llm).analyzeNew(TOKEN)).rejects.toMatchObject({
+        status: 404,
+      });
       expect(llm.stream).not.toHaveBeenCalled();
     });
 
@@ -278,18 +305,19 @@ describe("FeedbackService", () => {
         listFeedback: jest.fn().mockResolvedValue([authored(NICOLAS)]),
       });
 
-      await expect(
-        makeService(repo, makeLlm(["  "])).analyzeTester(NICOLAS, TOKEN),
-      ).rejects.toMatchObject({ status: 503 });
+      await expect(makeService(repo, makeLlm(["  "])).analyzeNew(TOKEN)).rejects.toMatchObject({
+        status: 503,
+      });
     });
 
-    it("refuse l'analyse à qui n'est pas de l'équipe, sans appeler le modèle", async () => {
+    it("refuse l'analyse à qui n'est pas de l'équipe, sans rien lire ni appeler le modèle", async () => {
       const llm = makeLlm();
       const repo = makeRepository({ isAdmin: jest.fn().mockResolvedValue(false) });
 
-      await expect(makeService(repo, llm).analyzeTester(NICOLAS, TOKEN)).rejects.toMatchObject({
+      await expect(makeService(repo, llm).analyzeNew(TOKEN)).rejects.toMatchObject({
         status: 403,
       });
+      expect(repo.listFeedback).not.toHaveBeenCalled();
       expect(llm.stream).not.toHaveBeenCalled();
     });
   });

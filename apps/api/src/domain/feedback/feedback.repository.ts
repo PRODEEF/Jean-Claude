@@ -146,16 +146,13 @@ export const feedbackRepository: IFeedbackRepository = {
     return data === true;
   },
 
-  async listFeedback(testerId, accessToken) {
-    let query = forUser(accessToken)
+  async listFeedback(accessToken) {
+    const { data, error } = await forUser(accessToken)
       .from("feedback")
       .select(`user_id, ${FEEDBACK_COLUMNS}`)
       .order("created_at", { ascending: false })
       .limit(REVIEW_LIMIT);
 
-    if (testerId !== null) query = query.eq("user_id", testerId);
-
-    const { data, error } = await query;
     if (error) throw new Error(error.message);
 
     return (data as unknown as (FeedbackRow & { user_id: string })[]).map(
@@ -163,16 +160,13 @@ export const feedbackRepository: IFeedbackRepository = {
     );
   },
 
-  async listRatings(testerId, accessToken) {
-    let query = forUser(accessToken)
+  async listRatings(accessToken) {
+    const { data, error } = await forUser(accessToken)
       .from("message_ratings")
       .select(`user_id, ${MESSAGE_RATING_COLUMNS}`)
       .order("created_at", { ascending: false })
       .limit(REVIEW_LIMIT);
 
-    if (testerId !== null) query = query.eq("user_id", testerId);
-
-    const { data, error } = await query;
     if (error) throw new Error(error.message);
 
     return (data as unknown as (MessageRatingRow & { user_id: string })[]).map(

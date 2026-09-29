@@ -23,13 +23,13 @@ export interface IFeedbackRepository {
   /** L'appelant fait-il partie de l'équipe habilitée à lire les retours ? */
   isAdmin(accessToken: string): Promise<boolean>;
   /**
-   * Retours visibles de l'appelant, du plus récent au plus ancien — ceux de
-   * tous les testeurs pour un admin, par la RLS. `testerId` restreint à un
-   * seul testeur, `null` les rend tous.
+   * Retours de tous les testeurs, du plus récent au plus ancien — pour un
+   * admin seulement : la RLS n'en rend aucun à un autre compte, pas même les
+   * siens.
    */
-  listFeedback(testerId: string | null, accessToken: string): Promise<AuthoredFeedback[]>;
+  listFeedback(accessToken: string): Promise<AuthoredFeedback[]>;
   /** Même lecture que `listFeedback`, pour les notations de réponses. */
-  listRatings(testerId: string | null, accessToken: string): Promise<AuthoredRating[]>;
+  listRatings(accessToken: string): Promise<AuthoredRating[]>;
   /** Auteurs d'au moins un retour ou une notation — vide pour qui n'est pas admin. */
   listAuthors(accessToken: string): Promise<FeedbackAuthor[]>;
   /** `null` quand le retour n'existe pas, ou n'est pas visible de l'appelant. */
