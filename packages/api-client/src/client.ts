@@ -51,6 +51,7 @@ import {
   type Group,
   type GroupListSuggestion,
   type GroupMessage,
+  type SendGroupMessage,
   type UpdateGroup,
   type CreateWorkspaceTask,
   type CreateWorkspaceTaskList,
@@ -252,10 +253,10 @@ export class JeanClaudeClient {
     messages: (id: string, params: { cursor?: string; limit?: number } = {}) =>
       this.http.request<Paginated<GroupMessage>>(`/groups/${id}/messages`, { query: params }),
 
-    send: (id: string, content: string) =>
+    send: (id: string, input: SendGroupMessage) =>
       this.http.request<GroupMessage>(`/groups/${id}/messages`, {
         method: "POST",
-        body: { content },
+        body: input,
       }),
 
     markRead: (id: string) => this.http.request<Group>(`/groups/${id}/read`, { method: "POST" }),

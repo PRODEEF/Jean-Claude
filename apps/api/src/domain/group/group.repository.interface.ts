@@ -41,10 +41,18 @@ export interface IGroupRepository {
   ): Promise<Paginated<GroupMessage>>;
   /** Identifiant du dernier message du fil, `null` pour un fil vide. */
   findLatestMessageId(groupId: string, accessToken: string): Promise<string | null>;
+  /** `null` si le message n'existe pas dans ce groupe. */
+  findMessage(
+    groupId: string,
+    messageId: string,
+    accessToken: string,
+  ): Promise<GroupMessage | null>;
+  /** `replyToId` : message du même fil auquel celui-ci répond (lot 6). */
   appendMessage(
     groupId: string,
     userId: string,
     content: string,
+    replyToId: string | null,
     accessToken: string,
   ): Promise<GroupMessage>;
   /**

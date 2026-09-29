@@ -41,6 +41,7 @@ function makeMessage(overrides: Partial<GroupMessage> = {}): GroupMessage {
     authorId: "alice",
     role: "user",
     content: "Bonjour",
+    replyTo: null,
     createdAt: "2026-09-29T08:00:00.000Z",
     ...overrides,
   };
@@ -63,6 +64,7 @@ function makeRepository(overrides: Partial<IGroupRepository> = {}): IGroupReposi
     setFolders: jest.fn().mockResolvedValue(undefined),
     findMessages: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
     findLatestMessageId: jest.fn().mockResolvedValue(null),
+    findMessage: jest.fn().mockResolvedValue(null),
     appendMessage: jest.fn().mockResolvedValue(makeMessage()),
     appendAssistantMessage: jest.fn().mockResolvedValue(makeMessage({ role: "assistant" })),
     findAssistantModel: jest.fn().mockResolvedValue(null),
@@ -370,7 +372,7 @@ describe("GroupService", () => {
       );
 
       expect(message.content).toBe("Bonjour");
-      expect(repo.appendMessage).toHaveBeenCalledWith("group-1", "alice", "Bonjour", TOKEN);
+      expect(repo.appendMessage).toHaveBeenCalledWith("group-1", "alice", "Bonjour", null, TOKEN);
       expect(deps.runAfterResponse).toHaveBeenCalledTimes(1);
     });
 
@@ -399,6 +401,74 @@ describe("GroupService", () => {
       );
 
       expect(deps.runAfterResponse).toHaveBeenCalledTimes(1);
+    });
+
+    it("rattache la réponse au message cité du même fil", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeGroup()),
+        findMessage: jest.fn().mockResolvedValue(makeMessage({ id: "msg-3", authorId: "bruno" })),
+      });
+
+      await service(repo).send(
+        "group-1",
+        "alice",
+        { content: "D'accord", replyToId: "msg-3" },
+        TOKEN,
+      );
+
+      expect(repo.findMessage).toHaveBeenCalledWith("group-1", "msg-3", TOKEN);
+      expect(repo.appendMessage).toHaveBeenCalledWith(
+        "group-1",
+        "alice",
+        "D'accord",
+        "msg-3",
+        TOKEN,
+      );
+    });
+
+    it("refuse de citer un message absent de la conversation", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeGroup()) });
+
+      await expect(
+        service(repo).send("group-1", "alice", { content: "Oui", replyToId: "ailleurs" }, TOKEN),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.appendMessage).not.toHaveBeenCalled();
+    });
+
+    it("appelle Jean-Claude quand on répond à l'un de ses messages, même en silence", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeGroup({ aiMuted: true })),
+        findMessage: jest
+          .fn()
+          .mockResolvedValue(makeMessage({ id: "msg-4", role: "assistant", authorId: "bruno" })),
+      });
+      const deps = makeDeps(makeLlm().llm);
+
+      await service(repo, deps).send(
+        "group-1",
+        "alice",
+        { content: "Tu peux préciser ?", replyToId: "msg-4" },
+        TOKEN,
+      );
+
+      expect(deps.runAfterResponse).toHaveBeenCalledTimes(1);
+    });
+
+    it("ne dérange pas Jean-Claude en silence pour une réponse à un membre", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeGroup({ aiMuted: true })),
+        findMessage: jest.fn().mockResolvedValue(makeMessage({ id: "msg-3", authorId: "bruno" })),
+      });
+      const deps = makeDeps(makeLlm().llm);
+
+      await service(repo, deps).send(
+        "group-1",
+        "alice",
+        { content: "D'accord", replyToId: "msg-3" },
+        TOKEN,
+      );
+
+      expect(deps.runAfterResponse).not.toHaveBeenCalled();
     });
 
     it("refuse d'écrire dans un groupe dont on n'est pas membre", async () => {
@@ -812,6 +882,44 @@ describe("describeThread", () => {
     );
 
     expect(thread).toBe("Membre 1 : Présente");
+  });
+
+  it("signale à quel message une réponse se rapporte, par un extrait", () => {
+    const thread = describeThread(
+      [
+        makeMessage({
+          authorId: "bruno",
+          content: "Oui, je m'en charge",
+          replyTo: {
+            id: "msg-1",
+            authorId: "alice",
+            role: "assistant",
+            content: "Qui   réserve\nla salle ?",
+          },
+        }),
+      ],
+      MEMBERS,
+    );
+
+    expect(thread).toBe(
+      "Bruno, en réponse à Jean-Claude (« Qui réserve la salle ? ») : Oui, je m'en charge",
+    );
+  });
+
+  it("tronque l'extrait d'un long message cité", () => {
+    const long = "a".repeat(120);
+    const thread = describeThread(
+      [
+        makeMessage({
+          authorId: "bruno",
+          content: "Vu",
+          replyTo: { id: "msg-1", authorId: "alice", role: "user", content: long },
+        }),
+      ],
+      MEMBERS,
+    );
+
+    expect(thread).toBe(`Bruno, en réponse à Alice (« ${"a".repeat(80)}… ») : Vu`);
   });
 
   it("signe « Ancien membre » un auteur parti de l'espace", () => {

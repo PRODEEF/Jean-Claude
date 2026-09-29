@@ -39,6 +39,15 @@ export type CreateGroup = z.infer<typeof createGroupSchema>;
 export const groupMessageRoleSchema = z.enum(["user", "assistant"]);
 export type GroupMessageRole = z.infer<typeof groupMessageRoleSchema>;
 
+/** Message cité par une réponse, tel que la bulle le rappelle. */
+export const quotedGroupMessageSchema = z.object({
+  id: uuidSchema,
+  authorId: uuidSchema,
+  role: groupMessageRoleSchema,
+  content: z.string(),
+});
+export type QuotedGroupMessage = z.infer<typeof quotedGroupMessageSchema>;
+
 export const groupMessageSchema = z.object({
   id: uuidSchema,
   groupId: uuidSchema,
@@ -49,12 +58,19 @@ export const groupMessageSchema = z.object({
   authorId: uuidSchema,
   role: groupMessageRoleSchema,
   content: z.string(),
+  /**
+   * Message auquel celui-ci répond (lot 6). Rendu avec la réponse : il peut
+   * être hors de la page chargée. `null` aussi quand il a été supprimé.
+   */
+  replyTo: quotedGroupMessageSchema.nullable(),
   createdAt: isoDateTimeSchema,
 });
 export type GroupMessage = z.infer<typeof groupMessageSchema>;
 
 export const sendGroupMessageSchema = z.object({
   content: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
+  /** Message du même fil auquel on répond. */
+  replyToId: uuidSchema.optional(),
 });
 export type SendGroupMessage = z.infer<typeof sendGroupMessageSchema>;
 

@@ -24,6 +24,8 @@ type MembershipRow = { unread_count: number; conversations: GroupRow | null };
 
 type MemberRow = { conversation_id: string; user_id: string };
 
+type QuotedMessageRow = { id: string; user_id: string; role: string; content: string };
+
 type GroupMessageRow = {
   id: string;
   conversation_id: string;
@@ -31,6 +33,7 @@ type GroupMessageRow = {
   role: string;
   content: string;
   created_at: string;
+  reply_to: QuotedMessageRow | null;
 };
 
 type SuggestionRow = {
@@ -79,6 +82,14 @@ function toMessage(row: GroupMessageRow): GroupMessage {
     authorId: row.user_id,
     role: row.role as GroupMessage["role"],
     content: row.content,
+    replyTo: row.reply_to
+      ? {
+          id: row.reply_to.id,
+          authorId: row.reply_to.user_id,
+          role: row.reply_to.role as GroupMessage["role"],
+          content: row.reply_to.content,
+        }
+      : null,
     createdAt: row.created_at,
   };
 }
@@ -87,7 +98,11 @@ function toMessage(row: GroupMessageRow): GroupMessage {
 // d'autres espaces avec un groupe `null` au lieu de les écarter.
 const MEMBERSHIP_COLUMNS =
   "unread_count, conversations!inner(id, workspace_id, title, ai_muted, last_message_at, created_at, conversation_folders(folder_id))";
-const MESSAGE_COLUMNS = "id, conversation_id, user_id, role, content, created_at";
+// Le message cité voyage avec la réponse : il peut être hors de la page
+// chargée. `!reply_to_id` désigne la clé à suivre, la table se référençant
+// elle-même.
+const MESSAGE_COLUMNS =
+  "id, conversation_id, user_id, role, content, created_at, reply_to:messages!reply_to_id(id, user_id, role, content)";
 
 export const groupRepository: IGroupRepository = {
   async findWorkspaceMembers(workspaceId, accessToken) {
@@ -275,13 +290,27 @@ export const groupRepository: IGroupRepository = {
     };
   },
 
-  appendMessage(groupId, userId, content, accessToken) {
+  async findMessage(groupId, messageId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("messages")
+      .select(MESSAGE_COLUMNS)
+      .eq("conversation_id", groupId)
+      .eq("id", messageId)
+      .in("role", ["user", "assistant"])
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return data ? toMessage(data as unknown as GroupMessageRow) : null;
+  },
+
+  appendMessage(groupId, userId, content, replyToId, accessToken) {
     return insertMessage(forUser(accessToken), {
       conversation_id: groupId,
       user_id: userId,
       role: "user",
       content,
       input_mode: "text",
+      reply_to_id: replyToId,
     });
   },
 
