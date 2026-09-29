@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowUp } from "lucide-react-native";
+import { ArrowUp, Bell, BellOff } from "lucide-react-native";
 import type { GroupMessage, WorkspaceMember } from "@jc/domain";
 import { useWorkspaceMembers } from "@/features/workspace/hooks/use-workspaces";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
@@ -20,13 +20,15 @@ import {
   useGroupMessages,
   useMarkGroupRead,
   useSendGroupMessage,
+  useSetGroupMuted,
 } from "./hooks/use-groups";
 
 /**
  * Fil d'une discussion de groupe.
  *
  * Volontairement plus simple que le fil personnel : ni flux de réponse, ni
- * suggestions, ni pièces jointes. Jean-Claude n'y parle pas encore (lot 4).
+ * suggestions, ni pièces jointes. Jean-Claude y répond comme un membre : sa
+ * réponse arrive par Realtime, après coup (docs/COLLABORATION.md, lot 4).
  */
 export function GroupScreen() {
   const { id: workspaceId, groupId } = useLocalSearchParams<{ id: string; groupId: string }>();
@@ -43,6 +45,8 @@ export function GroupScreen() {
   const members = useWorkspaceMembers(workspaceId);
   const markRead = useMarkGroupRead(groupId);
   const send = useSendGroupMessage(groupId);
+  const setMuted = useSetGroupMuted(groupId);
+  const muted = group.data?.aiMuted ?? false;
   const { typingUserIds, notifyTyping, clearTyping } = useGroupTyping(groupId);
   const [draft, setDraft] = useState("");
 
@@ -87,6 +91,31 @@ export function GroupScreen() {
       title={group.data?.title ?? ""}
       scrolls={false}
       onBack={compact ? () => router.back() : undefined}
+      action={
+        group.data ? (
+          // Réglage du groupe entier et non de l'appelant : c'est le groupe qui
+          // choisit si Jean-Claude intervient de lui-même.
+          <Button
+            variant="ghost"
+            onPress={() => setMuted.mutate(!muted)}
+            disabled={setMuted.isPending}
+            accessibilityLabel={
+              muted
+                ? `${assistantName} ne répond que si on le mentionne. Le laisser intervenir de lui-même`
+                : `${assistantName} intervient de lui-même. Le limiter aux mentions`
+            }
+            className="gap-2"
+          >
+            <Icon as={muted ? BellOff : Bell} size={16} className="text-muted-foreground" />
+            {/* Icône seule sur téléphone : le libellé mangerait le titre du groupe. */}
+            {compact ? null : (
+              <Text className="text-sm text-muted-foreground">
+                {muted ? "Sur mention" : `${assistantName} actif`}
+              </Text>
+            )}
+          </Button>
+        ) : undefined
+      }
     >
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: palette.background }}
@@ -154,7 +183,7 @@ export function GroupScreen() {
                 if (text.trim()) notifyTyping();
               }}
               onSubmitEditing={submit}
-              placeholder="Écrire au groupe"
+              placeholder={`Écrire au groupe — @${assistantName} pour l'appeler`}
               returnKeyType="send"
               blurOnSubmit={false}
               accessibilityLabel="Message au groupe"

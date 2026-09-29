@@ -42,6 +42,14 @@ export function useSendGroupMessage(groupId: string) {
   });
 }
 
+export function useSetGroupMuted(groupId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (aiMuted: boolean) => api.groups.update(groupId, { aiMuted }),
+    onSuccess: (group: Group) => queryClient.setQueryData(["group", groupId], group),
+  });
+}
+
 export function useMarkGroupRead(groupId: string) {
   const queryClient = useQueryClient();
   return useMutation({

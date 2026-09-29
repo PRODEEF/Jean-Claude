@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Group, GroupMessage } from "@jc/domain";
 import { forUser } from "../../core/supabase/supabase.js";
-import type { IGroupRepository } from "./group.repository.interface.js";
+import type {
+  AssistantReply,
+  IGroupRepository,
+  WorkspaceMemberName,
+} from "./group.repository.interface.js";
 
 /** Lignes Postgres — snake_case, telles que renvoyées par Supabase. */
 type GroupRow = {
@@ -58,13 +62,16 @@ const MEMBERSHIP_COLUMNS =
 const MESSAGE_COLUMNS = "id, conversation_id, user_id, role, content, created_at";
 
 export const groupRepository: IGroupRepository = {
-  async findWorkspaceMemberIds(workspaceId, accessToken) {
+  async findWorkspaceMembers(workspaceId, accessToken) {
     const { data, error } = await forUser(accessToken).rpc("workspace_member_profiles", {
       p_workspace: workspaceId,
     });
 
     if (error) throw new Error(error.message);
-    return (data as unknown as { user_id: string }[]).map((row) => row.user_id);
+    // L'adresse n'est pas reprise : elle n'a rien à faire dans un prompt.
+    return (data as unknown as { user_id: string; display_name: string | null }[]).map(
+      (row): WorkspaceMemberName => ({ userId: row.user_id, displayName: row.display_name }),
+    );
   },
 
   async findByWorkspace(workspaceId, userId, accessToken) {
@@ -150,6 +157,28 @@ export const groupRepository: IGroupRepository = {
     return group;
   },
 
+  async setAiMuted(groupId, aiMuted, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("conversations")
+      .update({ ai_muted: aiMuted })
+      .eq("id", groupId);
+
+    if (error) throw new Error(error.message);
+  },
+
+  async findLatestMessageId(groupId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("messages")
+      .select("id")
+      .eq("conversation_id", groupId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return (data as { id: string } | null)?.id ?? null;
+  },
+
   async findMessages(groupId, options, accessToken) {
     let query = forUser(accessToken)
       .from("messages")
@@ -176,32 +205,37 @@ export const groupRepository: IGroupRepository = {
     };
   },
 
-  async appendMessage(groupId, userId, content, accessToken) {
-    const client = forUser(accessToken);
-    const { data, error } = await client
-      .from("messages")
-      .insert({
-        conversation_id: groupId,
-        user_id: userId,
-        role: "user",
-        content,
-        input_mode: "text",
-      })
-      .select(MESSAGE_COLUMNS)
-      .single();
+  appendMessage(groupId, userId, content, accessToken) {
+    return insertMessage(forUser(accessToken), {
+      conversation_id: groupId,
+      user_id: userId,
+      role: "user",
+      content,
+      input_mode: "text",
+    });
+  },
+
+  appendAssistantMessage(groupId, userId, reply: AssistantReply, accessToken) {
+    return insertMessage(forUser(accessToken), {
+      conversation_id: groupId,
+      user_id: userId,
+      role: "assistant",
+      content: reply.content,
+      input_mode: "text",
+      provider: reply.provider,
+      model: reply.model,
+    });
+  },
+
+  async findAssistantModel(userId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("profiles")
+      .select("llm_model")
+      .eq("id", userId)
+      .maybeSingle();
 
     if (error) throw new Error(error.message);
-    const message = toMessage(data as unknown as GroupMessageRow);
-
-    // `last_message_at` ordonne la liste des groupes, comme celle des
-    // conversations personnelles.
-    const { error: touchError } = await client
-      .from("conversations")
-      .update({ last_message_at: message.createdAt })
-      .eq("id", groupId);
-    if (touchError) throw new Error(touchError.message);
-
-    return message;
+    return (data as { llm_model: string | null } | null)?.llm_model ?? null;
   },
 
   async markRead(groupId, userId, accessToken) {
@@ -214,6 +248,30 @@ export const groupRepository: IGroupRepository = {
     if (error) throw new Error(error.message);
   },
 };
+
+async function insertMessage(
+  client: ReturnType<typeof forUser>,
+  row: Record<string, unknown>,
+): Promise<GroupMessage> {
+  const { data, error } = await client
+    .from("messages")
+    .insert(row)
+    .select(MESSAGE_COLUMNS)
+    .single();
+
+  if (error) throw new Error(error.message);
+  const message = toMessage(data as unknown as GroupMessageRow);
+
+  // `last_message_at` ordonne la liste des groupes, comme celle des
+  // conversations personnelles.
+  const { error: touchError } = await client
+    .from("conversations")
+    .update({ last_message_at: message.createdAt })
+    .eq("id", message.groupId);
+  if (touchError) throw new Error(touchError.message);
+
+  return message;
+}
 
 async function findMembers(
   client: ReturnType<typeof forUser>,

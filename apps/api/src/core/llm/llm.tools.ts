@@ -793,6 +793,46 @@ export const ASK_QUESTION: LlmTool = {
 };
 
 /** Outils actifs sur une conversation classique. */
+/**
+ * Verdict du petit modèle qui décide si Jean-Claude prend la parole dans une
+ * discussion de groupe (docs/COLLABORATION.md, lot 4). Ce n'est pas une
+ * suggestion : l'outil ne sert qu'à obtenir une réponse structurée plutôt
+ * qu'un « oui » à deviner dans du texte libre.
+ */
+export const DECIDE_INTERVENTION: LlmTool = {
+  name: "decide_intervention",
+  description:
+    "À appeler une fois, toujours, pour dire si l'assistant doit prendre la parole " +
+    "maintenant dans la discussion de groupe. Par défaut, il se tait : intervenir " +
+    "seulement si l'un des quatre cas est net dans les derniers messages. " +
+    "`unanswered_question` : une question posée au groupe est restée sans réponse " +
+    "et l'assistant peut y répondre à partir du fil ou de connaissances générales. " +
+    "`factual_error` : un membre affirme une information inexacte — date, chiffre, " +
+    "fait déjà donné plus haut dans le fil. " +
+    "`decision_or_task` : le groupe vient de prendre une décision ou de se répartir " +
+    "du travail, et un récapitulatif aiderait. " +
+    "`going_in_circles` : plusieurs messages sans avancer, les positions se répètent. " +
+    "Sinon `none`, avec `intervene` à false — c'est le cas le plus fréquent.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      intervene: { type: "boolean" },
+      reason: {
+        type: "string",
+        enum: [
+          "unanswered_question",
+          "factual_error",
+          "decision_or_task",
+          "going_in_circles",
+          "none",
+        ],
+      },
+    },
+    required: ["intervene", "reason"],
+    additionalProperties: false,
+  },
+};
+
 export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_ITEMS,

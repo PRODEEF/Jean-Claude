@@ -7,6 +7,25 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 4)** —
+Jean-Claude dans les groupes, sur la branche `feat/collaboration`. Vérifié
+par les tests (38 nouveaux ou repris), le typecheck, et dans Chromium sur une
+fausse API, en clair et en sombre, grand écran et 390 pt. **Aucun appel à un
+vrai modèle, et `waitUntil` non observé sur Vercel.**
+
+**Jean-Claude parle dans les groupes.** Mentionné (`@Jean-Claude`), il répond
+toujours. Sinon, sauf bouton silence, il attend une pause de 6 secondes, puis
+un petit modèle Mistral juge s'il y a une question sans réponse, une erreur
+factuelle, une décision à récapituler ou une discussion qui tourne en rond.
+La réponse est rédigée par le modèle que le membre qui l'a déclenchée a choisi
+dans ses réglages (§5.1). Jean-Claude ne voit que le fil du groupe, jamais les
+données personnelles des membres, et ne fait que proposer (§12.1).
+
+**Migration `20260929160000_group_realtime.sql` appliquée** au projet
+Supabase Jean-Claude le 29 septembre : `messages` publiée pour Realtime, canal
+privé réservé aux membres. Le schéma des espaces (`20260929150000`) était déjà
+en place, sans trace dans l'historique des migrations.
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 3)** —
 discussions de groupe, sur la branche `feat/collaboration`. Vérifié par les
 tests (dont 12 nouveaux pour les groupes), le typecheck, les migrations

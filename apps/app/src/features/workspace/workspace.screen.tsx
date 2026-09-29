@@ -10,7 +10,6 @@ import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "@/shared/ui/modal";
-import { NotBuiltYet } from "@/shared/ui/not-built-yet";
 import { FORM_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Separator } from "@/shared/ui/separator";
 import { Text } from "@/shared/ui/text";
@@ -72,14 +71,6 @@ export function WorkspaceScreen() {
       }
     >
       <View className="gap-8 pb-8">
-        <NotBuiltYet
-          phase="lot 4"
-          items={[
-            "Jean-Claude dans les groupes : il répond quand on le mentionne",
-            "et prend la parole de lui-même quand c'est utile, sauf bouton silence",
-          ]}
-        />
-
         <MembersSection workspace={workspace} />
         {isAdmin ? <InvitationsSection workspaceId={workspace.id} /> : null}
         <LeaveSection workspace={workspace} />

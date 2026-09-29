@@ -276,6 +276,51 @@ complet et 620 tests du dépôt au vert, scénario RLS rejoué avec la fonction
 modifiée. Les requêtes du Repository n'ont pas été jouées contre un vrai
 PostgREST : l'environnement n'a pas d'instance Supabase.
 
+### Livré au lot 4
+
+Jean-Claude prend part aux discussions de groupe.
+
+- **Sur mention** (`@Jean-Claude`, sans égard à la casse, aux accents ni au
+  trait d'union — `mentionsAssistant`, `@jc/domain`), il répond toujours,
+  même en silence, sans attendre.
+- **De lui-même**, sauf bouton silence : après chaque message, l'API attend
+  6 secondes (`GROUP_PAUSE_MS`). Si un autre message est arrivé entre-temps,
+  elle abandonne. Sinon un petit modèle (`LLM_DECISION_MODEL`, par défaut
+  `mistral/ministral-8b`) rend un verdict par l'outil `decide_intervention`
+  : se taire, ou l'un des quatre cas. Il se tait par défaut, et aussi quand il
+  répond sans utiliser l'outil.
+- **La réponse est rédigée par le modèle choisi dans ses réglages par le
+  membre qui l'a déclenchée** — l'auteur du dernier message, ou celui qui
+  mentionne — sinon par le modèle par défaut du serveur. Elle est imputée à
+  son quota (`llm_rate_limits`) ; le verdict du petit modèle ne l'est pas.
+- **Contexte** : les 30 derniers messages du groupe, signés du nom affiché de
+  chaque membre ; un membre sans nom devient « Membre 1 », jamais son
+  adresse. Aucune source personnelle : la consigne de groupe
+  (`groupSystemPrompt`) est construite à part de `buildSystemPrompt`.
+- **Il propose, il n'exécute rien** : sur une décision ou une répartition du
+  travail, il récapitule qui fait quoi et demande si c'est juste. Aucune
+  suggestion en attente n'est créée tant que la question 1 du §9 n'est pas
+  tranchée.
+- **Bouton silence** dans l'en-tête du fil (`PATCH /api/groups/:id`), réglage
+  du groupe entier, modifiable par tout membre.
+- **Traitement après réponse** : `core/after-response.ts`, sur `waitUntil` de
+  `@vercel/functions` (nouvelle dépendance de l'API). La réponse de Jean-Claude
+  arrive chez tous les membres par Realtime, comme un message ordinaire.
+
+**Vérification.** 31 tests du service des groupes, dont le chemin complet
+d'une intervention sur doubles du moteur et du dépôt (mention, pause
+interrompue, verdict négatif, verdict sans outil, quota épuisé, réponse vide,
+modèle du membre ou modèle par défaut) ; 7 tests de `mentionsAssistant`.
+Parcours joué dans Chromium sur une fausse API, clair et sombre, grand écran et
+390 pt : bouton silence, réponse de Jean-Claude à une mention.
+
+**Non vérifié.** Aucun appel à un vrai modèle : la qualité du jugement et des
+réponses reste à éprouver en usage. `waitUntil` n'a pas été observé sur
+Vercel : si la fonction s'arrêtait avec la réponse, Jean-Claude ne parlerait
+jamais de lui-même — c'est le premier point à vérifier après déploiement. Le
+bouton silence basculé par un membre n'apparaît chez les autres qu'au
+rechargement du groupe : Realtime ne diffuse que les messages.
+
 ### Livré au lot 3
 
 Groupes de bout en bout : API, temps réel, non-lus, « en train d'écrire », et
@@ -410,8 +455,9 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
    suggestion « tâche détectée » acceptée ? Proposition : une liste dans
    l'espace personnel de qui l'accepte, en attendant les listes d'espace. Et
    qui peut l'accepter — tout membre, ou seulement l'auteur du message ?
-2. **Coût.** Imputer l'appel de décision au dernier auteur est simple, mais un
-   membre bavard épuise son quota pour tout le groupe. Un quota par espace
+2. **Coût.** Seule la réponse rédigée est imputée, au membre qui l'a
+   déclenchée ; le verdict du petit modèle n'est décompté nulle part. Un membre
+   bavard épuise son quota pour tout le groupe. Un quota par espace
    serait plus juste ; il n'existe pas aujourd'hui.
 3. **Suppression d'un espace.** Réservée à l'admin, avec toutes ses discussions ?
    Ou archivage seulement ?

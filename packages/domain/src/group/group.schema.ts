@@ -59,6 +59,25 @@ export type SendGroupMessage = z.infer<typeof sendGroupMessageSchema>;
 export const listGroupsQuerySchema = z.object({ workspaceId: uuidSchema });
 export type ListGroupsQuery = z.infer<typeof listGroupsQuerySchema>;
 
+export const updateGroupSchema = z.object({ aiMuted: z.boolean() });
+export type UpdateGroup = z.infer<typeof updateGroupSchema>;
+
+/**
+ * Le message appelle-t-il Jean-Claude ?
+ *
+ * `@Jean-Claude`, quelle que soit la casse, avec ou sans accent ni trait
+ * d'union : au clavier d'un téléphone, `@jean claude` ou `@Jéan-Claude`
+ * arrivent aussi souvent que la forme exacte. Une mention au milieu d'un mot
+ * (`mail@jean-claude.fr`) ne compte pas.
+ */
+export function mentionsAssistant(content: string): boolean {
+  const plain = content
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+  return /(^|[^\p{L}\p{N}_.])@jean[\s-]?claude(?![\p{L}\p{N}])/u.test(plain);
+}
+
 /** Canal Realtime d'un groupe — même forme côté app et dans la policy SQL. */
 export function groupRealtimeTopic(groupId: string): string {
   return `group:${groupId}`;

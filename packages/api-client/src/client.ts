@@ -50,6 +50,7 @@ import {
   type CreateGroup,
   type Group,
   type GroupMessage,
+  type UpdateGroup,
 } from "@jc/domain";
 import { ApiError, HttpClient, type ApiClientOptions, type RequestOptions } from "./http";
 
@@ -195,6 +196,10 @@ export class JeanClaudeClient {
       this.http.request<Group[]>("/groups", { query: { workspaceId } }),
 
     get: (id: string) => this.http.request<Group>(`/groups/${id}`),
+
+    /** Bouton silence : Jean-Claude ne parle plus que si on le mentionne. */
+    update: (id: string, input: UpdateGroup) =>
+      this.http.request<Group>(`/groups/${id}`, { method: "PATCH", body: input }),
 
     create: (input: CreateGroup) =>
       this.http.request<Group>("/groups", { method: "POST", body: input }),
