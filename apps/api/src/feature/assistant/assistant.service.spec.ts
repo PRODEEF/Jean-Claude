@@ -364,7 +364,7 @@ function makeService(
     taskService,
     calendarService,
     users,
-    new FeedbackService(feedback),
+    new FeedbackService(feedback, IDLE_LLM),
   );
 }
 
@@ -458,9 +458,14 @@ function makeFeedbackRepository(overrides: Partial<IFeedbackRepository> = {}): I
     createGeneral: jest
       .fn()
       .mockImplementation((_userId: string, input: CreateFeedback) =>
-        Promise.resolve<Feedback>({ id: "fb-1", createdAt: NOW, ...input }),
+        Promise.resolve<Feedback>({ id: "fb-1", status: "new", createdAt: NOW, ...input }),
       ),
     rateMessage: jest.fn(),
+    isAdmin: jest.fn().mockResolvedValue(false),
+    listFeedback: jest.fn().mockResolvedValue([]),
+    listRatings: jest.fn().mockResolvedValue([]),
+    listAuthors: jest.fn().mockResolvedValue([]),
+    updateStatus: jest.fn().mockResolvedValue(null),
     ...overrides,
   };
 }

@@ -99,13 +99,23 @@ de la montrer — voir skill [ui-decision](../ui-decision/SKILL.md).
 
 ## 4. Lire les retours utilisateurs
 
-Aucune route ne les liste : les deux tables se lisent à la main dans
-Supabase Studio (SQL Editor). Une route de lecture aurait exigé un premier
-accès privilégié que les RLS actuelles ne prévoient pas — voir
-`.claude/rules/100-api.md` sur `admin` hors traitement système.
+Depuis l'app : **Retours des testeurs**, en bas de la barre latérale, visible
+des seuls comptes inscrits dans `public.admins`. Un testeur par carte, un
+statut par retour (nouveau, pris en compte, traité, écarté), et « Analyser »
+pour une synthèse du testeur par le modèle. Donner l'accès à un compte, depuis
+le SQL Editor :
 
 ```sql
-select category, content, platform, screen, created_at
+insert into public.admins (user_id)
+select id from auth.users where email = '<adresse>';
+```
+
+L'accès admin ne lit que `feedback` et `message_ratings`, jamais les
+conversations. Pour le report, les requêtes ci-dessous restent valables dans
+Supabase Studio (SQL Editor) :
+
+```sql
+select category, status, content, platform, screen, created_at
 from public.feedback
 where created_at > now() - interval '1 day'
 order by created_at desc;
