@@ -132,7 +132,7 @@ export function GroupScreen() {
     const content = draft.trim();
     if (!content || send.isPending) return;
     send.mutate(
-      { content, ...(replyTarget ? { replyToId: replyTarget.id } : {}) },
+      { content, attachmentIds: [], ...(replyTarget ? { replyToId: replyTarget.id } : {}) },
       {
         onSuccess: () => {
           setDraft("");

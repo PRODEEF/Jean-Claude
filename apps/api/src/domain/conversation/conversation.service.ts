@@ -409,6 +409,11 @@ export class ConversationService {
       if (resolved.some((a) => a.messageId !== null)) {
         throw httpError(409, "Une pièce jointe a déjà été envoyée dans un autre message.");
       }
+      // Un fichier d'espace n'entre pas dans le fil personnel : la base le
+      // refuserait aussi, mais après l'envoi du message.
+      if (resolved.some((a) => a.workspaceId !== null)) {
+        throw httpError(400, "Ce fichier a été déposé dans un espace d'équipe.");
+      }
       attachments = resolved;
     }
 

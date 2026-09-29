@@ -6,6 +6,10 @@ import type {
 } from "../../core/llm/llm.port.js";
 import type { IWorkspaceListRepository } from "../workspace-list/workspace-list.repository.interface.js";
 import { WorkspaceListService } from "../workspace-list/workspace-list.service.js";
+import type {
+  AttachmentRecord,
+  IAttachmentRepository,
+} from "../attachment/attachment.repository.interface.js";
 import type { IGroupRepository } from "./group.repository.interface.js";
 import {
   describeThread,
@@ -42,6 +46,8 @@ function makeMessage(overrides: Partial<GroupMessage> = {}): GroupMessage {
     role: "user",
     content: "Bonjour",
     replyTo: null,
+    attachments: [],
+    removedAttachments: [],
     createdAt: "2026-09-29T08:00:00.000Z",
     ...overrides,
   };
@@ -183,8 +189,42 @@ function service(
   repo: IGroupRepository,
   deps: GroupAssistantDeps = makeDeps(makeLlm().llm),
   lists: IWorkspaceListRepository = makeListRepository(),
+  attachments: IAttachmentRepository = makeAttachmentRepository(),
 ) {
-  return new GroupService(repo, deps, new WorkspaceListService(lists));
+  return new GroupService(repo, deps, new WorkspaceListService(lists), attachments);
+}
+
+function makeAttachmentRecord(overrides: Partial<AttachmentRecord> = {}): AttachmentRecord {
+  return {
+    id: "att-1",
+    messageId: null,
+    userId: "alice",
+    workspaceId: WORKSPACE_ID,
+    deletedAt: null,
+    url: "https://storage.example/budget.pdf",
+    fileName: "budget.pdf",
+    mimeType: "application/pdf",
+    byteSize: 2048,
+    extractedText: "Budget 2027 : 12 000 €",
+    createdAt: "2026-09-30T08:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeAttachmentRepository(
+  overrides: Partial<IAttachmentRepository> = {},
+): IAttachmentRepository {
+  return {
+    create: jest.fn(),
+    findById: jest.fn().mockResolvedValue(null),
+    findByIds: jest.fn().mockResolvedValue([]),
+    linkToMessage: jest.fn().mockResolvedValue(undefined),
+    delete: jest.fn().mockResolvedValue(undefined),
+    softDelete: jest.fn().mockResolvedValue(undefined),
+    findWorkspaceRole: jest.fn().mockResolvedValue(null),
+    findWorkspaceFiles: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    ...overrides,
+  };
 }
 
 const proposalCall = (input: Record<string, unknown>) =>
@@ -367,7 +407,7 @@ describe("GroupService", () => {
       const message = await service(repo, deps).send(
         "group-1",
         "alice",
-        { content: "Bonjour" },
+        { content: "Bonjour", attachmentIds: [] },
         TOKEN,
       );
 
@@ -382,7 +422,12 @@ describe("GroupService", () => {
       });
       const deps = makeDeps(makeLlm().llm);
 
-      await service(repo, deps).send("group-1", "alice", { content: "Bonjour" }, TOKEN);
+      await service(repo, deps).send(
+        "group-1",
+        "alice",
+        { content: "Bonjour", attachmentIds: [] },
+        TOKEN,
+      );
 
       expect(deps.runAfterResponse).not.toHaveBeenCalled();
     });
@@ -396,7 +441,7 @@ describe("GroupService", () => {
       await service(repo, deps).send(
         "group-1",
         "alice",
-        { content: "@Jean-Claude tu résumes ?" },
+        { content: "@Jean-Claude tu résumes ?", attachmentIds: [] },
         TOKEN,
       );
 
@@ -412,7 +457,7 @@ describe("GroupService", () => {
       await service(repo).send(
         "group-1",
         "alice",
-        { content: "D'accord", replyToId: "msg-3" },
+        { content: "D'accord", replyToId: "msg-3", attachmentIds: [] },
         TOKEN,
       );
 
@@ -430,7 +475,12 @@ describe("GroupService", () => {
       const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeGroup()) });
 
       await expect(
-        service(repo).send("group-1", "alice", { content: "Oui", replyToId: "ailleurs" }, TOKEN),
+        service(repo).send(
+          "group-1",
+          "alice",
+          { content: "Oui", replyToId: "ailleurs", attachmentIds: [] },
+          TOKEN,
+        ),
       ).rejects.toMatchObject({ status: 400 });
       expect(repo.appendMessage).not.toHaveBeenCalled();
     });
@@ -447,7 +497,7 @@ describe("GroupService", () => {
       await service(repo, deps).send(
         "group-1",
         "alice",
-        { content: "Tu peux préciser ?", replyToId: "msg-4" },
+        { content: "Tu peux préciser ?", replyToId: "msg-4", attachmentIds: [] },
         TOKEN,
       );
 
@@ -464,18 +514,106 @@ describe("GroupService", () => {
       await service(repo, deps).send(
         "group-1",
         "alice",
-        { content: "D'accord", replyToId: "msg-3" },
+        { content: "D'accord", replyToId: "msg-3", attachmentIds: [] },
         TOKEN,
       );
 
       expect(deps.runAfterResponse).not.toHaveBeenCalled();
     });
 
+    it("rattache au message les fichiers déposés dans l'espace, et les rend avec lui", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeGroup()) });
+      const attachments = makeAttachmentRepository({
+        findByIds: jest.fn().mockResolvedValue([makeAttachmentRecord()]),
+      });
+
+      const sent = await service(repo, undefined, undefined, attachments).send(
+        "group-1",
+        "alice",
+        { content: "", attachmentIds: ["att-1"] },
+        TOKEN,
+      );
+
+      expect(attachments.linkToMessage).toHaveBeenCalledWith(["att-1"], "msg-1", TOKEN);
+      expect(sent.attachments).toEqual([
+        expect.objectContaining({ id: "att-1", fileName: "budget.pdf" }),
+      ]);
+      expect(sent.attachments[0]).not.toHaveProperty("workspaceId");
+    });
+
+    it("refuse un fichier déposé dans un autre espace, avant d'écrire", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeGroup()) });
+      const attachments = makeAttachmentRepository({
+        findByIds: jest.fn().mockResolvedValue([makeAttachmentRecord({ workspaceId: "ws-autre" })]),
+      });
+
+      await expect(
+        service(repo, undefined, undefined, attachments).send(
+          "group-1",
+          "alice",
+          { content: "Voici", attachmentIds: ["att-1"] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.appendMessage).not.toHaveBeenCalled();
+    });
+
+    it("refuse un fichier personnel", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeGroup()) });
+      const attachments = makeAttachmentRepository({
+        findByIds: jest.fn().mockResolvedValue([makeAttachmentRecord({ workspaceId: null })]),
+      });
+
+      await expect(
+        service(repo, undefined, undefined, attachments).send(
+          "group-1",
+          "alice",
+          { content: "Voici", attachmentIds: ["att-1"] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.appendMessage).not.toHaveBeenCalled();
+    });
+
+    it("refuse un fichier déjà envoyé", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeGroup()) });
+      const attachments = makeAttachmentRepository({
+        findByIds: jest.fn().mockResolvedValue([makeAttachmentRecord({ messageId: "msg-ancien" })]),
+      });
+
+      await expect(
+        service(repo, undefined, undefined, attachments).send(
+          "group-1",
+          "alice",
+          { content: "Encore", attachmentIds: ["att-1"] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(repo.appendMessage).not.toHaveBeenCalled();
+    });
+
+    it("refuse le fichier déposé par un autre membre, comme un fichier inconnu", async () => {
+      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeGroup()) });
+      const attachments = makeAttachmentRepository({
+        findByIds: jest.fn().mockResolvedValue([makeAttachmentRecord({ userId: "bruno" })]),
+      });
+
+      await expect(
+        service(repo, undefined, undefined, attachments).send(
+          "group-1",
+          "alice",
+          { content: "Voici", attachmentIds: ["att-1", "att-inconnu"] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(repo.appendMessage).not.toHaveBeenCalled();
+    });
+
     it("refuse d'écrire dans un groupe dont on n'est pas membre", async () => {
       const repo = makeRepository();
 
       await expect(
-        service(repo).send("group-1", "dora", { content: "Intrusion" }, TOKEN),
+        service(repo).send("group-1", "dora", { content: "Intrusion", attachmentIds: [] }, TOKEN),
       ).rejects.toMatchObject({ status: 404 });
       expect(repo.appendMessage).not.toHaveBeenCalled();
     });
@@ -903,6 +1041,87 @@ describe("describeThread", () => {
 
     expect(thread).toBe(
       "Bruno, en réponse à Jean-Claude (« Qui réserve la salle ? ») : Oui, je m'en charge",
+    );
+  });
+
+  it("remet au modèle le texte d'un fichier joint, balisé", () => {
+    const thread = describeThread(
+      [
+        makeMessage({
+          authorId: "alice",
+          content: "Le budget",
+          attachments: [
+            {
+              id: "att-1",
+              url: "https://storage.example/budget.pdf",
+              fileName: "budget.pdf",
+              mimeType: "application/pdf",
+              byteSize: 10,
+              extractedText: "Total : 12 000 €",
+              createdAt: "2026-09-30T08:00:00.000Z",
+            },
+          ],
+        }),
+      ],
+      MEMBERS,
+    );
+
+    expect(thread).toBe(
+      "Alice : Le budget\n[fichier joint : budget.pdf]\nTotal : 12 000 €\n[fin du fichier]",
+    );
+  });
+
+  it("tronque le texte d'un long fichier", () => {
+    const thread = describeThread(
+      [
+        makeMessage({
+          authorId: "alice",
+          content: "",
+          attachments: [
+            {
+              id: "att-1",
+              url: "https://storage.example/long.txt",
+              fileName: "long.txt",
+              mimeType: "text/plain",
+              byteSize: 10,
+              extractedText: "x".repeat(5_000),
+              createdAt: "2026-09-30T08:00:00.000Z",
+            },
+          ],
+        }),
+      ],
+      MEMBERS,
+    );
+
+    expect(thread).toContain(`${"x".repeat(4_000)}… [suite tronquée]`);
+    expect(thread).not.toContain("x".repeat(4_001));
+  });
+
+  it("ne donne que le nom d'une image, et d'un fichier supprimé", () => {
+    const thread = describeThread(
+      [
+        makeMessage({
+          authorId: "bruno",
+          content: "Photos",
+          attachments: [
+            {
+              id: "att-1",
+              url: "https://storage.example/salle.png",
+              fileName: "salle.png",
+              mimeType: "image/png",
+              byteSize: 10,
+              extractedText: null,
+              createdAt: "2026-09-30T08:00:00.000Z",
+            },
+          ],
+          removedAttachments: [{ id: "att-2", fileName: "ancien.pdf" }],
+        }),
+      ],
+      MEMBERS,
+    );
+
+    expect(thread).toBe(
+      "Bruno : Photos\n[image jointe, non visible : salle.png]\n[fichier supprimé : ancien.pdf]",
     );
   });
 

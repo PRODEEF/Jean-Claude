@@ -1,6 +1,16 @@
 import { z } from "zod";
-import { MESSAGE_MAX_LENGTH } from "../message/message.schema";
-import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
+import {
+  MESSAGE_ATTACHMENT_MAX_COUNT,
+  MESSAGE_MAX_LENGTH,
+  messageAttachmentMimeTypeSchema,
+  messageAttachmentSchema,
+} from "../message/message.schema";
+import {
+  cursorPaginationSchema,
+  isoDateTimeSchema,
+  labelSchema,
+  uuidSchema,
+} from "../shared/primitives";
 
 /**
  * Discussions de groupe d'un espace d'équipe — voir docs/COLLABORATION.md.
@@ -63,16 +73,55 @@ export const groupMessageSchema = z.object({
    * être hors de la page chargée. `null` aussi quand il a été supprimé.
    */
   replyTo: quotedGroupMessageSchema.nullable(),
+  /** Fichiers joints, lisibles des membres de la conversation (lot 7). */
+  attachments: z.array(messageAttachmentSchema),
+  /** Fichiers joints puis supprimés : le message dit qu'il y en avait un. */
+  removedAttachments: z.array(z.object({ id: uuidSchema, fileName: z.string() })),
   createdAt: isoDateTimeSchema,
 });
 export type GroupMessage = z.infer<typeof groupMessageSchema>;
 
-export const sendGroupMessageSchema = z.object({
-  content: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
-  /** Message du même fil auquel on répond. */
-  replyToId: uuidSchema.optional(),
-});
+/** Texte ou fichier, l'un des deux au moins — comme dans le fil personnel. */
+export const sendGroupMessageSchema = z
+  .object({
+    content: z.string().trim().max(MESSAGE_MAX_LENGTH),
+    /** Message du même fil auquel on répond. */
+    replyToId: uuidSchema.optional(),
+    /** Pièces déjà déposées dans l'espace (`POST /attachments` avec `workspaceId`). */
+    attachmentIds: z.array(uuidSchema).max(MESSAGE_ATTACHMENT_MAX_COUNT).default([]),
+  })
+  .refine((value) => value.content.length > 0 || value.attachmentIds.length > 0, {
+    message: "Écrivez un message ou joignez un fichier.",
+    path: ["content"],
+  });
 export type SendGroupMessage = z.infer<typeof sendGroupMessageSchema>;
+
+/**
+ * Un fichier de la page « Fichiers » d'un espace : envoyé dans une
+ * conversation dont l'appelant est membre, et pas supprimé.
+ */
+export const workspaceFileSchema = z.object({
+  id: uuidSchema,
+  /** URL signée à courte durée de vie : le bucket est privé. */
+  url: z.string().url(),
+  fileName: z.string(),
+  mimeType: messageAttachmentMimeTypeSchema,
+  byteSize: z.number().int().positive(),
+  authorId: uuidSchema,
+  groupId: uuidSchema,
+  groupTitle: z.string(),
+  /** L'auteur ou un admin de l'espace — décidé par le serveur. */
+  canDelete: z.boolean(),
+  createdAt: isoDateTimeSchema,
+});
+export type WorkspaceFile = z.infer<typeof workspaceFileSchema>;
+
+export const listWorkspaceFilesQuerySchema = cursorPaginationSchema.extend({
+  workspaceId: uuidSchema,
+  /** Seulement les fichiers des conversations rangées dans ce dossier. */
+  folderId: uuidSchema.optional(),
+});
+export type ListWorkspaceFilesQuery = z.infer<typeof listWorkspaceFilesQuerySchema>;
 
 /** Rangement complet : la liste remplace celle d'avant. */
 export const assignGroupFoldersSchema = z.object({ folderIds: z.array(uuidSchema).max(50) });

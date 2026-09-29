@@ -369,6 +369,9 @@ function makeAttachment(overrides: Partial<AttachmentRecord> = {}): AttachmentRe
   return {
     id: "att-1",
     messageId: null,
+    userId: "user-1",
+    workspaceId: null,
+    deletedAt: null,
     url: "https://storage.example/att-1.png",
     fileName: "photo.png",
     mimeType: "image/png",
@@ -388,6 +391,9 @@ function makeAttachmentRepository(
     findByIds: jest.fn().mockResolvedValue([]),
     linkToMessage: jest.fn().mockResolvedValue(undefined),
     delete: jest.fn().mockResolvedValue(undefined),
+    softDelete: jest.fn().mockResolvedValue(undefined),
+    findWorkspaceRole: jest.fn().mockResolvedValue(null),
+    findWorkspaceFiles: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
     ...overrides,
   };
 }
@@ -1901,6 +1907,22 @@ describe("ConversationService", () => {
             attachmentIds: ["att-1"],
           }),
         ).rejects.toMatchObject({ status: 409 });
+        expect(repo.appendMessage).not.toHaveBeenCalled();
+      });
+
+      it("refuse un fichier déposé dans un espace d'équipe", async () => {
+        const repo = makeRepository();
+        const attachments = makeAttachmentRepository({
+          findByIds: jest.fn().mockResolvedValue([makeAttachment({ workspaceId: "ws-1" })]),
+        });
+
+        await expect(
+          drain(withAttachments(attachments, repo), {
+            content: "",
+            inputMode: "text",
+            attachmentIds: ["att-1"],
+          }),
+        ).rejects.toMatchObject({ status: 400 });
         expect(repo.appendMessage).not.toHaveBeenCalled();
       });
 

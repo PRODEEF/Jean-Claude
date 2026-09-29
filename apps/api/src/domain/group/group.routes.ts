@@ -15,6 +15,7 @@ import { config } from "../../core/config.js";
 import { validate } from "../../core/http.js";
 import { llm } from "../../core/llm/providers/gateway.provider.js";
 import { consumeLlmCall } from "../../core/rate-limit/rate-limit.middleware.js";
+import { attachmentRepository } from "../attachment/attachment.repository.js";
 import { workspaceListRepository } from "../workspace-list/workspace-list.repository.js";
 import { WorkspaceListService } from "../workspace-list/workspace-list.service.js";
 import { groupRepository } from "./group.repository.js";
@@ -30,6 +31,7 @@ const service = new GroupService(
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   },
   new WorkspaceListService(workspaceListRepository),
+  attachmentRepository,
 );
 
 const suggestionParam = validate("param", z.object({ id: uuidSchema, suggestionId: uuidSchema }));

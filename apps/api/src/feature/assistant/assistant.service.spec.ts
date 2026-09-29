@@ -210,6 +210,9 @@ const IDLE_ATTACHMENTS: IAttachmentRepository = {
   findByIds: jest.fn().mockResolvedValue([]),
   linkToMessage: jest.fn(),
   delete: jest.fn(),
+  softDelete: jest.fn(),
+  findWorkspaceRole: jest.fn(),
+  findWorkspaceFiles: jest.fn(),
 };
 
 /**

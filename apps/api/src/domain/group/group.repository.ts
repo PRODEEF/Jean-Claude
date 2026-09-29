@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { Group, GroupListSuggestion, GroupMessage } from "@jc/domain";
+import type {
+  Group,
+  GroupListSuggestion,
+  GroupMessage,
+  MessageAttachmentMimeType,
+} from "@jc/domain";
+import { signAttachmentUrls } from "../../core/storage/attachment-storage.js";
 import { forUser } from "../../core/supabase/supabase.js";
 import type {
   AssistantReply,
@@ -26,6 +32,17 @@ type MemberRow = { conversation_id: string; user_id: string };
 
 type QuotedMessageRow = { id: string; user_id: string; role: string; content: string };
 
+type AttachmentSubRow = {
+  id: string;
+  storage_path: string;
+  mime_type: string;
+  byte_size: number;
+  file_name: string;
+  extracted_text: string | null;
+  created_at: string;
+  deleted_at: string | null;
+};
+
 type GroupMessageRow = {
   id: string;
   conversation_id: string;
@@ -34,6 +51,7 @@ type GroupMessageRow = {
   content: string;
   created_at: string;
   reply_to: QuotedMessageRow | null;
+  message_attachments: AttachmentSubRow[] | null;
 };
 
 type SuggestionRow = {
@@ -75,7 +93,30 @@ function toGroup(row: GroupRow, unreadCount: number, memberIds: string[]): Group
   };
 }
 
-function toMessage(row: GroupMessageRow): GroupMessage {
+/**
+ * Mappe une ligne à partir d'URLs déjà signées, en lot par `signMessages`.
+ * Une pièce supprimée, ou dont l'objet a disparu, ne rend que son nom.
+ */
+function toMessage(row: GroupMessageRow, urlByPath: ReadonlyMap<string, string>): GroupMessage {
+  const attachments: GroupMessage["attachments"] = [];
+  const removedAttachments: GroupMessage["removedAttachments"] = [];
+  for (const a of row.message_attachments ?? []) {
+    const url = a.deleted_at ? undefined : urlByPath.get(a.storage_path);
+    if (!url) {
+      removedAttachments.push({ id: a.id, fileName: a.file_name });
+      continue;
+    }
+    attachments.push({
+      id: a.id,
+      url,
+      fileName: a.file_name,
+      mimeType: a.mime_type as MessageAttachmentMimeType,
+      byteSize: a.byte_size,
+      extractedText: a.extracted_text,
+      createdAt: a.created_at,
+    });
+  }
+
   return {
     id: row.id,
     groupId: row.conversation_id,
@@ -90,6 +131,8 @@ function toMessage(row: GroupMessageRow): GroupMessage {
           content: row.reply_to.content,
         }
       : null,
+    attachments,
+    removedAttachments,
     createdAt: row.created_at,
   };
 }
@@ -104,7 +147,20 @@ const MEMBERSHIP_COLUMNS =
 // suivrait le lien à l'envers et rendrait les réponses à ce message, en
 // tableau — vérifié contre PostgREST 12.
 const MESSAGE_COLUMNS =
-  "id, conversation_id, user_id, role, content, created_at, reply_to:reply_to_id(id, user_id, role, content)";
+  "id, conversation_id, user_id, role, content, created_at, reply_to:reply_to_id(id, user_id, role, content), " +
+  "message_attachments(id, storage_path, mime_type, byte_size, file_name, extracted_text, created_at, deleted_at)";
+
+/** Signe en un seul aller-retour les fichiers de toute une page de messages. */
+async function signMessages(
+  client: ReturnType<typeof forUser>,
+  rows: GroupMessageRow[],
+): Promise<GroupMessage[]> {
+  const paths = rows.flatMap((row) =>
+    (row.message_attachments ?? []).filter((a) => a.deleted_at === null).map((a) => a.storage_path),
+  );
+  const urlByPath = await signAttachmentUrls(client, paths);
+  return rows.map((row) => toMessage(row, urlByPath));
+}
 
 export const groupRepository: IGroupRepository = {
   async findWorkspaceMembers(workspaceId, accessToken) {
@@ -267,7 +323,8 @@ export const groupRepository: IGroupRepository = {
   },
 
   async findMessages(groupId, options, accessToken) {
-    let query = forUser(accessToken)
+    const client = forUser(accessToken);
+    let query = client
       .from("messages")
       .select(MESSAGE_COLUMNS)
       .eq("conversation_id", groupId)
@@ -287,13 +344,14 @@ export const groupRepository: IGroupRepository = {
     // Même geste que le fil personnel : on pagine depuis le plus récent, puis
     // on remet la page dans l'ordre de lecture.
     return {
-      items: page.map(toMessage).reverse(),
+      items: (await signMessages(client, page)).reverse(),
       nextCursor: hasMore ? (page[page.length - 1]?.created_at ?? null) : null,
     };
   },
 
   async findMessage(groupId, messageId, accessToken) {
-    const { data, error } = await forUser(accessToken)
+    const client = forUser(accessToken);
+    const { data, error } = await client
       .from("messages")
       .select(MESSAGE_COLUMNS)
       .eq("conversation_id", groupId)
@@ -302,7 +360,9 @@ export const groupRepository: IGroupRepository = {
       .maybeSingle();
 
     if (error) throw new Error(error.message);
-    return data ? toMessage(data as unknown as GroupMessageRow) : null;
+    if (!data) return null;
+    const [message] = await signMessages(client, [data as unknown as GroupMessageRow]);
+    return message ?? null;
   },
 
   appendMessage(groupId, userId, content, replyToId, accessToken) {
@@ -419,7 +479,9 @@ async function insertMessage(
     .single();
 
   if (error) throw new Error(error.message);
-  const message = toMessage(data as unknown as GroupMessageRow);
+  // Un message tout juste inséré n'a pas encore de fichier : ils le rejoignent
+  // après (`linkAttachments`), et le service les ajoute à ce qu'il rend.
+  const message = toMessage(data as unknown as GroupMessageRow, new Map());
 
   // `last_message_at` ordonne la liste des groupes, comme celle des
   // conversations personnelles.

@@ -52,6 +52,7 @@ import {
   type GroupListSuggestion,
   type GroupMessage,
   type SendGroupMessage,
+  type WorkspaceFile,
   type UpdateGroup,
   type CreateWorkspaceTask,
   type CreateWorkspaceTaskList,
@@ -421,8 +422,19 @@ export class JeanClaudeClient {
         ...(signal ? { signal } : {}),
       }),
 
-    /** Retire une pièce jointe pas encore envoyée. */
+    /**
+     * Retire une pièce jointe pas encore envoyée, ou supprime un fichier
+     * d'espace déjà envoyé (son auteur ou un admin).
+     */
     remove: (id: string) => this.http.request<void>(`/attachments/${id}`, { method: "DELETE" }),
+
+    /** Page « Fichiers » d'un espace, du plus récent au plus ancien. */
+    listWorkspaceFiles: (params: {
+      workspaceId: string;
+      folderId?: string;
+      cursor?: string;
+      limit?: number;
+    }) => this.http.request<Paginated<WorkspaceFile>>("/attachments", { query: params }),
   };
 
   readonly conversations = {

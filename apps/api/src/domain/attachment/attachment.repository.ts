@@ -1,20 +1,28 @@
-import type { MessageAttachmentMimeType } from "@jc/domain";
+import type { MessageAttachmentMimeType, WorkspaceRole } from "@jc/domain";
 import { logger } from "../../core/logger.js";
 import {
   ATTACHMENT_BUCKET,
   attachmentPath,
+  workspaceAttachmentPath,
   removeAttachmentObjects,
   signAttachmentUrl,
   signAttachmentUrls,
 } from "../../core/storage/attachment-storage.js";
 import { forUser } from "../../core/supabase/supabase.js";
-import type { AttachmentRecord, IAttachmentRepository } from "./attachment.repository.interface.js";
+import type {
+  AttachmentRecord,
+  IAttachmentRepository,
+  WorkspaceFileRecord,
+} from "./attachment.repository.interface.js";
 
 const SCOPE = "domain.attachment.repository";
 
 /** Ligne Postgres — snake_case, telle que renvoyée par Supabase. */
 type AttachmentRow = {
   id: string;
+  user_id: string;
+  workspace_id: string | null;
+  deleted_at: string | null;
   message_id: string | null;
   storage_path: string;
   mime_type: string;
@@ -25,7 +33,20 @@ type AttachmentRow = {
 };
 
 const COLUMNS =
-  "id, message_id, storage_path, mime_type, byte_size, file_name, extracted_text, created_at";
+  "id, user_id, workspace_id, deleted_at, message_id, storage_path, mime_type, byte_size, " +
+  "file_name, extracted_text, created_at";
+
+/** Fichier d'espace, avec la conversation où il a été envoyé. */
+type WorkspaceFileRow = {
+  id: string;
+  user_id: string;
+  storage_path: string;
+  mime_type: string;
+  byte_size: number;
+  file_name: string;
+  created_at: string;
+  messages: { conversations: { id: string; title: string } | null } | null;
+};
 
 /**
  * Le mapping snake_case ↔ camelCase est confiné ici. `url` n'est pas une
@@ -36,6 +57,9 @@ function toRecord(row: AttachmentRow, url: string): AttachmentRecord {
   return {
     id: row.id,
     messageId: row.message_id,
+    userId: row.user_id,
+    workspaceId: row.workspace_id,
+    deletedAt: row.deleted_at,
     url,
     fileName: row.file_name,
     mimeType: row.mime_type as MessageAttachmentMimeType,
@@ -51,7 +75,9 @@ export const attachmentRepository: IAttachmentRepository = {
     // Généré ici plutôt que laissé au défaut Postgres : le chemin Storage doit
     // être connu avant l'upload, qui doit lui-même réussir avant l'insertion.
     const id = crypto.randomUUID();
-    const path = attachmentPath(userId, id, input.mimeType);
+    const path = input.workspaceId
+      ? workspaceAttachmentPath(input.workspaceId, id, input.mimeType)
+      : attachmentPath(userId, id, input.mimeType);
 
     const { error: uploadError } = await client.storage
       .from(ATTACHMENT_BUCKET)
@@ -68,6 +94,7 @@ export const attachmentRepository: IAttachmentRepository = {
         byte_size: input.byteSize,
         file_name: input.fileName,
         extracted_text: input.extractedText,
+        workspace_id: input.workspaceId,
       })
       .select(COLUMNS)
       .single();
@@ -138,6 +165,98 @@ export const attachmentRepository: IAttachmentRepository = {
       .is("message_id", null);
 
     if (error) throw new Error(error.message);
+  },
+
+  async softDelete(id, accessToken) {
+    const client = forUser(accessToken);
+    // Le texte part avec le fichier : supprimer doit en effacer le contenu.
+    const { data, error } = await client
+      .from("message_attachments")
+      .update({ deleted_at: new Date().toISOString(), extracted_text: null })
+      .eq("id", id)
+      .is("deleted_at", null)
+      .select("storage_path")
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (data) {
+      const row = data as unknown as { storage_path: string };
+      await removeAttachmentObjects(client, [row.storage_path]);
+    }
+  },
+
+  async findWorkspaceRole(workspaceId, userId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return (data as { role: WorkspaceRole } | null)?.role ?? null;
+  },
+
+  async findWorkspaceFiles(workspaceId, options, accessToken) {
+    const client = forUser(accessToken);
+    // `!inner` : un fichier dont la conversation n'est pas lisible — ou pas
+    // rangée dans le dossier demandé — sort du résultat au lieu d'y revenir
+    // avec une conversation `null`.
+    const conversation = options.folderId
+      ? "conversations!inner(id, title, conversation_folders!inner(folder_id))"
+      : "conversations!inner(id, title)";
+    let query = client
+      .from("message_attachments")
+      .select(
+        `id, user_id, storage_path, mime_type, byte_size, file_name, created_at, messages!inner(${conversation})`,
+      )
+      .eq("workspace_id", workspaceId)
+      .not("message_id", "is", null)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(options.limit + 1);
+
+    if (options.folderId) {
+      query = query.eq("messages.conversations.conversation_folders.folder_id", options.folderId);
+    }
+    if (options.cursor) query = query.lt("created_at", options.cursor);
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+
+    const rows = data as unknown as WorkspaceFileRow[];
+    const hasMore = rows.length > options.limit;
+    const page = hasMore ? rows.slice(0, options.limit) : rows;
+    const urls = await signAttachmentUrls(
+      client,
+      page.map((row) => row.storage_path),
+    );
+
+    const items: WorkspaceFileRecord[] = [];
+    for (const row of page) {
+      const url = urls.get(row.storage_path);
+      const group = row.messages?.conversations;
+      if (!url || !group) {
+        logger.warn(SCOPE, "Fichier d'espace sans URL signée ou sans conversation, exclu", row.id);
+        continue;
+      }
+      items.push({
+        id: row.id,
+        url,
+        fileName: row.file_name,
+        mimeType: row.mime_type as MessageAttachmentMimeType,
+        byteSize: row.byte_size,
+        authorId: row.user_id,
+        groupId: group.id,
+        groupTitle: group.title,
+        createdAt: row.created_at,
+      });
+    }
+
+    return {
+      items,
+      nextCursor: hasMore ? (page[page.length - 1]?.created_at ?? null) : null,
+    };
   },
 
   async delete(id, accessToken) {
