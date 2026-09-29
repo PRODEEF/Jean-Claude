@@ -9,9 +9,10 @@ import {
   View,
 } from "react-native";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { Bell, BellOff, FolderInput, X } from "lucide-react-native";
+import { Bell, BellOff, CalendarPlus, FolderInput, X } from "lucide-react-native";
 import {
   DEFAULT_ASSISTANT_NAME,
+  type GroupEventSuggestion,
   type GroupListSuggestion,
   type GroupMessage,
   type WorkspaceMember,
@@ -33,11 +34,14 @@ import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { contentColumn, READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Text } from "@/shared/ui/text";
+import { EventFormDialog, type EventDialogTarget } from "@/features/calendar/EventFormDialog";
+import { GroupEventSuggestionCard } from "./GroupEventSuggestionCard";
 import { GroupFoldersDialog } from "./GroupFoldersDialog";
 import { GroupListSuggestionCard } from "./GroupListSuggestionCard";
 import { useGroupTyping } from "./hooks/use-group-realtime";
 import {
   useGroup,
+  useGroupEventSuggestions,
   useGroupMessages,
   useGroupSuggestions,
   useMarkGroupRead,
@@ -74,6 +78,15 @@ export function GroupScreen() {
     () => new Map((suggestions.data ?? []).map((suggestion) => [suggestion.messageId, suggestion])),
     [suggestions.data],
   );
+  const eventSuggestions = useGroupEventSuggestions(groupId);
+  const eventSuggestionByMessage = useMemo(
+    () =>
+      new Map(
+        (eventSuggestions.data ?? []).map((suggestion) => [suggestion.messageId, suggestion]),
+      ),
+    [eventSuggestions.data],
+  );
+  const [eventTarget, setEventTarget] = useState<EventDialogTarget | null>(null);
   const members = useWorkspaceMembers(workspaceId);
   const markRead = useMarkGroupRead(groupId);
   const send = useSendGroupMessage(groupId);
@@ -162,6 +175,16 @@ export function GroupScreen() {
       action={
         group.data ? (
           <View className="flex-row items-center gap-1">
+            {/* L'événement va au calendrier de tous les membres de la conversation. */}
+            <Button
+              variant="ghost"
+              onPress={() => setEventTarget(newEventTarget(groupId))}
+              accessibilityLabel="Ajouter un événement au calendrier des membres"
+              className="gap-2"
+            >
+              <Icon as={CalendarPlus} size={16} className="text-muted-foreground" />
+              {compact ? null : <Text className="text-sm text-muted-foreground">Événement</Text>}
+            </Button>
             <Button
               variant="ghost"
               onPress={() => setFiling(true)}
@@ -196,6 +219,7 @@ export function GroupScreen() {
         ) : undefined
       }
     >
+      <EventFormDialog target={eventTarget} onClose={() => setEventTarget(null)} />
       <GroupFoldersDialog
         group={filing ? (group.data ?? null) : null}
         onClose={() => setFiling(false)}
@@ -240,6 +264,7 @@ export function GroupScreen() {
               contentColumn(compact, READING_MAX_WIDTH),
             ]}
             renderItem={({ item, index }) => {
+              if (item.role === "system") return <SystemLine content={item.content} />;
               // Liste inversée : le message précédent à l'écran est le suivant
               // dans le tableau.
               const previous = items[index + 1];
@@ -266,6 +291,7 @@ export function GroupScreen() {
                   onReply={startReply}
                   onPressQuote={scrollToMessage}
                   suggestion={suggestionByMessage.get(item.id) ?? null}
+                  eventSuggestion={eventSuggestionByMessage.get(item.id) ?? null}
                   workspaceId={workspaceId}
                   nameOf={(userId) => names.get(userId) ?? "Ancien membre"}
                   onOpenList={(listId) => router.push(`/workspace/${workspaceId}/list/${listId}`)}
@@ -344,6 +370,7 @@ function MessageBubble({
   speaking,
   onToggleSpeech,
   suggestion,
+  eventSuggestion,
   workspaceId,
   nameOf,
   onOpenList,
@@ -359,6 +386,8 @@ function MessageBubble({
   onPressQuote: (messageId: string) => void;
   /** Liste proposée par Jean-Claude dans ce message, s'il y en a une. */
   suggestion: GroupListSuggestion | null;
+  /** Événement proposé par Jean-Claude dans ce message, s'il y en a un. */
+  eventSuggestion: GroupEventSuggestion | null;
   workspaceId: string;
   nameOf: (userId: string) => string;
   onOpenList: (listId: string) => void;
@@ -390,6 +419,7 @@ function MessageBubble({
           onOpenList={onOpenList}
         />
       ) : null}
+      {eventSuggestion ? <GroupEventSuggestionCard suggestion={eventSuggestion} /> : null}
     </View>
   );
 }
@@ -445,6 +475,26 @@ const QUOTE_SCROLL_RETRIES = 8;
  */
 function quotedText(message: Pick<GroupMessage, "role" | "content">): string {
   return message.role === "assistant" ? markdownToSpeech(message.content) : message.content;
+}
+
+/**
+ * Ligne laissée par un geste sur un événement d'espace : ni bulle ni auteur
+ * au-dessus, elle se nomme elle-même (« Bruno a déplacé… »), comme les
+ * annonces d'un groupe WhatsApp.
+ */
+function SystemLine({ content }: { content: string }) {
+  return (
+    <View className="flex-row items-center justify-center gap-1.5 px-6">
+      <Icon as={CalendarPlus} size={12} className="text-muted-foreground" />
+      <Text className="text-center text-xs text-muted-foreground">{content}</Text>
+    </View>
+  );
+}
+
+/** Nouvel événement : aujourd'hui, à l'heure pleine qui suit. */
+function newEventTarget(groupId: string): EventDialogTarget {
+  const now = new Date();
+  return { mode: "create", day: now, minute: Math.min(now.getHours() + 1, 23) * 60, groupId };
 }
 
 function typingLabel(names: string[]): string {

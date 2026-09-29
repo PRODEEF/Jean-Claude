@@ -7,6 +7,20 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 8 :
+événements)** — sur la branche `feat/collaboration`. Vérifié par un scénario
+d'accès sur Postgres 16, les requêtes jouées contre PostgREST en local, les
+tests, le typecheck, et dans Chromium sur une fausse API, en clair et en
+sombre, grand écran et 390 pt. **Aucun appel à un vrai modèle.**
+
+**Les conversations d'espace ont leurs événements.** Un membre ajoute un
+événement depuis la conversation ; il s'affiche au calendrier de chacun de ses
+membres, marqué de l'espace, et tous peuvent le modifier. Chaque geste laisse
+une ligne dans le fil. Quand le groupe fixe une date, Jean-Claude propose
+l'événement ; le premier membre qui accepte l'ajoute pour tous (§12.1).
+
+**Migration `20260930120000_workspace_events.sql`** à appliquer.
+
 Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 7 :
 fichiers)** — sur la branche `feat/collaboration`. Vérifié par un scénario
 d'accès sur Postgres 16, les requêtes jouées contre PostgREST en local, les

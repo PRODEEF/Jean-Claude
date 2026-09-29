@@ -55,6 +55,38 @@ export function useResolveGroupSuggestion(groupId: string, workspaceId: string) 
   return { accept, dismiss };
 }
 
+export function useGroupEventSuggestions(groupId: string) {
+  return useQuery({
+    queryKey: ["group", groupId, "event-suggestions"],
+    queryFn: () => api.groups.eventSuggestions(groupId),
+  });
+}
+
+/**
+ * Accepter ou ignorer un événement proposé par Jean-Claude. Accepté, il entre
+ * au calendrier de tous les membres ; le fil gagne la ligne qui le dit.
+ */
+export function useResolveGroupEventSuggestion(groupId: string) {
+  const queryClient = useQueryClient();
+  const refresh = () =>
+    Promise.all([
+      refreshGroup(queryClient, groupId),
+      queryClient.invalidateQueries({ queryKey: ["calendar"] }),
+    ]);
+
+  const accept = useMutation({
+    mutationFn: (suggestionId: string) => api.groups.acceptEventSuggestion(groupId, suggestionId),
+    onSettled: refresh,
+  });
+
+  const dismiss = useMutation({
+    mutationFn: (suggestionId: string) => api.groups.dismissEventSuggestion(groupId, suggestionId),
+    onSettled: refresh,
+  });
+
+  return { accept, dismiss };
+}
+
 export function useCreateGroup() {
   const queryClient = useQueryClient();
   return useMutation({

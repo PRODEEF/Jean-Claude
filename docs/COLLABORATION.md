@@ -782,6 +782,54 @@ fichiers natif.
 - **Dans une conversation d'espace, Jean-Claude ne voit toujours pas les
   calendriers personnels** : il ne peut pas dire qui est disponible.
 
+### Livré au lot 8
+
+- **Migration `20260930120000_workspace_events.sql`** : table
+  `workspace_events` (ponctuelle, pas de récurrence), lisible et modifiable
+  par les membres de la conversation ; création signée de soi ; trigger qui
+  interdit de changer un événement de conversation. Table
+  `workspace_event_suggestions` sur le modèle des listes proposées, publiée
+  pour Realtime.
+- **API** : module `domain/workspace-event` — `POST /api/workspace-events`,
+  `PATCH` et `DELETE /api/workspace-events/:id`. `GET /api/calendar` rend des
+  `CalendarEntry` : les événements personnels (`space: null`) et ceux des
+  conversations dont on est membre, marqués de leur espace et conversation,
+  dans une seule chronologie. Chaque geste laisse une ligne `system` dans le
+  fil (« Bruno a déplacé « Réunion » au vendredi 2 octobre, 18 h. »), écrite
+  dans le fuseau de son auteur (`describeEventChange`, `@jc/domain`).
+- **Jean-Claude** : outil `suggest_shared_event` sur une mention ou une
+  décision du groupe. Sa consigne est désormais datée (« Nous sommes… »,
+  fuseau du membre) ; les heures murales du modèle sont posées dans ce fuseau
+  par `instantFromModel`, déplacé de `conversation.service` vers
+  `core/timezone` pour servir aux deux fils. Le premier membre qui accepte
+  crée l'événement pour tous ; la proposition se rouvre si la création échoue.
+  Il lit les lignes du calendrier du fil (« [Calendrier] … »).
+- **App** : bouton « Événement » dans l'en-tête de la conversation, qui ouvre
+  le formulaire du calendrier ; lignes du calendrier centrées dans le fil ;
+  carte de proposition ; au calendrier, icône « membres » devant un événement
+  d'espace, espace et conversation dans la fiche et la vue jour ; la
+  modification et la suppression depuis le calendrier vont à la bonne route.
+  Realtime relit le calendrier quand une ligne `system` arrive.
+
+**Vérification.** Scénario d'accès sur Postgres 16 (9 cas : membres,
+membre de l'espace hors conversation, extérieur, conversation personnelle,
+usurpation, changement de conversation, horaire inversé). Requêtes jouées
+telles quelles contre PostgREST 12.2 : création, déplacement, retrait et
+leurs lignes dans le fil, calendrier fusionné par membre, proposition puis
+acceptation, second geste refusé (409). 637 tests de l'API, 127 des
+paquets (dont 8 de `describeEventChange`), typecheck. Parcours Chromium sur
+une fausse API, clair et sombre, 1280 pt et 390 pt : accepter une
+proposition, créer depuis la conversation, marque au calendrier, fiche,
+modification envoyée à `/workspace-events`.
+
+**Non vérifié.** Un vrai modèle : la justesse des dates proposées reste à
+éprouver. Le temps réel. iOS et Android.
+
+**Limites.** Pas de récurrence. Rappel enregistré, non délivré (aucun
+rappel ne l'est encore, calendrier personnel compris). La ligne du fil est
+écrite dans le fuseau de son auteur : un membre à l'étranger la lirait dans
+un autre fuseau que le sien.
+
 ### Lots
 
 | Lot | Contenu                                                            | Démonstration                                                                |

@@ -43,6 +43,19 @@ export function useGroupMessageFeed() {
           // Seul champ lu dans la ligne brute : de quoi savoir quel fil relire.
           const conversationId: unknown = payload.new["conversation_id"];
           if (typeof conversationId === "string") void refreshGroup(queryClient, conversationId);
+          // Une ligne `system` dit qu'un événement d'espace a changé : le
+          // calendrier des membres doit suivre (lot 8).
+          if (payload.new["role"] === "system") {
+            void queryClient.invalidateQueries({ queryKey: ["calendar"] });
+          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "workspace_event_suggestions" },
+        (payload) => {
+          const conversationId: unknown = payload.new["conversation_id"];
+          if (typeof conversationId === "string") void refreshGroup(queryClient, conversationId);
         },
       )
       // La carte de proposition naît après le message de Jean-Claude : sans ce

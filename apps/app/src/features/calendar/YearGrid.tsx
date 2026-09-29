@@ -1,13 +1,13 @@
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
-import type { CalendarEvent } from "@jc/domain";
+import type { CalendarEntry } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
 import { isSameDay, monthGrid, monthName, monthsOfYear } from "@/shared/lib/dates";
 
 export type YearGridProps = {
   /** Année affichée ; seul le millésime compte. */
   anchor: Date;
-  events: CalendarEvent[];
+  events: CalendarEntry[];
   /** Ouvre le mois choisi — la vue année sert à viser, pas à lire le détail. */
   onSelectMonth: (month: Date) => void;
 };

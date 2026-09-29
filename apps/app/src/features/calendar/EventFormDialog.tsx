@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { View } from "react-native";
-import type { CalendarEvent } from "@jc/domain";
+import type { CalendarEntry } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -17,7 +17,9 @@ import {
 } from "./lib/event-form";
 
 export type EventDialogTarget =
-  { mode: "create"; day: Date; minute: number } | { mode: "edit"; event: CalendarEvent };
+  /** `groupId` : depuis une conversation d'espace, pour le calendrier de tous ses membres. */
+  | { mode: "create"; day: Date; minute: number; groupId?: string }
+  | { mode: "edit"; event: CalendarEntry };
 
 export type EventFormDialogProps = {
   /** `null` = fenêtre fermée. */
@@ -64,6 +66,7 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const editing = target.mode === "edit";
+  const shared = target.mode === "edit" ? target.event.space !== null : Boolean(target.groupId);
   const pending = create.isPending || update.isPending || remove.isPending;
 
   const patch = <K extends keyof EventFormValues>(key: K, value: EventFormValues[K]) =>
@@ -79,9 +82,12 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
 
     const options = { onSuccess: onClose, onError: (cause: Error) => setError(toMessage(cause)) };
     if (target.mode === "edit") {
-      update.mutate({ id: target.event.id, patch: parsed.value }, options);
+      update.mutate({ event: target.event, patch: parsed.value }, options);
     } else {
-      create.mutate(parsed.value, options);
+      create.mutate(
+        { ...parsed.value, ...(target.groupId ? { groupId: target.groupId } : {}) },
+        options,
+      );
     }
   };
 
@@ -90,6 +96,10 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
       open
       onClose={onClose}
       title={editing ? "Modifier l'événement" : "Nouvel événement"}
+      // Dire pour qui l'on écrit : un événement d'espace s'affiche chez tous.
+      {...(shared
+        ? { description: "Visible et modifiable par tous les membres de la conversation." }
+        : {})}
       error={error}
       // Bascule du libellé plutôt que suppression au premier appui : le bouton
       // voisine désormais avec « Enregistrer », et un événement supprimé par
@@ -105,7 +115,7 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
                   setConfirmingDelete(true);
                   return;
                 }
-                remove.mutate(target.event.id, {
+                remove.mutate(target.event, {
                   onSuccess: onClose,
                   onError: (cause: Error) => setError(toMessage(cause)),
                 });
