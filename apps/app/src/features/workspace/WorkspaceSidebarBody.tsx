@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
-import { ListChecks, Plus } from "lucide-react-native";
+import { FileText, ListChecks, Plus } from "lucide-react-native";
 import type { Group, WorkspaceTaskList } from "@jc/domain";
 import { useGroups } from "@/features/group/hooks/use-groups";
 import {
@@ -56,9 +56,22 @@ export function WorkspaceSidebarBody({
     return <ListRow list={list} active={pathname === href} onPress={() => onNavigate(href)} />;
   };
   const createFolder = () => setEditing({ kind: "create", parentId: null });
+  const filesHref = `/workspace/${workspaceId}/files`;
 
   return (
     <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
+      {/* En tête, comme l'entrée « Fichiers » de Slack et de Teams : ce n'est
+          ni un dossier ni une conversation, mais ce qu'elles contiennent. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onPress={() => onNavigate(filesHref)}
+        className={selected("mt-2 w-full justify-start gap-2 px-2", pathname === filesHref)}
+      >
+        <Icon as={FileText} size={14} className="text-muted-foreground" />
+        <Text className={rowLabel(pathname === filesHref)}>Fichiers</Text>
+      </Button>
+
       <SectionLabel action={{ label: "Créer un dossier", onPress: createFolder }}>
         Dossiers
       </SectionLabel>

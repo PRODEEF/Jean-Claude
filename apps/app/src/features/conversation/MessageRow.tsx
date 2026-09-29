@@ -95,6 +95,8 @@ export type MessageRowProps = {
   quote?: { id: string; author: string; content: string } | null;
   /** Ramène le fil au message cité. */
   onPressQuote?: (messageId: string) => void;
+  /** Fichiers joints puis supprimés — conversations d'espace (lot 7). */
+  removedFileNames?: string[];
   /** Un tour est déjà en cours : les deux gestes sont neutralisés. */
   busy: boolean;
   /** Ce message est celui en cours de lecture à voix haute (§12.3, A.12). */
@@ -132,6 +134,7 @@ export const MessageRow = memo(function MessageRow({
   onReply,
   quote = null,
   onPressQuote,
+  removedFileNames = [],
   busy,
   speaking,
   onToggleSpeech,
@@ -248,6 +251,15 @@ export const MessageRow = memo(function MessageRow({
                 </View>
               ) : null}
               {quote ? <QuoteBlock quote={quote} onPress={onPressQuote} /> : null}
+              {removedFileNames.map((fileName, index) => (
+                <Text
+                  key={`${index}-${fileName}`}
+                  style={[styles.removedFile, { color: palette.textMuted }]}
+                  numberOfLines={1}
+                >
+                  Fichier supprimé : {fileName}
+                </Text>
+              ))}
               {answeredQuestion ? (
                 <Text style={[styles.question, { color: palette.textMuted }]}>
                   Q&nbsp;: {answeredQuestion}
@@ -694,6 +706,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  removedFile: {
+    fontFamily: FONT_FAMILY,
+    fontSize: fontSize.sm,
+    fontStyle: "italic",
     marginBottom: spacing.xs,
   },
   quoteAuthor: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.medium },

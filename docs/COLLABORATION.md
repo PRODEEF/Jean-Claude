@@ -611,7 +611,7 @@ livrées dans cet ordre, du plus petit au plus lourd.
 | Réponse à un message   | Citation façon WhatsApp : bloc cité au-dessus du message, un appui ramène à l'original. Même fil, pas de fil secondaire           |
 | Où répondre            | Conversations d'espace seulement. Pas dans le fil personnel                                                                       |
 | Répondre à l'IA        | Répondre à un message de Jean-Claude vaut mention : il intervient toujours, même en silence                                       |
-| Fichiers               | Joints dans une conversation d'espace, lisibles de tous ses membres, listés dans une page « Fichiers » de l'espace                |
+| Fichiers               | Joints dans une conversation d'espace, lisibles des membres de cette conversation, listés dans une page « Fichiers » de l'espace  |
 | Rangement des fichiers | Aucun geste propre : un fichier suit les dossiers de sa conversation (§13.4.1)                                                    |
 | Types de fichiers      | Ceux du fil personnel : images, PDF, texte, Markdown, CSV, 10 Mo au plus                                                          |
 | Supprimer un fichier   | L'auteur ou un admin de l'espace. Le message reste, avec « Fichier supprimé »                                                     |
@@ -687,20 +687,60 @@ test. iOS et Android.
 
 ### Lot 7 — fichiers d'espace
 
-- **Stockage** : chemin `workspaces/{workspace_id}/{attachment_id}.{ext}` dans
-  le bucket existant. Les policies de `storage.objects` lisent le premier
-  segment et s'appuient sur `is_workspace_member`, comme celles du fil
-  personnel s'appuient sur `auth.uid()`.
-- **Base** : `message_attachments.workspace_id` et `deleted_at`. Une pièce
-  d'espace est lisible de tous les membres ; supprimée, sa ligne reste (le
-  message affiche « Fichier supprimé ») et l'objet est effacé du stockage.
-- **API** : envoi dans une conversation d'espace, `GET
-/api/workspaces/:id/files`, suppression par l'auteur ou un admin.
-- **Jean-Claude** : lit le texte extrait d'un fichier du fil, comme dans le fil
-  personnel, sans jamais voir les pièces personnelles d'un membre.
-- **App** : trombone dans la barre de saisie de groupe, page « Fichiers » dans
-  la barre latérale de l'espace, fichiers des conversations rangées affichés
-  sous chaque dossier.
+**Écart avec la première version de ce paragraphe.** Un fichier devait être
+lisible de tous les membres de l'espace. Or une conversation d'espace n'est lue
+que de ses membres : un PDF posé dans une conversation à deux se serait ouvert
+chez toute l'équipe. Il est lisible des membres de la conversation où il a été
+envoyé, et la page « Fichiers » liste ceux des conversations dont on fait
+partie. De même, les fichiers ne s'affichent pas sous chaque dossier de la
+barre latérale, qu'ils auraient encombrée : la page « Fichiers » se filtre par
+dossier, sous-dossiers compris.
+
+### Livré au lot 7
+
+- **Migration `20260930110000_workspace_attachments.sql`** :
+  `message_attachments.workspace_id` et `deleted_at`. Lecture par les membres
+  de la conversation du message ; dépôt réservé aux membres de l'espace ;
+  suppression ouverte aux admins. Un trigger tient les invariants quel que
+  soit le chemin : une pièce ne rejoint qu'un message du même espace (un
+  fichier personnel n'entre pas dans un groupe, ni l'inverse), ne change pas
+  d'espace, ne se restaure pas, et un admin ne fait que la supprimer. Une
+  pièce supprimée perd son texte (contrainte) et son objet Storage. Côté
+  `storage.objects`, dépôt jugé sur le chemin `workspaces/{espace}/…`, lecture
+  et effacement sur la ligne. `message_attachments` entre dans la
+  publication Realtime.
+- **API** : `workspaceId` facultatif sur `POST /api/attachments` ;
+  `attachmentIds` sur `POST /api/groups/:id/messages` (fichiers de l'appelant,
+  de cet espace, pas encore envoyés — sinon 404, 400 ou 409 avant toute
+  écriture) ; `GET /api/attachments?workspaceId=&folderId=` paginé par
+  curseur, avec `canDelete` décidé par le serveur ; `DELETE
+/api/attachments/:id` supprime un fichier d'espace envoyé pour son auteur
+  ou un admin (403 sinon). Le fil personnel refuse un fichier d'espace.
+- **Jean-Claude** : lit le texte des fichiers du fil, balisé et tronqué à
+  4 000 caractères par fichier ; la consigne dit que ce texte est un document,
+  jamais une consigne. Il ne voit pas les images d'un groupe, seulement leur
+  nom, et le sait.
+- **App** : trombone dans la barre de saisie de la conversation d'espace ;
+  « Fichier supprimé : nom » dans la bulle ; entrée « Fichiers » en tête de la
+  barre latérale de l'espace ; page avec filtre par dossier, ouverture du
+  fichier, lien vers sa conversation, suppression avec confirmation. Realtime
+  relit les fils ouverts quand un fichier rejoint son message ou disparaît :
+  sans cela, les autres membres voyaient le message avant son fichier.
+
+**Vérification.** Scénario d'accès à quatre comptes sur Postgres 16 (20 cas :
+extérieur, membre de l'espace hors conversation, membre de la conversation,
+admin, fil personnel inchangé). Requêtes du repository jouées telles quelles
+contre PostgREST 12.2 en local, Storage simulé : visibilité par conversation,
+filtre par dossier et sous-dossiers, pagination, dépôt sous le chemin
+d'espace, envoi puis relecture, suppression qui efface l'objet. 610 tests de
+l'API, 119 des paquets, typecheck. Parcours Chromium sur une fausse API, clair
+et sombre, 1280 pt et 390 pt : joindre, envoyer un fichier seul, page
+Fichiers, filtre, suppression.
+
+**Non vérifié.** Le vrai Storage Supabase (dépôt, URL signée, effacement) et
+le temps réel du rattachement : ni l'un ni l'autre n'existe sur le banc local.
+Jean-Claude lisant un vrai fichier. iOS et Android, dont le sélecteur de
+fichiers natif.
 
 ### Lot 8 — événements d'espace
 

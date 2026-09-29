@@ -17,7 +17,7 @@ export type AttachmentFileCardProps = {
   onRemove?: (() => void) | undefined;
 };
 
-function formatByteSize(byteSize: number): string {
+export function formatByteSize(byteSize: number): string {
   if (byteSize < 1024) return `${byteSize} o`;
   const kilobytes = byteSize / 1024;
   if (kilobytes < 1024) return `${Math.round(kilobytes)} Ko`;

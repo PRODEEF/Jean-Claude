@@ -19,6 +19,8 @@ import {
 import { useWorkspaceMembers } from "@/features/workspace/hooks/use-workspaces";
 import { MessageRow } from "@/features/conversation/MessageRow";
 import { useSpeech } from "@/features/conversation/hooks/use-speech";
+import { useAttachmentPicker } from "@/features/conversation/hooks/use-attachment-picker";
+import { useComposerAttachments } from "@/features/conversation/hooks/use-composer-attachments";
 import { Composer } from "@/features/conversation/Composer";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { markdownToSpeech } from "@/shared/lib/markdown";
@@ -47,7 +49,8 @@ import {
  * Fil d'une discussion de groupe.
  *
  * Volontairement plus simple que le fil personnel : ni flux de réponse, ni
- * suggestions, ni pièces jointes. Jean-Claude y répond comme un membre : sa
+ * suggestions. Les fichiers joints sont déposés dans l'espace et lus des seuls
+ * membres de la conversation (lot 7). Jean-Claude y répond comme un membre : sa
  * réponse arrive par Realtime, après coup (docs/COLLABORATION.md, lot 4).
  */
 export function GroupScreen() {
@@ -83,6 +86,8 @@ export function GroupScreen() {
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const listRef = useRef<FlatList<GroupMessage>>(null);
   const inputRef = useRef<TextInput>(null);
+  const attachments = useComposerAttachments(workspaceId);
+  const picker = useAttachmentPicker(attachments.add, inputRef);
   // Relances d'un appui sur une citation. Chacune peut échouer à son tour et
   // rappeler le gestionnaire d'échec : sans borne, le fil défilait sans fin.
   const scrollRetries = useRef(0);
@@ -130,13 +135,15 @@ export function GroupScreen() {
 
   const submit = () => {
     const content = draft.trim();
-    if (!content || send.isPending) return;
+    const attachmentIds = attachments.readyIds;
+    if ((!content && attachmentIds.length === 0) || send.isPending || attachments.uploading) return;
     send.mutate(
-      { content, attachmentIds: [], ...(replyTarget ? { replyToId: replyTarget.id } : {}) },
+      { content, attachmentIds, ...(replyTarget ? { replyToId: replyTarget.id } : {}) },
       {
         onSuccess: () => {
           setDraft("");
           setReplyToId(null);
+          attachments.reset();
         },
       },
     );
@@ -302,6 +309,9 @@ export function GroupScreen() {
             onSubmit={submit}
             placeholder={`Écrivez un message ou mentionnez @${assistantName} pour l'appeler`}
             busy={send.isPending}
+            attachments={attachments.items}
+            onRemoveAttachment={attachments.remove}
+            picker={picker}
             slashCommands={false}
             mentionName={assistantName}
           />
@@ -365,6 +375,7 @@ function MessageBubble({
         author={mine ? null : author}
         mine={mine}
         quote={quote}
+        removedFileNames={message.removedAttachments.map((file) => file.fileName)}
         onReply={onReply}
         onPressQuote={onPressQuote}
         busy={false}

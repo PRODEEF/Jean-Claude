@@ -7,6 +7,20 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 7 :
+fichiers)** — sur la branche `feat/collaboration`. Vérifié par un scénario
+d'accès sur Postgres 16, les requêtes jouées contre PostgREST en local, les
+tests, le typecheck, et dans Chromium sur une fausse API, en clair et en
+sombre, grand écran et 390 pt. **Ni vrai Storage, ni vrai modèle.**
+
+**On partage des fichiers dans une conversation d'espace.** Le trombone y
+joint images, PDF et fichiers texte, lus des seuls membres de la conversation.
+Une page « Fichiers » les rassemble, filtrable par dossier ; l'auteur ou un
+admin supprime un fichier, et le message indique « Fichier supprimé ».
+Jean-Claude lit le texte des fichiers du fil.
+
+**Migration `20260930110000_workspace_attachments.sql`** à appliquer.
+
 Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 6 :
 réponse citée)** — sur la branche `feat/collaboration`. Vérifié par la
 migration rejouée sur Postgres 16 avec un scénario dédié, les tests, le

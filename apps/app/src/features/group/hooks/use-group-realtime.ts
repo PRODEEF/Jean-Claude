@@ -55,6 +55,20 @@ export function useGroupMessageFeed() {
           if (typeof conversationId === "string") void refreshGroup(queryClient, conversationId);
         },
       )
+      // Un fichier rejoint son message juste après lui, ou disparaît plus
+      // tard : la ligne ne dit pas de quelle conversation il s'agit, on relit
+      // les fils de groupe ouverts et les pages « Fichiers ».
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "message_attachments" },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ["group"] });
+          void queryClient.invalidateQueries({
+            predicate: (query) =>
+              query.queryKey[0] === "workspace" && query.queryKey[2] === "files",
+          });
+        },
+      )
       .subscribe();
 
     return () => {
