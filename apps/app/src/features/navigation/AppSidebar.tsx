@@ -242,6 +242,18 @@ export function AppSidebar({
             restent au-dessus de l'espace, car ils ne dépendent pas de lui. */}
         <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onNavigate={go} />
 
+        {/* Même bouton dans les deux espaces : dans un espace collaboratif, il
+            ouvre la création d'une conversation partagée. */}
+        <Button
+          variant="outline"
+          onPress={() => (activeWorkspaceId ? setCreatingGroup(true) : go("/chat"))}
+          accessibilityLabel="Démarrer une nouvelle conversation"
+          className="justify-start gap-2"
+        >
+          <Icon as={Plus} size={16} />
+          <Text>Nouvelle conversation</Text>
+        </Button>
+
         {activeWorkspaceId ? (
           <Button
             variant="ghost"
@@ -256,18 +268,6 @@ export function AppSidebar({
             <Text className="text-sm font-normal text-foreground">Membres et invitations</Text>
           </Button>
         ) : null}
-
-        {/* Même bouton dans les deux espaces : dans un espace collaboratif, il
-            ouvre la création d'une conversation partagée. */}
-        <Button
-          variant="outline"
-          onPress={() => (activeWorkspaceId ? setCreatingGroup(true) : go("/chat"))}
-          accessibilityLabel="Démarrer une nouvelle conversation"
-          className="justify-start gap-2"
-        >
-          <Icon as={Plus} size={16} />
-          <Text>Nouvelle conversation</Text>
-        </Button>
       </View>
 
       {activeWorkspaceId ? (
