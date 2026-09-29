@@ -300,7 +300,7 @@ export function GroupScreen() {
               if (text.trim()) notifyTyping();
             }}
             onSubmit={submit}
-            placeholder={`Écrire un message — @${assistantName} pour l'appeler`}
+            placeholder={`Écrivez un message ou mentionnez @${assistantName} pour l'appeler`}
             busy={send.isPending}
             slashCommands={false}
             mentionName={assistantName}
