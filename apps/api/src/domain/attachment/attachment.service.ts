@@ -130,10 +130,19 @@ export class AttachmentService {
     const role = await this.attachments.findWorkspaceRole(query.workspaceId, userId, accessToken);
     if (!role) throw httpError(404, "Espace introuvable.");
 
+    // Un dossier contient ses sous-dossiers : on raisonne en « ce que contient
+    // Budget », comme le compteur de la barre latérale.
+    const folderIds = query.folderId
+      ? withDescendants(
+          query.folderId,
+          await this.attachments.findWorkspaceFolders(query.workspaceId, accessToken),
+        )
+      : null;
+
     const page = await this.attachments.findWorkspaceFiles(
       query.workspaceId,
       {
-        ...(query.folderId ? { folderId: query.folderId } : {}),
+        ...(folderIds ? { folderIds } : {}),
         ...(query.cursor ? { cursor: query.cursor } : {}),
         limit: query.limit,
       },
@@ -148,4 +157,25 @@ export class AttachmentService {
       nextCursor: page.nextCursor,
     };
   }
+}
+
+/**
+ * Le dossier et tous ses descendants, à toute profondeur. Un dossier inconnu
+ * ne rend que lui-même : le filtre ne trouve alors rien, sans erreur.
+ */
+export function withDescendants(
+  folderId: string,
+  folders: { id: string; parentId: string | null }[],
+): string[] {
+  const found = new Set([folderId]);
+  let frontier = [folderId];
+  while (frontier.length > 0) {
+    const next = folders
+      .filter((folder) => folder.parentId !== null && frontier.includes(folder.parentId))
+      .map((folder) => folder.id)
+      .filter((id) => !found.has(id));
+    for (const id of next) found.add(id);
+    frontier = next;
+  }
+  return [...found];
 }

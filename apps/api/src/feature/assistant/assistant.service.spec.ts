@@ -213,6 +213,7 @@ const IDLE_ATTACHMENTS: IAttachmentRepository = {
   softDelete: jest.fn(),
   findWorkspaceRole: jest.fn(),
   findWorkspaceFiles: jest.fn(),
+  findWorkspaceFolders: jest.fn(),
 };
 
 /**

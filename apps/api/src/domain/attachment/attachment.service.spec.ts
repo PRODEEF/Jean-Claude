@@ -1,5 +1,5 @@
 import { MESSAGE_ATTACHMENT_MAX_BYTES } from "@jc/domain";
-import { AttachmentService } from "./attachment.service.js";
+import { AttachmentService, withDescendants } from "./attachment.service.js";
 import type { AttachmentRecord, IAttachmentRepository } from "./attachment.repository.interface.js";
 
 const TOKEN = "access-token";
@@ -31,6 +31,7 @@ function makeRepository(overrides: Partial<IAttachmentRepository> = {}): IAttach
     softDelete: jest.fn().mockResolvedValue(undefined),
     findWorkspaceRole: jest.fn().mockResolvedValue(null),
     findWorkspaceFiles: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    findWorkspaceFolders: jest.fn().mockResolvedValue([]),
     ...overrides,
   };
 }
@@ -404,8 +405,16 @@ describe("AttachmentService", () => {
       expect(page.items[0]?.canDelete).toBe(true);
     });
 
-    it("transmet le filtre par dossier", async () => {
-      const repo = makeRepository({ findWorkspaceRole: jest.fn().mockResolvedValue("member") });
+    it("filtre par dossier, sous-dossiers compris", async () => {
+      const repo = makeRepository({
+        findWorkspaceRole: jest.fn().mockResolvedValue("member"),
+        findWorkspaceFolders: jest.fn().mockResolvedValue([
+          { id: "folder-1", parentId: null },
+          { id: "folder-2", parentId: "folder-1" },
+          { id: "folder-3", parentId: "folder-2" },
+          { id: "folder-4", parentId: null },
+        ]),
+      });
 
       await new AttachmentService(repo).listWorkspaceFiles(
         "user-1",
@@ -415,7 +424,7 @@ describe("AttachmentService", () => {
 
       expect(repo.findWorkspaceFiles).toHaveBeenCalledWith(
         "ws-1",
-        { folderId: "folder-1", limit: 20 },
+        { folderIds: ["folder-1", "folder-2", "folder-3"], limit: 20 },
         TOKEN,
       );
     });
@@ -432,5 +441,20 @@ describe("AttachmentService", () => {
       ).rejects.toMatchObject({ status: 404 });
       expect(repo.findWorkspaceFiles).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("withDescendants", () => {
+  it("rend le dossier seul quand il n'a pas d'enfant", () => {
+    expect(withDescendants("a", [{ id: "a", parentId: null }])).toEqual(["a"]);
+  });
+
+  it("ne boucle pas sur une arborescence malformée", () => {
+    expect(
+      withDescendants("a", [
+        { id: "a", parentId: "b" },
+        { id: "b", parentId: "a" },
+      ]).sort(),
+    ).toEqual(["a", "b"]);
   });
 });

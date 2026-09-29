@@ -197,12 +197,25 @@ export const attachmentRepository: IAttachmentRepository = {
     return (data as { role: WorkspaceRole } | null)?.role ?? null;
   },
 
+  async findWorkspaceFolders(workspaceId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("folders")
+      .select("id, parent_id")
+      .eq("workspace_id", workspaceId);
+
+    if (error) throw new Error(error.message);
+    return (data as { id: string; parent_id: string | null }[]).map((row) => ({
+      id: row.id,
+      parentId: row.parent_id,
+    }));
+  },
+
   async findWorkspaceFiles(workspaceId, options, accessToken) {
     const client = forUser(accessToken);
     // `!inner` : un fichier dont la conversation n'est pas lisible — ou pas
     // rangée dans le dossier demandé — sort du résultat au lieu d'y revenir
     // avec une conversation `null`.
-    const conversation = options.folderId
+    const conversation = options.folderIds
       ? "conversations!inner(id, title, conversation_folders!inner(folder_id))"
       : "conversations!inner(id, title)";
     let query = client
@@ -216,8 +229,8 @@ export const attachmentRepository: IAttachmentRepository = {
       .order("created_at", { ascending: false })
       .limit(options.limit + 1);
 
-    if (options.folderId) {
-      query = query.eq("messages.conversations.conversation_folders.folder_id", options.folderId);
+    if (options.folderIds) {
+      query = query.in("messages.conversations.conversation_folders.folder_id", options.folderIds);
     }
     if (options.cursor) query = query.lt("created_at", options.cursor);
 

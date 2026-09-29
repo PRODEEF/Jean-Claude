@@ -394,6 +394,7 @@ function makeAttachmentRepository(
     softDelete: jest.fn().mockResolvedValue(undefined),
     findWorkspaceRole: jest.fn().mockResolvedValue(null),
     findWorkspaceFiles: jest.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    findWorkspaceFolders: jest.fn().mockResolvedValue([]),
     ...overrides,
   };
 }

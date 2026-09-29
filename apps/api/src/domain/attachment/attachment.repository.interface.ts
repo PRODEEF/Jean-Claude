@@ -72,13 +72,19 @@ export interface IAttachmentRepository {
     userId: string,
     accessToken: string,
   ): Promise<WorkspaceRole | null>;
+  /** Dossiers de l'espace, avec leur parent — pour y inclure les sous-dossiers. */
+  findWorkspaceFolders(
+    workspaceId: string,
+    accessToken: string,
+  ): Promise<{ id: string; parentId: string | null }[]>;
   /**
    * Fichiers envoyés et non supprimés de l'espace, du plus récent au plus
    * ancien, limités par la RLS aux conversations dont l'appelant est membre.
    */
   findWorkspaceFiles(
     workspaceId: string,
-    options: { folderId?: string; cursor?: string; limit: number },
+    /** `folderIds` : seulement les conversations rangées dans l'un de ces dossiers. */
+    options: { folderIds?: string[]; cursor?: string; limit: number },
     accessToken: string,
   ): Promise<Paginated<WorkspaceFileRecord>>;
 }
