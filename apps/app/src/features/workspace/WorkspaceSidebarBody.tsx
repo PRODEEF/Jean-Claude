@@ -1,9 +1,14 @@
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
-import { MessagesSquare, Plus, Users } from "lucide-react-native";
-import type { Group } from "@jc/domain";
+import { ListChecks, MessagesSquare, Plus, Users } from "lucide-react-native";
+import type { Group, WorkspaceTaskList } from "@jc/domain";
 import { CreateGroupDialog } from "@/features/group/CreateGroupDialog";
 import { useGroups } from "@/features/group/hooks/use-groups";
+import { useWorkspaceLists } from "@/features/workspace-list/hooks/use-workspace-lists";
+import {
+  WorkspaceListDialog,
+  type WorkspaceListTarget,
+} from "@/features/workspace-list/WorkspaceListDialog";
 import { cn } from "@/shared/lib/utils";
 import { WorkspaceFolderDialog, type WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
 import { WorkspaceFolderTree } from "./WorkspaceFolderTree";
@@ -33,12 +38,18 @@ export function WorkspaceSidebarBody({
 }: WorkspaceSidebarBodyProps) {
   const groups = useGroups(workspaceId);
   const folders = useWorkspaceFolders(workspaceId);
+  const lists = useWorkspaceLists(workspaceId);
   const [creating, setCreating] = useState(false);
+  const [listDialog, setListDialog] = useState<WorkspaceListTarget | null>(null);
   const [editing, setEditing] = useState<WorkspaceFolderTarget | null>(null);
 
   const renderGroup = (group: Group) => {
     const href = `/workspace/${workspaceId}/group/${group.id}`;
     return <GroupRow group={group} active={pathname === href} onPress={() => onNavigate(href)} />;
+  };
+  const renderList = (list: WorkspaceTaskList) => {
+    const href = `/workspace/${workspaceId}/list/${list.id}`;
+    return <ListRow list={list} active={pathname === href} onPress={() => onNavigate(href)} />;
   };
   const membersHref = `/workspace/${workspaceId}`;
 
@@ -95,8 +106,10 @@ export function WorkspaceSidebarBody({
       <WorkspaceFolderTree
         nodes={folders.data ?? []}
         groups={groups.data ?? []}
+        lists={lists.data ?? []}
         onEdit={setEditing}
         renderGroup={renderGroup}
+        renderList={renderList}
       />
 
       <View className="mt-3 flex-row items-center justify-between px-2 py-1">
@@ -136,6 +149,51 @@ export function WorkspaceSidebarBody({
       {groups.data?.map((group) => (
         <View key={group.id}>{renderGroup(group)}</View>
       ))}
+
+      <View className="mt-3 flex-row items-center justify-between px-2 py-1">
+        <Text className="text-xs font-medium text-muted-foreground">Listes</Text>
+        <Button
+          variant="ghost"
+          size="icon"
+          onPress={() => setListDialog({ kind: "create", workspaceId })}
+          accessibilityLabel="Créer une liste partagée"
+          className="size-7"
+        >
+          <Icon as={Plus} size={14} className="text-muted-foreground" />
+        </Button>
+      </View>
+
+      {lists.error ? (
+        <Text className="px-2 py-1 text-xs text-destructive">
+          Listes indisponibles pour le moment.
+        </Text>
+      ) : null}
+
+      {lists.data?.length === 0 ? (
+        <Button
+          variant="ghost"
+          onPress={() => setListDialog({ kind: "create", workspaceId })}
+          className="justify-start gap-2 px-2"
+        >
+          <Icon as={Plus} size={14} className="text-muted-foreground" />
+          <Text className="text-xs font-normal text-muted-foreground">
+            Créer une première liste
+          </Text>
+        </Button>
+      ) : null}
+
+      {lists.data?.map((list) => (
+        <View key={list.id}>{renderList(list)}</View>
+      ))}
+
+      <WorkspaceListDialog
+        target={listDialog}
+        onClose={() => setListDialog(null)}
+        onDone={(list) => {
+          setListDialog(null);
+          if (list) onNavigate(`/workspace/${workspaceId}/list/${list.id}`);
+        }}
+      />
 
       <WorkspaceFolderDialog
         workspaceId={workspaceId}
@@ -195,6 +253,37 @@ function GroupRow({
           </Text>
         </View>
       ) : null}
+    </Button>
+  );
+}
+
+/** Une liste partagée, avec ce qu'il reste à faire. */
+function ListRow({
+  list,
+  active,
+  onPress,
+}: {
+  list: WorkspaceTaskList;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const remaining = list.tasks.filter((task) => !task.done).length;
+
+  return (
+    <Button
+      variant="ghost"
+      onPress={onPress}
+      accessibilityLabel={`${list.title}, ${remaining} tâche(s) à faire`}
+      className={cn("justify-start gap-3 px-2", active && "bg-accent")}
+    >
+      <Icon as={ListChecks} size={16} className="text-muted-foreground" />
+      <Text
+        className={cn("flex-1 text-sm text-foreground", active ? "font-medium" : "font-normal")}
+        numberOfLines={1}
+      >
+        {list.title}
+      </Text>
+      {remaining > 0 ? <Text className="text-xs text-muted-foreground">{remaining}</Text> : null}
     </Button>
   );
 }

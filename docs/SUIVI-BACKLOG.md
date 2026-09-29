@@ -7,6 +7,19 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, listes)** —
+sur la branche `feat/collaboration`. Vérifié par la migration rejouée sur
+Postgres 16 avec un scénario RLS dédié, les tests, le typecheck, et dans
+Chromium sur une fausse API, en clair et en sombre, grand écran et 390 pt.
+
+**Un espace a ses listes partagées.** Tout membre crée une liste, y ajoute des
+tâches, les coche et les confie à un membre ; chaque tâche s'enregistre à
+part, sans écraser le geste d'un autre. Une liste se range dans un dossier de
+l'espace. Plus simples que les todolistes personnelles : ni échéance ni
+calendrier.
+
+**Migration `20260929190000_workspace_task_lists.sql`** à appliquer.
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, dossiers)** —
 sur la branche `feat/collaboration`. Vérifié par la migration rejouée sur
 Postgres 16 avec un scénario RLS dédié, les tests, le typecheck, et dans

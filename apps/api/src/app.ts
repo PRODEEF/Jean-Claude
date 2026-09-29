@@ -11,6 +11,7 @@ import { folderRoutes } from "./domain/folder/folder.routes.js";
 import { groupRoutes } from "./domain/group/group.routes.js";
 import { taskRoutes } from "./domain/task/task.routes.js";
 import { workspaceRoutes } from "./domain/workspace/workspace.routes.js";
+import { workspaceListRoutes } from "./domain/workspace-list/workspace-list.routes.js";
 import { assistantRoutes } from "./feature/assistant/assistant.routes.js";
 import { userRoutes } from "./domain/user/user.routes.js";
 import { healthRoutes } from "./feature/health/health.routes.js";
@@ -45,6 +46,7 @@ export const app = new Hono()
   .route("/api/feedback", feedbackRoutes)
   .route("/api/workspaces", workspaceRoutes)
   .route("/api/groups", groupRoutes)
+  .route("/api/workspace-lists", workspaceListRoutes)
   .route("/api/me", userRoutes)
   .route("/api/search", searchRoutes)
   .route("/api/health", healthRoutes)

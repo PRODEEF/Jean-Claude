@@ -51,6 +51,12 @@ import {
   type Group,
   type GroupMessage,
   type UpdateGroup,
+  type CreateWorkspaceTask,
+  type CreateWorkspaceTaskList,
+  type UpdateWorkspaceTask,
+  type UpdateWorkspaceTaskList,
+  type WorkspaceTask,
+  type WorkspaceTaskList,
 } from "@jc/domain";
 import { ApiError, HttpClient, type ApiClientOptions, type RequestOptions } from "./http";
 
@@ -190,6 +196,40 @@ export class JeanClaudeClient {
     },
   };
 
+  /** Listes partagées d'un espace — une tâche s'écrit à part, sans écraser les autres. */
+  readonly workspaceLists = {
+    list: (workspaceId: string) =>
+      this.http.request<WorkspaceTaskList[]>("/workspace-lists", { query: { workspaceId } }),
+
+    get: (id: string) => this.http.request<WorkspaceTaskList>(`/workspace-lists/${id}`),
+
+    create: (input: CreateWorkspaceTaskList) =>
+      this.http.request<WorkspaceTaskList>("/workspace-lists", { method: "POST", body: input }),
+
+    update: (id: string, patch: UpdateWorkspaceTaskList) =>
+      this.http.request<WorkspaceTaskList>(`/workspace-lists/${id}`, {
+        method: "PATCH",
+        body: patch,
+      }),
+
+    remove: (id: string) => this.http.request<void>(`/workspace-lists/${id}`, { method: "DELETE" }),
+
+    addTask: (listId: string, input: CreateWorkspaceTask) =>
+      this.http.request<WorkspaceTask>(`/workspace-lists/${listId}/tasks`, {
+        method: "POST",
+        body: input,
+      }),
+
+    updateTask: (listId: string, taskId: string, patch: UpdateWorkspaceTask) =>
+      this.http.request<WorkspaceTask>(`/workspace-lists/${listId}/tasks/${taskId}`, {
+        method: "PATCH",
+        body: patch,
+      }),
+
+    removeTask: (listId: string, taskId: string) =>
+      this.http.request<void>(`/workspace-lists/${listId}/tasks/${taskId}`, { method: "DELETE" }),
+  };
+
   /** Discussions de groupe d'un espace — voir docs/COLLABORATION.md. */
   readonly groups = {
     list: (workspaceId: string) =>
@@ -223,7 +263,10 @@ export class JeanClaudeClient {
   readonly folders = {
     /** Sans argument, l'arborescence personnelle ; sinon celle d'un espace d'équipe. */
     tree: (workspaceId?: string) =>
-      this.http.request<FolderTreeNode[]>("/folders", workspaceId ? { query: { workspaceId } } : {}),
+      this.http.request<FolderTreeNode[]>(
+        "/folders",
+        workspaceId ? { query: { workspaceId } } : {},
+      ),
 
     create: (input: CreateFolder) =>
       this.http.request<Folder>("/folders", { method: "POST", body: input }),

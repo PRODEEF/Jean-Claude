@@ -279,6 +279,35 @@ complet et 620 tests du dépôt au vert, scénario RLS rejoué avec la fonction
 modifiée. Les requêtes du Repository n'ont pas été jouées contre un vrai
 PostgREST : l'environnement n'a pas d'instance Supabase.
 
+### Listes partagées (29 septembre, suite)
+
+Des listes simples, communes à l'espace : un titre, des tâches cochables par
+tous, un responsable par tâche. Ni échéance, ni sous-tâche, ni calendrier
+(décision de Clarisse).
+
+- **Migration `20260929190000_workspace_task_lists.sql`** : tables à part,
+  `workspace_task_lists` et `workspace_tasks`, et non une colonne de plus sur
+  `task_lists` — les requêtes des listes personnelles s'en remettent à la RLS,
+  qui leur aurait alors mêlé les listes d'espace. Réservées aux membres ;
+  triggers qui gardent la liste, son dossier et sa conversation d'origine dans
+  l'espace, et le responsable parmi les membres. Quitter l'espace libère ses
+  tâches. `created_by` en `set null` : supprimer son compte n'efface pas ce
+  que l'équipe partage.
+- **Une tâche s'écrit à part** (`POST`, `PATCH`, `DELETE
+/api/workspace-lists/:id/tasks/:taskId`) : deux membres qui cochent en même
+  temps ne s'écrasent pas, contrairement à `PUT /tasks/:id/items`.
+- **App** : section « Listes » dans la barre latérale de l'espace, avec ce qui
+  reste à faire ; listes rangées sous leur dossier (un seul, comme en
+  personnel) ; écran de liste pour cocher, confier, ajouter, supprimer, et
+  menu « … » pour renommer, ranger, supprimer.
+
+**Vérification.** Scénario RLS à trois comptes (13 vérifications), 16 tests du
+service, typecheck, parcours Chromium sur une fausse API en clair et en
+sombre, grand écran et 390 pt.
+
+**Limite.** Pas de temps réel sur les listes : un membre voit les gestes des
+autres en rouvrant la liste.
+
 ### Dossiers d'espace (29 septembre, suite)
 
 Demandés par Clarisse après le lot 4 : chaque espace a son arborescence
@@ -473,8 +502,8 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
 - Envoi de l'e-mail d'invitation (Supabase `inviteUserByEmail` imposerait le
   client `admin` dans une route HTTP ; un service d'envoi ajouterait une
   dépendance et un secret)
-- Dossiers, listes et calendrier partagés — les listes demanderont de régler
-  l'écrasement de `PUT /tasks/:id/items` (dernier qui écrit gagne)
+- Calendrier partagé ; échéances, sous-tâches et calendrier sur les listes
+  partagées
 - Réglages de l'IA propres à l'espace (nom, couleur, modèle)
 - Messages directs distincts des groupes, réponse à un message cité, réactions
 - Notifications push

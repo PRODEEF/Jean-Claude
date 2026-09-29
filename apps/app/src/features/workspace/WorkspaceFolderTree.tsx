@@ -6,7 +6,12 @@ import {
   Folder as FolderIcon,
   MoreHorizontal,
 } from "lucide-react-native";
-import { MAX_FOLDER_DEPTH, type FolderTreeNode, type Group } from "@jc/domain";
+import {
+  MAX_FOLDER_DEPTH,
+  type FolderTreeNode,
+  type Group,
+  type WorkspaceTaskList,
+} from "@jc/domain";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
@@ -17,10 +22,12 @@ import type { WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
 export type WorkspaceFolderTreeProps = {
   nodes: FolderTreeNode[];
   groups: Group[];
+  lists: WorkspaceTaskList[];
   /** Ouvre la fenêtre de création, de renommage ou de suppression. */
   onEdit: (target: WorkspaceFolderTarget) => void;
   /** Rendu d'une conversation rangée — la même rangée que dans la liste à plat. */
   renderGroup: (group: Group) => React.ReactNode;
+  renderList: (list: WorkspaceTaskList) => React.ReactNode;
 };
 
 /**
@@ -46,6 +53,7 @@ function FolderRow({
   const [open, setOpen] = useState(true);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const filed = props.groups.filter((group) => group.folderIds.includes(node.id));
+  const filedLists = props.lists.filter((list) => list.folderId === node.id);
 
   const items: ContextMenuItem[] = [
     // Au dernier niveau, un sous-dossier ne rentre plus : le serveur le refuse
@@ -113,7 +121,10 @@ function FolderRow({
           {filed.map((group) => (
             <View key={group.id}>{props.renderGroup(group)}</View>
           ))}
-          {node.children.length === 0 && filed.length === 0 ? (
+          {filedLists.map((list) => (
+            <View key={list.id}>{props.renderList(list)}</View>
+          ))}
+          {node.children.length === 0 && filed.length === 0 && filedLists.length === 0 ? (
             <Text className="px-2 py-1.5 text-xs italic text-muted-foreground">Vide</Text>
           ) : null}
         </View>
