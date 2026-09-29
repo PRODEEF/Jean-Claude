@@ -262,6 +262,10 @@ export class JeanClaudeClient {
 
     markRead: (id: string) => this.http.request<Group>(`/groups/${id}/read`, { method: "POST" }),
 
+    /** « Convertir en todoliste » : Jean-Claude propose une liste dans le fil. */
+    extractList: (id: string) =>
+      this.http.request<GroupListSuggestion>(`/groups/${id}/extract-list`, { method: "POST" }),
+
     /** Listes proposées par Jean-Claude dans la conversation, à accepter ou ignorer (§12.1). */
     suggestions: (id: string) =>
       this.http.request<GroupListSuggestion[]>(`/groups/${id}/suggestions`),

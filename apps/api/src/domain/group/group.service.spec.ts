@@ -1001,6 +1001,86 @@ describe("toListProposal", () => {
   });
 });
 
+describe("extractList", () => {
+  const thread = {
+    items: [makeMessage({ authorId: "bruno", content: "Je prends les chaises, Alice le café" })],
+    nextCursor: null,
+  };
+
+  it("fait proposer par Jean-Claude une liste, posée en carte sous son message", async () => {
+    const { llm, requests } = makeLlm(
+      proposalCall({
+        title: "Kermesse",
+        tasks: [
+          { title: "Chaises", assignee: "Bruno" },
+          { title: "Café", assignee: "Alice" },
+        ],
+      }),
+    );
+    const repo = inWorkspace({
+      findById: jest.fn().mockResolvedValue(makeGroup()),
+      findMessages: jest.fn().mockResolvedValue(thread),
+    });
+
+    const suggestion = await service(repo, makeDeps(llm)).extractList("group-1", "alice", TOKEN);
+
+    expect(requests[0]?.tools?.map((tool) => tool.name)).toEqual(["suggest_shared_list"]);
+    expect(requests[0]?.system).toContain("N'invente aucune tâche");
+    expect(repo.appendAssistantMessage).toHaveBeenCalledWith(
+      "group-1",
+      "alice",
+      expect.objectContaining({ content: "Voici qui fait quoi." }),
+      TOKEN,
+    );
+    expect(repo.createListSuggestion).toHaveBeenCalledWith(
+      "group-1",
+      "msg-1",
+      "alice",
+      {
+        title: "Kermesse",
+        tasks: [
+          { title: "Chaises", assigneeId: "bruno" },
+          { title: "Café", assigneeId: "alice" },
+        ],
+      },
+      TOKEN,
+    );
+    expect(suggestion.title).toBe("Kermesse");
+  });
+
+  it("refuse une conversation vide, sans appeler le modèle", async () => {
+    const { llm, requests } = makeLlm();
+    const repo = inWorkspace({ findById: jest.fn().mockResolvedValue(makeGroup()) });
+
+    await expect(
+      service(repo, makeDeps(llm)).extractList("group-1", "alice", TOKEN),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(requests).toHaveLength(0);
+  });
+
+  it("ne poste rien quand le modèle ne trouve pas de liste", async () => {
+    const { llm } = makeLlm(response({ text: "Je ne vois rien à faire." }));
+    const repo = inWorkspace({
+      findById: jest.fn().mockResolvedValue(makeGroup()),
+      findMessages: jest.fn().mockResolvedValue(thread),
+    });
+
+    await expect(
+      service(repo, makeDeps(llm)).extractList("group-1", "alice", TOKEN),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(repo.appendAssistantMessage).not.toHaveBeenCalled();
+    expect(repo.createListSuggestion).not.toHaveBeenCalled();
+  });
+
+  it("rend un 404 à qui n'est pas membre de la conversation", async () => {
+    const repo = inWorkspace();
+
+    await expect(service(repo).extractList("group-1", "dora", TOKEN)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+});
+
 describe("describeThread", () => {
   it("signe chaque message du nom de son auteur", () => {
     const thread = describeThread(

@@ -14,7 +14,7 @@ import { runAfterResponse } from "../../core/after-response.js";
 import { config } from "../../core/config.js";
 import { validate } from "../../core/http.js";
 import { llm } from "../../core/llm/providers/gateway.provider.js";
-import { consumeLlmCall } from "../../core/rate-limit/rate-limit.middleware.js";
+import { consumeLlmCall, rateLimit } from "../../core/rate-limit/rate-limit.middleware.js";
 import { attachmentRepository } from "../attachment/attachment.repository.js";
 import { workspaceListRepository } from "../workspace-list/workspace-list.repository.js";
 import { WorkspaceListService } from "../workspace-list/workspace-list.service.js";
@@ -92,6 +92,15 @@ export const groupRoutes = new Hono<AuthEnv>()
     const user = c.get("user");
     return c.json(
       await service.send(c.req.valid("param").id, user.id, c.req.valid("json"), user.accessToken),
+      201,
+    );
+  })
+
+  // « Convertir en todoliste » : Jean-Claude propose, un membre accepte (§12.1).
+  .post("/:id/extract-list", idParam, rateLimit, async (c) => {
+    const user = c.get("user");
+    return c.json(
+      await service.extractList(c.req.valid("param").id, user.id, user.accessToken),
       201,
     );
   })

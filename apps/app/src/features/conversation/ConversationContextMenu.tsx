@@ -1,22 +1,28 @@
 import type { Conversation } from "@jc/domain";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 
-/** Conversation visée et point où le menu doit s'ouvrir, en coordonnées écran. */
-export type ConversationMenuTarget = {
-  conversation: Conversation;
+/**
+ * Conversation visée et point où le menu doit s'ouvrir, en coordonnées écran.
+ * Personnelle par défaut ; une conversation d'espace (`Group`) passe par le
+ * même menu.
+ */
+export type ConversationMenuTarget<T = Conversation> = {
+  conversation: T;
   x: number;
   y: number;
 };
 
-export type ConversationContextMenuProps = {
+export type ConversationContextMenuProps<T = Conversation> = {
   /** `null` = menu fermé. */
-  target: ConversationMenuTarget | null;
+  target: ConversationMenuTarget<T> | null;
   onClose: () => void;
-  onRename: (target: ConversationMenuTarget) => void;
-  onFile: (target: ConversationMenuTarget) => void;
+  /** Absent pour une conversation d'espace, qui ne se renomme pas encore. */
+  onRename?: (target: ConversationMenuTarget<T>) => void;
+  onFile: (target: ConversationMenuTarget<T>) => void;
   /** Conversion à la demande, plutôt que d'attendre une suggestion (A.2, #17). */
-  onConvertToTaskList: (target: ConversationMenuTarget) => void;
-  onDelete: (target: ConversationMenuTarget) => void;
+  onConvertToTaskList: (target: ConversationMenuTarget<T>) => void;
+  /** Absent pour une conversation d'espace, qui ne se supprime pas encore. */
+  onDelete?: (target: ConversationMenuTarget<T>) => void;
 };
 
 /**
@@ -27,21 +33,23 @@ export type ConversationContextMenuProps = {
  * duplication mais la même donnée vue de plusieurs endroits (§5.2, A.1). Le
  * libellé doit dire ce que la fenêtre permet réellement.
  */
-export function ConversationContextMenu({
+export function ConversationContextMenu<T = Conversation>({
   target,
   onClose,
   onRename,
   onFile,
   onConvertToTaskList,
   onDelete,
-}: ConversationContextMenuProps) {
+}: ConversationContextMenuProps<T>) {
   if (!target) return null;
 
   const items: ContextMenuItem[] = [
-    { label: "Renommer", onPress: () => onRename(target) },
+    ...(onRename ? [{ label: "Renommer", onPress: () => onRename(target) }] : []),
     { label: "Ranger dans des dossiers", onPress: () => onFile(target) },
     { label: "Convertir en todoliste", onPress: () => onConvertToTaskList(target) },
-    { label: "Supprimer", destructive: true, onPress: () => onDelete(target) },
+    ...(onDelete
+      ? [{ label: "Supprimer", destructive: true, onPress: () => onDelete(target) }]
+      : []),
   ];
 
   return <ContextMenu x={target.x} y={target.y} items={items} onClose={onClose} />;

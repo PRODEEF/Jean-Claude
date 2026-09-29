@@ -534,6 +534,15 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
   tâches » en espace collaboratif a été retiré le 30 septembre (demande de
   Clarisse) : comme en personnel, une liste partagée naît d'un dossier ou
   d'une proposition de Jean-Claude.
+- **Menu d'une conversation d'espace** (30 septembre) : le même
+  `ConversationContextMenu` que le personnel — clic droit, « … » au survol,
+  appui long — avec « Ranger dans des dossiers » et « Convertir en
+  todoliste ». Renommer et supprimer n'existent pas encore pour une
+  conversation d'espace (ni route, ni règle de droits). La conversion (`POST
+/api/groups/:id/extract-list`, quota du membre) fait proposer par
+  Jean-Claude une liste partagée, en carte dans le fil ; rien n'est créé
+  avant qu'un membre l'accepte (§12.1). Conversation vide ou rien à en tirer :
+  422, message affiché sous la liste des conversations.
 - **L'espace actif est mémorisé** (`use-active-workspace.ts`), en plus de
   l'adresse : ouvrir le canal, le calendrier ou les réglages depuis un espace
   collaboratif ne ramène plus au personnel. Il ne change que par le sélecteur

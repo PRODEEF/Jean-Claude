@@ -106,3 +106,15 @@ function invalidateGroupLists(queryClient: QueryClient) {
     predicate: (query) => query.queryKey[0] === "workspace" && query.queryKey[2] === "groups",
   });
 }
+
+/**
+ * « Convertir en todoliste » (A.2) : Jean-Claude pose une proposition de liste
+ * dans le fil, que les membres acceptent ou non (§12.1).
+ */
+export function useExtractGroupList() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (groupId: string) => api.groups.extractList(groupId),
+    onSuccess: (_suggestion, groupId) => refreshGroup(queryClient, groupId),
+  });
+}

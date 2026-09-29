@@ -3,8 +3,15 @@ import { ScrollView, View } from "react-native";
 import { ListChecks, Plus } from "lucide-react-native";
 import type { Group, WorkspaceTaskList } from "@jc/domain";
 import { CreateGroupDialog } from "@/features/group/CreateGroupDialog";
-import { useGroups } from "@/features/group/hooks/use-groups";
 import {
+  ConversationContextMenu,
+  type ConversationMenuTarget,
+} from "@/features/conversation/ConversationContextMenu";
+import { GroupFoldersDialog } from "@/features/group/GroupFoldersDialog";
+import { useExtractGroupList, useGroups } from "@/features/group/hooks/use-groups";
+import {
+  contextMenuProps,
+  RowMenuButton,
   rowLabel,
   SectionLabel,
   selected,
@@ -18,6 +25,7 @@ import {
 import { WorkspaceFolderDialog, type WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
 import { WorkspaceFolderTree } from "./WorkspaceFolderTree";
 import { useFileNewGroup, useWorkspaceFolders } from "./hooks/use-workspace-folders";
+import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
@@ -50,10 +58,20 @@ export function WorkspaceSidebarBody({
   /** Dossier d'où l'on crée une conversation, qui y naîtra rangée. */
   const [creatingIn, setCreatingIn] = useState<string | null>(null);
   const fileNewGroup = useFileNewGroup();
+  const [groupMenu, setGroupMenu] = useState<ConversationMenuTarget<Group> | null>(null);
+  const [filing, setFiling] = useState<Group | null>(null);
+  const extractList = useExtractGroupList();
 
   const renderGroup = (group: Group) => {
     const href = `/workspace/${workspaceId}/group/${group.id}`;
-    return <GroupRow group={group} active={pathname === href} onPress={() => onNavigate(href)} />;
+    return (
+      <GroupRow
+        group={group}
+        active={pathname === href}
+        onPress={() => onNavigate(href)}
+        onMenu={setGroupMenu}
+      />
+    );
   };
   const renderList = (list: WorkspaceTaskList) => {
     const href = `/workspace/${workspaceId}/list/${list.id}`;
@@ -100,6 +118,16 @@ export function WorkspaceSidebarBody({
           Jean-Claude dans une conversation. */}
       <SectionLabel>Conversations et tâches</SectionLabel>
 
+      {/* Un 4xx dit pourquoi la conversion a été refusée, dans un message
+          écrit pour l'utilisateur ; au-delà, message fixe. */}
+      {extractList.error ? (
+        <Text className="px-2 py-1 text-xs text-destructive">
+          {extractList.error instanceof ApiError && extractList.error.status < 500
+            ? extractList.error.message
+            : "La conversion en todoliste a échoué. Réessayez dans un instant."}
+        </Text>
+      ) : null}
+
       {groups.error || lists.error ? (
         <Text className="px-2 py-1 text-xs text-destructive">
           Conversations indisponibles pour le moment.
@@ -122,6 +150,23 @@ export function WorkspaceSidebarBody({
         }}
       />
 
+      <ConversationContextMenu<Group>
+        target={groupMenu}
+        onClose={() => setGroupMenu(null)}
+        onFile={({ conversation }) => {
+          setGroupMenu(null);
+          setFiling(conversation);
+        }}
+        onConvertToTaskList={({ conversation }) => {
+          setGroupMenu(null);
+          // La carte se lit dans le fil de la conversation, comme en personnel.
+          extractList.mutate(conversation.id, {
+            onSuccess: () => onNavigate(`/workspace/${workspaceId}/group/${conversation.id}`),
+          });
+        }}
+      />
+      <GroupFoldersDialog group={filing} onClose={() => setFiling(null)} />
+
       <CreateGroupDialog
         workspaceId={creatingIn ? workspaceId : null}
         onClose={() => setCreatingIn(null)}
@@ -142,25 +187,32 @@ export function WorkspaceSidebarBody({
   );
 }
 
+/** Même rangée qu'une conversation personnelle : clic droit, « … » au survol, appui long. */
 function GroupRow({
   group,
   active,
   onPress,
+  onMenu,
 }: {
   group: Group;
   active: boolean;
   onPress: () => void;
+  onMenu: (target: ConversationMenuTarget<Group>) => void;
 }) {
   // La conversation ouverte est marquée lue : sa pastille n'a pas à clignoter
   // le temps que l'écran s'en charge.
   const unread = active ? 0 : group.unreadCount;
 
   return (
-    <View className={selected("flex-row items-center rounded-md", active)}>
+    <View className={selected("group flex-row items-center rounded-md", active)}>
       <Button
         variant="ghost"
         size="sm"
         onPress={onPress}
+        onLongPress={(event) =>
+          onMenu({ conversation: group, x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+        }
+        {...contextMenuProps((x, y) => onMenu({ conversation: group, x, y }))}
         accessibilityLabel={unread > 0 ? `${group.title}, ${unread} non lu(s)` : group.title}
         className="min-w-0 flex-1 justify-start px-2"
       >
@@ -169,6 +221,10 @@ function GroupRow({
         </Text>
       </Button>
       <UnreadBadge count={unread} />
+      <RowMenuButton
+        label={`Actions pour ${group.title}`}
+        onOpen={(x, y) => onMenu({ conversation: group, x, y })}
+      />
     </View>
   );
 }
