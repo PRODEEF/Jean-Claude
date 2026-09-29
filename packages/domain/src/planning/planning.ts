@@ -208,9 +208,7 @@ export function listsWithoutVisibleEvent(
   lists: TaskListWithTasks[],
   eventIds: ReadonlySet<string>,
 ): TaskListWithTasks[] {
-  return datedLists(lists).filter(
-    (list) => list.eventId === null || !eventIds.has(list.eventId),
-  );
+  return datedLists(lists).filter((list) => list.eventId === null || !eventIds.has(list.eventId));
 }
 
 export function listsOfDay(lists: TaskListWithTasks[], day: Date): TaskListWithTasks[] {
@@ -250,7 +248,7 @@ export function byDueDate(a: TaskListWithTasks, b: TaskListWithTasks): number {
  * qu'au jour où il commence, sans quoi un rappel de 9h déborderait sur la
  * journée suivante par le seul jeu des comparaisons de bornes.
  */
-export function eventsOfDay(events: CalendarEvent[], day: Date): CalendarEvent[] {
+export function eventsOfDay<T extends CalendarEvent>(events: T[], day: Date): T[] {
   const dayStart = startOfDay(day).getTime();
   const dayEnd = addDays(startOfDay(day), 1).getTime();
 
@@ -269,8 +267,9 @@ const MINUTES_PER_DAY = 24 * 60;
 /** Durée prêtée à un créneau sans heure de fin, pour lui donner une hauteur. */
 const IMPLICIT_DURATION_MINUTES = 60;
 
-export type PositionedEvent = {
-  event: CalendarEvent;
+/** Générique : une entrée du calendrier garde ce qu'elle porte en plus (`space`). */
+export type PositionedEvent<T extends CalendarEvent = CalendarEvent> = {
+  event: T;
   /** Minutes depuis minuit, borné au jour affiché. */
   startMinute: number;
   endMinute: number;
@@ -354,7 +353,10 @@ function minuteInDay(instant: number, day: Date): number {
 }
 
 /** Place les événements horaires d'une journée en colonnes. */
-export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedEvent[] {
+export function layoutDayEvents<T extends CalendarEvent>(
+  events: T[],
+  day: Date,
+): PositionedEvent<T>[] {
   const boxes = events
     .filter((event) => !event.allDay)
     .map((event) => {

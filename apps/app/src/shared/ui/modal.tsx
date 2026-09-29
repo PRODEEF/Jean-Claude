@@ -109,6 +109,7 @@ export function Modal({
 }: ModalProps) {
   const compact = useBreakpoint() === "compact";
   const insets = useSafeAreaInsets();
+  const { cssVariables } = useTheme();
 
   // Sur web, le fond ne ferme pas de lui-même : la primitive ne pose le geste
   // que sur les plateformes natives.
@@ -139,12 +140,21 @@ export function Modal({
               exiting={FadeOut.duration(120).reduceMotion(ReduceMotion.System)}
               as="Pressable"
             >
+              {/* Les variables du thème sont reposées ici : sur web, la fenêtre
+                  s'affiche dans `document.body`, hors de la vue où
+                  `ThemeProvider` les pose — `bg-background` y retombait sur le
+                  blanc par défaut, même en thème sombre. */}
               <DialogPrimitive.Content
+                style={cssVariables}
                 className={cn(
                   "bg-background border-border w-full flex-col overflow-hidden border shadow-lg shadow-black/20",
                   compact
                     ? cn(MAX_HEIGHT_COMPACT, "rounded-t-2xl border-b-0")
-                    : cn(MAX_HEIGHT_EXPANDED, "rounded-xl", variant === "confirm" ? "max-w-md" : "max-w-lg"),
+                    : cn(
+                        MAX_HEIGHT_EXPANDED,
+                        "rounded-xl",
+                        variant === "confirm" ? "max-w-md" : "max-w-lg",
+                      ),
                 )}
               >
                 {/* Poignée : elle dit qu'on est devant une feuille et non
@@ -186,7 +196,9 @@ export function Modal({
                           <Icon
                             as={action.icon}
                             size={16}
-                            className={action.destructive ? "text-destructive" : "text-muted-foreground"}
+                            className={
+                              action.destructive ? "text-destructive" : "text-muted-foreground"
+                            }
                           />
                         </Pressable>
                       ))}

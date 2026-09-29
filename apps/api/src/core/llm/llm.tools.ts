@@ -331,7 +331,8 @@ export const SUGGEST_UPDATE_TASK_ITEMS: LlmTool = {
             },
             done: {
               type: "boolean",
-              description: "true pour cocher, false pour décocher. Omettre si l'état ne change pas.",
+              description:
+                "true pour cocher, false pour décocher. Omettre si l'état ne change pas.",
             },
             remove: {
               type: "boolean",
@@ -793,6 +794,120 @@ export const ASK_QUESTION: LlmTool = {
 };
 
 /** Outils actifs sur une conversation classique. */
+/**
+ * Verdict du petit modèle qui décide si Jean-Claude prend la parole dans une
+ * discussion de groupe (docs/COLLABORATION.md, lot 4). Ce n'est pas une
+ * suggestion : l'outil ne sert qu'à obtenir une réponse structurée plutôt
+ * qu'un « oui » à deviner dans du texte libre.
+ */
+export const DECIDE_INTERVENTION: LlmTool = {
+  name: "decide_intervention",
+  description:
+    "À appeler une fois, toujours, pour dire si l'assistant doit prendre la parole " +
+    "maintenant dans la discussion de groupe. Par défaut, il se tait : intervenir " +
+    "seulement si l'un des quatre cas est net dans les derniers messages. " +
+    "`unanswered_question` : une question posée au groupe est restée sans réponse " +
+    "et l'assistant peut y répondre à partir du fil ou de connaissances générales. " +
+    "`factual_error` : un membre affirme une information inexacte — date, chiffre, " +
+    "fait déjà donné plus haut dans le fil. " +
+    "`decision_or_task` : le groupe vient de prendre une décision ou de se répartir " +
+    "du travail, et un récapitulatif aiderait. " +
+    "`going_in_circles` : plusieurs messages sans avancer, les positions se répètent. " +
+    "Sinon `none`, avec `intervene` à false — c'est le cas le plus fréquent.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      intervene: { type: "boolean" },
+      reason: {
+        type: "string",
+        enum: [
+          "unanswered_question",
+          "factual_error",
+          "decision_or_task",
+          "going_in_circles",
+          "none",
+        ],
+      },
+    },
+    required: ["intervene", "reason"],
+    additionalProperties: false,
+  },
+};
+
+/**
+ * Liste partagée proposée dans une conversation d'espace. Comme les autres
+ * outils, l'appel ne crée rien : il devient une carte que les membres
+ * acceptent ou ignorent (§12.1).
+ */
+export const SUGGEST_SHARED_LIST: LlmTool = {
+  name: "suggest_shared_list",
+  description:
+    "À appeler quand le groupe vient de décider quelque chose ou de se répartir du " +
+    "travail, et qu'une liste partagée l'aiderait à s'y tenir — ou quand un membre te " +
+    "demande d'en faire une. L'appel ne crée rien : les membres voient la proposition " +
+    "et l'acceptent ou l'ignorent. Une seule liste par appel, faite de tâches concrètes " +
+    "tirées du fil, sans en inventer. Pour chaque tâche, `assignee` reprend exactement le " +
+    "nom de la personne tel qu'il apparaît dans le fil (« Bruno Petit », « Membre 1 ») ; " +
+    "l'omettre quand le fil ne dit pas qui s'en charge. Jamais pour toi-même.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: { type: "string", minLength: 1, maxLength: 120 },
+      tasks: {
+        type: "array",
+        minItems: 1,
+        maxItems: 30,
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string", minLength: 1, maxLength: 120 },
+            assignee: { type: "string" },
+          },
+          required: ["title"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["title", "tasks"],
+    additionalProperties: false,
+  },
+};
+
+/**
+ * Événement proposé dans une conversation d'espace (lot 8) : quand le groupe
+ * fixe une date. L'appel ne crée rien (§12.1) ; le premier membre qui accepte
+ * l'ajoute au calendrier de tous les membres de la conversation.
+ */
+export const SUGGEST_SHARED_EVENT: LlmTool = {
+  name: "suggest_shared_event",
+  description:
+    "À appeler quand le groupe vient de fixer une date — une réunion, un rendez-vous, " +
+    "une échéance commune — ou quand un membre te demande de l'ajouter au calendrier. " +
+    "L'appel ne crée rien : les membres voient la proposition et l'acceptent ou " +
+    "l'ignorent. Un seul événement par appel, dont la date et l'heure sont dites dans " +
+    "le fil : n'en invente aucune. Si le jour est fixé mais pas l'heure, `allDay` à true.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: { type: "string", minLength: 1, maxLength: 120 },
+      startsAt: {
+        type: "string",
+        description:
+          "Début, en heure locale du groupe, ISO 8601 sans fuseau ni « Z » — ex. " +
+          "2026-10-02T18:00 pour « vendredi à 18h », 2026-10-02 pour la journée.",
+      },
+      endsAt: {
+        type: "string",
+        description: "Fin, même format ; à omettre quand le fil ne la dit pas.",
+      },
+      allDay: { type: "boolean" },
+      notes: { type: "string", maxLength: 1000, description: "Lieu ou précision tirés du fil." },
+    },
+    required: ["title", "startsAt"],
+    additionalProperties: false,
+  },
+};
+
 export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_ITEMS,

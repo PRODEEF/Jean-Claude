@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from "react-native";
-import { ListChecks } from "lucide-react-native";
-import type { CalendarEvent, TaskListWithTasks } from "@jc/domain";
+import { ListChecks, Users } from "lucide-react-native";
+import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
 import { eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
@@ -11,12 +11,12 @@ export type MonthGridProps = {
   days: Date[];
   /** Mois mis en avant ; les jours des mois voisins sont atténués. */
   anchor: Date;
-  events: CalendarEvent[];
+  events: CalendarEntry[];
   /** Todolistes échues, toutes listes confondues : ce qui charge la journée (A.2). */
   lists: TaskListWithTasks[];
   selectedDay: Date;
   onSelectDay: (day: Date) => void;
-  onOpenEvent: (event: CalendarEvent) => void;
+  onOpenEvent: (event: CalendarEntry) => void;
   /** En deçà du point de rupture : pastilles au lieu des titres. */
   compact: boolean;
 };
@@ -124,12 +124,13 @@ export function MonthGrid({
                       key={event.id}
                       onPress={() => onOpenEvent(event)}
                       accessibilityRole="button"
-                      accessibilityLabel={`Modifier ${event.title}`}
-                      className="bg-accent-soft rounded px-1 py-0.5"
+                      accessibilityLabel={eventLabel(event)}
+                      className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
                     >
+                      {event.space ? <SharedMark /> : null}
                       <Text
                         numberOfLines={1}
-                        className="text-accent-soft-foreground text-[11px] leading-4"
+                        className="text-accent-soft-foreground flex-1 text-[11px] leading-4"
                       >
                         {event.allDay
                           ? event.title
@@ -162,9 +163,9 @@ export function MonthGrid({
  * trois. Le reste se lit dans la liste du jour, en dessous.
  */
 function fitEvents(
-  events: CalendarEvent[],
+  events: CalendarEntry[],
   hasTaskBadge: boolean,
-): { shown: CalendarEvent[]; hidden: number } {
+): { shown: CalendarEntry[]; hidden: number } {
   const room = MAX_LINES_PER_CELL - (hasTaskBadge ? 1 : 0);
   const shown = events.length <= room ? events : events.slice(0, Math.max(room - 1, 0));
   return { shown, hidden: events.length - shown.length };
@@ -198,4 +199,19 @@ function TaskBadge({ count, compact }: { count: number; compact?: boolean }) {
       </Text>
     </View>
   );
+}
+
+/**
+ * Marque d'un événement d'espace : il est au calendrier de tous les membres
+ * d'une conversation, pas seulement au sien.
+ */
+export function SharedMark() {
+  return <Icon as={Users} size={10} className="text-accent-soft-foreground" />;
+}
+
+/** Libellé lu par un lecteur d'écran : l'espace, quand l'événement est partagé. */
+export function eventLabel(event: CalendarEntry): string {
+  return event.space
+    ? `Modifier ${event.title}, ${event.space.workspaceName} · ${event.space.groupTitle}`
+    : `Modifier ${event.title}`;
 }

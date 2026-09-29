@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
@@ -29,6 +30,8 @@ import { TaskService } from "../task/task.service.js";
 import { userRepository } from "../user/user.repository.js";
 import { conversationRepository } from "./conversation.repository.js";
 import { ConversationService } from "./conversation.service.js";
+import { workspaceEventRepository } from "../workspace-event/workspace-event.repository.js";
+import { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
 
 const service = new ConversationService(
   conversationRepository,
@@ -36,7 +39,11 @@ const service = new ConversationService(
   new SuggestionService(suggestionRepository),
   new FolderService(folderRepository),
   userRepository,
-  new CalendarService(calendarRepository, taskRepository),
+  new CalendarService(
+    calendarRepository,
+    taskRepository,
+    new WorkspaceEventService(workspaceEventRepository),
+  ),
   new TaskService(taskRepository, calendarRepository, userRepository),
   attachmentRepository,
 );
@@ -46,8 +53,27 @@ const messageParam = validate("param", z.object({ id: uuidSchema, messageId: uui
 const pagination = validate("query", cursorPaginationSchema);
 const listQuery = validate("query", listConversationsQuerySchema);
 
+/**
+ * Écarte les discussions de groupe de toutes les routes `/:id`.
+ *
+ * Un membre lit un groupe par la RLS, et certaines routes agissent par
+ * identifiant sans relire la conversation. Sans ce filtre, un membre pourrait
+ * écrire dans un groupe par le tour personnel, qui remet au modèle son
+ * contexte privé (docs/COLLABORATION.md). `getById` rend un 404 pour un
+ * groupe ; un identifiant malformé est laissé à la validation de la route.
+ */
+const personalOnly = createMiddleware<AuthEnv>(async (c, next) => {
+  const id = c.req.param("id");
+  if (id && uuidSchema.safeParse(id).success) {
+    await service.getById(id, c.get("user").accessToken);
+  }
+  await next();
+});
+
 export const conversationRoutes = new Hono<AuthEnv>()
   .use(auth)
+  // `/:id/*` couvre aussi `/:id` : un second montage ferait deux lectures.
+  .use("/:id/*", personalOnly)
 
   .get("/", listQuery, async (c) => {
     const query = c.req.valid("query");

@@ -1,4 +1,5 @@
 import type {
+  CalendarEntry,
   CalendarEvent,
   CalendarRange,
   CreateCalendarEvent,
@@ -6,6 +7,7 @@ import type {
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import type { ITaskRepository } from "../task/task.repository.interface.js";
+import type { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
 import type { ICalendarRepository } from "./calendar.repository.interface.js";
 
 export class CalendarService {
@@ -20,6 +22,8 @@ export class CalendarService {
   constructor(
     private readonly events: ICalendarRepository,
     private readonly taskLists: ITaskRepository,
+    /** Événements des conversations d'espace de l'appelant, fusionnés dans la vue (lot 8). */
+    private readonly workspaceEvents: WorkspaceEventService,
   ) {}
 
   /**
@@ -29,8 +33,15 @@ export class CalendarService {
    * une `rrule` n'apparaît qu'à la date de son premier créneau. Le déploiement
    * des occurrences relève d'A.11, qui traite aussi le rappel automatique.
    */
-  list(range: CalendarRange, accessToken: string): Promise<CalendarEvent[]> {
-    return this.events.findInRange(range, accessToken);
+  async list(range: CalendarRange, accessToken: string): Promise<CalendarEntry[]> {
+    const [own, shared] = await Promise.all([
+      this.events.findInRange(range, accessToken),
+      this.workspaceEvents.listForCalendar(range, accessToken),
+    ]);
+    // Une seule chronologie : l'utilisateur lit sa journée, pas deux agendas.
+    return [...own.map((event) => ({ ...event, space: null })), ...shared].sort(
+      (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
+    );
   }
 
   // `async` malgré l'absence d'`await` : la validation lève, et une méthode

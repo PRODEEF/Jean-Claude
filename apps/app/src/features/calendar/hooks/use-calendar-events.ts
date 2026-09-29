@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CalendarRange, CreateCalendarEvent, UpdateCalendarEvent } from "@jc/domain";
+import type {
+  CalendarEntry,
+  CalendarRange,
+  CreateCalendarEvent,
+  UpdateCalendarEvent,
+  UpdateWorkspaceEvent,
+} from "@jc/domain";
 import { api } from "@/shared/lib/api";
 
 /**
@@ -33,21 +39,64 @@ export function useCalendarActions() {
     queryClient.invalidateQueries({ queryKey: ["taskLists"] });
   };
 
+  // Un événement d'espace laisse une ligne dans le fil de sa conversation :
+  // le fil ouvert doit la montrer sans attendre le temps réel.
+  const refreshShared = () => {
+    refresh();
+    queryClient.invalidateQueries({ queryKey: ["group"] });
+  };
+
+  /** `groupId` : l'événement va au calendrier de tous les membres de cette conversation. */
   const create = useMutation({
-    mutationFn: (input: CreateCalendarEvent) => api.calendar.create(input),
-    onSuccess: refresh,
+    mutationFn: async ({ groupId, ...input }: CreateCalendarEvent & { groupId?: string }) => {
+      if (!groupId) return void (await api.calendar.create(input));
+      await api.workspaceEvents.create({
+        groupId,
+        title: input.title,
+        notes: input.notes ?? null,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt ?? null,
+        allDay: input.allDay,
+        reminderMinutesBefore: input.reminderMinutesBefore ?? null,
+      });
+    },
+    onSuccess: (_event, variables) => (variables.groupId ? refreshShared() : refresh()),
   });
 
   const update = useMutation({
-    mutationFn: (variables: { id: string; patch: UpdateCalendarEvent }) =>
-      api.calendar.update(variables.id, variables.patch),
-    onSuccess: refreshWithLinkedTaskLists,
+    mutationFn: async ({ event, patch }: { event: EntryRef; patch: UpdateCalendarEvent }) => {
+      if (event.space) await api.workspaceEvents.update(event.id, sharedFields(patch));
+      else await api.calendar.update(event.id, patch);
+    },
+    onSuccess: (_event, { event }) =>
+      event.space ? refreshShared() : refreshWithLinkedTaskLists(),
   });
 
   const remove = useMutation({
-    mutationFn: (id: string) => api.calendar.remove(id),
-    onSuccess: refreshWithLinkedTaskLists,
+    mutationFn: (event: EntryRef) =>
+      event.space ? api.workspaceEvents.remove(event.id) : api.calendar.remove(event.id),
+    onSuccess: (_result, event) => (event.space ? refreshShared() : refreshWithLinkedTaskLists()),
   });
 
   return { create, update, remove };
+}
+
+/** Ce qui suffit à savoir où écrire : un événement d'espace porte `space`. */
+type EntryRef = Pick<CalendarEntry, "id" | "space">;
+
+/**
+ * Les champs qu'un événement d'espace connaît : ni récurrence ni dossier
+ * propre. Écrit clé par clé, un `undefined` laissant la valeur intacte.
+ */
+function sharedFields(input: UpdateCalendarEvent): UpdateWorkspaceEvent {
+  const fields: UpdateWorkspaceEvent = {};
+  if (input.title !== undefined) fields.title = input.title;
+  if (input.notes !== undefined) fields.notes = input.notes;
+  if (input.startsAt !== undefined) fields.startsAt = input.startsAt;
+  if (input.endsAt !== undefined) fields.endsAt = input.endsAt;
+  if (input.allDay !== undefined) fields.allDay = input.allDay;
+  if (input.reminderMinutesBefore !== undefined) {
+    fields.reminderMinutesBefore = input.reminderMinutesBefore;
+  }
+  return fields;
 }

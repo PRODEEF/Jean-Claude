@@ -29,6 +29,8 @@ export const folderSchema = z.object({
   position: z.number().int().nonnegative(),
   /** Renseigné quand le dossier a été créé à l'initiative de l'assistant (A.4). */
   createdByAssistant: z.boolean(),
+  /** `null` = dossier personnel ; sinon l'espace d'équipe dont il fait partie. */
+  workspaceId: uuidSchema.nullable(),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
 });
@@ -41,15 +43,21 @@ export const createFolderSchema = z.object({
   category: folderCategorySchema.nullable().optional(),
   purpose: folderPurposeSchema.optional(),
   color: hexColorSchema.nullable().optional(),
+  /** Absent : dossier personnel. Un dossier ne change jamais d'espace ensuite. */
+  workspaceId: uuidSchema.nullable().optional(),
 });
 
 export type CreateFolder = z.infer<typeof createFolderSchema>;
 
-export const updateFolderSchema = createFolderSchema.partial().extend({
+export const updateFolderSchema = createFolderSchema.omit({ workspaceId: true }).partial().extend({
   position: z.number().int().nonnegative().optional(),
 });
 
 export type UpdateFolder = z.infer<typeof updateFolderSchema>;
+
+/** Arborescence demandée : l'espace personnel sans paramètre, sinon celle d'un espace. */
+export const folderTreeQuerySchema = z.object({ workspaceId: uuidSchema.optional() });
+export type FolderTreeQuery = z.infer<typeof folderTreeQuerySchema>;
 
 /**
  * Dossier enrichi de ses descendants — forme consommée par la sidebar (web) et

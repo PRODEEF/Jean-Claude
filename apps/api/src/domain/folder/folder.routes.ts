@@ -1,6 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { createFolderSchema, updateFolderSchema, uuidSchema } from "@jc/domain";
+import {
+  createFolderSchema,
+  folderTreeQuerySchema,
+  updateFolderSchema,
+  uuidSchema,
+} from "@jc/domain";
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { validate } from "../../core/http.js";
 import { folderRepository } from "./folder.repository.js";
@@ -13,7 +18,15 @@ const idParam = validate("param", z.object({ id: uuidSchema }));
 export const folderRoutes = new Hono<AuthEnv>()
   .use(auth)
 
-  .get("/", async (c) => c.json(await service.getTree(c.get("user").accessToken)))
+  .get("/", validate("query", folderTreeQuerySchema), async (c) => {
+    const { workspaceId } = c.req.valid("query");
+    const { accessToken } = c.get("user");
+    return c.json(
+      workspaceId
+        ? await service.getWorkspaceTree(workspaceId, accessToken)
+        : await service.getTree(accessToken),
+    );
+  })
 
   .post("/", validate("json", createFolderSchema), async (c) => {
     const user = c.get("user");

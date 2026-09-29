@@ -44,4 +44,9 @@ export const config = {
   // ne correspond à aucune option du sélecteur, qui affiche alors une liste
   // sans rien de coché.
   llmModel: optional("LLM_MODEL", "mistral/ministral-14b"),
+
+  // Juge, dans un groupe, s'il y a lieu de prendre la parole. Appelé après
+  // chaque pause de la discussion pour un simple oui ou non : un petit modèle
+  // suffit, et le choix de l'utilisateur ne s'applique qu'à la réponse.
+  llmDecisionModel: optional("LLM_DECISION_MODEL", "mistral/ministral-8b"),
 } as const;
