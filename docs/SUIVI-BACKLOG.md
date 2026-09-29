@@ -51,10 +51,13 @@ l'outil ne change pas : les propositions déjà stockées le portent. C'est ce
 qui permettra de retirer le bouton « Signaler un problème » quand ce sera
 décidé — **il reste en place pour l'instant**, comme la fenêtre d'avis.
 
-**Migration `20260929090000_feedback_review.sql` à appliquer en production
-avant le déploiement** : le profil lit le droit admin à chaque chargement, et
-l'envoi d'un avis relit la colonne `status`. Sans elle, l'application ne
-charge plus.
+**Migration `20260929090000_feedback_review.sql` appliquée en production le
+29 septembre**, avant tout déploiement : le nouveau code lit le droit admin à
+chaque chargement du profil, et ne démarre pas sans elle. Elle reste
+compatible avec le code déjà déployé, qui n'écrit jamais de statut. Droits
+vérifiés sur la base réelle : Clarisse, inscrite comme admin, voit les 10
+retours des 3 testeurs ; un testeur ordinaire ne voit que les siens, ni
+auteurs ni admins.
 
 **Non fait :** pas de filtre « à traiter seulement » dans la revue ; la revue
 plafonne à 500 retours et 500 notations, sans pagination.
