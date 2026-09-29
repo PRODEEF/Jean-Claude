@@ -237,7 +237,7 @@ développement.
   pas » tient dans le service, pas face à une suppression de compte.
 - **Pièces jointes de groupe.** `message_attachments` reste lisible de son
   seul propriétaire. Une pièce jointe envoyée dans un groupe ne serait pas
-  visible des autres membres. Hors V1.
+  visible des autres membres. Traité au lot 7 (§10).
 
 ### Livré au lot 2
 
@@ -572,10 +572,10 @@ aucun parcours joué dans un navigateur, ni iOS ni Android.
 - Envoi de l'e-mail d'invitation (Supabase `inviteUserByEmail` imposerait le
   client `admin` dans une route HTTP ; un service d'envoi ajouterait une
   dépendance et un secret)
-- Calendrier partagé ; échéances, sous-tâches et calendrier sur les listes
-  partagées
+- Échéances, sous-tâches et calendrier sur les listes partagées (le calendrier
+  d'espace est traité au §10)
 - Réglages de l'IA propres à l'espace (nom, couleur, modèle)
-- Messages directs distincts des groupes, réponse à un message cité, réactions
+- Messages directs distincts des groupes, réactions
 - Notifications push
 - Résumé « ce que vous avez manqué », aparté privé avec l'IA sur un fil de groupe
 
@@ -596,3 +596,92 @@ aucun parcours joué dans un navigateur, ni iOS ni Android.
 4. **Retrait d'un groupe.** Chacun quitte un groupe de lui-même. Qui peut en
    retirer un autre membre : le créateur du groupe, un admin de l'espace, tout
    membre ? Aucun des trois n'est ouvert par la migration du lot 1.
+
+---
+
+## 10. Réponse citée, fichiers et événements d'espace (lots 6 à 8)
+
+Demandés par Clarisse le 29 septembre, validés par Yann. Trois fonctions,
+livrées dans cet ordre, du plus petit au plus lourd.
+
+### Décisions
+
+| Sujet                  | Décision                                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Réponse à un message   | Citation façon WhatsApp : bloc cité au-dessus du message, un appui ramène à l'original. Même fil, pas de fil secondaire           |
+| Où répondre            | Conversations d'espace seulement. Pas dans le fil personnel                                                                       |
+| Répondre à l'IA        | Répondre à un message de Jean-Claude vaut mention : il intervient toujours, même en silence                                       |
+| Fichiers               | Joints dans une conversation d'espace, lisibles de tous ses membres, listés dans une page « Fichiers » de l'espace                |
+| Rangement des fichiers | Aucun geste propre : un fichier suit les dossiers de sa conversation (§13.4.1)                                                    |
+| Types de fichiers      | Ceux du fil personnel : images, PDF, texte, Markdown, CSV, 10 Mo au plus                                                          |
+| Supprimer un fichier   | L'auteur ou un admin de l'espace. Le message reste, avec « Fichier supprimé »                                                     |
+| Événement d'espace     | Rattaché à une conversation d'espace, affiché dans le calendrier de chacun de ses membres, avec un marqueur d'espace. Pas de RSVP |
+| Qui crée               | Un membre, depuis la conversation. Jean-Claude le propose quand le groupe fixe une date ; un membre valide (§12.1)                |
+| Qui modifie            | Tout membre de la conversation. Chaque modification laisse une ligne dans le fil (« Marie a déplacé Réunion au 14 »)              |
+| Rappel                 | Un seul, commun à tous les membres                                                                                                |
+
+### Lot 6 — réponse citée
+
+- **Base** : `messages.reply_to_id`, en `on delete set null`. Un trigger refuse
+  une réponse à un message d'une autre conversation, quel que soit le chemin
+  d'écriture.
+- **API** : `POST /api/groups/:id/messages` accepte `replyToId`. Le service
+  vérifie que le message cité appartient au groupe (400 sinon). Chaque message
+  revient avec `replyTo` (identifiant, auteur, rôle, texte) : le message cité
+  peut être hors de la page chargée, l'app ne doit pas avoir à le chercher.
+- **Jean-Claude** : une réponse à l'un de ses messages déclenche son
+  intervention comme une mention. Le fil transmis au modèle signale les
+  réponses (« Bruno, en réponse à Jean-Claude : … »).
+- **App** : commande « Répondre » parmi celles du message (survol sur web,
+  appui long sur mobile, comme les autres commandes de `MessageRow`). Un
+  bandeau au-dessus du champ rappelle le message cité, avec une croix pour
+  renoncer. Dans le fil, le bloc cité est posé dans la bulle ; un appui fait
+  défiler jusqu'à l'original s'il est chargé.
+- **Hors lot** : le glissement de la bulle vers la droite (WhatsApp) sur
+  mobile. Il demande un gestionnaire de gestes ; l'appui long suffit à la
+  démonstration.
+
+### Lot 7 — fichiers d'espace
+
+- **Stockage** : chemin `workspaces/{workspace_id}/{attachment_id}.{ext}` dans
+  le bucket existant. Les policies de `storage.objects` lisent le premier
+  segment et s'appuient sur `is_workspace_member`, comme celles du fil
+  personnel s'appuient sur `auth.uid()`.
+- **Base** : `message_attachments.workspace_id` et `deleted_at`. Une pièce
+  d'espace est lisible de tous les membres ; supprimée, sa ligne reste (le
+  message affiche « Fichier supprimé ») et l'objet est effacé du stockage.
+- **API** : envoi dans une conversation d'espace, `GET
+/api/workspaces/:id/files`, suppression par l'auteur ou un admin.
+- **Jean-Claude** : lit le texte extrait d'un fichier du fil, comme dans le fil
+  personnel, sans jamais voir les pièces personnelles d'un membre.
+- **App** : trombone dans la barre de saisie de groupe, page « Fichiers » dans
+  la barre latérale de l'espace, fichiers des conversations rangées affichés
+  sous chaque dossier.
+
+### Lot 8 — événements d'espace
+
+- **Base** : table à part `workspace_events`, sur le modèle des listes
+  partagées, plutôt qu'une colonne de plus sur `calendar_events`. Les requêtes
+  du calendrier personnel s'en remettent à la RLS, qui leur aurait mêlé les
+  événements d'espace ; et le prompt personnel lit le calendrier. Lecture et
+  écriture réservées aux membres de la conversation.
+- **API** : création, modification, suppression sous `/api/groups/:id/events`.
+  La vue calendrier (`GET /api/calendar`) fusionne les événements personnels
+  et ceux des conversations dont l'appelant est membre, marqués de leur espace.
+- **Trace dans le fil** : un message `role = 'system'` (déjà prévu par le
+  schéma) à chaque création, modification ou suppression. `findMessages` des
+  groupes ne lit aujourd'hui que `user` et `assistant` : à ouvrir.
+- **Jean-Claude** : outil `suggest_shared_event`, sur le modèle de
+  `suggest_shared_list`. La proposition vit dans une table de propositions
+  d'espace, pas dans `assistant_suggestions`, personnelle. Le premier membre
+  qui accepte crée l'événement pour tous.
+- **Dans une conversation d'espace, Jean-Claude ne voit toujours pas les
+  calendriers personnels** : il ne peut pas dire qui est disponible.
+
+### Lots
+
+| Lot | Contenu                                                            | Démonstration                                                                |
+| --- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| 6   | Réponse citée : migration, API, Jean-Claude, fil                   | Répondre à un membre, puis à Jean-Claude, qui répond                         |
+| 7   | Fichiers d'espace : stockage, RLS, API, page « Fichiers »          | Un membre joint un PDF, un autre l'ouvre et interroge Jean-Claude            |
+| 8   | Événements d'espace : table, API, calendrier fusionné, proposition | Le groupe fixe une date, Jean-Claude propose, l'événement apparaît chez tous |
