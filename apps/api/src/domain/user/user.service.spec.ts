@@ -13,6 +13,7 @@ function makeRecord(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
     displayName: "Clarisse",
     memory: null,
     onboardingCompletedAt: null,
+    isAdmin: false,
     createdAt: "2026-08-31T08:00:00.000Z",
     preferences: {
       assistantName: "Jean-Claude",

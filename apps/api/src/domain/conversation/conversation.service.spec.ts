@@ -328,6 +328,7 @@ function makeUserRepository(
     displayName: "Clarisse",
     memory: null,
     onboardingCompletedAt: "2026-08-31T09:00:00.000Z",
+    isAdmin: false,
     createdAt: "2026-08-31T08:00:00.000Z",
     preferences: makePreferences({}, scope),
     ...record,

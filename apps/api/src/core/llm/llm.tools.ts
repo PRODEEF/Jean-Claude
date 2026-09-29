@@ -678,14 +678,20 @@ export const OPEN_NEW_CONVERSATION: LlmTool = {
   },
 };
 
+/**
+ * Retour sur l'application, à transmettre à l'équipe (A.10).
+ *
+ * Le nom date du temps où seuls les bugs passaient par là ; il reste, les
+ * propositions déjà stockées le portant.
+ */
 export const REPORT_BUG: LlmTool = {
   name: "report_bug",
   description:
-    "À appeler quand l'utilisateur décrit un dysfonctionnement de l'application — " +
-    "quelque chose qui ne marche pas comme attendu, une erreur, un blocage, un " +
-    "comportement inattendu. Ne pas l'appeler pour une idée d'amélioration ou une " +
-    "question sur le fonctionnement de l'outil : uniquement un problème réellement " +
-    "constaté.",
+    "À appeler quand l'utilisateur fait un retour sur l'application elle-même : un " +
+    "dysfonctionnement (une erreur, un blocage, un comportement inattendu), une idée " +
+    "d'amélioration, ou un mécontentement. Ne pas l'appeler pour une question sur le " +
+    "fonctionnement de l'outil, ni pour un sujet de sa vie ou de ses projets : " +
+    "uniquement un retour sur Jean-Claude, réellement exprimé.",
   inputSchema: {
     type: "object",
     properties: {
@@ -693,18 +699,27 @@ export const REPORT_BUG: LlmTool = {
         type: "string",
         description:
           "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
-          "de question — ex. « On dirait un bug, je le signale ? ». Ne jamais présenter " +
-          "le signalement comme déjà transmis. 500 caractères maximum.",
+          "de question — ex. « On dirait un bug, je le signale ? », « Bonne idée, je la " +
+          "transmets à l'équipe ? ». Ne jamais présenter le retour comme déjà transmis. " +
+          "500 caractères maximum.",
+      },
+      category: {
+        type: "string",
+        enum: ["bug", "idea", "other"],
+        description:
+          "`bug` pour un dysfonctionnement, `idea` pour une idée ou une amélioration " +
+          "souhaitée, `other` pour une réclamation ou une impression d'ensemble.",
       },
       content: {
         type: "string",
         description:
-          "Description du problème à l'intention de l'équipe technique, rédigée " +
-          "clairement à partir de ce que l'utilisateur a décrit : ce qui s'est passé, " +
-          "ce qui était attendu à la place. 2000 caractères maximum.",
+          "Le retour à l'intention de l'équipe, rédigé clairement à partir de ce que " +
+          "l'utilisateur a dit. Pour un bug : ce qui s'est passé, ce qui était attendu à " +
+          "la place. Pour une idée ou une réclamation : ce qu'il souhaite, et pourquoi " +
+          "s'il l'a dit. 2000 caractères maximum.",
       },
     },
-    required: ["message", "content"],
+    required: ["message", "category", "content"],
   },
 };
 
@@ -812,8 +827,8 @@ export const ASSISTANT_TOOLS: LlmTool[] = [
  * une forme à une question que le modèle poserait de toute façon,
  * `open_new_conversation` applique le bornage du canal lui-même — le rendre
  * désactivable reviendrait à supprimer A.10 — et `report_bug` ne fait que
- * proposer de transmettre un problème que l'utilisateur vient lui-même de
- * décrire : le désactiver l'empêcherait de signaler ce qu'il a déjà exprimé.
+ * proposer de transmettre un retour que l'utilisateur vient lui-même de
+ * formuler : le désactiver l'empêcherait de transmettre ce qu'il a déjà exprimé.
  */
 const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_TASK_LIST.name]: "proactiveTaskDetection",

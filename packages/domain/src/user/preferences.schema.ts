@@ -271,6 +271,11 @@ export const userProfileSchema = z.object({
   memory: z.string().max(8_000).nullable(),
   onboardingCompletedAt: isoDateTimeSchema.nullable(),
   preferences: userPreferencesSchema,
+  /**
+   * Membre de l'équipe, habilité à lire les retours des testeurs. Attribué à
+   * la main en base, jamais depuis l'application.
+   */
+  isAdmin: z.boolean(),
   createdAt: isoDateTimeSchema,
 });
 

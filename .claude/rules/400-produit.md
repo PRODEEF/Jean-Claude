@@ -24,8 +24,8 @@ l'UI : le serveur refuse de produire la suggestion correspondante.
 
 Le canal Jean-Claude couvre **quatre sujets** : les rappels, l'organisation
 interne de l'outil (dossiers, rangement), la structure du projet de
-l'utilisateur, et le signalement d'un problème technique avec l'application
-(`report_bug`).
+l'utilisateur, et les retours sur l'application — problème technique, idée
+d'amélioration ou réclamation (`report_bug`, avec sa catégorie).
 
 Hors de ce périmètre → nouvelle conversation classique, rangée en dossier. Le
 bornage est appliqué **côté serveur** (`buildSystemPrompt`), jamais dans l'UI :

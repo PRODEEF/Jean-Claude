@@ -364,7 +364,7 @@ function makeService(
     taskService,
     calendarService,
     users,
-    new FeedbackService(feedback),
+    new FeedbackService(feedback, IDLE_LLM),
   );
 }
 
@@ -458,9 +458,14 @@ function makeFeedbackRepository(overrides: Partial<IFeedbackRepository> = {}): I
     createGeneral: jest
       .fn()
       .mockImplementation((_userId: string, input: CreateFeedback) =>
-        Promise.resolve<Feedback>({ id: "fb-1", createdAt: NOW, ...input }),
+        Promise.resolve<Feedback>({ id: "fb-1", status: "new", createdAt: NOW, ...input }),
       ),
     rateMessage: jest.fn(),
+    isAdmin: jest.fn().mockResolvedValue(false),
+    listFeedback: jest.fn().mockResolvedValue([]),
+    listRatings: jest.fn().mockResolvedValue([]),
+    listAuthors: jest.fn().mockResolvedValue([]),
+    updateStatus: jest.fn().mockResolvedValue(null),
     ...overrides,
   };
 }
@@ -1834,6 +1839,44 @@ describe("AssistantService", () => {
           category: "bug",
           content: "Le bouton reste grisé.",
           platform: "web",
+          screen: "/assistant",
+        },
+        TOKEN,
+      );
+    });
+
+    it("transmet une idée dans sa catégorie, sans la ranger parmi les bugs", async () => {
+      const feedback = makeFeedbackRepository();
+      const suggestions = makeSuggestionRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeReportBugSuggestion({
+            category: "idea",
+            content: "Pouvoir archiver plusieurs conversations d'un coup.",
+          }),
+        ),
+      });
+
+      await makeService(
+        suggestions,
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        makeCalendarRepository(),
+        IDLE_USERS,
+        feedback,
+      ).resolve(
+        USER,
+        "sug-1",
+        { action: "accept", bugReportContext: { platform: "ios", screen: "/assistant" } },
+        TOKEN,
+      );
+
+      expect(feedback.createGeneral).toHaveBeenCalledWith(
+        USER,
+        {
+          category: "idea",
+          content: "Pouvoir archiver plusieurs conversations d'un coup.",
+          platform: "ios",
           screen: "/assistant",
         },
         TOKEN,

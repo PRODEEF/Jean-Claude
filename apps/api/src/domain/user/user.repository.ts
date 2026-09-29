@@ -17,6 +17,11 @@ type ProfileRow = {
   assistant_scope: AssistantScope;
   flat_banner: boolean;
   created_at: string;
+  /**
+   * Ligne de `admins` embarquée par PostgREST : un objet quand elle existe,
+   * `null` sinon. La RLS n'en laisse voir que la sienne.
+   */
+  admins: { user_id: string } | { user_id: string }[] | null;
 };
 
 /**
@@ -44,11 +49,14 @@ function toEntity(row: ProfileRow): ProfileRecord {
       scope: row.assistant_scope,
       flatBanner: row.flat_banner,
     },
+    // Tableau si PostgREST ne reconnaît pas la relation un-à-un (clé primaire
+    // sur la clé étrangère) : les deux formes disent la même chose.
+    isAdmin: Array.isArray(row.admins) ? row.admins.length > 0 : row.admins !== null,
   };
 }
 
 const COLUMNS =
-  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, created_at";
+  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, created_at, admins(user_id)";
 
 export const userRepository: IUserRepository = {
   async findById(userId, accessToken) {

@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Folder as FolderIcon,
+  Inbox,
   ListChecks,
   MessageCircle,
   MoreHorizontal,
@@ -43,7 +44,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui
 import { Icon } from "@/shared/ui/icon";
 import { Separator } from "@/shared/ui/separator";
 import { Text } from "@/shared/ui/text";
-import { useAssistantName } from "@/shared/hooks/use-profile";
+import { useAssistantName, useProfile } from "@/shared/hooks/use-profile";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { useSidebarData, type SidebarGroup } from "./use-sidebar-data";
 import { UTILITY_LINKS } from "./utility-links";
@@ -88,6 +89,7 @@ export function AppSidebar({
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const assistantName = useAssistantName();
+  const isAdmin = useProfile().data?.isAdmin === true;
   const { palette } = useTheme();
   const { groups, all, channel, isLoading, error } = useSidebarData();
   const [deleting, setDeleting] = useState<Folder | null>(null);
@@ -345,6 +347,27 @@ export function AppSidebar({
             </Text>
           </Button>
         ))}
+
+        {/* Hors de `UTILITY_LINKS` : la bannière les reprend pour tous, alors
+            que la revue n'existe que pour l'équipe. */}
+        {isAdmin ? (
+          <Button
+            variant="ghost"
+            onPress={() => go("/feedback")}
+            className={selected("justify-start gap-3 px-2", pathname === "/feedback")}
+          >
+            <Icon as={Inbox} size={16} className="text-muted-foreground" />
+            <Text
+              className={
+                pathname === "/feedback"
+                  ? "text-sm font-medium text-foreground"
+                  : "text-sm font-normal text-foreground"
+              }
+            >
+              Retours des testeurs
+            </Text>
+          </Button>
+        ) : null}
       </View>
 
       {/* Le menu ne fait que choisir : renommage et suppression passent par la
