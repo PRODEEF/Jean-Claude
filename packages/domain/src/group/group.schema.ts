@@ -106,6 +106,32 @@ export function mentionsAssistant(content: string): boolean {
   return /(^|[^\p{L}\p{N}_.])@jean[\s-]?claude(?![\p{L}\p{N}])/u.test(plain);
 }
 
+/**
+ * Texte du message une fois la mention en cours de saisie complétée, ou `null`
+ * s'il n'y a rien à proposer.
+ *
+ * Ne regarde que la fin du texte : c'est là qu'on tape. Même tolérance que
+ * `mentionsAssistant` sur la casse et les accents — `@jea` propose
+ * `@Jean-Claude`. Rien n'est proposé une fois le nom entier saisi, ni pour une
+ * arobase au milieu d'un mot (`mail@…`).
+ */
+export function completeAssistantMention(draft: string, assistantName: string): string | null {
+  const match = /(^|\s)@([^\s@]*)$/u.exec(draft);
+  if (!match) return null;
+
+  const fold = (text: string) =>
+    text
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase();
+  const typed = match[2] ?? "";
+  const target = fold(assistantName);
+  const partial = fold(typed);
+  if (partial === target || !target.startsWith(partial)) return null;
+
+  return `${draft.slice(0, draft.length - typed.length - 1)}@${assistantName} `;
+}
+
 /** Canal Realtime d'un groupe — même forme côté app et dans la policy SQL. */
 export function groupRealtimeTopic(groupId: string): string {
   return `group:${groupId}`;

@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  View,
+} from "react-native";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ArrowUp, Bell, BellOff, FolderInput } from "lucide-react-native";
-import type { GroupListSuggestion, GroupMessage, WorkspaceMember } from "@jc/domain";
+import {
+  completeAssistantMention,
+  type GroupListSuggestion,
+  type GroupMessage,
+  type WorkspaceMember,
+} from "@jc/domain";
 import { useWorkspaceMembers } from "@/features/workspace/hooks/use-workspaces";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useAssistantName } from "@/shared/hooks/use-profile";
@@ -82,6 +94,10 @@ export function GroupScreen() {
     if (!content || send.isPending) return;
     send.mutate(content, { onSuccess: () => setDraft("") });
   };
+
+  // Seul Jean-Claude est mentionnable pour l'instant : une proposition unique,
+  // acceptée par Tab au clavier ou d'un appui sur la pastille.
+  const mentionCompletion = completeAssistantMention(draft, assistantName);
 
   // `inverted` pose le plus récent en bas sans calcul de défilement : la liste
   // lui est donc donnée du plus récent au plus ancien.
@@ -202,6 +218,19 @@ export function GroupScreen() {
           <Text className="h-5 px-1 text-xs text-muted-foreground" numberOfLines={1}>
             {typingLabel(typingNames)}
           </Text>
+          {mentionCompletion ? (
+            <Pressable
+              onPress={() => setDraft(mentionCompletion)}
+              accessibilityRole="button"
+              accessibilityLabel={`Mentionner ${assistantName}`}
+              className="mb-1 min-h-11 flex-row items-center gap-2 self-start rounded-md border border-border bg-muted px-3"
+            >
+              <Text className="text-sm font-medium">@{assistantName}</Text>
+              {Platform.OS === "web" ? (
+                <Text className="text-xs text-muted-foreground">Tab</Text>
+              ) : null}
+            </Pressable>
+          ) : null}
           <View className="flex-row items-center gap-2">
             <Input
               className="flex-1"
@@ -209,6 +238,12 @@ export function GroupScreen() {
               onChangeText={(text) => {
                 setDraft(text);
                 if (text.trim()) notifyTyping();
+              }}
+              onKeyPress={(event) => {
+                if (event.nativeEvent.key !== "Tab" || !mentionCompletion) return;
+                // Sans cela, Tab passe le focus au bouton d'envoi.
+                event.preventDefault();
+                setDraft(mentionCompletion);
               }}
               onSubmitEditing={submit}
               placeholder={`Écrire un message — @${assistantName} pour l'appeler`}

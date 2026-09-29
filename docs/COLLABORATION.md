@@ -548,6 +548,12 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
 **Vérification.** Typecheck et tests API passent. **Non vérifié à l'écran** :
 aucun parcours joué dans un navigateur, ni iOS ni Android.
 
+- **Complétion de la mention** : en tapant `@` dans une conversation d'espace,
+  `@Jean-Claude` est proposé au-dessus du champ ; Tab (web) ou un appui sur la
+  pastille le complète. Règle dans `completeAssistantMention` (`@jc/domain`).
+  Seul Jean-Claude est proposé ; les membres viendront s'ils deviennent
+  mentionnables. Non vérifié à l'écran.
+
 ## 8. Hors V1
 
 - Envoi de l'e-mail d'invitation (Supabase `inviteUserByEmail` imposerait le

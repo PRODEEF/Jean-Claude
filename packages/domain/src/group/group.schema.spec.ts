@@ -1,4 +1,4 @@
-import { mentionsAssistant } from "./group.schema";
+import { completeAssistantMention, mentionsAssistant } from "./group.schema";
 
 describe("mentionsAssistant", () => {
   it("reconnaît la mention exacte", () => {
@@ -29,5 +29,32 @@ describe("mentionsAssistant", () => {
 
   it("rend faux pour un message vide", () => {
     expect(mentionsAssistant("")).toBe(false);
+  });
+});
+
+describe("completeAssistantMention", () => {
+  const NAME = "Jean-Claude";
+
+  it("propose le nom dès l'arobase seule", () => {
+    expect(completeAssistantMention("@", NAME)).toBe("@Jean-Claude ");
+  });
+
+  it("complète un début de nom, sans tenir compte de la casse ni des accents", () => {
+    expect(completeAssistantMention("Salut @jea", NAME)).toBe("Salut @Jean-Claude ");
+    expect(completeAssistantMention("@JÉAN-c", NAME)).toBe("@Jean-Claude ");
+  });
+
+  it("ne propose rien quand le nom est déjà complet", () => {
+    expect(completeAssistantMention("@Jean-Claude", NAME)).toBeNull();
+  });
+
+  it("ne propose rien si ce qui suit l'arobase ne commence pas le nom", () => {
+    expect(completeAssistantMention("@yann", NAME)).toBeNull();
+  });
+
+  it("ne propose rien pour une arobase au milieu d'un mot ou avant la fin du texte", () => {
+    expect(completeAssistantMention("écris à mail@jea", NAME)).toBeNull();
+    expect(completeAssistantMention("@jea et la suite", NAME)).toBeNull();
+    expect(completeAssistantMention("Bonjour", NAME)).toBeNull();
   });
 });
