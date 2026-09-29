@@ -1,29 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  View,
-} from "react-native";
+import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { ArrowUp, Bell, BellOff, FolderInput } from "lucide-react-native";
+import { Bell, BellOff, FolderInput } from "lucide-react-native";
 import {
-  completeAssistantMention,
+  DEFAULT_ASSISTANT_NAME,
   type GroupListSuggestion,
   type GroupMessage,
   type WorkspaceMember,
 } from "@jc/domain";
 import { useWorkspaceMembers } from "@/features/workspace/hooks/use-workspaces";
+import { Composer } from "@/features/conversation/Composer";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
-import { useAssistantName } from "@/shared/hooks/use-profile";
 import { cn } from "@/shared/lib/utils";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
-import { Input } from "@/shared/ui/input";
 import { contentColumn, READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Text } from "@/shared/ui/text";
 import { GroupFoldersDialog } from "./GroupFoldersDialog";
@@ -50,10 +45,14 @@ export function GroupScreen() {
   const router = useRouter();
   const { palette } = useTheme();
   const compact = useBreakpoint() === "compact";
+  const insets = useSafeAreaInsets();
   const focused = useIsFocused();
   const { session } = useAuth();
   const selfId = session?.user.id ?? null;
-  const assistantName = useAssistantName();
+  // Dans un groupe, l'assistant est « Jean-Claude » pour tous : le nom choisi
+  // dans les réglages est personnel, alors que le serveur nomme et reconnaît
+  // Jean-Claude seul (mention, consigne, fil transmis au modèle).
+  const assistantName = DEFAULT_ASSISTANT_NAME;
 
   const group = useGroup(groupId);
   const messages = useGroupMessages(groupId);
@@ -94,10 +93,6 @@ export function GroupScreen() {
     if (!content || send.isPending) return;
     send.mutate(content, { onSuccess: () => setDraft("") });
   };
-
-  // Seul Jean-Claude est mentionnable pour l'instant : une proposition unique,
-  // acceptée par Tab au clavier ou d'un appui sur la pastille.
-  const mentionCompletion = completeAssistantMention(draft, assistantName);
 
   // `inverted` pose le plus récent en bas sans calcul de défilement : la liste
   // lui est donc donnée du plus récent au plus ancien.
@@ -212,55 +207,34 @@ export function GroupScreen() {
         )}
 
         <View
-          className="border-t border-border pb-3 pt-2"
-          style={contentColumn(compact, READING_MAX_WIDTH)}
+          style={[
+            contentColumn(compact, READING_MAX_WIDTH),
+            { padding: spacing.md, paddingBottom: spacing.md + insets.bottom },
+          ]}
         >
           <Text className="h-5 px-1 text-xs text-muted-foreground" numberOfLines={1}>
             {typingLabel(typingNames)}
           </Text>
-          {mentionCompletion ? (
-            <Pressable
-              onPress={() => setDraft(mentionCompletion)}
-              accessibilityRole="button"
-              accessibilityLabel={`Mentionner ${assistantName}`}
-              className="mb-1 min-h-11 flex-row items-center gap-2 self-start rounded-md border border-border bg-muted px-3"
-            >
-              <Text className="text-sm font-medium">@{assistantName}</Text>
-              {Platform.OS === "web" ? (
-                <Text className="text-xs text-muted-foreground">Tab</Text>
-              ) : null}
-            </Pressable>
-          ) : null}
-          <View className="flex-row items-center gap-2">
-            <Input
-              className="flex-1"
-              value={draft}
-              onChangeText={(text) => {
-                setDraft(text);
-                if (text.trim()) notifyTyping();
-              }}
-              onKeyPress={(event) => {
-                if (event.nativeEvent.key !== "Tab" || !mentionCompletion) return;
-                // Sans cela, Tab passe le focus au bouton d'envoi.
-                event.preventDefault();
-                setDraft(mentionCompletion);
-              }}
-              onSubmitEditing={submit}
-              placeholder={`Écrire un message — @${assistantName} pour l'appeler`}
-              returnKeyType="send"
-              blurOnSubmit={false}
-              accessibilityLabel="Message à la conversation"
-            />
-            <Button
-              size="icon"
-              onPress={submit}
-              disabled={!draft.trim() || send.isPending}
-              accessibilityLabel="Envoyer"
-              style={{ backgroundColor: palette.accent }}
-            >
-              <Icon as={ArrowUp} size={18} color={palette.accentText} />
-            </Button>
-          </View>
+          <Composer
+            value={draft}
+            onChangeText={(text) => {
+              setDraft(text);
+              if (text.trim()) notifyTyping();
+            }}
+            onSubmit={submit}
+            placeholder={`Écrire un message — @${assistantName} pour l'appeler`}
+            busy={send.isPending}
+            slashCommands={false}
+            mentionName={assistantName}
+          />
+          {/* Même mention que sous le champ du fil personnel. */}
+          <Text
+            className="mt-2 text-center text-xs text-muted-foreground"
+            style={{ fontFamily: FONT_FAMILY }}
+          >
+            Jean-Claude comme tout non-humain peut faire des erreurs. Veuillez vérifier les
+            réponses.
+          </Text>
           {send.isError ? (
             <Text className="mt-1 text-xs text-destructive">
               Le message n'a pas pu être envoyé. Réessayez dans un instant.

@@ -552,7 +552,15 @@ aucun parcours joué dans un navigateur, ni iOS ni Android.
   `@Jean-Claude` est proposé au-dessus du champ ; Tab (web) ou un appui sur la
   pastille le complète. Règle dans `completeAssistantMention` (`@jc/domain`).
   Seul Jean-Claude est proposé ; les membres viendront s'ils deviennent
-  mentionnables. Non vérifié à l'écran.
+  mentionnables.
+- **Même barre de saisie que le fil personnel** : la conversation d'espace
+  réutilise `Composer` (champ qui grandit, dictée, flèche) et la mention sous le
+  champ. Différences : le placeholder, pas de trombone (les pièces jointes ne
+  sont pas prises en charge en groupe) et pas de commandes « / ».
+- **Nom de l'assistant en groupe** : toujours « Jean-Claude », quel que soit le
+  nom choisi dans les réglages. Ce nom est personnel ; le serveur, lui, nomme et
+  reconnaît Jean-Claude seul dans un groupe (mention, consigne, fil transmis au
+  modèle). Non vérifié à l'écran.
 
 ## 8. Hors V1
 
