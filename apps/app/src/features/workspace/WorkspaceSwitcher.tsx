@@ -8,6 +8,7 @@ import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Modal } from "@/shared/ui/modal";
 import { Text } from "@/shared/ui/text";
+import { rememberWorkspace } from "./hooks/use-active-workspace";
 import {
   useReceivedInvitations,
   useWorkspaceActions,
@@ -118,7 +119,12 @@ function SpaceList({
         <SpaceRow
           workspace={null}
           active={activeWorkspaceId === null}
-          onPress={() => onNavigate("/chat")}
+          onPress={() => {
+            // Le choix explicite du personnel : l'adresse `/chat` ne dit rien
+            // de l'espace, c'est la mémoire qui doit le refléter.
+            rememberWorkspace(null);
+            onNavigate("/chat");
+          }}
         />
         {workspaces.data?.map((workspace) => (
           <SpaceRow
@@ -126,6 +132,7 @@ function SpaceList({
             workspace={workspace}
             active={workspace.id === activeWorkspaceId}
             onPress={() => onNavigate(`/workspace/${workspace.id}`)}
+            onManageMembers={() => onNavigate(`/workspace/${workspace.id}`)}
           />
         ))}
       </View>
@@ -176,39 +183,54 @@ function SpaceRow({
   workspace,
   active,
   onPress,
+  onManageMembers,
 }: {
   workspace: Workspace | null;
   active: boolean;
   onPress: () => void;
+  /** Absent pour l'espace personnel, qui n'a pas de membres. */
+  onManageMembers?: () => void;
 }) {
   const name = workspace?.name ?? "Personnel";
 
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Ouvrir ${name}`}
-      accessibilityState={{ selected: active }}
-      className={cn(
-        "min-h-11 flex-row items-center gap-3 rounded-md px-2 py-2 active:bg-muted",
-        active && "bg-muted",
-      )}
-    >
-      <SpaceIcon workspace={workspace} />
-      <View className="min-w-0 flex-1">
-        <Text className="text-sm font-medium" numberOfLines={1}>
-          {name}
-        </Text>
-        <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-          {workspace
-            ? workspace.role === "admin"
-              ? "Espace d'équipe · admin"
-              : "Espace d'équipe"
-            : "Vos conversations, listes et calendrier"}
-        </Text>
-      </View>
-      {active ? <Icon as={Check} size={16} className="text-foreground" /> : null}
-    </Pressable>
+    <View className={cn("flex-row items-center rounded-md", active && "bg-muted")}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`Ouvrir ${name}`}
+        accessibilityState={{ selected: active }}
+        className="min-h-11 min-w-0 flex-1 flex-row items-center gap-3 rounded-md px-2 py-2 active:bg-muted"
+      >
+        <SpaceIcon workspace={workspace} />
+        <View className="min-w-0 flex-1">
+          <Text className="text-sm font-medium" numberOfLines={1}>
+            {name}
+          </Text>
+          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+            {workspace
+              ? `Espace collaboratif · ${workspace.memberCount} ${workspace.memberCount > 1 ? "membres" : "membre"}`
+              : "Vos conversations, listes et calendrier"}
+          </Text>
+        </View>
+        {active ? <Icon as={Check} size={16} className="text-foreground" /> : null}
+      </Pressable>
+
+      {/* Frère du Pressable et non son enfant : un bouton dans un bouton n'est
+          pas un DOM valide sur le web. Seulement pour l'espace ouvert, comme le
+          reste de la barre le montre. */}
+      {workspace && active && onManageMembers ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          onPress={onManageMembers}
+          accessibilityLabel={`Membres et invitations de ${name}`}
+          className="mr-1 size-8"
+        >
+          <Icon as={Users} size={16} className="text-muted-foreground" />
+        </Button>
+      ) : null}
+    </View>
   );
 }
 

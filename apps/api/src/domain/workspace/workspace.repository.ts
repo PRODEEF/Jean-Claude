@@ -9,7 +9,13 @@ import { forUser } from "../../core/supabase/supabase.js";
 import type { IWorkspaceRepository } from "./workspace.repository.interface.js";
 
 /** Lignes Postgres — snake_case, telles que renvoyées par Supabase. */
-type WorkspaceRow = { id: string; name: string; created_at: string };
+type WorkspaceRow = {
+  id: string;
+  name: string;
+  created_at: string;
+  /** Agrégat PostgREST : une seule ligne `{ count }`. */
+  workspace_members: { count: number }[];
+};
 
 /** Adhésion de l'appelant, avec l'espace embarqué. */
 type MembershipRow = { role: string; workspaces: WorkspaceRow | null };
@@ -39,6 +45,7 @@ function toWorkspace(row: MembershipRow): Workspace | null {
     id: row.workspaces.id,
     name: row.workspaces.name,
     role: row.role as Workspace["role"],
+    memberCount: row.workspaces.workspace_members[0]?.count ?? 1,
     createdAt: row.workspaces.created_at,
   };
 }
@@ -71,7 +78,7 @@ function toReceivedInvitation(row: ReceivedInvitationRow): ReceivedInvitation | 
   };
 }
 
-const MEMBERSHIP_COLUMNS = "role, workspaces(id, name, created_at)";
+const MEMBERSHIP_COLUMNS = "role, workspaces(id, name, created_at, workspace_members(count))";
 const INVITATION_COLUMNS = "id, workspace_id, email, created_at";
 const RECEIVED_INVITATION_COLUMNS = "id, workspace_id, created_at, workspaces(name)";
 
@@ -109,6 +116,7 @@ export const workspaceRepository: IWorkspaceRepository = {
       id: randomUUID(),
       name,
       role: "admin",
+      memberCount: 1,
       createdAt: new Date().toISOString(),
     };
 

@@ -95,7 +95,7 @@ function FolderRow({
             className="text-muted-foreground"
           />
           <Icon as={FolderIcon} size={16} className="text-muted-foreground" />
-          <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
+          <Text className="flex-1 text-sm font-normal text-muted-foreground" numberOfLines={1}>
             {node.name}
           </Text>
           {node.conversationCount > 0 ? (
@@ -114,7 +114,7 @@ function FolderRow({
       </View>
 
       {open ? (
-        <View className={cn("ml-4 border-l border-border pl-1")}>
+        <View className={cn("ml-4 border-l border-border pl-2")}>
           {node.children.map((child) => (
             <FolderRow key={child.id} node={child} depth={depth + 1} {...props} />
           ))}

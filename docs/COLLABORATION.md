@@ -523,6 +523,31 @@ l'écran de conversation existant, l'interface dédiée venant au lot 5.
 
 ---
 
+### Refonte de la barre latérale
+
+- **Ordre** : signalement, canal Jean-Claude, sélecteur d'espace, puis
+  « Nouvelle conversation ». Le canal et le signalement sont personnels : ils
+  ne dépendent pas de l'espace et passent au-dessus.
+- **Même structure dans les deux espaces** : Dossiers, puis « Conversations et
+  tâches » (conversations et listes à plat). Rangées, retraits et pastilles
+  partagés via `features/navigation/SidebarSection.tsx`. Écart assumé : un
+  « + » reste sur « Conversations et tâches » en espace collaboratif, seul
+  point d'entrée d'une liste partagée. Dans l'espace personnel, elle naît d'une
+  conversation ou d'un dossier.
+- **L'espace actif est mémorisé** (`use-active-workspace.ts`), en plus de
+  l'adresse : ouvrir le canal, le calendrier ou les réglages depuis un espace
+  collaboratif ne ramène plus au personnel. Il ne change que par le sélecteur
+  ou une adresse `/workspace/:id`. Mémoire en mémoire vive seulement : un
+  rechargement retombe sur l'adresse. Remplace « l'espace actif se lit dans
+  l'adresse » du lot 5.
+- **Membres et invitations** : plus de rangée dans la barre, un bouton sur la
+  ligne de l'espace ouvert dans la fenêtre des espaces.
+- **Fenêtre des espaces** : « Espace collaboratif · x membre(s) » pour tous
+  (`Workspace.memberCount`, agrégat PostgREST côté API).
+
+**Vérification.** Typecheck et tests API passent. **Non vérifié à l'écran** :
+aucun parcours joué dans un navigateur, ni iOS ni Android.
+
 ## 8. Hors V1
 
 - Envoi de l'e-mail d'invitation (Supabase `inviteUserByEmail` imposerait le

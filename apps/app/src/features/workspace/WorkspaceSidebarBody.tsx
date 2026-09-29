@@ -1,15 +1,19 @@
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
-import { ListChecks, MessagesSquare, Plus, Users } from "lucide-react-native";
+import { ListChecks, Plus } from "lucide-react-native";
 import type { Group, WorkspaceTaskList } from "@jc/domain";
-import { CreateGroupDialog } from "@/features/group/CreateGroupDialog";
 import { useGroups } from "@/features/group/hooks/use-groups";
+import {
+  rowLabel,
+  SectionLabel,
+  selected,
+  UnreadBadge,
+} from "@/features/navigation/SidebarSection";
 import { useWorkspaceLists } from "@/features/workspace-list/hooks/use-workspace-lists";
 import {
   WorkspaceListDialog,
   type WorkspaceListTarget,
 } from "@/features/workspace-list/WorkspaceListDialog";
-import { cn } from "@/shared/lib/utils";
 import { WorkspaceFolderDialog, type WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
 import { WorkspaceFolderTree } from "./WorkspaceFolderTree";
 import { useWorkspaceFolders } from "./hooks/use-workspace-folders";
@@ -24,12 +28,13 @@ export type WorkspaceSidebarBodyProps = {
 };
 
 /**
- * Corps de la barre latérale quand un espace d'équipe est sélectionné.
+ * Corps de la barre latérale quand un espace collaboratif est sélectionné.
  *
- * Les dossiers et conversations personnels s'effacent, comme les canaux d'un
- * autre espace dans Slack : on ne mêle pas ce qui est à soi et ce qui est à
- * l'équipe. Même structure que l'espace personnel : les dossiers d'abord, avec
- * ce qui y est rangé, puis toutes les conversations à plat.
+ * Même structure que l'espace personnel, dans le même ordre : les dossiers avec
+ * ce qui y est rangé, puis toutes les conversations et listes à plat. Les
+ * dossiers et conversations personnels s'effacent, comme les canaux d'un autre
+ * espace dans Slack : on ne mêle pas ce qui est à soi et ce qui est à l'équipe.
+ * Les membres se gèrent depuis le sélecteur d'espace.
  */
 export function WorkspaceSidebarBody({
   workspaceId,
@@ -39,7 +44,6 @@ export function WorkspaceSidebarBody({
   const groups = useGroups(workspaceId);
   const folders = useWorkspaceFolders(workspaceId);
   const lists = useWorkspaceLists(workspaceId);
-  const [creating, setCreating] = useState(false);
   const [listDialog, setListDialog] = useState<WorkspaceListTarget | null>(null);
   const [editing, setEditing] = useState<WorkspaceFolderTarget | null>(null);
 
@@ -51,39 +55,16 @@ export function WorkspaceSidebarBody({
     const href = `/workspace/${workspaceId}/list/${list.id}`;
     return <ListRow list={list} active={pathname === href} onPress={() => onNavigate(href)} />;
   };
-  const membersHref = `/workspace/${workspaceId}`;
+  const createFolder = () => setEditing({ kind: "create", parentId: null });
 
   return (
-    <ScrollView className="flex-1" contentContainerClassName="gap-0.5 px-3 pb-4">
-      <Button
-        variant="ghost"
-        onPress={() => onNavigate(membersHref)}
-        className={cn("justify-start gap-3 px-2", pathname === membersHref && "bg-accent")}
-      >
-        <Icon as={Users} size={16} className="text-muted-foreground" />
-        <Text
-          className={cn(
-            "text-sm text-foreground",
-            pathname === membersHref ? "font-medium" : "font-normal",
-          )}
-        >
-          Membres et invitations
-        </Text>
-      </Button>
+    <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
+      <SectionLabel action={{ label: "Créer un dossier", onPress: createFolder }}>
+        Dossiers
+      </SectionLabel>
 
-      <View className="mt-3 flex-row items-center justify-between px-2 py-1">
-        <Text className="text-xs font-medium text-muted-foreground">Dossiers</Text>
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={() => setEditing({ kind: "create", parentId: null })}
-          accessibilityLabel="Créer un dossier dans l'espace"
-          className="size-7"
-        >
-          <Icon as={Plus} size={14} className="text-muted-foreground" />
-        </Button>
-      </View>
-
+      {/* Message fixe, et non `error.message` : une erreur brute peut porter
+          des fragments de requête. */}
       {folders.error ? (
         <Text className="px-2 py-1 text-xs text-destructive">
           Dossiers indisponibles pour le moment.
@@ -91,11 +72,7 @@ export function WorkspaceSidebarBody({
       ) : null}
 
       {folders.data?.length === 0 ? (
-        <Button
-          variant="ghost"
-          onPress={() => setEditing({ kind: "create", parentId: null })}
-          className="justify-start gap-2 px-2"
-        >
+        <Button variant="ghost" onPress={createFolder} className="justify-start gap-2 px-2">
           <Icon as={Plus} size={14} className="text-muted-foreground" />
           <Text className="text-xs font-normal text-muted-foreground">
             Créer un premier dossier
@@ -112,76 +89,27 @@ export function WorkspaceSidebarBody({
         renderList={renderList}
       />
 
-      <View className="mt-3 flex-row items-center justify-between px-2 py-1">
-        <Text className="text-xs font-medium text-muted-foreground">Conversations</Text>
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={() => setCreating(true)}
-          accessibilityLabel="Démarrer une conversation d'espace"
-          className="size-7"
-        >
-          <Icon as={Plus} size={14} className="text-muted-foreground" />
-        </Button>
-      </View>
+      {/* Le « + » n'existe pas dans l'espace personnel, où une liste naît d'une
+          conversation ou d'un dossier. Il reste ici : sans lui, une liste
+          partagée n'aurait plus aucun point d'entrée. */}
+      <SectionLabel
+        action={{
+          label: "Créer une liste partagée",
+          onPress: () => setListDialog({ kind: "create", workspaceId }),
+        }}
+      >
+        Conversations et tâches
+      </SectionLabel>
 
-      {/* Message fixe, et non `error.message` : une erreur brute peut porter
-          des fragments de requête. */}
-      {groups.error ? (
+      {groups.error || lists.error ? (
         <Text className="px-2 py-1 text-xs text-destructive">
           Conversations indisponibles pour le moment.
         </Text>
       ) : null}
 
-      {groups.data?.length === 0 ? (
-        <Button
-          variant="ghost"
-          onPress={() => setCreating(true)}
-          className="justify-start gap-2 px-2"
-        >
-          <Icon as={Plus} size={14} className="text-muted-foreground" />
-          <Text className="text-xs font-normal text-muted-foreground">
-            Démarrer une première conversation
-          </Text>
-        </Button>
-      ) : null}
-
       {groups.data?.map((group) => (
         <View key={group.id}>{renderGroup(group)}</View>
       ))}
-
-      <View className="mt-3 flex-row items-center justify-between px-2 py-1">
-        <Text className="text-xs font-medium text-muted-foreground">Listes</Text>
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={() => setListDialog({ kind: "create", workspaceId })}
-          accessibilityLabel="Créer une liste partagée"
-          className="size-7"
-        >
-          <Icon as={Plus} size={14} className="text-muted-foreground" />
-        </Button>
-      </View>
-
-      {lists.error ? (
-        <Text className="px-2 py-1 text-xs text-destructive">
-          Listes indisponibles pour le moment.
-        </Text>
-      ) : null}
-
-      {lists.data?.length === 0 ? (
-        <Button
-          variant="ghost"
-          onPress={() => setListDialog({ kind: "create", workspaceId })}
-          className="justify-start gap-2 px-2"
-        >
-          <Icon as={Plus} size={14} className="text-muted-foreground" />
-          <Text className="text-xs font-normal text-muted-foreground">
-            Créer une première liste
-          </Text>
-        </Button>
-      ) : null}
-
       {lists.data?.map((list) => (
         <View key={list.id}>{renderList(list)}</View>
       ))}
@@ -200,15 +128,6 @@ export function WorkspaceSidebarBody({
         target={editing}
         onClose={() => setEditing(null)}
       />
-
-      <CreateGroupDialog
-        workspaceId={creating ? workspaceId : null}
-        onClose={() => setCreating(false)}
-        onCreated={(group) => {
-          setCreating(false);
-          onNavigate(`/workspace/${workspaceId}/group/${group.id}`);
-        }}
-      />
     </ScrollView>
   );
 }
@@ -222,38 +141,25 @@ function GroupRow({
   active: boolean;
   onPress: () => void;
 }) {
-  // Le groupe ouvert est marqué lu : sa pastille n'a pas à clignoter le temps
-  // que l'écran s'en charge.
+  // La conversation ouverte est marquée lue : sa pastille n'a pas à clignoter
+  // le temps que l'écran s'en charge.
   const unread = active ? 0 : group.unreadCount;
 
   return (
-    <Button
-      variant="ghost"
-      onPress={onPress}
-      accessibilityLabel={unread > 0 ? `${group.title}, ${unread} non lu(s)` : group.title}
-      className={cn("justify-start gap-3 px-2", active && "bg-accent")}
-    >
-      <Icon as={MessagesSquare} size={16} className="text-muted-foreground" />
-      <Text
-        className={cn(
-          "flex-1 text-sm text-foreground",
-          active || unread > 0 ? "font-medium" : "font-normal",
-        )}
-        numberOfLines={1}
+    <View className={selected("flex-row items-center rounded-md", active)}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onPress={onPress}
+        accessibilityLabel={unread > 0 ? `${group.title}, ${unread} non lu(s)` : group.title}
+        className="min-w-0 flex-1 justify-start px-2"
       >
-        {group.title}
-      </Text>
-      {unread > 0 ? (
-        <View
-          className="min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5"
-          style={{ height: 18 }}
-        >
-          <Text className="text-[10px] font-semibold leading-none text-primary-foreground">
-            {unread}
-          </Text>
-        </View>
-      ) : null}
-    </Button>
+        <Text className={rowLabel(active)} numberOfLines={1}>
+          {group.title}
+        </Text>
+      </Button>
+      <UnreadBadge count={unread} />
+    </View>
   );
 }
 
@@ -272,15 +178,13 @@ function ListRow({
   return (
     <Button
       variant="ghost"
+      size="sm"
       onPress={onPress}
       accessibilityLabel={`${list.title}, ${remaining} tâche(s) à faire`}
-      className={cn("justify-start gap-3 px-2", active && "bg-accent")}
+      className={selected("w-full justify-start gap-2 px-2", active)}
     >
-      <Icon as={ListChecks} size={16} className="text-muted-foreground" />
-      <Text
-        className={cn("flex-1 text-sm text-foreground", active ? "font-medium" : "font-normal")}
-        numberOfLines={1}
-      >
+      <Icon as={ListChecks} size={14} className="text-muted-foreground" />
+      <Text className={rowLabel(active)} numberOfLines={1}>
         {list.title}
       </Text>
       {remaining > 0 ? <Text className="text-xs text-muted-foreground">{remaining}</Text> : null}

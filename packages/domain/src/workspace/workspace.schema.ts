@@ -19,6 +19,8 @@ export const workspaceSchema = z.object({
   id: uuidSchema,
   name: z.string(),
   role: workspaceRoleSchema,
+  /** Affiché dans le sélecteur d'espace, sans charger la liste des membres. */
+  memberCount: z.number().int().min(1),
   createdAt: isoDateTimeSchema,
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
