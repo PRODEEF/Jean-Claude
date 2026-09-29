@@ -289,7 +289,8 @@ export function parseInline(source: string): InlineNode[] {
 }
 
 /**
- * Aplatit un Markdown en texte continu, pour la synthèse vocale (§12.3).
+ * Aplatit un Markdown en texte continu, pour la synthèse vocale (§12.3) et
+ * pour la citation d'une réponse dans une conversation d'espace.
  *
  * Lu tel quel, le Markdown ferait prononcer les astérisques d'un gras et
  * l'URL entière d'un lien : seul le texte porté par chaque nœud compte ici,

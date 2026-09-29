@@ -1,7 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  type TextInput,
+  View,
+} from "react-native";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
-import { Bell, BellOff, FolderInput } from "lucide-react-native";
+import { Bell, BellOff, FolderInput, X } from "lucide-react-native";
 import {
   DEFAULT_ASSISTANT_NAME,
   type GroupListSuggestion,
@@ -13,8 +21,9 @@ import { MessageRow } from "@/features/conversation/MessageRow";
 import { useSpeech } from "@/features/conversation/hooks/use-speech";
 import { Composer } from "@/features/conversation/Composer";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
+import { markdownToSpeech } from "@/shared/lib/markdown";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { spacing } from "@jc/design";
+import { MIN_TOUCH_TARGET, spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -71,6 +80,9 @@ export function GroupScreen() {
   const { typingUserIds, notifyTyping, clearTyping } = useGroupTyping(groupId);
   const [draft, setDraft] = useState("");
   const [filing, setFiling] = useState(false);
+  const [replyToId, setReplyToId] = useState<string | null>(null);
+  const listRef = useRef<FlatList<GroupMessage>>(null);
+  const inputRef = useRef<TextInput>(null);
 
   const names = useMemo(
     () => new Map((members.data ?? []).map((member) => [member.userId, memberName(member)])),
@@ -90,18 +102,40 @@ export function GroupScreen() {
     if (last?.role === "user") clearTyping(last.authorId);
   }, [last?.id, last?.role, last?.authorId, clearTyping]);
 
-  const submit = () => {
-    const content = draft.trim();
-    if (!content || send.isPending) return;
-    send.mutate(content, { onSuccess: () => setDraft("") });
-  };
-
   // `inverted` pose le plus récent en bas sans calcul de défilement : la liste
   // lui est donc donnée du plus récent au plus ancien.
   const items = useMemo(() => [...(messages.data?.items ?? [])].reverse(), [messages.data]);
 
-  const authorLabel = (message: GroupMessage) =>
+  const authorLabel = (message: Pick<GroupMessage, "role" | "authorId">) =>
     message.role === "assistant" ? assistantName : (names.get(message.authorId) ?? "Ancien membre");
+
+  const replyTarget = replyToId ? items.find((message) => message.id === replyToId) : undefined;
+
+  const startReply = (messageId: string) => {
+    setReplyToId(messageId);
+    inputRef.current?.focus();
+  };
+
+  // Seul un message chargé peut être rejoint : un message plus ancien que la
+  // page ouverte n'est rappelé que par sa citation.
+  const scrollToMessage = (messageId: string) => {
+    const index = items.findIndex((message) => message.id === messageId);
+    if (index >= 0) listRef.current?.scrollToIndex({ index, viewPosition: 0.5 });
+  };
+
+  const submit = () => {
+    const content = draft.trim();
+    if (!content || send.isPending) return;
+    send.mutate(
+      { content, ...(replyTarget ? { replyToId: replyTarget.id } : {}) },
+      {
+        onSuccess: () => {
+          setDraft("");
+          setReplyToId(null);
+        },
+      },
+    );
+  };
 
   const typingNames = typingUserIds
     .filter((id) => id !== selfId)
@@ -170,9 +204,22 @@ export function GroupScreen() {
           </View>
         ) : (
           <FlatList
+            ref={listRef}
             inverted
             data={items}
             keyExtractor={(message) => message.id}
+            // Hauteurs variables, donc inconnues d'avance : on approche la
+            // position, puis on réessaie une fois la zone dessinée.
+            onScrollToIndexFailed={(info) => {
+              listRef.current?.scrollToOffset({
+                offset: info.averageItemLength * info.index,
+                animated: true,
+              });
+              setTimeout(
+                () => listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0.5 }),
+                100,
+              );
+            }}
             contentContainerStyle={[
               { padding: spacing.lg, gap: spacing.md },
               contentColumn(compact, READING_MAX_WIDTH),
@@ -192,6 +239,17 @@ export function GroupScreen() {
                   speaking={speakingId === item.id}
                   onToggleSpeech={toggleSpeech}
                   author={showAuthor ? authorLabel(item) : null}
+                  quote={
+                    item.replyTo
+                      ? {
+                          id: item.replyTo.id,
+                          author: authorLabel(item.replyTo),
+                          content: quotedText(item.replyTo),
+                        }
+                      : null
+                  }
+                  onReply={startReply}
+                  onPressQuote={scrollToMessage}
                   suggestion={suggestionByMessage.get(item.id) ?? null}
                   workspaceId={workspaceId}
                   nameOf={(userId) => names.get(userId) ?? "Ancien membre"}
@@ -219,7 +277,15 @@ export function GroupScreen() {
           <Text className="h-5 px-1 text-xs text-muted-foreground" numberOfLines={1}>
             {typingLabel(typingNames)}
           </Text>
+          {replyTarget ? (
+            <ReplyBanner
+              author={authorLabel(replyTarget)}
+              content={quotedText(replyTarget)}
+              onCancel={() => setReplyToId(null)}
+            />
+          ) : null}
           <Composer
+            inputRef={inputRef}
             value={draft}
             onChangeText={(text) => {
               setDraft(text);
@@ -254,6 +320,9 @@ function MessageBubble({
   message,
   selfId,
   author,
+  quote,
+  onReply,
+  onPressQuote,
   speaking,
   onToggleSpeech,
   suggestion,
@@ -267,6 +336,9 @@ function MessageBubble({
   onToggleSpeech: (messageId: string, content: string) => void;
   /** `null` quand le message précédent vient déjà de la même personne. */
   author: string | null;
+  quote: { id: string; author: string; content: string } | null;
+  onReply: (messageId: string) => void;
+  onPressQuote: (messageId: string) => void;
   /** Liste proposée par Jean-Claude dans ce message, s'il y en a une. */
   suggestion: GroupListSuggestion | null;
   workspaceId: string;
@@ -284,6 +356,9 @@ function MessageBubble({
         message={message}
         author={mine ? null : author}
         mine={mine}
+        quote={quote}
+        onReply={onReply}
+        onPressQuote={onPressQuote}
         busy={false}
         speaking={speaking}
         onToggleSpeech={onToggleSpeech}
@@ -298,6 +373,56 @@ function MessageBubble({
       ) : null}
     </View>
   );
+}
+
+/** Rappel du message cité au-dessus du champ, tant que la réponse n'est pas partie. */
+function ReplyBanner({
+  author,
+  content,
+  onCancel,
+}: {
+  author: string;
+  content: string;
+  onCancel: () => void;
+}) {
+  const { palette } = useTheme();
+
+  return (
+    <View
+      className="mb-2 flex-row items-center gap-2 rounded-md bg-muted py-1 pl-3"
+      style={{ borderLeftWidth: 3, borderLeftColor: palette.accent }}
+    >
+      <View className="flex-1">
+        <Text className="text-xs font-medium text-primary" numberOfLines={1}>
+          Réponse à {author}
+        </Text>
+        <Text className="text-sm text-muted-foreground" numberOfLines={1}>
+          {content}
+        </Text>
+      </View>
+      <Pressable
+        onPress={onCancel}
+        accessibilityRole="button"
+        accessibilityLabel="Ne plus répondre à ce message"
+        style={{
+          width: MIN_TOUCH_TARGET,
+          height: MIN_TOUCH_TARGET,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Icon as={X} size={16} className="text-muted-foreground" />
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * Texte d'un message cité. Une réponse de Jean-Claude est du Markdown : sur
+ * deux lignes, ses astérisques se liraient au lieu du gras.
+ */
+function quotedText(message: Pick<GroupMessage, "role" | "content">): string {
+  return message.role === "assistant" ? markdownToSpeech(message.content) : message.content;
 }
 
 function typingLabel(names: string[]): string {

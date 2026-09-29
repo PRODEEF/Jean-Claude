@@ -641,6 +641,36 @@ livrées dans cet ordre, du plus petit au plus lourd.
   mobile. Il demande un gestionnaire de gestes ; l'appui long suffit à la
   démonstration.
 
+### Livré au lot 6
+
+- **Migration `20260930100000_message_reply.sql`** : `messages.reply_to_id`
+  en `on delete set null`, index partiel, et trigger `check_message_reply`
+  qui refuse un message cité absent du fil, d'un autre fil ou le message
+  lui-même, à l'insertion comme à la modification.
+- **API** : `replyToId` facultatif sur `POST /api/groups/:id/messages` ; 400
+  « Le message cité n'appartient pas à cette conversation. » sinon. Chaque
+  message revient avec `replyTo`, lu par une jointure de `messages` sur
+  elle-même (`messages!reply_to_id`).
+- **Jean-Claude** : répondre à l'un de ses messages vaut mention. Le fil qu'il
+  lit porte « Bruno, en réponse à Jean-Claude (« extrait ») : … », extrait
+  tronqué à 80 caractères.
+- **App** : commande « Répondre » dans `MessageRow` (prop `onReply`, absente du
+  fil personnel), bloc cité en tête de bulle, bandeau au-dessus du champ. La
+  citation d'une réponse de Jean-Claude est aplatie en texte
+  (`markdownToSpeech`).
+
+**Vérification.** 6 nouveaux tests du service des groupes (54 au total), 705
+tests du dépôt, typecheck. Migrations rejouées sur Postgres 16 : même fil
+accepté ; autre fil, soi-même, identifiant inconnu et déplacement par `update`
+refusés ; suppression du message cité qui laisse la réponse sans citation.
+Parcours joué dans Chromium sur une fausse API, clair et sombre, 1280 pt et
+390 pt au doigt : répondre, bandeau, envoi avec `replyToId`, bandeau refermé,
+citation affichée.
+
+**Non vérifié.** La jointure `messages!reply_to_id` contre un vrai PostgREST.
+Le défilement vers le message cité d'un appui sur la citation. Jean-Claude
+réveillé par une réponse, hors des doubles de test. iOS et Android.
+
 ### Lot 7 — fichiers d'espace
 
 - **Stockage** : chemin `workspaces/{workspace_id}/{attachment_id}.{ext}` dans

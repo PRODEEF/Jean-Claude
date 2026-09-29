@@ -7,6 +7,21 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **30 septembre 2026 (espaces d'équipe, lot 6 :
+réponse citée)** — sur la branche `feat/collaboration`. Vérifié par la
+migration rejouée sur Postgres 16 avec un scénario dédié, les tests, le
+typecheck, et dans Chromium sur une fausse API, en clair et en sombre, grand
+écran et 390 pt. **Aucun appel à un vrai modèle.**
+
+**On répond à un message précis dans une conversation d'espace.** La commande
+« Répondre » (survol sur web, appui long sur téléphone) pose un bandeau
+au-dessus du champ ; le message envoyé rappelle en tête de bulle l'auteur et le
+début du message cité. Répondre à Jean-Claude le fait intervenir, même en
+silence. Spécification des lots 6 à 8 (réponse, fichiers, événements d'espace)
+au §10 de `docs/COLLABORATION.md`.
+
+**Migration `20260930100000_message_reply.sql`** à appliquer.
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, listes
 proposées)** — sur la branche `feat/collaboration`. Vérifié par la migration
 rejouée sur Postgres 16, les tests, le typecheck, et dans Chromium sur une

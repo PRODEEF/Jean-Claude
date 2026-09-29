@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import type { CreateGroup, Group } from "@jc/domain";
+import type { CreateGroup, Group, SendGroupMessage } from "@jc/domain";
 import { api } from "@/shared/lib/api";
 
 /** Messages chargés à l'ouverture d'un fil de groupe, comme pour un fil personnel. */
@@ -67,7 +67,7 @@ export function useCreateGroup() {
 export function useSendGroupMessage(groupId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (content: string) => api.groups.send(groupId, content),
+    mutationFn: (input: SendGroupMessage) => api.groups.send(groupId, input),
     // Realtime préviendrait aussi, mais l'auteur n'a pas à attendre l'aller-
     // retour du flux pour voir son propre message.
     onSuccess: () => refreshGroup(queryClient, groupId),

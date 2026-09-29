@@ -5,6 +5,7 @@ import {
   Check,
   Copy,
   Pencil,
+  Reply,
   RotateCcw,
   ThumbsDown,
   ThumbsUp,
@@ -85,6 +86,15 @@ export type MessageRowProps = {
   onRetry?: (messageId: string) => void;
   /** Remplace le texte du message et rejoue le tour. Même raison pour l'identifiant. */
   onEdit?: (messageId: string, content: string) => void;
+  /**
+   * Cite ce message dans le prochain envoi — conversations d'espace (lot 6).
+   * Même raison pour l'identifiant.
+   */
+  onReply?: (messageId: string) => void;
+  /** Message auquel celui-ci répond, rappelé en tête de la bulle. */
+  quote?: { id: string; author: string; content: string } | null;
+  /** Ramène le fil au message cité. */
+  onPressQuote?: (messageId: string) => void;
   /** Un tour est déjà en cours : les deux gestes sont neutralisés. */
   busy: boolean;
   /** Ce message est celui en cours de lecture à voix haute (§12.3, A.12). */
@@ -119,6 +129,9 @@ export const MessageRow = memo(function MessageRow({
   answeredQuestion = null,
   onRetry,
   onEdit,
+  onReply,
+  quote = null,
+  onPressQuote,
   busy,
   speaking,
   onToggleSpeech,
@@ -234,6 +247,7 @@ export const MessageRow = memo(function MessageRow({
                   )}
                 </View>
               ) : null}
+              {quote ? <QuoteBlock quote={quote} onPress={onPressQuote} /> : null}
               {answeredQuestion ? (
                 <Text style={[styles.question, { color: palette.textMuted }]}>
                   Q&nbsp;: {answeredQuestion}
@@ -281,6 +295,20 @@ export const MessageRow = memo(function MessageRow({
                     setEditing(true);
                   }}
                   disabled={busy}
+                  onHoverIn={reveal}
+                  onHoverOut={scheduleHide}
+                />
+              ) : null}
+
+              {onReply ? (
+                <IconAction
+                  icon={Reply}
+                  label="Répondre"
+                  onPress={() => {
+                    setRevealed(false);
+                    onReply(message.id);
+                  }}
+                  disabled={false}
                   onHoverIn={reveal}
                   onHoverOut={scheduleHide}
                 />
@@ -400,6 +428,42 @@ export const MessageRow = memo(function MessageRow({
     </>
   );
 });
+
+/**
+ * Rappel du message cité, en tête de la bulle — comme WhatsApp : un filet
+ * coloré, l'auteur, deux lignes au plus. Un appui ramène à l'original.
+ */
+function QuoteBlock({
+  quote,
+  onPress,
+}: {
+  quote: { id: string; author: string; content: string };
+  onPress: ((messageId: string) => void) | undefined;
+}) {
+  const { palette } = useTheme();
+
+  return (
+    <Pressable
+      onPress={onPress ? () => onPress(quote.id) : undefined}
+      disabled={!onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Voir le message de ${quote.author} auquel celui-ci répond`}
+      style={[
+        styles.quote,
+        // Le fond de l'écran, en retrait dans la bulle teintée comme dans
+        // celle d'un autre membre.
+        { borderLeftColor: palette.accent, backgroundColor: palette.background },
+      ]}
+    >
+      <Text style={[styles.quoteAuthor, { color: palette.accent }]} numberOfLines={1}>
+        {quote.author}
+      </Text>
+      <Text style={[styles.quoteText, { color: palette.textMuted }]} numberOfLines={2}>
+        {quote.content}
+      </Text>
+    </Pressable>
+  );
+}
 
 /** Saisie qui prend la place du message le temps de le corriger. */
 function MessageEditor({
@@ -625,6 +689,15 @@ const styles = StyleSheet.create({
    */
   plain: { alignSelf: "flex-start", maxWidth: "100%", paddingHorizontal: 0 },
   bubbleText: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22 },
+  quote: {
+    borderLeftWidth: 3,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  quoteAuthor: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.medium },
+  quoteText: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, lineHeight: 18 },
   question: {
     fontFamily: FONT_FAMILY,
     fontSize: fontSize.sm,
