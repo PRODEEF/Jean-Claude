@@ -196,8 +196,9 @@ Migration `supabase/migrations/20260929150000_workspaces.sql`.
   colonne), sans quoi elle pourrait déplacer son invitation vers un autre
   espace.
 - **Noms des membres.** `workspace_member_profiles(workspace)` rend le nom
-  affiché et le rôle, jamais le reste du profil : la ligne porte la mémoire de
-  l'utilisateur.
+  affiché, l'adresse et le rôle, jamais le reste du profil : la ligne porte la
+  mémoire de l'utilisateur. L'adresse a été ajoutée au lot 2, dans la même
+  migration, encore appliquée nulle part (voir « Livré au lot 2 »).
 - **Invariants structurels en trigger.** Quitter un espace retire de tous ses
   groupes. Une conversation ne change pas d'espace. Les non-lus de groupe sont
   comptés par membre.
@@ -217,7 +218,7 @@ Migration `supabase/migrations/20260929150000_workspaces.sql`.
 
 **Vérification.** Toutes les migrations rejouées sur un Postgres 16 vierge.
 Un scénario à trois comptes (fondatrice, invité, personne extérieure) passe
-ses 40 vérifications, dont le comportement inchangé des conversations
+ses 46 vérifications, dont le comportement inchangé des conversations
 personnelles. `database.types.ts` n'est pas régénéré : `npm run db:types`
 demande une instance Supabase locale, absente de l'environnement de
 développement.
@@ -234,6 +235,46 @@ développement.
 - **Pièces jointes de groupe.** `message_attachments` reste lisible de son
   seul propriétaire. Une pièce jointe envoyée dans un groupe ne serait pas
   visible des autres membres. Hors V1.
+
+### Livré au lot 2
+
+Module `apps/api/src/domain/workspace/`, schémas dans
+`packages/domain/src/workspace/`, section `workspaces` de `@jc/api-client`.
+
+| Route                                                  | Qui                            |
+| ------------------------------------------------------ | ------------------------------ |
+| `GET /api/workspaces`                                  | tout compte : ses espaces      |
+| `POST /api/workspaces`                                 | tout compte, devient admin     |
+| `PATCH /api/workspaces/:id`                            | admin — renommer               |
+| `GET /api/workspaces/:id/members`                      | membre                         |
+| `PATCH /api/workspaces/:id/members/:userId`            | admin — changer un rôle        |
+| `DELETE /api/workspaces/:id/members/:userId`           | admin, ou soi-même (partir)    |
+| `GET /api/workspaces/:id/invitations`                  | admin — invitations en attente |
+| `POST /api/workspaces/:id/invitations`                 | admin — inviter une adresse    |
+| `DELETE /api/workspaces/:id/invitations/:invitationId` | admin — annuler une invitation |
+| `GET /api/workspaces/invitations`                      | la personne invitée            |
+| `POST /api/workspaces/invitations/:id/accept`          | la personne invitée            |
+| `POST /api/workspaces/invitations/:id/decline`         | la personne invitée            |
+
+**Un non-membre reçoit un 404, pas un 403** : il n'a pas à apprendre qu'un
+espace existe.
+
+**Les membres voient l'adresse de leurs collègues.** Sans elle, on ne peut
+ni refuser une invitation à une adresse déjà membre, ni reconnaître un membre
+qui n'a pas choisi de nom. C'est la pratique de Slack et de Notion. Décision à
+confirmer.
+
+**Annuler une invitation** n'était pas listé parmi les droits de l'admin, mais
+c'est le seul recours après une faute de frappe dans l'adresse.
+
+**Accepter une invitation** inscrit d'abord la personne, puis marque
+l'invitation acceptée : la RLS n'ouvre l'espace qu'à une invitation encore en
+attente. Si la seconde écriture échoue, rejouer l'acceptation aboutit.
+
+**Vérification.** 29 tests du service (`workspace.service.spec.ts`), typecheck
+complet et 620 tests du dépôt au vert, scénario RLS rejoué avec la fonction
+modifiée. Les requêtes du Repository n'ont pas été jouées contre un vrai
+PostgREST : l'environnement n'a pas d'instance Supabase.
 
 ---
 

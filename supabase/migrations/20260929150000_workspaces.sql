@@ -226,18 +226,21 @@ as $$
   );
 $$;
 
--- Nom affiché des membres d'un espace, pour signer les messages de groupe. La
--- RLS de `profiles` s'arrête au propriétaire, et à raison : la ligne porte la
--- mémoire de l'utilisateur. Comme `feedback_authors()`, la fonction ne rend
--- que ce qu'un collègue doit voir.
+-- Nom affiché et adresse des membres d'un espace, pour signer les messages de
+-- groupe et reconnaître un membre qui n'a pas choisi de nom. La RLS de
+-- `profiles` s'arrête au propriétaire, et à raison : la ligne porte la
+-- mémoire de l'utilisateur ; `auth.users` n'est pas lisible du rôle
+-- `authenticated`. Comme `feedback_authors()`, la fonction ne rend que ce
+-- qu'un collègue doit voir.
 create function public.workspace_member_profiles(p_workspace uuid)
-returns table (user_id uuid, display_name text, role text)
+returns table (user_id uuid, display_name text, email text, role text)
 language sql stable security definer
 set search_path = ''
 as $$
-  select wm.user_id, p.display_name, wm.role
+  select wm.user_id, p.display_name, u.email::text, wm.role
     from public.workspace_members wm
     left join public.profiles p on p.id = wm.user_id
+    left join auth.users u on u.id = wm.user_id
    where wm.workspace_id = p_workspace
      and public.is_workspace_member(p_workspace);
 $$;

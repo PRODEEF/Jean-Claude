@@ -7,12 +7,33 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, lot 2)** —
+API des espaces, invitations et membres, sur la branche `feat/collaboration`.
+Vérifié par 29 tests du service, le typecheck et les 620 tests du dépôt, et
+le scénario RLS rejoué. **Pas d'écran : la démonstration passe par des appels
+HTTP, et les requêtes du Repository n'ont pas été jouées contre un vrai
+Supabase.**
+
+**On crée un espace, on invite, on accepte.** Douze routes sous
+`/api/workspaces`, et la section `workspaces` de `@jc/api-client`. Le service
+vérifie les droits avant la RLS pour rendre un message clair, et tient la
+règle que la base ne voit pas : un espace garde toujours un admin. Un
+non-membre reçoit un 404, pas un 403. Détail des routes dans
+`docs/COLLABORATION.md`.
+
+**Deux écarts à la spécification, à confirmer.** Les membres voient l'adresse
+de leurs collègues — sans elle, on ne peut ni refuser d'inviter un membre
+existant ni reconnaître un membre sans nom. L'admin peut annuler une
+invitation, seul recours après une faute de frappe. La fonction
+`workspace_member_profiles` a été modifiée en conséquence dans la migration
+du lot 1, appliquée nulle part à ce jour.
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe)** — lot 1 des
 espaces d'équipe et discussions de groupe (demande de Clarisse, hors cahier
 des charges — le §1 fixe une V1 mono-utilisateur), sur la branche
 `feat/collaboration`. Spécification et décisions dans `docs/COLLABORATION.md`.
 Vérifié en rejouant toutes les migrations sur un Postgres 16 vierge, avec un
-scénario RLS à trois comptes (40 vérifications). **Aucun code applicatif :
+scénario RLS à trois comptes (46 vérifications). **Aucun code applicatif :
 rien à démontrer à l'écran à ce stade.**
 
 **Le schéma accueille plusieurs comptes dans un même espace.** Nouvelles

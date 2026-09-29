@@ -39,6 +39,14 @@ import {
   type UpdateFolder,
   type UpdateUserProfile,
   type UserProfile,
+  type CreateWorkspace,
+  type InviteToWorkspace,
+  type ReceivedInvitation,
+  type UpdateWorkspace,
+  type Workspace,
+  type WorkspaceInvitation,
+  type WorkspaceMember,
+  type WorkspaceRole,
 } from "@jc/domain";
 import { ApiError, HttpClient, type ApiClientOptions, type RequestOptions } from "./http";
 
@@ -115,6 +123,66 @@ export class JeanClaudeClient {
       /** Synthèse des retours encore au statut « nouveau », tous testeurs confondus. */
       analyzeNew: () =>
         this.http.request<FeedbackAnalysis>("/feedback/review/analysis", { method: "POST" }),
+    },
+  };
+
+  /** Espaces d'équipe — voir docs/COLLABORATION.md. */
+  readonly workspaces = {
+    list: () => this.http.request<Workspace[]>("/workspaces"),
+
+    create: (input: CreateWorkspace) =>
+      this.http.request<Workspace>("/workspaces", { method: "POST", body: input }),
+
+    rename: (id: string, input: UpdateWorkspace) =>
+      this.http.request<Workspace>(`/workspaces/${id}`, { method: "PATCH", body: input }),
+
+    members: {
+      list: (workspaceId: string) =>
+        this.http.request<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`),
+
+      changeRole: (workspaceId: string, userId: string, role: WorkspaceRole) =>
+        this.http.request<WorkspaceMember>(`/workspaces/${workspaceId}/members/${userId}`, {
+          method: "PATCH",
+          body: { role },
+        }),
+
+      /** Retire un membre, ou quitte l'espace quand `userId` est l'utilisateur connecté. */
+      remove: (workspaceId: string, userId: string) =>
+        this.http.request<void>(`/workspaces/${workspaceId}/members/${userId}`, {
+          method: "DELETE",
+        }),
+    },
+
+    /** Invitations envoyées — réservées aux admins de l'espace. */
+    invitations: {
+      list: (workspaceId: string) =>
+        this.http.request<WorkspaceInvitation[]>(`/workspaces/${workspaceId}/invitations`),
+
+      create: (workspaceId: string, input: InviteToWorkspace) =>
+        this.http.request<WorkspaceInvitation>(`/workspaces/${workspaceId}/invitations`, {
+          method: "POST",
+          body: input,
+        }),
+
+      revoke: (workspaceId: string, invitationId: string) =>
+        this.http.request<void>(`/workspaces/${workspaceId}/invitations/${invitationId}`, {
+          method: "DELETE",
+        }),
+    },
+
+    /** Invitations reçues par l'utilisateur connecté, retrouvées par son adresse. */
+    received: {
+      list: () => this.http.request<ReceivedInvitation[]>("/workspaces/invitations"),
+
+      accept: (invitationId: string) =>
+        this.http.request<Workspace>(`/workspaces/invitations/${invitationId}/accept`, {
+          method: "POST",
+        }),
+
+      decline: (invitationId: string) =>
+        this.http.request<void>(`/workspaces/invitations/${invitationId}/decline`, {
+          method: "POST",
+        }),
     },
   };
 
