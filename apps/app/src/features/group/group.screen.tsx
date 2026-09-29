@@ -20,6 +20,7 @@ import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { contentColumn, READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
+import { Markdown } from "@/shared/ui/Markdown";
 import { Text } from "@/shared/ui/text";
 import { GroupFoldersDialog } from "./GroupFoldersDialog";
 import { GroupListSuggestionCard } from "./GroupListSuggestionCard";
@@ -276,9 +277,15 @@ function MessageBubble({
         className="rounded-2xl px-3.5 py-2"
         style={{ backgroundColor: mine ? palette.accentSoft : palette.surface }}
       >
-        <Text style={{ color: mine ? palette.accentSoftText : palette.text }}>
-          {message.content}
-        </Text>
+        {/* Comme dans le fil personnel : la parole de l'assistant est du
+            Markdown, celle d'un membre reste le texte qu'il a tapé. */}
+        {message.role === "assistant" ? (
+          <Markdown>{message.content}</Markdown>
+        ) : (
+          <Text style={{ color: mine ? palette.accentSoftText : palette.text }}>
+            {message.content}
+          </Text>
+        )}
       </View>
       {suggestion ? (
         <GroupListSuggestionCard
