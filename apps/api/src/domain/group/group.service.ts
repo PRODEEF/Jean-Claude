@@ -528,6 +528,8 @@ export function describeThread(messages: GroupMessage[], members: WorkspaceMembe
 
   return messages
     .map((message) => {
+      // Une ligne du calendrier se lit telle quelle : elle nomme déjà son auteur.
+      if (message.role === "system") return `[Calendrier] ${message.content}`;
       const author = labelOf(message, names);
       // Le message cité peut être sorti de la fenêtre remise au modèle : un
       // extrait lui dit à quoi l'on répond.

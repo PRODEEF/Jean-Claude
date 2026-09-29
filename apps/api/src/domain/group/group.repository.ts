@@ -328,7 +328,7 @@ export const groupRepository: IGroupRepository = {
       .from("messages")
       .select(MESSAGE_COLUMNS)
       .eq("conversation_id", groupId)
-      .in("role", ["user", "assistant"])
+      .in("role", ["user", "assistant", "system"])
       .order("created_at", { ascending: false })
       .limit(options.limit + 1);
 

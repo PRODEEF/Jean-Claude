@@ -1222,6 +1222,21 @@ describe("describeThread", () => {
     expect(thread).toBe(`Bruno, en réponse à Alice (« ${"a".repeat(80)}… ») : Vu`);
   });
 
+  it("rend telles quelles les lignes du calendrier, marquées comme telles", () => {
+    const thread = describeThread(
+      [
+        makeMessage({
+          role: "system",
+          authorId: "bruno",
+          content: "Bruno a déplacé « Réunion » au vendredi 2 octobre, 18 h.",
+        }),
+      ],
+      MEMBERS,
+    );
+
+    expect(thread).toBe("[Calendrier] Bruno a déplacé « Réunion » au vendredi 2 octobre, 18 h.");
+  });
+
   it("signe « Ancien membre » un auteur parti de l'espace", () => {
     const thread = describeThread([makeMessage({ authorId: "zoe", content: "Salut" })], MEMBERS);
 

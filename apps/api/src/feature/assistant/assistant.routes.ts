@@ -19,10 +19,16 @@ import { taskRepository } from "../../domain/task/task.repository.js";
 import { TaskService } from "../../domain/task/task.service.js";
 import { userRepository } from "../../domain/user/user.repository.js";
 import { AssistantService } from "./assistant.service.js";
+import { workspaceEventRepository } from "../../domain/workspace-event/workspace-event.repository.js";
+import { WorkspaceEventService } from "../../domain/workspace-event/workspace-event.service.js";
 
 const suggestions = new SuggestionService(suggestionRepository);
 const folders = new FolderService(folderRepository);
-const calendar = new CalendarService(calendarRepository, taskRepository);
+const calendar = new CalendarService(
+  calendarRepository,
+  taskRepository,
+  new WorkspaceEventService(workspaceEventRepository),
+);
 const tasks = new TaskService(taskRepository, calendarRepository, userRepository);
 const feedback = new FeedbackService(feedbackRepository, llm);
 

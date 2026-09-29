@@ -46,7 +46,11 @@ export const createGroupSchema = z.object({
 });
 export type CreateGroup = z.infer<typeof createGroupSchema>;
 
-export const groupMessageRoleSchema = z.enum(["user", "assistant"]);
+/**
+ * `system` : ligne laissée par un geste sur un événement d'espace (lot 8),
+ * signée de son auteur, sans bulle.
+ */
+export const groupMessageRoleSchema = z.enum(["user", "assistant", "system"]);
 export type GroupMessageRole = z.infer<typeof groupMessageRoleSchema>;
 
 /** Message cité par une réponse, tel que la bulle le rappelle. */

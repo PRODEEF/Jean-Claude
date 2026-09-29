@@ -30,6 +30,8 @@ import { TaskService } from "../task/task.service.js";
 import { userRepository } from "../user/user.repository.js";
 import { conversationRepository } from "./conversation.repository.js";
 import { ConversationService } from "./conversation.service.js";
+import { workspaceEventRepository } from "../workspace-event/workspace-event.repository.js";
+import { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
 
 const service = new ConversationService(
   conversationRepository,
@@ -37,7 +39,11 @@ const service = new ConversationService(
   new SuggestionService(suggestionRepository),
   new FolderService(folderRepository),
   userRepository,
-  new CalendarService(calendarRepository, taskRepository),
+  new CalendarService(
+    calendarRepository,
+    taskRepository,
+    new WorkspaceEventService(workspaceEventRepository),
+  ),
   new TaskService(taskRepository, calendarRepository, userRepository),
   attachmentRepository,
 );

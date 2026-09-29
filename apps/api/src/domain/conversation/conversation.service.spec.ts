@@ -27,6 +27,19 @@ import { TaskService } from "../task/task.service.js";
 import type { IUserRepository, ProfileRecord } from "../user/user.repository.interface.js";
 import { ConversationService } from "./conversation.service.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
+import type { IWorkspaceEventRepository } from "../workspace-event/workspace-event.repository.interface.js";
+import { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
+
+const IDLE_WORKSPACE_EVENTS: IWorkspaceEventRepository = {
+  findSpace: jest.fn().mockResolvedValue(null),
+  findById: jest.fn().mockResolvedValue(null),
+  findInRange: jest.fn().mockResolvedValue([]),
+  create: jest.fn(),
+  update: jest.fn(),
+  delete: jest.fn(),
+  findAuthor: jest.fn(),
+  appendSystemMessage: jest.fn(),
+};
 
 const TOKEN = "access-token";
 const USER = "user-1";
@@ -450,7 +463,7 @@ function makeService(
     new SuggestionService(suggestions),
     new FolderService(folders),
     users,
-    new CalendarService(calendar, tasks),
+    new CalendarService(calendar, tasks, new WorkspaceEventService(IDLE_WORKSPACE_EVENTS)),
     new TaskService(tasks, calendar, users),
     attachments,
   );

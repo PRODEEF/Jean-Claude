@@ -1,7 +1,11 @@
 import {
   messageStreamEventSchema,
   type AssignFolders,
+  type CalendarEntry,
   type CalendarEvent,
+  type CreateWorkspaceEvent,
+  type UpdateWorkspaceEvent,
+  type WorkspaceEvent,
   type CalendarRange,
   type Conversation,
   type CreateCalendarEvent,
@@ -305,8 +309,9 @@ export class JeanClaudeClient {
    * n'appellent pas deux routes différentes, elles demandent deux fenêtres.
    */
   readonly calendar = {
+    /** Événements personnels et ceux des conversations d'espace, marqués par `space`. */
     list: (range: CalendarRange) =>
-      this.http.request<CalendarEvent[]>("/calendar", { query: range }),
+      this.http.request<CalendarEntry[]>("/calendar", { query: range }),
 
     create: (input: CreateCalendarEvent) =>
       this.http.request<CalendarEvent>("/calendar", { method: "POST", body: input }),
@@ -315,6 +320,24 @@ export class JeanClaudeClient {
       this.http.request<CalendarEvent>(`/calendar/${id}`, { method: "PATCH", body: patch }),
 
     remove: (id: string) => this.http.request<void>(`/calendar/${id}`, { method: "DELETE" }),
+  };
+
+  /**
+   * Événements d'espace (lot 8). Leur lecture passe par `calendar.list` ;
+   * chaque geste laisse une ligne dans le fil de la conversation.
+   */
+  readonly workspaceEvents = {
+    create: (input: CreateWorkspaceEvent) =>
+      this.http.request<WorkspaceEvent>("/workspace-events", { method: "POST", body: input }),
+
+    update: (id: string, patch: UpdateWorkspaceEvent) =>
+      this.http.request<WorkspaceEvent>(`/workspace-events/${id}`, {
+        method: "PATCH",
+        body: patch,
+      }),
+
+    remove: (id: string) =>
+      this.http.request<void>(`/workspace-events/${id}`, { method: "DELETE" }),
   };
 
   /**
