@@ -923,10 +923,17 @@ export const CHAT_TOOLS: LlmTool[] = [
  * Outils actifs sur le canal permanent Jean-Claude (A.10).
  *
  * Jeu distinct de `CHAT_TOOLS` : le canal est borné aux rappels, à
- * l'organisation de l'outil et à la structure du projet. Y exposer la détection
- * de todolistes ou de rendez-vous récurrents le ferait déborder de ce périmètre.
+ * l'organisation de l'outil, à la structure du projet et aux retours sur
+ * l'application. Les rappels comprennent ce que l'utilisateur demande de
+ * noter — un rendez-vous, une todoliste : sans ces outils, « pose-moi le
+ * dentiste jeudi » ne pouvait qu'être renvoyé vers une autre conversation.
+ * Les outils qui modifient une liste existante restent propres à la
+ * conversation dont elle est née : le canal n'a pas de listes à désigner.
  */
 export const ASSISTANT_TOOLS: LlmTool[] = [
+  SUGGEST_TASK_LIST,
+  SUGGEST_EVENTS,
+  SUGGEST_RECURRING_EVENT,
   SUGGEST_PROJECT_FOLDERS,
   OPEN_NEW_CONVERSATION,
   REPORT_BUG,

@@ -1284,6 +1284,73 @@ describe("ConversationService", () => {
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
       expect(tools).toContain("suggest_project_folders");
       expect(tools).toContain("open_new_conversation");
+      expect(tools).not.toContain("suggest_folders");
+      expect(tools).not.toContain("suggest_task_list_items");
+    });
+
+    it("laisse le canal permanent proposer rendez-vous et todolistes (A.10)", async () => {
+      const llm = makeLlm();
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+
+      await drain(makeService(repo, llm), {
+        content: "Note-moi le dentiste jeudi à 15h.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      const request = lastRequest(llm);
+      const tools = request.tools?.map((t) => t.name) ?? [];
+      expect(tools).toEqual(
+        expect.arrayContaining(["suggest_events", "suggest_recurring_event", "suggest_task_list"]),
+      );
+      expect(request.system ?? "").toContain("appelle `suggest_events`");
+      expect(request.system ?? "").toContain("appelle `suggest_task_list`");
+    });
+
+    it("retire au canal permanent l'outil d'un rendez-vous déjà proposé en attente", async () => {
+      const llm = makeLlm();
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+      const suggestions = makeSuggestionRepository({
+        listForConversation: jest
+          .fn()
+          .mockResolvedValue([makeSuggestion({ kind: "create_events", status: "pending" })]),
+      });
+
+      await drain(makeService(repo, llm, suggestions), {
+        content: "Et le coiffeur vendredi ?",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).not.toContain("suggest_events");
+      expect(tools).toContain("suggest_task_list");
+    });
+
+    it("ne propose ni rendez-vous ni todoliste pendant l'accueil (A.13)", async () => {
+      const llm = makeLlm();
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
+      });
+
+      await drain(
+        makeService(
+          repo,
+          llm,
+          makeSuggestionRepository(),
+          makeFolderRepository(),
+          makeUserRepository({}, { onboardingCompletedAt: null }),
+        ),
+        { content: "Bonjour", inputMode: "text", attachmentIds: [] },
+      );
+
+      const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+      expect(tools).toContain("finish_onboarding");
+      expect(tools).not.toContain("suggest_events");
       expect(tools).not.toContain("suggest_task_list");
     });
 
@@ -1645,7 +1712,7 @@ describe("ConversationService", () => {
         expect(system).toContain("« liste de courses samedi »");
       });
 
-      it("ne l'ajoute pas dans le canal permanent, où les todolistes sont hors périmètre (A.10)", async () => {
+      it("l'ajoute aussi dans le canal permanent, qui note les todolistes (A.10)", async () => {
         const llm = makeLlm();
         const repo = makeRepository({
           findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
@@ -1661,7 +1728,7 @@ describe("ConversationService", () => {
           attachmentIds: [],
         });
 
-        expect(lastRequest(llm).system ?? "").not.toContain("Commande /todo");
+        expect(lastRequest(llm).system ?? "").toContain("Commande /todo");
       });
 
       it("ne l'ajoute pas quand la détection proactive de todolistes est désactivée (A.10)", async () => {
@@ -1732,7 +1799,7 @@ describe("ConversationService", () => {
         expect(system).toContain("« kiné tous les mardis à 18h »");
       });
 
-      it("ne l'ajoute pas dans le canal permanent, où les rendez-vous récurrents sont hors périmètre (A.10)", async () => {
+      it("l'ajoute aussi dans le canal permanent, qui note les rendez-vous (A.10)", async () => {
         const llm = makeLlm();
         const repo = makeRepository({
           findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
@@ -1750,7 +1817,7 @@ describe("ConversationService", () => {
           attachmentIds: [],
         });
 
-        expect(lastRequest(llm).system ?? "").not.toContain("Commande /planifier");
+        expect(lastRequest(llm).system ?? "").toContain("Commande /planifier");
       });
     });
 
@@ -3485,6 +3552,8 @@ describe("ConversationService", () => {
             structureSuggestions: false,
             folderOrganization: false,
             morningReminders: false,
+            proactiveTaskDetection: false,
+            proactiveScheduling: false,
           }),
         ),
         { content: "Donne-moi une recette de tarte.", inputMode: "text", attachmentIds: [] },
