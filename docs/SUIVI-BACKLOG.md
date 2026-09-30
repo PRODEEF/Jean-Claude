@@ -7,6 +7,29 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **30 septembre 2026 (nouvelle navigation, historique
+du fil, sélecteurs de date, délai du moteur)** — sur la branche `refonte/ui`.
+Vérifié par le typecheck et les tests de l'API ; **non joué dans un navigateur,
+ni sur iOS et Android**.
+
+**La nouvelle navigation suit Claude de plus près.** Sélecteur d'espace en tête,
+« Nouvelle conversation » en premier, actions rares rangées dans le menu du
+profil, sections Dossiers et Récents repliables, Récents limités à 20. Détail
+dans le tableau des points à tester (§4.3). L'ancienne navigation est inchangée.
+
+**Tout l'historique d'un fil est atteignable.** Au-delà des 50 derniers
+messages, « Afficher les messages précédents » en tête du fil charge la page
+d'avant. Un bouton plutôt qu'un chargement au défilement : sur web, la liste ne
+sait pas garder sa position quand du contenu arrive au-dessus.
+
+**Les dates et heures se choisissent au lieu de se taper.** Sélecteur du
+système sur iOS et Android (`@react-native-community/datetimepicker`, module du
+SDK Expo), champ date et heure du navigateur sur web. Formulaire d'événement,
+tâche, échéance de liste et filtres de la recherche.
+
+**Un moteur lent n'est plus annoncé en panne.** Un délai dépassé rend un 504
+« le moteur IA met trop de temps à répondre », au lieu du 503 « indisponible ».
+
 Dernière mise à jour : **29 septembre 2026 (espaces d'équipe, amorçage et
 invitations)** — sur la branche `feat/collaboration`, suite de la revue de la
 fonctionnalité. Vérifié par le typecheck et le build web ; **non joué dans un
@@ -2259,7 +2282,6 @@ déploiement Vercel : périmètre fonctionnel inchangé, démarrage ramené de 2
 | RDV de projet non rattaché à PRENDRE RDV                 | `calendar_events` ne porte aucun `folder_id`, contrairement à `task_lists` : un rendez-vous créé depuis un projet ne peut pas rejoindre son sous-dossier typé comme le font déjà les todolistes vers ACHAT et TODO (A.4). Demanderait une migration, écartée pour l'itération de #19                                                                                                                                                                                                                                                                                                                                             |
 | Sauvegarde de liste en écrasement                        | `PUT /tasks/:id/items` réécrit la liste entière depuis ce que l'éditeur tient. Deux appareils ouverts sur la même liste se recouvrent donc l'un l'autre — le dernier à écrire gagne. Sans effet à un seul utilisateur, à revoir si l'édition partagée arrive                                                                                                                                                                                                                                                                                                                                                                     |
 | Séries récurrentes non déployées                         | Une `rrule` se saisit et se stocke, mais les occurrences ne sont pas calculées : l'événement n'apparaît qu'à son premier créneau. La dépendance `rrule` est déjà au `package.json` de l'API (A.11)                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Dates saisies au clavier                                 | Le formulaire d'événement demande `JJ/MM/AAAA` et `HH:MM` en texte, faute de sélecteur natif partagé par les trois cibles. Fonctionnel, mais en deçà des références du §4.2                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Node ≥ 22.12 requis                                      | Le SDK `ai` est ESM-only et l'API compile en CommonJS : `require(esm)` n'est natif qu'à partir de Node 22.12. `engines` a été relevé en conséquence                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Aucun modèle de repli                                    | `llm-error.ts` distingue proprement 429 et 402, mais il n'y a qu'un `LLM_MODEL` : un quota atteint tue le tour au lieu de basculer sur un second moteur                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Historique ouvert par un tour assistant                  | Le canal commence par le message d'accueil, donc l'historique remis au modèle débute par un tour `assistant`. Toléré ou refusé selon le moteur routé par le Gateway — à couvrir avant de changer `LLM_MODEL`                                                                                                                                                                                                                                                                                                                                                                                                                     |

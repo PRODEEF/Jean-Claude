@@ -3,6 +3,7 @@ import { View } from "react-native";
 import type { Task, UpdateTask } from "@jc/domain";
 import { calendarDayOf, dateOfCalendarDay } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
+import { DateTimeField } from "@/shared/ui/date-time-field";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "@/shared/ui/modal";
 import { Text } from "@/shared/ui/text";
@@ -87,11 +88,12 @@ function TaskForm({ task, onClose }: { task: Task; onClose: () => void }) {
       {/* La date de la tâche, distincte de celle de sa liste : « le site pour
           le 12, les groupes pour le 14 » tiennent dans la même liste. */}
       <Field label="Échéance">
-        <Input
+        <DateTimeField
+          mode="date"
           value={values.dueOn}
-          onChangeText={(text) => patch("dueOn", text)}
-          placeholder="JJ/MM/AAAA"
-          keyboardType="numbers-and-punctuation"
+          onChange={(text) => patch("dueOn", text)}
+          placeholder="Aucune"
+          clearable
           accessibilityLabel="Date d'échéance de la tâche"
         />
       </Field>
