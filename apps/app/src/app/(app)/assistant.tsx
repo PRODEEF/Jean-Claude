@@ -17,7 +17,8 @@ import { useTheme } from "@/shared/providers/theme-provider";
  * ce qui le séparait d'une nouvelle conversation.
  */
 const CHANNEL_INTRO =
-  "Ce fil reste ouvert en permanence pour vos rappels, le rangement de vos dossiers, " +
+  "Ce fil reste ouvert en permanence pour vos rappels (un rendez-vous, une liste à noter), " +
+  "le rangement de vos dossiers, " +
   "l'organisation de vos projets et vos retours sur l'application : un problème, une " +
   "idée, une remarque. " +
   "Pour tout autre sujet, ouvrez une nouvelle conversation.";

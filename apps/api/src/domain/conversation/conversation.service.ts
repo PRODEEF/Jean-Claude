@@ -155,6 +155,13 @@ const KNOWN_TOOL_NAMES = [
   ),
 ];
 
+/**
+ * Outils par lesquels le canal permanent propose ce qu'on lui demande de
+ * noter. Retirés pendant l'accueil : la consigne d'accueil n'en dit rien, et
+ * l'échange doit y rester une conversation plutôt qu'une suite de cartes.
+ */
+const CHANNEL_REMINDER_TOOLS = [SUGGEST_TASK_LIST, SUGGEST_EVENTS, SUGGEST_RECURRING_EVENT];
+
 const APPLIED_DIRECTLY = new Set([
   NAME_CONVERSATION.name,
   OPEN_NEW_CONVERSATION.name,
@@ -759,7 +766,7 @@ export class ConversationService {
 
     const baseSystem = buildSystemPrompt(conversation.kind, todo, context, now);
     // Chaque commande n'a de sens que là où son outil est exposé — jamais
-    // dans le canal permanent pour /ranger et /planifier, jamais dans une
+    // dans le canal permanent pour /ranger, jamais dans une
     // conversation classique pour /bug (A.10) : la note serait sinon une
     // consigne pour un outil que le modèle ne peut pas appeler.
     // `command.name` exclut déjà "aide" ici : le premier `if` de la méthode
@@ -1107,7 +1114,7 @@ export class ConversationService {
    * modèle propose juste.
    *
    * Le canal permanent a son propre jeu (A.10) et reçoit en plus l'agenda
-   * proche — il annonce les rappels comme premier de ses trois sujets, et sans
+   * proche — il annonce les rappels comme premier de ses quatre sujets, et sans
    * cette lecture il ne pourrait qu'inventer. Une conversation classique reçoit
    * de quoi se nommer tant qu'elle porte le titre par défaut, et de quoi se
    * ranger — d'office tant qu'elle n'est dans aucun dossier, sur demande
@@ -1137,8 +1144,9 @@ export class ConversationService {
       // dossiers n'y ont leur place — le compte vient d'être créé, les deux
       // sont vides, et la consigne d'accueil doit rester une conversation.
       if (context.onboarding) {
-        tools.push(FINISH_ONBOARDING);
-        return { tools, filing: null, channel: null, lists: [], decided: [] };
+        const welcoming = tools.filter((tool) => !CHANNEL_REMINDER_TOOLS.includes(tool));
+        welcoming.push(FINISH_ONBOARDING);
+        return { tools: welcoming, filing: null, channel: null, lists: [], decided: [] };
       }
 
       // Les trois lectures partent ensemble : les enchaîner ajoutait deux
@@ -1150,9 +1158,15 @@ export class ConversationService {
         this.calendar.list(agendaWindow(now), accessToken),
       ]);
 
-      const structuring = isPending(decided, "create_project_folders")
-        ? tools.filter((tool) => tool !== SUGGEST_PROJECT_FOLDERS)
-        : tools;
+      // Une proposition qui attend un geste retire son outil, comme en
+      // conversation classique — sauf les todolistes : c'est par
+      // `suggest_task_list` que la carte en attente se corrige.
+      const structuring = tools.filter(
+        (tool) =>
+          !(tool === SUGGEST_PROJECT_FOLDERS && isPending(decided, "create_project_folders")) &&
+          !(tool === SUGGEST_RECURRING_EVENT && isPending(decided, "create_recurring_event")) &&
+          !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")),
+      );
 
       // L'arborescence n'est remise au modèle que s'il peut en proposer une :
       // sans l'outil, elle ne ferait qu'allonger la consigne.
@@ -2643,6 +2657,87 @@ const COMMAND_NOTES: Record<
   bug: { tool: REPORT_BUG, describe: describeBugCommand },
 };
 
+/**
+ * Consigne des todolistes, commune à la conversation classique et au canal
+ * permanent : une même demande doit produire la même carte dans les deux.
+ */
+function describeTaskListRules(decided: Suggestion[]): string[] {
+  const rules = [
+    "",
+    "Si l'utilisateur demande explicitement de transformer l'échange en",
+    "todoliste, ne le décris pas en texte : appelle `suggest_task_list` tout",
+    "de suite, comme pour n'importe quelle autre proposition — la demande",
+    "explicite ne dispense pas de la faire valider.",
+    "",
+    "Une liste se propose remplie. Tant que l'utilisateur n'a pas dit ce qu'elle",
+    "contient — « les courses samedi » sans rien de listé —, n'appelle pas",
+    "`suggest_task_list` : demande-lui d'abord ce qu'il faut y mettre.",
+    "",
+    "Une ligne par article. « De quoi faire des lasagnes » se décline en ses",
+    "ingrédients, une ligne chacun ; « des légumes » ne se devine pas : demande",
+    "lesquels avant de proposer. Une tâche énoncée (« devoirs de maths ») se",
+    "reprend telle quelle, sans demander de détail que l'utilisateur n'a pas évoqué.",
+    "",
+    "Le jour et le moment dits plus tôt dans l'échange valent pour la liste",
+    "proposée ensuite : « les courses samedi matin », puis le contenu au message",
+    "suivant, donne une liste « Courses » datée samedi (`dueAt`) à 10:00",
+    "(`dueTime`). Matin = 10:00, après-midi = 16:00, soir = 20:00. Jamais de date",
+    "ni de moment dans le titre.",
+    "",
+    "Ne recopie pas le contenu des listes dans ta réponse : la carte le montre, et",
+    "n'y cite jamais un article qui n'y figure pas. N'annonce jamais une liste",
+    "créée, modifiée ou détaillée sans avoir appelé l'outil qui la propose.",
+  ];
+
+  // Corriger la carte en attente plutôt qu'en empiler une seconde : la
+  // nouvelle proposition remplace l'ancienne (`supersedePendingLists`).
+  if (isPending(decided, "create_task_list")) {
+    rules.push(
+      "",
+      "Une proposition de todolistes attend encore la réponse de l'utilisateur. S'il",
+      "demande de la corriger — détailler une ligne, en retirer, en ajouter —,",
+      "rappelle `suggest_task_list` avec la version corrigée complète, toutes listes",
+      "comprises, même celles qui ne changent pas : elle remplace la carte en attente.",
+      "Sinon, ne la repropose pas.",
+    );
+  }
+
+  return rules;
+}
+
+const RECURRING_EVENT_RULES = [
+  "",
+  "Quand l'utilisateur mentionne un rendez-vous ou une activité qui se",
+  "répète — « kiné tous les mardis à 18h », « réunion chaque lundi »,",
+  "« zumba tous les mercredis » — appelle `suggest_recurring_event` avec",
+  "une règle RRULE (FREQ=WEEKLY;BYDAY=…) plutôt qu'une liste de dates.",
+  "Si en plus il demande de le noter, de s'en rappeler ou de le retenir,",
+  "appelle l'outil tout de suite : un « C'est noté » ou « Je note » en texte",
+  "ne crée rien et viole la règle du §12.1. Ne laisse pas `suggest_folders`",
+  "se substituer à cette proposition quand la demande porte clairement sur",
+  "un créneau récurrent. Un rendez-vous daté sans mention de répétition",
+  "relève de `suggest_events`, pas de celui-ci. Ne présente jamais le",
+  "rendez-vous comme déjà posé.",
+];
+
+const EVENTS_RULES = [
+  "",
+  "Quand l'utilisateur mentionne un ou plusieurs rendez-vous ponctuels — sans",
+  "règle de répétition — à noter dans l'agenda, appelle `suggest_events` avec",
+  "une entrée par rendez-vous dans un seul appel, jamais un appel par",
+  "rendez-vous. Avant d'appeler l'outil, compte le nombre de rendez-vous",
+  "distincts mentionnés dans le message et vérifie que `events` en contient",
+  "exactement autant — un rendez-vous oublié dans le tableau est une",
+  "proposition incomplète. Exemple : « pose-moi le dentiste jeudi 15h et le",
+  "coiffeur vendredi 10h » appelle `suggest_events` une seule fois avec DEUX",
+  "entrées dans `events`, une par rendez-vous. S'il demande de le noter, de",
+  "s'en souvenir ou de le retenir, appelle l'outil tout de suite : un",
+  "« C'est noté » ou « Je note » en texte ne crée rien et viole la règle du",
+  "§12.1. Utilise `suggest_recurring_event` à la place dès que la demande",
+  "porte sur une répétition. Ne présente jamais les rendez-vous comme déjà",
+  "posés.",
+];
+
 function buildSystemPrompt(
   kind: Conversation["kind"],
   todo: Housekeeping,
@@ -2665,7 +2760,9 @@ function buildSystemPrompt(
       ...preamble,
       "",
       "Ce canal est réservé à quatre sujets : les rappels (ce qui est important",
-      "aujourd'hui ou cette semaine), l'organisation interne de l'outil (dossiers,",
+      "aujourd'hui ou cette semaine, et ce que l'utilisateur demande de noter :",
+      "un rendez-vous à poser dans l'agenda, une todoliste, une liste d'achats),",
+      "l'organisation interne de l'outil (dossiers,",
       "rangement, structure), l'évolution de la structure du projet de l'utilisateur,",
       "et les retours sur l'application : un problème technique, une idée",
       "d'amélioration, un mécontentement.",
@@ -2705,6 +2802,12 @@ function buildSystemPrompt(
         ...describeFolders(known),
       );
     }
+
+    // Mêmes consignes qu'en conversation classique : une demande de rendez-vous
+    // ou de todoliste doit produire la même carte, où qu'elle soit formulée.
+    if (todo.tools.includes(SUGGEST_TASK_LIST)) channel.push(...describeTaskListRules(todo.decided));
+    if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) channel.push(...RECURRING_EVENT_RULES);
+    if (todo.tools.includes(SUGGEST_EVENTS)) channel.push(...EVENTS_RULES);
 
     if (todo.tools.includes(SUGGEST_PROJECT_FOLDERS)) {
       channel.push(
@@ -2761,47 +2864,7 @@ function buildSystemPrompt(
     );
   }
 
-  if (todo.tools.includes(SUGGEST_TASK_LIST)) {
-    lines.push(
-      "",
-      "Si l'utilisateur demande explicitement de transformer l'échange en",
-      "todoliste, ne le décris pas en texte : appelle `suggest_task_list` tout",
-      "de suite, comme pour n'importe quelle autre proposition — la demande",
-      "explicite ne dispense pas de la faire valider.",
-      "",
-      "Une liste se propose remplie. Tant que l'utilisateur n'a pas dit ce qu'elle",
-      "contient — « les courses samedi » sans rien de listé —, n'appelle pas",
-      "`suggest_task_list` : demande-lui d'abord ce qu'il faut y mettre.",
-      "",
-      "Une ligne par article. « De quoi faire des lasagnes » se décline en ses",
-      "ingrédients, une ligne chacun ; « des légumes » ne se devine pas : demande",
-      "lesquels avant de proposer. Une tâche énoncée (« devoirs de maths ») se",
-      "reprend telle quelle, sans demander de détail que l'utilisateur n'a pas évoqué.",
-      "",
-      "Le jour et le moment dits plus tôt dans l'échange valent pour la liste",
-      "proposée ensuite : « les courses samedi matin », puis le contenu au message",
-      "suivant, donne une liste « Courses » datée samedi (`dueAt`) à 10:00",
-      "(`dueTime`). Matin = 10:00, après-midi = 16:00, soir = 20:00. Jamais de date",
-      "ni de moment dans le titre.",
-      "",
-      "Ne recopie pas le contenu des listes dans ta réponse : la carte le montre, et",
-      "n'y cite jamais un article qui n'y figure pas. N'annonce jamais une liste",
-      "créée, modifiée ou détaillée sans avoir appelé l'outil qui la propose.",
-    );
-
-    // Corriger la carte en attente plutôt qu'en empiler une seconde : la
-    // nouvelle proposition remplace l'ancienne (`supersedePendingLists`).
-    if (isPending(todo.decided, "create_task_list")) {
-      lines.push(
-        "",
-        "Une proposition de todolistes attend encore la réponse de l'utilisateur. S'il",
-        "demande de la corriger — détailler une ligne, en retirer, en ajouter —,",
-        "rappelle `suggest_task_list` avec la version corrigée complète, toutes listes",
-        "comprises, même celles qui ne changent pas : elle remplace la carte en attente.",
-        "Sinon, ne la repropose pas.",
-      );
-    }
-  }
+  if (todo.tools.includes(SUGGEST_TASK_LIST)) lines.push(...describeTaskListRules(todo.decided));
 
   // Exposer l'outil ne suffit pas : sa description est lue au moment de choisir,
   // pas au moment de décider s'il y a lieu de choisir. Les gestes d'entretien
@@ -2853,42 +2916,9 @@ function buildSystemPrompt(
     );
   }
 
-  if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) {
-    lines.push(
-      "",
-      "Quand l'utilisateur mentionne un rendez-vous ou une activité qui se",
-      "répète — « kiné tous les mardis à 18h », « réunion chaque lundi »,",
-      "« zumba tous les mercredis » — appelle `suggest_recurring_event` avec",
-      "une règle RRULE (FREQ=WEEKLY;BYDAY=…) plutôt qu'une liste de dates.",
-      "Si en plus il demande de le noter, de s'en rappeler ou de le retenir,",
-      "appelle l'outil tout de suite : un « C'est noté » ou « Je note » en texte",
-      "ne crée rien et viole la règle du §12.1. Ne laisse pas `suggest_folders`",
-      "se substituer à cette proposition quand la demande porte clairement sur",
-      "un créneau récurrent. Un rendez-vous daté sans mention de répétition",
-      "relève de `suggest_events`, pas de celui-ci. Ne présente jamais le",
-      "rendez-vous comme déjà posé.",
-    );
-  }
+  if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) lines.push(...RECURRING_EVENT_RULES);
 
-  if (todo.tools.includes(SUGGEST_EVENTS)) {
-    lines.push(
-      "",
-      "Quand l'utilisateur mentionne un ou plusieurs rendez-vous ponctuels — sans",
-      "règle de répétition — à noter dans l'agenda, appelle `suggest_events` avec",
-      "une entrée par rendez-vous dans un seul appel, jamais un appel par",
-      "rendez-vous. Avant d'appeler l'outil, compte le nombre de rendez-vous",
-      "distincts mentionnés dans le message et vérifie que `events` en contient",
-      "exactement autant — un rendez-vous oublié dans le tableau est une",
-      "proposition incomplète. Exemple : « pose-moi le dentiste jeudi 15h et le",
-      "coiffeur vendredi 10h » appelle `suggest_events` une seule fois avec DEUX",
-      "entrées dans `events`, une par rendez-vous. S'il demande de le noter, de",
-      "s'en souvenir ou de le retenir, appelle l'outil tout de suite : un",
-      "« C'est noté » ou « Je note » en texte ne crée rien et viole la règle du",
-      "§12.1. Utilise `suggest_recurring_event` à la place dès que la demande",
-      "porte sur une répétition. Ne présente jamais les rendez-vous comme déjà",
-      "posés.",
-    );
-  }
+  if (todo.tools.includes(SUGGEST_EVENTS)) lines.push(...EVENTS_RULES);
 
   if (todo.tools.includes(NAME_CONVERSATION)) {
     lines.push(

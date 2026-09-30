@@ -7,6 +7,26 @@ le report quotidien demandé au §0.1.
 Légende : ✅ fait · 🟡 en cours · ⬜ non démarré · 🔵 socle posé (structure et
 schéma prêts, comportement à écrire)
 
+Dernière mise à jour : **30 septembre 2026 (rendez-vous et todolistes depuis
+le canal permanent)** — sur la branche `fix/jean-claude`. Vérifié par le
+typecheck et les tests de l'API ; **non joué avec un vrai moteur, ni dans un
+navigateur, ni sur iOS et Android**.
+
+**Le canal permanent sait noter un rendez-vous ou une todoliste** (A.10,
+§12.1). Il n'exposait au modèle que `suggest_project_folders`,
+`open_new_conversation`, `report_bug` et `ask_question` : « note-moi le
+dentiste jeudi » ne pouvait qu'être renvoyé vers une nouvelle conversation, ou
+recevoir un « c'est noté » qui ne créait rien. `suggest_events`,
+`suggest_recurring_event` et `suggest_task_list` y sont désormais ouverts, avec
+les mêmes consignes qu'en conversation classique (factorisées) et les mêmes
+réglages de périmètre. Toujours des propositions à valider, jamais une écriture
+directe. Les rappels, premier des quatre sujets du canal, couvrent donc ce que
+l'utilisateur demande de noter. Restent propres aux conversations classiques
+les outils qui modifient une liste existante (compléter, cocher, décaler) : le
+canal n'a pas de listes nées de lui à désigner. Retirés pendant l'accueil, qui
+doit rester une conversation. `/todo` et `/planifier` fonctionnent aussi dans
+le canal. La phrase d'en-tête du canal le mentionne.
+
 Dernière mise à jour : **30 septembre 2026 (nouvelle navigation, historique
 du fil, sélecteurs de date, délai du moteur)** — sur la branche `refonte/ui`.
 Vérifié par le typecheck et les tests de l'API ; **non joué dans un navigateur,
