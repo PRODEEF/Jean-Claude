@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { View } from "react-native";
-import { ChevronDown, ChevronRight, Folder as FolderIcon } from "lucide-react-native";
 import type { FolderTreeNode, Group, WorkspaceTaskList } from "@jc/domain";
 import { FolderContextMenu, type FolderMenuTarget } from "@/features/folder/FolderContextMenu";
 import {
   contextMenuProps,
+  FolderToggleIcon,
   NewConversationRow,
   RowMenuButton,
   rowLabel,
 } from "@/features/navigation/SidebarSection";
+import { useSidebarLayout } from "@/features/navigation/use-sidebar-layout";
 import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
-import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import type { WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
 
@@ -61,8 +61,9 @@ function FolderRow({
   const filedLists = props.lists.filter((list) => list.folderId === node.id);
   const isEmpty = node.children.length === 0 && filed.length === 0 && filedLists.length === 0;
   // Un dossier vide reste replié : le déplier allongerait la barre sans rien
-  // apprendre.
-  const [open, setOpen] = useState(!isEmpty);
+  // apprendre. La nouvelle navigation les replie tous, comme l'espace personnel.
+  const modern = useSidebarLayout() === "modern";
+  const [open, setOpen] = useState(modern ? false : !isEmpty);
   const openMenu = (x: number, y: number) => setMenu({ folder: node, depth, x, y });
 
   return (
@@ -75,14 +76,7 @@ function FolderRow({
             onLongPress={(event) => openMenu(event.nativeEvent.pageX, event.nativeEvent.pageY)}
             {...contextMenuProps(openMenu)}
           >
-            <View className="flex-row items-center gap-1">
-              <Icon
-                as={open ? ChevronDown : ChevronRight}
-                size={14}
-                className="text-muted-foreground"
-              />
-              <Icon as={FolderIcon} size={16} className="text-muted-foreground" />
-            </View>
+            <FolderToggleIcon open={open} modern={modern} />
             <Text className={rowLabel(false)} numberOfLines={1}>
               {node.name}
             </Text>

@@ -3,6 +3,7 @@ import { View } from "react-native";
 import type { CreateTaskList, TaskList, TaskListKind, UpdateTaskList } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
+import { DateTimeField } from "@/shared/ui/date-time-field";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "@/shared/ui/modal";
 import { Text } from "@/shared/ui/text";
@@ -216,22 +217,24 @@ function ListForm({
       <View className="flex-row gap-3">
         <View className="flex-1">
           <Field label="Échéance">
-            <Input
+            <DateTimeField
+              mode="date"
               value={date}
-              onChangeText={setDate}
-              placeholder="JJ/MM/AAAA"
-              keyboardType="numbers-and-punctuation"
+              onChange={setDate}
+              placeholder="Aucune"
+              clearable
               accessibilityLabel="Date d'échéance de la liste"
             />
           </Field>
         </View>
         <View className="flex-1">
           <Field label="Heure">
-            <Input
+            <DateTimeField
+              mode="time"
               value={time}
-              onChangeText={setTime}
-              placeholder="HH:MM"
-              keyboardType="numbers-and-punctuation"
+              onChange={setTime}
+              placeholder="Aucune"
+              clearable
               accessibilityLabel="Heure de l'échéance"
             />
           </Field>

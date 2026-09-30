@@ -11,6 +11,7 @@ import {
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
 import { ASSISTANT_MODELS, toCatalogueModel, type AssistantScope, type Theme } from "@jc/domain";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
+import { setSidebarLayout, useSidebarLayout } from "@/features/navigation/use-sidebar-layout";
 import { AccountDeleteDialog } from "@/features/settings/AccountDeleteDialog";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useCurrentUser } from "@/shared/hooks/use-current-user";
@@ -108,6 +109,7 @@ export function SettingsScreen() {
   const updateProfile = useUpdateProfile();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const sidebarLayout = useSidebarLayout();
 
   const health = useQuery({ queryKey: ["health"], queryFn: () => api.health.check() });
 
@@ -296,6 +298,17 @@ export function SettingsScreen() {
               onValueChange={(value) => updateProfile.mutate({ flatBanner: value })}
               disabled={!profile || updateProfile.isPending}
               accessibilityLabel="Bandeau uni"
+            />
+          </SettingRow>
+
+          <SettingRow
+            label="Nouvelle navigation"
+            hint="Sans bandeau en haut : raccourcis en tête de la barre latérale, profil en bas. Mémorisé sur cet appareil."
+          >
+            <Switch
+              value={sidebarLayout === "modern"}
+              onValueChange={(value) => setSidebarLayout(value ? "modern" : "classic")}
+              accessibilityLabel="Nouvelle navigation"
             />
           </SettingRow>
 

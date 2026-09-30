@@ -41,6 +41,22 @@ describe("toHttpException", () => {
     expect(toHttpException(wrapped).status).toBe(402);
   });
 
+  it("distingue un délai dépassé d'une panne", () => {
+    const timeout = new DOMException("Total timeout of 60000ms exceeded", "TimeoutError");
+    const exception = toHttpException(timeout);
+
+    expect(exception.status).toBe(504);
+    expect(exception.message).toContain("trop de temps");
+  });
+
+  it("reconnaît un délai dépassé emballé dans une cause", () => {
+    const wrapped = new Error("No output generated.", {
+      cause: new DOMException("First chunk timeout of 15000ms exceeded", "TimeoutError"),
+    });
+
+    expect(toHttpException(wrapped).status).toBe(504);
+  });
+
   it("ne boucle pas sur une chaîne de causes cyclique", () => {
     const first: { cause?: unknown } = new Error("premier");
     const second = new Error("second", { cause: first });
