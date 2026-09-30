@@ -24,7 +24,12 @@
       "bundler": "metro",
       "output": "static"
     },
-    "plugins": ["expo-router", "expo-secure-store", "expo-speech-recognition"],
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-speech-recognition",
+      "@react-native-community/datetimepicker"
+    ],
     "experiments": {
       "typedRoutes": true
     }

@@ -16,6 +16,7 @@ import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/des
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { DateTimeField } from "@/shared/ui/date-time-field";
 
 export type SearchDialogProps = {
   open: boolean;
@@ -377,17 +378,16 @@ function DateField({
   return (
     <View style={styles.dateField}>
       <Text style={[styles.dateLabel, { color: palette.textMuted }]}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={(next) => onChange(formatDateInput(next))}
-        placeholder="JJ/MM/AAAA"
-        placeholderTextColor={palette.textMuted}
-        accessibilityLabel={`${label} — date au format jour, mois, année`}
-        keyboardType="number-pad"
-        maxLength={10}
-        className="web:outline-none"
-        style={[styles.dateInput, { color: palette.text, borderColor: palette.border }]}
-      />
+      <View style={styles.datePicker}>
+        <DateTimeField
+          mode="date"
+          value={value}
+          onChange={onChange}
+          placeholder="Choisir"
+          clearable
+          accessibilityLabel={`${label} — date`}
+        />
+      </View>
     </View>
   );
 }
@@ -449,14 +449,6 @@ function ResultRow({
       ) : null}
     </Pressable>
   );
-}
-
-/** Pose les séparateurs à mesure de la frappe : « 03092026 » devient « 03/09/2026 ». */
-function formatDateInput(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 8);
-  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)]
-    .filter((part) => part.length > 0)
-    .join("/");
 }
 
 /**
@@ -559,15 +551,7 @@ const styles = StyleSheet.create({
   },
   dateField: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   dateLabel: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs },
-  dateInput: {
-    fontFamily: FONT_FAMILY,
-    width: 120,
-    height: 32,
-    paddingHorizontal: spacing.sm,
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    fontSize: fontSize.xs,
-  },
+  datePicker: { width: 160 },
   divider: { height: 1 },
   list: { padding: spacing.xs },
   row: {

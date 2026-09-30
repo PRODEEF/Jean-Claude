@@ -3,6 +3,7 @@ import { View } from "react-native";
 import type { CalendarEntry } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
+import { DateTimeField } from "@/shared/ui/date-time-field";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "@/shared/ui/modal";
 import { Switch } from "@/shared/ui/switch";
@@ -144,11 +145,10 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
       </Field>
 
       <Field label="Date">
-        <Input
+        <DateTimeField
+          mode="date"
           value={values.date}
-          onChangeText={(text) => patch("date", text)}
-          placeholder="JJ/MM/AAAA"
-          keyboardType="numbers-and-punctuation"
+          onChange={(text) => patch("date", text)}
           accessibilityLabel="Date de l'événement"
         />
       </Field>
@@ -166,22 +166,22 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
         <View className="flex-row gap-3">
           <View className="flex-1">
             <Field label="Début">
-              <Input
+              <DateTimeField
+                mode="time"
                 value={values.startTime}
-                onChangeText={(text) => patch("startTime", text)}
-                placeholder="HH:MM"
-                keyboardType="numbers-and-punctuation"
+                onChange={(text) => patch("startTime", text)}
                 accessibilityLabel="Heure de début"
               />
             </Field>
           </View>
           <View className="flex-1">
             <Field label="Fin">
-              <Input
+              <DateTimeField
+                mode="time"
                 value={values.endTime}
-                onChangeText={(text) => patch("endTime", text)}
-                placeholder="HH:MM"
-                keyboardType="numbers-and-punctuation"
+                onChange={(text) => patch("endTime", text)}
+                placeholder="Aucune"
+                clearable
                 accessibilityLabel="Heure de fin"
               />
             </Field>

@@ -1,10 +1,14 @@
 import { useState } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { Slot } from "expo-router";
+import { PanelLeft } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppSidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "@/features/navigation/AppSidebar";
 import { useAssistantChannel } from "@/features/navigation/use-sidebar-data";
+import { useSidebarLayout } from "@/features/navigation/use-sidebar-layout";
 import { AppBanner } from "@/features/navigation/AppBanner";
+import { Button } from "@/shared/ui/button";
+import { Icon } from "@/shared/ui/icon";
 import { InvitationBanner } from "@/features/workspace/InvitationBanner";
 import { useGroupMessageFeed } from "@/features/group/hooks/use-group-realtime";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
@@ -52,19 +56,44 @@ export default function AppLayout() {
     Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(windowWidth * 0.2))),
   );
 
+  // Sans bannière, la nouvelle navigation porte elle-même le bouton de repli ;
+  // le tiroir n'a alors plus 56 pt de bandeau à laisser au-dessus de lui.
+  const withBanner = useSidebarLayout() === "classic";
+  const bannerHeight = withBanner ? 56 : 0;
+
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
-      <AppBanner onToggleSidebar={() => setPreference(!visible)} />
+      {withBanner ? <AppBanner onToggleSidebar={() => setPreference(!visible)} /> : null}
       <InvitationBanner />
 
       <View className="flex-1 flex-row">
         {/* Le tiroir ne reçoit pas `onResize` : superposé au contenu et refermé
             à la première navigation, il n'a pas de largeur à négocier. */}
         {expanded && visible ? (
-          <AppSidebar width={sidebarWidth} onResize={setSidebarWidth} />
+          <AppSidebar
+            width={sidebarWidth}
+            onResize={setSidebarWidth}
+            onCollapse={() => setPreference(false)}
+          />
         ) : null}
         <View className="flex-1">
           <Slot />
+
+          {/* Seul moyen de rouvrir la barre une fois masquée, faute de bannière :
+              posé en haut à gauche du contenu, là où Claude le place (§4.2). */}
+          {!withBanner && !visible ? (
+            <View className="absolute left-2 top-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onPress={() => setPreference(true)}
+                accessibilityLabel="Afficher la navigation"
+                className="bg-background"
+              >
+                <Icon as={PanelLeft} size={18} className="text-muted-foreground" />
+              </Button>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -74,7 +103,7 @@ export default function AppLayout() {
       {!expanded && visible ? (
         <View
           className="absolute inset-0 flex-row"
-          style={{ paddingTop: insets.top + 56 }}
+          style={{ paddingTop: insets.top + bannerHeight }}
           // `box-none` en prop et non mêlé à `style` : sa zone de padding,
           // au-dessus de la barre latérale, n'a aucun enfant mais couvrait
           // déjà la bannière — sans lui, le second appui sur le bouton
@@ -89,7 +118,10 @@ export default function AppLayout() {
           // React Native natif l'aurait honoré, jamais un navigateur.
           pointerEvents="box-none"
         >
-          <AppSidebar onNavigate={() => setPreference(false)} />
+          <AppSidebar
+            onNavigate={() => setPreference(false)}
+            onCollapse={() => setPreference(false)}
+          />
           {/* Noir littéral et non un jeton de la palette : le modificateur
               d'opacité de Tailwind ne sait pas calculer d'alpha sur une
               variable CSS, et un voile clair en thème sombre n'assombrirait

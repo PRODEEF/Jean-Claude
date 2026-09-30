@@ -13,10 +13,14 @@ import {
   contextMenuProps,
   RowMenuButton,
   rowLabel,
+  RECENT_PAGE_SIZE,
   SectionLabel,
   selected,
+  ShowMoreRow,
   UnreadBadge,
+  useSectionOpen,
 } from "@/features/navigation/SidebarSection";
+import { useSidebarLayout } from "@/features/navigation/use-sidebar-layout";
 import { useWorkspaceLists } from "@/features/workspace-list/hooks/use-workspace-lists";
 import {
   WorkspaceListDialog,
@@ -50,6 +54,10 @@ export function WorkspaceSidebarBody({
   pathname,
   onNavigate,
 }: WorkspaceSidebarBodyProps) {
+  const modern = useSidebarLayout() === "modern";
+  const [foldersOpen, toggleFolders] = useSectionOpen("folders");
+  const [conversationsOpen, toggleConversations] = useSectionOpen("conversations");
+  const [recentLimit, setRecentLimit] = useState(RECENT_PAGE_SIZE);
   const groups = useGroups(workspaceId);
   const folders = useWorkspaceFolders(workspaceId);
   const lists = useWorkspaceLists(workspaceId);
@@ -77,11 +85,22 @@ export function WorkspaceSidebarBody({
     const href = `/workspace/${workspaceId}/list/${list.id}`;
     return <ListRow list={list} active={pathname === href} onPress={() => onNavigate(href)} />;
   };
+  // Une seule limite pour les conversations puis les listes, dans l'ordre où
+  // elles s'affichent : « Récents » se lit comme une seule liste.
+  const allGroups = groups.data ?? [];
+  const allLists = lists.data ?? [];
+  const visibleGroups = modern ? allGroups.slice(0, recentLimit) : allGroups;
+  const visibleLists = modern
+    ? allLists.slice(0, Math.max(0, recentLimit - allGroups.length))
+    : allLists;
   const createFolder = () => setEditing({ kind: "create", parentId: null });
 
   return (
     <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
-      <SectionLabel action={{ label: "Créer un dossier", onPress: createFolder }}>
+      <SectionLabel
+        action={{ label: "Créer un dossier", onPress: createFolder }}
+        {...(modern ? { collapse: { open: foldersOpen, onToggle: toggleFolders } } : {})}
+      >
         Dossiers
       </SectionLabel>
 
@@ -102,21 +121,29 @@ export function WorkspaceSidebarBody({
         </Button>
       ) : null}
 
-      <WorkspaceFolderTree
-        nodes={folders.data ?? []}
-        groups={groups.data ?? []}
-        lists={lists.data ?? []}
-        onEdit={setEditing}
-        renderGroup={renderGroup}
-        renderList={renderList}
-        onNewConversation={setCreatingIn}
-        onNewList={(folderId) => setListDialog({ kind: "create", workspaceId, folderId })}
-      />
+      {!modern || foldersOpen ? (
+        <WorkspaceFolderTree
+          nodes={folders.data ?? []}
+          groups={groups.data ?? []}
+          lists={lists.data ?? []}
+          onEdit={setEditing}
+          renderGroup={renderGroup}
+          renderList={renderList}
+          onNewConversation={setCreatingIn}
+          onNewList={(folderId) => setListDialog({ kind: "create", workspaceId, folderId })}
+        />
+      ) : null}
 
       {/* Pas de « + », comme dans l'espace personnel : une liste partagée naît
           d'un dossier (« Nouvelle todoliste ») ou d'une proposition de
           Jean-Claude dans une conversation. */}
-      <SectionLabel>Conversations et tâches</SectionLabel>
+      <SectionLabel
+        {...(modern
+          ? { collapse: { open: conversationsOpen, onToggle: toggleConversations } }
+          : {})}
+      >
+        {modern ? "Récents" : "Conversations et tâches"}
+      </SectionLabel>
 
       {/* Un 4xx dit pourquoi la conversion a été refusée, dans un message
           écrit pour l'utilisateur ; au-delà, message fixe. */}
@@ -134,12 +161,19 @@ export function WorkspaceSidebarBody({
         </Text>
       ) : null}
 
-      {groups.data?.map((group) => (
-        <View key={group.id}>{renderGroup(group)}</View>
-      ))}
-      {lists.data?.map((list) => (
-        <View key={list.id}>{renderList(list)}</View>
-      ))}
+      {!modern || conversationsOpen ? (
+        <>
+          {visibleGroups.map((group) => (
+            <View key={group.id}>{renderGroup(group)}</View>
+          ))}
+          {visibleLists.map((list) => (
+            <View key={list.id}>{renderList(list)}</View>
+          ))}
+          {modern && allGroups.length + allLists.length > recentLimit ? (
+            <ShowMoreRow onPress={() => setRecentLimit((limit) => limit + RECENT_PAGE_SIZE)} />
+          ) : null}
+        </>
+      ) : null}
 
       <WorkspaceListDialog
         target={listDialog}
