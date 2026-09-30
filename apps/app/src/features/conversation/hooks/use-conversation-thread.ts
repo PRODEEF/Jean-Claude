@@ -108,20 +108,18 @@ export function useConversationThread(
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
 
   /**
-   * Pages plus anciennes que l'utilisateur a dévoilées dans ce fil.
+   * Pages plus anciennes que l'utilisateur a dévoilées, par conversation.
    *
    * Une référence et non un état : seule la relecture du fil en a besoin, et
    * elle ne doit pas changer la clé du cache, que six endroits écrivent
-   * directement. Remise à zéro quand on passe à une autre conversation.
+   * directement. Indexée par conversation, parce que le même écran peut passer
+   * d'un fil à l'autre sans être démonté.
    */
-  const olderPages = useRef({ conversationId, count: 0 });
-  if (olderPages.current.conversationId !== conversationId) {
-    olderPages.current = { conversationId, count: 0 };
-  }
+  const olderPages = useRef(new Map<string, number>());
 
   const messages = useQuery({
     queryKey: ["conversation", conversationId, "messages"],
-    queryFn: () => fetchThread(conversationId, olderPages.current.count),
+    queryFn: () => fetchThread(conversationId, olderPages.current.get(conversationId) ?? 0),
   });
 
   /**
@@ -132,7 +130,7 @@ export function useConversationThread(
     mutationFn: (cursor: string) =>
       api.conversations.messages(conversationId, { cursor, limit: THREAD_PAGE_SIZE }),
     onSuccess: (page) => {
-      olderPages.current.count += 1;
+      olderPages.current.set(conversationId, (olderPages.current.get(conversationId) ?? 0) + 1);
       queryClient.setQueryData<Paginated<Message>>(
         ["conversation", conversationId, "messages"],
         (current) => {
