@@ -139,8 +139,19 @@ export function ConversationThread({
     setDraft((current) => (current.length > 0 ? current : content));
   }, []);
 
-  const { messages, send, submit, edit, retry, stop, switchAside, streamingText, pendingUserText } =
-    useConversationThread(conversationId, goToDedicatedConversation, restoreDraft);
+  const {
+    messages,
+    loadOlder,
+    send,
+    submit,
+    edit,
+    retry,
+    stop,
+    switchAside,
+    streamingText,
+    pendingUserText,
+  } = useConversationThread(conversationId, goToDedicatedConversation, restoreDraft);
+  const olderCursor = messages.data?.nextCursor ?? null;
   const { pending, resolved, resolve } = useSuggestions(conversationId);
   const { speakingId, toggle: toggleSpeech } = useSpeech();
 
@@ -335,7 +346,36 @@ export function ConversationThread({
           // une fois les premiers messages échangés, au lieu de disparaître dès
           // le premier envoi — elle défile avec le reste, sans être fixée.
           ListHeaderComponent={
-            <Text style={[styles.intro, { color: palette.textMuted }]}>{intro}</Text>
+            <>
+              <Text style={[styles.intro, { color: palette.textMuted }]}>{intro}</Text>
+              {/* Un bouton plutôt qu'un chargement au défilement : les messages
+                  arrivent au-dessus de ceux qu'on lit, et sur web la liste ne
+                  sait pas garder sa position quand son contenu grandit par le
+                  haut — le texte sauterait sous les yeux. */}
+              {olderCursor ? (
+                <Pressable
+                  onPress={() => loadOlder.mutate(olderCursor)}
+                  disabled={loadOlder.isPending}
+                  accessibilityRole="button"
+                  style={styles.older}
+                >
+                  {loadOlder.isPending ? (
+                    <ActivityIndicator color={palette.accent} />
+                  ) : (
+                    <Text
+                      style={[
+                        styles.olderText,
+                        { color: loadOlder.error ? palette.danger : palette.accent },
+                      ]}
+                    >
+                      {loadOlder.error
+                        ? "Le chargement a échoué. Réessayer"
+                        : "Afficher les messages précédents"}
+                    </Text>
+                  )}
+                </Pressable>
+              ) : null}
+            </>
           }
           // Rendu `null` quand il n'y a rien à montrer : un pied vide compterait
           // malgré tout dans l'espacement de la liste.
@@ -545,6 +585,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: spacing.md,
   },
+  older: {
+    minHeight: MIN_TOUCH_TARGET,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.md,
+  },
+  olderText: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
   errorBar: {
     flexDirection: "row",
     alignItems: "center",

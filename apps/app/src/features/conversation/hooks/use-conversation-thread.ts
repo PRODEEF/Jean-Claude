@@ -107,9 +107,44 @@ export function useConversationThread(
    */
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
 
+  /**
+   * Pages plus anciennes que l'utilisateur a dévoilées dans ce fil.
+   *
+   * Une référence et non un état : seule la relecture du fil en a besoin, et
+   * elle ne doit pas changer la clé du cache, que six endroits écrivent
+   * directement. Remise à zéro quand on passe à une autre conversation.
+   */
+  const olderPages = useRef({ conversationId, count: 0 });
+  if (olderPages.current.conversationId !== conversationId) {
+    olderPages.current = { conversationId, count: 0 };
+  }
+
   const messages = useQuery({
     queryKey: ["conversation", conversationId, "messages"],
-    queryFn: () => api.conversations.messages(conversationId, { limit: THREAD_PAGE_SIZE }),
+    queryFn: () => fetchThread(conversationId, olderPages.current.count),
+  });
+
+  /**
+   * Dévoile la page précédente du fil (50 messages), en tête de ce qui est
+   * déjà affiché. Les messages déjà présents ne sont pas redemandés.
+   */
+  const loadOlder = useMutation({
+    mutationFn: (cursor: string) =>
+      api.conversations.messages(conversationId, { cursor, limit: THREAD_PAGE_SIZE }),
+    onSuccess: (page) => {
+      olderPages.current.count += 1;
+      queryClient.setQueryData<Paginated<Message>>(
+        ["conversation", conversationId, "messages"],
+        (current) => {
+          if (!current) return current;
+          const known = new Set(current.items.map((item) => item.id));
+          return {
+            items: [...page.items.filter((item) => !known.has(item.id)), ...current.items],
+            nextCursor: page.nextCursor,
+          };
+        },
+      );
+    },
   });
 
   /**
@@ -302,7 +337,45 @@ export function useConversationThread(
    */
   const stop = useCallback(() => abort.current?.abort(), []);
 
-  return { messages, send, submit, edit, retry, stop, switchAside, streamingText, pendingUserText };
+  return {
+    messages,
+    loadOlder,
+    send,
+    submit,
+    edit,
+    retry,
+    stop,
+    switchAside,
+    streamingText,
+    pendingUserText,
+  };
+}
+
+/**
+ * Les derniers messages du fil, plus les pages anciennes déjà dévoilées.
+ *
+ * Tout est relu depuis le plus récent à chaque invalidation, plutôt que de
+ * garder les anciennes pages de côté : un tour ajoute des messages en bas, la
+ * première page glisse d'autant, et une page gardée telle quelle laisserait un
+ * trou entre les deux — les messages sortis de l'une sans être entrés dans
+ * l'autre.
+ */
+async function fetchThread(
+  conversationId: string,
+  olderPages: number,
+): Promise<Paginated<Message>> {
+  let page = await api.conversations.messages(conversationId, { limit: THREAD_PAGE_SIZE });
+  let items = page.items;
+
+  for (let loaded = 0; loaded < olderPages && page.nextCursor; loaded += 1) {
+    page = await api.conversations.messages(conversationId, {
+      cursor: page.nextCursor,
+      limit: THREAD_PAGE_SIZE,
+    });
+    items = [...page.items, ...items];
+  }
+
+  return { items, nextCursor: page.nextCursor };
 }
 
 /**
