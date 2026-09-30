@@ -38,6 +38,22 @@ function upstreamStatus(error: unknown, depth = 0): number | undefined {
 }
 
 /**
+ * L'appel a-t-il été coupé par l'un des délais de `gateway.provider.ts` ?
+ *
+ * L'AI SDK interrompt alors l'appel avec une `DOMException` nommée
+ * `TimeoutError`, pour le délai total comme pour celui du premier jeton. Elle
+ * ne porte aucun statut, et peut arriver emballée comme les autres échecs.
+ */
+function isTimeout(error: unknown, depth = 0): boolean {
+  if (typeof error !== "object" || error === null || depth >= MAX_WRAPPING_DEPTH) return false;
+
+  if ("name" in error && error.name === "TimeoutError") return true;
+
+  const { lastError, cause } = error as { lastError?: unknown; cause?: unknown };
+  return isTimeout(lastError, depth + 1) || isTimeout(cause, depth + 1);
+}
+
+/**
  * Seul le **statut** de l'erreur amont est lu, jamais son message : celui-ci
  * peut contenir des fragments de prompt, donc des données utilisateur. Le
  * détail complet part dans les logs serveur.
@@ -48,6 +64,13 @@ function upstreamStatus(error: unknown, depth = 0): number | undefined {
  * indisponible » le laisse attendre une panne qui ne se résoudra pas seule.
  */
 export function toHttpException(error: unknown): HTTPException {
+  // Un moteur lent n'est pas un moteur en panne : annoncer une indisponibilité
+  // laissait l'utilisateur attendre qu'elle se résolve, alors qu'un nouvel
+  // essai aboutit le plus souvent.
+  if (isTimeout(error)) {
+    return httpError(504, "Le moteur IA met trop de temps à répondre. Réessayez dans un instant.");
+  }
+
   switch (upstreamStatus(error)) {
     // La limite atteinte est celle du fournisseur, partagée par tous les
     // utilisateurs : « trop de requêtes » accusait d'une rafale quelqu'un qui
