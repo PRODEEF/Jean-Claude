@@ -21,6 +21,11 @@ export type WorkspaceSwitcherProps = {
   /** Espace affiché, `null` pour l'espace personnel. */
   activeWorkspaceId: string | null;
   onNavigate: (href: string) => void;
+  /**
+   * `row` : même format qu'une rangée de navigation (icône nue, libellé
+   * normal), pour se fondre dans la liste de la nouvelle navigation.
+   */
+  appearance?: "card" | "row";
 };
 
 /**
@@ -31,7 +36,11 @@ export type WorkspaceSwitcherProps = {
  * quoi en créer un. Les invitations en attente s'y lisent aussi — c'est là
  * qu'on cherche un espace qu'on n'a pas encore rejoint.
  */
-export function WorkspaceSwitcher({ activeWorkspaceId, onNavigate }: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({
+  activeWorkspaceId,
+  onNavigate,
+  appearance = "card",
+}: WorkspaceSwitcherProps) {
   const workspaces = useWorkspaces();
   const invitations = useReceivedInvitations();
   const [open, setOpen] = useState<"list" | "create" | null>(null);
@@ -54,10 +63,20 @@ export function WorkspaceSwitcher({ activeWorkspaceId, onNavigate }: WorkspaceSw
             ? `Changer d'espace — ${pending} invitation(s) en attente`
             : "Changer d'espace"
         }
-        className="h-auto justify-start gap-3 px-2 py-2"
+        className={cn("justify-start gap-3 px-2", appearance === "card" && "h-auto py-2")}
       >
-        <SpaceIcon workspace={active} />
-        <Text className="flex-1 text-sm font-semibold text-foreground" numberOfLines={1}>
+        {appearance === "row" ? (
+          <Icon as={active ? Users : User} size={16} className="text-foreground" />
+        ) : (
+          <SpaceIcon workspace={active} />
+        )}
+        <Text
+          className={cn(
+            "flex-1 text-sm text-foreground",
+            appearance === "row" ? "font-normal" : "font-semibold",
+          )}
+          numberOfLines={1}
+        >
           {active?.name ?? "Personnel"}
         </Text>
         {pending > 0 ? <View className="size-2 rounded-full bg-destructive" /> : null}

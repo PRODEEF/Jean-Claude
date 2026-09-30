@@ -1,18 +1,23 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { PanResponder, ScrollView, View } from "react-native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
 import { vars } from "nativewind";
 import {
+  ArrowLeftRight,
   ChevronDown,
   ChevronRight,
+  Flag,
   Folder as FolderIcon,
   Inbox,
   ListChecks,
   MessageCircle,
+  PanelLeft,
   Plus,
   FileText,
+  Search,
   Users,
+  type LucideIcon,
 } from "lucide-react-native";
 import { ApiError } from "@jc/api-client";
 import type { Conversation, Folder, FolderTreeNode, TaskList } from "@jc/domain";
@@ -29,6 +34,7 @@ import {
 } from "@/features/conversation/ConversationDropDialog";
 import { ConversationNameRow } from "@/features/conversation/ConversationNameRow";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
+import { SearchDialog } from "@/features/search/SearchDialog";
 import { FolderContextMenu, type FolderMenuTarget } from "@/features/folder/FolderContextMenu";
 import { FolderDeleteDialog } from "@/features/folder/FolderDeleteDialog";
 import { moveErrorMessage, useFolderActions } from "@/features/folder/hooks/use-folder-actions";
@@ -44,11 +50,14 @@ import {
   useFolderDragSource,
   useFolderDropTarget,
 } from "./sidebar-drag";
+import { Avatar, AvatarFallback } from "@/shared/ui/avatar";
 import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { Icon } from "@/shared/ui/icon";
 import { Separator } from "@/shared/ui/separator";
 import { Text } from "@/shared/ui/text";
+import { useCurrentUser } from "@/shared/hooks/use-current-user";
+import { cn } from "@/shared/lib/utils";
 import { useAssistantName, useProfile } from "@/shared/hooks/use-profile";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { useSidebarData, type SidebarGroup } from "./use-sidebar-data";
@@ -61,6 +70,7 @@ import {
   selected,
   UnreadBadge,
 } from "./SidebarSection";
+import { toggleSidebarLayout, useSidebarLayout } from "./use-sidebar-layout";
 import { UTILITY_LINKS } from "./utility-links";
 
 /** Largeur de la barre latérale avant tout ajustement — les 256 pt de `w-64`. */
@@ -83,7 +93,14 @@ export type AppSidebarProps = {
   width?: number;
   /** Fourni uniquement quand la barre est fixe : le tiroir ne se redimensionne pas. */
   onResize?: (width: number) => void;
+  /** Masque la barre depuis son propre en-tête — utilisé sans bannière. */
+  onCollapse?: () => void;
 };
+
+/** Calendrier puis listes : l'ordre de l'en-tête de la nouvelle navigation. */
+const MODERN_SHORTCUTS = ["/calendar", "/todo"].flatMap((href) =>
+  UTILITY_LINKS.filter((link) => link.href === href),
+);
 
 /**
  * Barre latérale de navigation.
@@ -98,7 +115,11 @@ export function AppSidebar({
   onNavigate,
   width = SIDEBAR_DEFAULT_WIDTH,
   onResize,
+  onCollapse,
 }: AppSidebarProps) {
+  const modern = useSidebarLayout() === "modern";
+  const { displayName, initials } = useCurrentUser();
+  const [searching, setSearching] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
@@ -199,6 +220,77 @@ export function AppSidebar({
     onFolder: (folderId) => moveFolder(null, folderId),
   });
 
+  // Le canal permanent (A.10) en tête, hors de la liste qui défile : il n'est
+  // pas une conversation parmi d'autres, et doit rester à portée quel que soit
+  // le nombre de dossiers et de conversations.
+  const channelButton = (
+    <Button
+      variant="ghost"
+      onPress={() => go("/assistant")}
+      accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+      className={selected("h-auto justify-start gap-3 px-2 py-2", pathname === "/assistant")}
+    >
+      <View className="size-8 items-center justify-center rounded-md bg-primary">
+        <Icon as={MessageCircle} size={16} className="text-primary-foreground" />
+      </View>
+      <Text className="flex-1 text-sm" numberOfLines={1}>
+        <Text className="font-semibold text-foreground">{assistantName}</Text>
+        <Text className="font-normal text-muted-foreground"> - Canal permanent</Text>
+      </Text>
+      <UnreadBadge
+        count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
+        pendingQuestion={pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)}
+      />
+    </Button>
+  );
+
+  // Même bouton dans les deux espaces : dans un espace collaboratif, il ouvre
+  // la création d'une conversation partagée.
+  const newConversationButton = (
+    <Button
+      variant="outline"
+      onPress={() => (activeWorkspaceId ? setCreatingGroup(true) : go("/chat"))}
+      accessibilityLabel="Démarrer une nouvelle conversation"
+      className="justify-start gap-2"
+    >
+      <Icon as={Plus} size={16} />
+      <Text>Nouvelle conversation</Text>
+    </Button>
+  );
+
+  // Serrées comme la liste du bas de la barre : ce sont deux entrées d'une même
+  // liste, pas deux blocs. « Fichiers » reste hors de la zone qui défile : ce
+  // n'est ni un dossier ni une conversation, mais ce qu'elles contiennent. Rien
+  // à montrer tant que l'espace n'a aucun fichier.
+  const workspaceLinks = activeWorkspaceId ? (
+    <View className="gap-0.5">
+      <NavRow
+        icon={Users}
+        label="Membres et invitations"
+        active={pathname === `/workspace/${activeWorkspaceId}`}
+        onPress={() => go(`/workspace/${activeWorkspaceId}`)}
+      />
+      {hasFiles || pathname === filesHref ? (
+        <NavRow
+          icon={FileText}
+          label="Fichiers"
+          accessibilityLabel="Fichiers de l'espace"
+          active={pathname === filesHref}
+          onPress={() => go(filesHref)}
+        />
+      ) : null}
+    </View>
+  ) : null;
+
+  const adminLink = isAdmin ? (
+    <NavRow
+      icon={Inbox}
+      label="Retours des testeurs"
+      active={pathname === "/feedback"}
+      onPress={() => go("/feedback")}
+    />
+  ) : null;
+
   return (
     <View
       className="h-full border-r border-border bg-secondary"
@@ -208,96 +300,130 @@ export function AppSidebar({
       // la barre seulement ; ailleurs, il se pose sur le fond blanc de l'écran.
       style={[{ width }, vars({ "--accent": palette.border })]}
     >
-      <View className="gap-2 p-3">
-        {/* Signalement direct, distinct des suggestions du modèle (§12.1) : un
-            geste utilisateur, jamais une proposition (A.10). Même traitement
-            visuel que le canal permanent, en rouge, pour rester aussi visible. */}
-        <Button
-          variant="ghost"
-          onPress={() => setFeedbackOpen(true)}
-          accessibilityLabel="Signaler un problème"
-          className="h-auto justify-start gap-3 px-2 py-2"
-        >
-          <View className="size-8 items-center justify-center rounded-md bg-destructive">
-            <Icon as={MessageCircle} size={16} className="text-white" />
-          </View>
-          <Text className="text-sm font-semibold text-foreground">SIGNALER UN PROBLÈME</Text>
-        </Button>
-
-        {/* Le canal permanent (A.10) en tête, hors de la liste qui défile : il
-            n'est pas une conversation parmi d'autres, et doit rester à portée
-            quel que soit le nombre de dossiers et de conversations. */}
-        <Button
-          variant="ghost"
-          onPress={() => go("/assistant")}
-          accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
-          className={selected("h-auto justify-start gap-3 px-2 py-2", pathname === "/assistant")}
-        >
-          <View className="size-8 items-center justify-center rounded-md bg-primary">
-            <Icon as={MessageCircle} size={16} className="text-primary-foreground" />
-          </View>
-          <Text className="flex-1 text-sm" numberOfLines={1}>
-            <Text className="font-semibold text-foreground">{assistantName}</Text>
-            <Text className="font-normal text-muted-foreground"> - Canal permanent</Text>
-          </Text>
-          <UnreadBadge
-            count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
-            pendingQuestion={
-              pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
-            }
-          />
-        </Button>
-
-        {/* Sous le canal, hors de la zone qui défile : le canal et le signalement
-            restent au-dessus de l'espace, car ils ne dépendent pas de lui. */}
-        <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onNavigate={go} />
-
-        {/* Même bouton dans les deux espaces : dans un espace collaboratif, il
-            ouvre la création d'une conversation partagée. */}
-        <Button
-          variant="outline"
-          onPress={() => (activeWorkspaceId ? setCreatingGroup(true) : go("/chat"))}
-          accessibilityLabel="Démarrer une nouvelle conversation"
-          className="justify-start gap-2"
-        >
-          <Icon as={Plus} size={16} />
-          <Text>Nouvelle conversation</Text>
-        </Button>
-
-        {/* Serrées comme la liste du bas de la barre : ce sont deux entrées
-            d'une même liste, pas deux blocs. */}
-        <View className="gap-0.5">
-          {activeWorkspaceId ? (
+      {modern ? (
+        <View className="gap-2 p-3">
+          {/* Replier et chercher en tête de barre, comme Claude et ChatGPT
+              (§4.2) : sans bannière, c'est là que ces deux gestes se retrouvent. */}
+          <View className="flex-row items-center gap-1">
+            {onCollapse ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                onPress={onCollapse}
+                accessibilityLabel="Masquer la navigation"
+              >
+                <Icon as={PanelLeft} size={18} className="text-muted-foreground" />
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
-              onPress={() => go(`/workspace/${activeWorkspaceId}`)}
-              accessibilityLabel="Membres et invitations"
-              className={selected(
-                "justify-start gap-3 px-2",
-                pathname === `/workspace/${activeWorkspaceId}`,
-              )}
+              size="icon"
+              onPress={() => setSearching(true)}
+              accessibilityLabel="Rechercher une conversation"
             >
-              <Icon as={Users} size={16} className="text-muted-foreground" />
-              <Text className="text-sm font-normal text-foreground">Membres et invitations</Text>
+              <Icon as={Search} size={18} className="text-muted-foreground" />
             </Button>
-          ) : null}
+          </View>
 
-          {/* Hors de la zone qui défile, comme « Membres et invitations » : ce
-            n'est ni un dossier ni une conversation, mais ce qu'elles
-            contiennent. Rien à montrer tant que l'espace n'a aucun fichier. */}
-          {activeWorkspaceId && (hasFiles || pathname === filesHref) ? (
-            <Button
-              variant="ghost"
-              onPress={() => go(filesHref)}
-              accessibilityLabel="Fichiers de l'espace"
-              className={selected("justify-start gap-3 px-2", pathname === filesHref)}
-            >
-              <Icon as={FileText} size={16} className="text-muted-foreground" />
-              <Text className="text-sm font-normal text-foreground">Fichiers</Text>
-            </Button>
-          ) : null}
+          {/* Quatre rangées au même format — icône et libellé en couleur de
+              texte — pour se lire comme une seule liste ; seul le nom de
+              l'assistant ressort, en gras. */}
+          <View className="gap-0.5">
+            <NavRow
+              icon={MessageCircle}
+              iconClassName="text-foreground"
+              label={
+                <>
+                  <Text className="font-semibold text-foreground">{assistantName}</Text>
+                  {" - Canal permanent"}
+                </>
+              }
+              accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+              active={pathname === "/assistant"}
+              onPress={() => go("/assistant")}
+              trailing={
+                <UnreadBadge
+                  count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
+                  pendingQuestion={
+                    pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
+                  }
+                />
+              }
+            />
+            {/* Signalement direct, distinct des suggestions du modèle (§12.1) :
+                un geste utilisateur, jamais une proposition (A.10). */}
+            <NavRow
+              icon={Flag}
+              iconClassName="text-foreground"
+              label="Signaler un problème"
+              active={false}
+              onPress={() => setFeedbackOpen(true)}
+            />
+            {/* La revue des signalements n'existe que pour l'équipe. */}
+            {isAdmin ? (
+              <NavRow
+                icon={Inbox}
+                iconClassName="text-foreground"
+                label="Retours des testeurs"
+                active={pathname === "/feedback"}
+                onPress={() => go("/feedback")}
+              />
+            ) : null}
+            {MODERN_SHORTCUTS.map((link) => (
+              <NavRow
+                key={link.href}
+                icon={link.icon}
+                iconClassName="text-foreground"
+                label={link.label}
+                active={pathname === link.href}
+                onPress={() => go(link.href)}
+              />
+            ))}
+            <NavRow
+              icon={Plus}
+              iconClassName="text-foreground"
+              label="Nouvelle conversation"
+              accessibilityLabel="Démarrer une nouvelle conversation"
+              active={false}
+              onPress={() => (activeWorkspaceId ? setCreatingGroup(true) : go("/chat"))}
+            />
+            <WorkspaceSwitcher
+              activeWorkspaceId={activeWorkspaceId}
+              onNavigate={go}
+              appearance="row"
+            />
+          </View>
+
+          {workspaceLinks}
         </View>
-      </View>
+      ) : (
+        <View className="gap-2 p-3">
+          {/* Signalement direct, distinct des suggestions du modèle (§12.1) : un
+              geste utilisateur, jamais une proposition (A.10). Même traitement
+              visuel que le canal permanent, en rouge, pour rester aussi visible. */}
+          <Button
+            variant="ghost"
+            onPress={() => setFeedbackOpen(true)}
+            accessibilityLabel="Signaler un problème"
+            className="h-auto justify-start gap-3 px-2 py-2"
+          >
+            <View className="size-8 items-center justify-center rounded-md bg-destructive">
+              <Icon as={MessageCircle} size={16} className="text-white" />
+            </View>
+            <Text className="text-sm font-semibold text-foreground">SIGNALER UN PROBLÈME</Text>
+          </Button>
+
+          {channelButton}
+
+          {/* Sous le canal, hors de la zone qui défile : le canal et le signalement
+              restent au-dessus de l'espace, car ils ne dépendent pas de lui. */}
+          <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onNavigate={go} />
+
+          {newConversationButton}
+
+          {workspaceLinks}
+        </View>
+      )}
 
       {activeWorkspaceId ? (
         <WorkspaceSidebarBody workspaceId={activeWorkspaceId} pathname={pathname} onNavigate={go} />
@@ -392,48 +518,63 @@ export function AppSidebar({
 
       <Separator />
 
-      <View className="gap-0.5 p-3">
-        {UTILITY_LINKS.map((link) => (
-          <Button
-            key={link.href}
-            variant="ghost"
-            onPress={() => go(link.href)}
-            className={selected("justify-start gap-3 px-2", pathname === link.href)}
-          >
-            <Icon as={link.icon} size={16} className="text-muted-foreground" />
-            <Text
-              className={
-                pathname === link.href
-                  ? "text-sm font-medium text-foreground"
-                  : "text-sm font-normal text-foreground"
-              }
+      {modern ? (
+        <View className="gap-0.5 p-3">
+          {/* Le profil en pied de barre, qui ouvre les réglages : Claude,
+              ChatGPT et Slack le placent tous là (§4.2). */}
+          <View className="flex-row items-center gap-1 pt-2">
+            <Button
+              variant="ghost"
+              onPress={() => go("/settings")}
+              accessibilityLabel={`Ouvrir les réglages de ${displayName}`}
+              className={selected(
+                "h-auto min-w-0 flex-1 justify-start gap-3 px-2 py-2",
+                pathname === "/settings",
+              )}
             >
-              {link.label}
-            </Text>
-          </Button>
-        ))}
+              <Avatar alt={`Avatar de ${displayName}`} className="size-8">
+                <AvatarFallback className="bg-primary">
+                  <Text className="text-xs font-semibold text-primary-foreground">{initials}</Text>
+                </AvatarFallback>
+              </Avatar>
+              <Text className="flex-1 text-sm font-medium text-foreground" numberOfLines={1}>
+                {displayName}
+              </Text>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onPress={toggleSidebarLayout}
+              accessibilityLabel="Revenir à l'ancienne navigation"
+            >
+              <Icon as={ArrowLeftRight} size={16} className="text-muted-foreground" />
+            </Button>
+          </View>
+        </View>
+      ) : (
+        <View className="gap-0.5 p-3">
+          {UTILITY_LINKS.map((link) => (
+            <NavRow
+              key={link.href}
+              icon={link.icon}
+              label={link.label}
+              active={pathname === link.href}
+              onPress={() => go(link.href)}
+            />
+          ))}
 
-        {/* Hors de `UTILITY_LINKS` : la bannière les reprend pour tous, alors
-            que la revue n'existe que pour l'équipe. */}
-        {isAdmin ? (
-          <Button
-            variant="ghost"
-            onPress={() => go("/feedback")}
-            className={selected("justify-start gap-3 px-2", pathname === "/feedback")}
-          >
-            <Icon as={Inbox} size={16} className="text-muted-foreground" />
-            <Text
-              className={
-                pathname === "/feedback"
-                  ? "text-sm font-medium text-foreground"
-                  : "text-sm font-normal text-foreground"
-              }
-            >
-              Retours des testeurs
-            </Text>
-          </Button>
-        ) : null}
-      </View>
+          {/* Hors de `UTILITY_LINKS` : la bannière les reprend pour tous, alors
+              que la revue n'existe que pour l'équipe. */}
+          {adminLink}
+
+          <NavRow
+            icon={ArrowLeftRight}
+            label="Essayer la nouvelle navigation"
+            active={false}
+            onPress={toggleSidebarLayout}
+          />
+        </View>
+      )}
 
       {/* Le menu ne fait que choisir : renommage et suppression passent par la
           fenêtre de dossier, la création par une rangée de saisie. */}
@@ -516,6 +657,16 @@ export function AppSidebar({
         }}
       />
       <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      {modern ? (
+        <SearchDialog
+          open={searching}
+          onClose={() => setSearching(false)}
+          onSelect={(conversation) => {
+            setSearching(false);
+            go(`/chat/${conversation.id}`);
+          }}
+        />
+      ) : null}
 
       {onResize ? <ResizeHandle width={width} onResize={onResize} /> : null}
     </View>
@@ -569,6 +720,48 @@ function ResizeHandle({ width, onResize }: { width: number; onResize: (width: nu
       // souris sans viser, trop peu pour manger le contenu de la barre.
       className="absolute inset-y-0 -right-1.5 w-3 web:cursor-col-resize"
     />
+  );
+}
+
+/** Une destination de la barre hors arborescence : raccourci, lien d'espace, action. */
+function NavRow({
+  icon,
+  label,
+  accessibilityLabel,
+  iconClassName = "text-muted-foreground",
+  active,
+  onPress,
+  trailing,
+}: {
+  icon: LucideIcon;
+  /** Un libellé composé (partie en gras) doit fournir `accessibilityLabel`. */
+  label: ReactNode;
+  accessibilityLabel?: string;
+  iconClassName?: string;
+  active: boolean;
+  onPress: () => void;
+  trailing?: ReactNode;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      onPress={onPress}
+      accessibilityLabel={accessibilityLabel ?? (typeof label === "string" ? label : undefined)}
+      accessibilityState={{ selected: active }}
+      className={selected("justify-start gap-3 px-2", active)}
+    >
+      <Icon as={icon} size={16} className={iconClassName} />
+      <Text
+        className={cn(
+          "flex-1 text-sm text-foreground",
+          active ? "font-medium" : "font-normal",
+        )}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+      {trailing}
+    </Button>
   );
 }
 
