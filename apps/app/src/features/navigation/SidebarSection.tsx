@@ -81,7 +81,9 @@ export function SectionLabel({
           />
         </Button>
       ) : (
-        <Text className="px-2 text-xs font-medium text-muted-foreground">{children}</Text>
+        // Plus grand que le nom des dossiers (`text-sm`) : c'est le titre de ce
+        // qui suit, il doit se lire au-dessus d'eux et non à côté.
+        <Text className="px-2 text-base font-medium text-muted-foreground">{children}</Text>
       )}
       {action ? <RowAction icon={Plus} label={action.label} onPress={action.onPress} /> : null}
     </View>

@@ -838,17 +838,15 @@ function FolderGroup({
   /** Dossier lâché sur celui-ci : `(cible, déplacé)`. */
   onDropFolder: (targetId: string, movedId: string) => void;
 }) {
-  const isEmpty = isFolderEmpty(group);
   const modern = useSidebarLayout() === "modern";
   // Un dossier est « courant » quand la conversation ouverte est chez lui ou
   // chez l'un de ses descendants : c'est la seule sélection qu'un dossier
   // puisse avoir, n'étant pas lui-même une destination.
   const active = containsPath(group, pathname);
-  // Un dossier vide s'ouvre sur la seule mention « Vide » : le déplier par
-  // défaut allongerait la barre sans rien apprendre. La nouvelle navigation
-  // les replie tous : la liste des dossiers se lit d'un coup d'œil, comme les
-  // projets d'une barre Claude, et se déplie à la demande.
-  const [open, setOpen] = useState(modern ? false : !isEmpty);
+  // Replié par défaut, dans les deux navigations : la liste des dossiers se
+  // lit d'un coup d'œil et se déplie à la demande, au lieu d'allonger la barre
+  // de tout ce qu'ils contiennent.
+  const [open, setOpen] = useState(false);
   const dragRef = useFolderDragSource(group.folder.id);
   const { ref: dropRef, isOver } = useFolderDropTarget({
     onConversation: (conversationId) => onDropConversation(group.folder, conversationId),
