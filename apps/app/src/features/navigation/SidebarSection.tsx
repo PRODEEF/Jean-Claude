@@ -1,5 +1,13 @@
+import { useEffect, useState } from "react";
 import { Platform, View } from "react-native";
-import { MoreHorizontal, Plus } from "lucide-react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  ChevronDown,
+  ChevronRight,
+  Folder as FolderIcon,
+  MoreHorizontal,
+  Plus,
+} from "lucide-react-native";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
@@ -43,14 +51,120 @@ export function rowLabel(active: boolean): string {
 export function SectionLabel({
   children,
   action,
+  collapse,
 }: {
   children: string;
   action?: { label: string; onPress: () => void };
+  /** Rend le titre repliable — nouvelle navigation uniquement. */
+  collapse?: { open: boolean; onToggle: () => void };
 }) {
   return (
     <View className="flex-row items-center justify-between pb-1 pt-3">
-      <Text className="px-2 text-xs font-medium text-muted-foreground">{children}</Text>
+      {collapse ? (
+        // Le titre entier replie la section, comme les « Starred » et
+        // « Recents » de Claude (§4.2). Le chevron reste visible : au doigt,
+        // rien d'autre ne dirait que le titre se touche.
+        <Button
+          variant="ghost"
+          size="sm"
+          onPress={collapse.onToggle}
+          hitSlop={4}
+          accessibilityLabel={collapse.open ? `Replier ${children}` : `Déplier ${children}`}
+          accessibilityState={{ expanded: collapse.open }}
+          className="h-auto gap-1 px-2 py-1"
+        >
+          <Text className="text-xs font-medium text-muted-foreground">{children}</Text>
+          <Icon
+            as={collapse.open ? ChevronDown : ChevronRight}
+            size={12}
+            className="text-muted-foreground"
+          />
+        </Button>
+      ) : (
+        <Text className="px-2 text-xs font-medium text-muted-foreground">{children}</Text>
+      )}
       {action ? <RowAction icon={Plus} label={action.label} onPress={action.onPress} /> : null}
+    </View>
+  );
+}
+
+const SECTION_STORAGE_PREFIX = "jc.sidebar-section.";
+
+/**
+ * Section repliable de la barre, dépliée tant que l'utilisateur ne l'a pas
+ * repliée. Mémorisé sur l'appareil, comme le choix de navigation : c'est une
+ * préférence d'affichage, sans valeur d'un appareil à l'autre.
+ */
+export function useSectionOpen(section: "folders" | "conversations"): [boolean, () => void] {
+  const [open, setOpen] = useState(true);
+  const key = `${SECTION_STORAGE_PREFIX}${section}`;
+
+  useEffect(() => {
+    AsyncStorage.getItem(key)
+      .then((stored) => {
+        if (stored === "closed") setOpen(false);
+      })
+      // Stockage indisponible (navigation privée) : la section reste dépliée.
+      .catch(() => undefined);
+  }, [key]);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    AsyncStorage.setItem(key, next ? "open" : "closed").catch(() => undefined);
+  };
+
+  return [open, toggle];
+}
+
+/**
+ * Le pointeur peut-il survoler ? Faux au doigt, y compris dans un navigateur
+ * de téléphone — `Platform.OS` ne suffit pas à le dire.
+ */
+function canHover(): boolean {
+  if (Platform.OS !== "web" || typeof window === "undefined") return false;
+  return window.matchMedia?.("(hover: hover)").matches ?? false;
+}
+
+/**
+ * Icône d'une rangée de dossier.
+ *
+ * Ancienne navigation : chevron permanent devant l'icône de dossier.
+ * Nouvelle navigation : l'icône de dossier seule, que le chevron remplace au
+ * survol — la rangée gagne la largeur du chevron. Sans survol possible, le
+ * chevron seul, en permanence : c'est lui qui dit qu'un dossier se déplie, le
+ * problème déjà signalé en usage réel quand il n'apparaissait qu'au survol.
+ */
+export function FolderToggleIcon({ open, modern }: { open: boolean; modern: boolean }) {
+  const chevron = open ? ChevronDown : ChevronRight;
+
+  if (!modern) {
+    return (
+      <View className="flex-row items-center gap-1">
+        <Icon as={chevron} size={14} className="text-muted-foreground" />
+        <Icon as={FolderIcon} size={16} className="text-muted-foreground" />
+      </View>
+    );
+  }
+
+  if (!canHover()) {
+    return (
+      <View className="size-4 items-center justify-center">
+        <Icon as={chevron} size={14} className="text-muted-foreground" />
+      </View>
+    );
+  }
+
+  // Les deux icônes superposées, basculées par opacité : la rangée garde la
+  // même largeur, et le libellé ne saute pas au passage du curseur.
+  return (
+    <View className="size-4 items-center justify-center">
+      <View className="group-hover:opacity-0">
+        <Icon as={FolderIcon} size={16} className="text-muted-foreground" />
+      </View>
+      <View className="absolute inset-0 items-center justify-center opacity-0 group-hover:opacity-100">
+        <Icon as={chevron} size={14} className="text-muted-foreground" />
+      </View>
     </View>
   );
 }

@@ -5,10 +5,7 @@ import { usePathname, useRouter } from "expo-router";
 import { vars } from "nativewind";
 import {
   ArrowLeftRight,
-  ChevronDown,
-  ChevronRight,
-  Flag,
-  Folder as FolderIcon,
+  ChevronsUpDown,
   Inbox,
   ListChecks,
   MessageCircle,
@@ -55,20 +52,24 @@ import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { Icon } from "@/shared/ui/icon";
 import { Separator } from "@/shared/ui/separator";
+import { ContextMenu } from "@/shared/ui/context-menu";
 import { Text } from "@/shared/ui/text";
 import { useCurrentUser } from "@/shared/hooks/use-current-user";
 import { cn } from "@/shared/lib/utils";
 import { useAssistantName, useProfile } from "@/shared/hooks/use-profile";
+import { useAuth } from "@/shared/providers/auth-provider";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { useSidebarData, type SidebarGroup } from "./use-sidebar-data";
 import {
   contextMenuProps,
+  FolderToggleIcon,
   NewConversationRow,
   RowMenuButton,
   rowLabel,
   SectionLabel,
   selected,
   UnreadBadge,
+  useSectionOpen,
 } from "./SidebarSection";
 import { toggleSidebarLayout, useSidebarLayout } from "./use-sidebar-layout";
 import { UTILITY_LINKS } from "./utility-links";
@@ -119,7 +120,12 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const modern = useSidebarLayout() === "modern";
   const { displayName, initials } = useCurrentUser();
+  const { signOut } = useAuth();
   const [searching, setSearching] = useState(false);
+  /** Point d'ouverture du menu du profil, `null` quand il est fermé. */
+  const [profileMenu, setProfileMenu] = useState<{ x: number; y: number } | null>(null);
+  const [foldersOpen, toggleFolders] = useSectionOpen("folders");
+  const [conversationsOpen, toggleConversations] = useSectionOpen("conversations");
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
@@ -302,9 +308,21 @@ export function AppSidebar({
     >
       {modern ? (
         <View className="gap-2 p-3">
-          {/* Replier et chercher en tête de barre, comme Claude et ChatGPT
-              (§4.2) : sans bannière, c'est là que ces deux gestes se retrouvent. */}
+          {/* L'espace courant en tête, comme Notion et Slack (§4.2) : c'est lui
+              qui décide de tout ce que la barre affiche en dessous. Chercher et
+              replier se rangent à sa droite, faute de bannière. */}
           <View className="flex-row items-center gap-1">
+            <View className="min-w-0 flex-1">
+              <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onNavigate={go} />
+            </View>
+            <Button
+              variant="ghost"
+              size="icon"
+              onPress={() => setSearching(true)}
+              accessibilityLabel="Rechercher une conversation"
+            >
+              <Icon as={Search} size={18} className="text-muted-foreground" />
+            </Button>
             {onCollapse ? (
               <Button
                 variant="ghost"
@@ -315,20 +333,26 @@ export function AppSidebar({
                 <Icon as={PanelLeft} size={18} className="text-muted-foreground" />
               </Button>
             ) : null}
-            <Button
-              variant="ghost"
-              size="icon"
-              onPress={() => setSearching(true)}
-              accessibilityLabel="Rechercher une conversation"
-            >
-              <Icon as={Search} size={18} className="text-muted-foreground" />
-            </Button>
           </View>
 
-          {/* Quatre rangées au même format — icône et libellé en couleur de
-              texte — pour se lire comme une seule liste ; seul le nom de
-              l'assistant ressort, en gras. */}
           <View className="gap-0.5">
+            {/* L'action la plus fréquente en premier, seule mise en valeur de la
+                liste, comme le « New chat » de Claude (§4.2). La pastille déborde
+                de 2 pt de chaque côté pour garder les libellés alignés sur ceux
+                des rangées à icône nue. */}
+            <Button
+              variant="ghost"
+              onPress={() => (activeWorkspaceId ? setCreatingGroup(true) : go("/chat"))}
+              accessibilityLabel="Démarrer une nouvelle conversation"
+              className="justify-start gap-3 px-2"
+            >
+              <View className="-mx-0.5 size-5 items-center justify-center rounded-full bg-primary">
+                <Icon as={Plus} size={14} className="text-primary-foreground" />
+              </View>
+              <Text className="flex-1 text-sm font-medium text-foreground" numberOfLines={1}>
+                Nouvelle conversation
+              </Text>
+            </Button>
             <NavRow
               icon={MessageCircle}
               iconClassName="text-foreground"
@@ -350,25 +374,6 @@ export function AppSidebar({
                 />
               }
             />
-            {/* Signalement direct, distinct des suggestions du modèle (§12.1) :
-                un geste utilisateur, jamais une proposition (A.10). */}
-            <NavRow
-              icon={Flag}
-              iconClassName="text-foreground"
-              label="Signaler un problème"
-              active={false}
-              onPress={() => setFeedbackOpen(true)}
-            />
-            {/* La revue des signalements n'existe que pour l'équipe. */}
-            {isAdmin ? (
-              <NavRow
-                icon={Inbox}
-                iconClassName="text-foreground"
-                label="Retours des testeurs"
-                active={pathname === "/feedback"}
-                onPress={() => go("/feedback")}
-              />
-            ) : null}
             {MODERN_SHORTCUTS.map((link) => (
               <NavRow
                 key={link.href}
@@ -379,19 +384,6 @@ export function AppSidebar({
                 onPress={() => go(link.href)}
               />
             ))}
-            <NavRow
-              icon={Plus}
-              iconClassName="text-foreground"
-              label="Nouvelle conversation"
-              accessibilityLabel="Démarrer une nouvelle conversation"
-              active={false}
-              onPress={() => (activeWorkspaceId ? setCreatingGroup(true) : go("/chat"))}
-            />
-            <WorkspaceSwitcher
-              activeWorkspaceId={activeWorkspaceId}
-              onNavigate={go}
-              appearance="row"
-            />
           </View>
 
           {workspaceLinks}
@@ -433,7 +425,10 @@ export function AppSidebar({
             de son parent. Sans elle, le geste serait à sens unique — on saurait
             ranger un dossier, jamais l'en ressortir. */}
           <View ref={rootDropRef} className={cx("rounded-md", isOverRoot)}>
-            <SectionLabel action={{ label: "Créer un dossier", onPress: createRootFolder }}>
+            <SectionLabel
+              action={{ label: "Créer un dossier", onPress: createRootFolder }}
+              {...(modern ? { collapse: { open: foldersOpen, onToggle: toggleFolders } } : {})}
+            >
               Dossiers
             </SectionLabel>
           </View>
@@ -464,24 +459,25 @@ export function AppSidebar({
             </Button>
           ) : null}
 
-          {groups.map((group) => (
-            <FolderGroup
-              key={group.folder.id}
-              group={group}
-              depth={1}
-              pathname={pathname}
-              naming={naming}
-              renamedConversation={renaming}
-              onOpen={go}
-              onMenu={setMenuTarget}
-              onCloseNaming={() => setNaming(null)}
-              onNewConversation={(folderId) => go(`/chat?folderId=${folderId}`)}
-              onConversationMenu={setConversationMenu}
-              onCloseRenaming={() => setRenaming(null)}
-              onDropConversation={dropOnFolder}
-              onDropFolder={moveFolder}
-            />
-          ))}
+          {(!modern || foldersOpen) &&
+            groups.map((group) => (
+              <FolderGroup
+                key={group.folder.id}
+                group={group}
+                depth={1}
+                pathname={pathname}
+                naming={naming}
+                renamedConversation={renaming}
+                onOpen={go}
+                onMenu={setMenuTarget}
+                onCloseNaming={() => setNaming(null)}
+                onNewConversation={(folderId) => go(`/chat?folderId=${folderId}`)}
+                onConversationMenu={setConversationMenu}
+                onCloseRenaming={() => setRenaming(null)}
+                onDropConversation={dropOnFolder}
+                onDropFolder={moveFolder}
+              />
+            ))}
 
           {naming?.kind === "create" && naming.parentId === null ? (
             <FolderNameRow target={naming} onDone={() => setNaming(null)} />
@@ -494,25 +490,32 @@ export function AppSidebar({
             rangées, elles, n'apparaissent plus qu'ici — une section « Sans
             dossier » à part aurait fait doublon avec cette liste, qui les
             contient déjà. */}
-          <SectionLabel>Conversations et tâches</SectionLabel>
+          <SectionLabel
+            {...(modern
+              ? { collapse: { open: conversationsOpen, onToggle: toggleConversations } }
+              : {})}
+          >
+            Conversations et tâches
+          </SectionLabel>
 
-          {all.map((conversation) =>
-            renaming?.id === conversation.id ? (
-              <ConversationNameRow
-                key={conversation.id}
-                conversation={conversation}
-                onDone={() => setRenaming(null)}
-              />
-            ) : (
-              <ConversationRow
-                key={conversation.id}
-                conversation={conversation}
-                pathname={pathname}
-                onOpen={go}
-                onMenu={setConversationMenu}
-              />
-            ),
-          )}
+          {(!modern || conversationsOpen) &&
+            all.map((conversation) =>
+              renaming?.id === conversation.id ? (
+                <ConversationNameRow
+                  key={conversation.id}
+                  conversation={conversation}
+                  onDone={() => setRenaming(null)}
+                />
+              ) : (
+                <ConversationRow
+                  key={conversation.id}
+                  conversation={conversation}
+                  pathname={pathname}
+                  onOpen={go}
+                  onMenu={setConversationMenu}
+                />
+              ),
+            )}
         </ScrollView>
       )}
 
@@ -520,36 +523,31 @@ export function AppSidebar({
 
       {modern ? (
         <View className="gap-0.5 p-3">
-          {/* Le profil en pied de barre, qui ouvre les réglages : Claude,
-              ChatGPT et Slack le placent tous là (§4.2). */}
-          <View className="flex-row items-center gap-1 pt-2">
-            <Button
-              variant="ghost"
-              onPress={() => go("/settings")}
-              accessibilityLabel={`Ouvrir les réglages de ${displayName}`}
-              className={selected(
-                "h-auto min-w-0 flex-1 justify-start gap-3 px-2 py-2",
-                pathname === "/settings",
-              )}
-            >
-              <Avatar alt={`Avatar de ${displayName}`} className="size-8">
-                <AvatarFallback className="bg-primary">
-                  <Text className="text-xs font-semibold text-primary-foreground">{initials}</Text>
-                </AvatarFallback>
-              </Avatar>
-              <Text className="flex-1 text-sm font-medium text-foreground" numberOfLines={1}>
-                {displayName}
-              </Text>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onPress={toggleSidebarLayout}
-              accessibilityLabel="Revenir à l'ancienne navigation"
-            >
-              <Icon as={ArrowLeftRight} size={16} className="text-muted-foreground" />
-            </Button>
-          </View>
+          {/* Le profil en pied de barre ouvre le menu du compte : Claude,
+              ChatGPT et Slack le placent tous là (§4.2). Les actions rares —
+              signalement, revue des retours, retour à l'ancienne navigation —
+              y sont rangées plutôt qu'en tête de barre. */}
+          <Button
+            variant="ghost"
+            onPress={(event) =>
+              setProfileMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+            }
+            accessibilityLabel={`Menu du compte de ${displayName}`}
+            className={selected(
+              "h-auto min-w-0 justify-start gap-3 px-2 py-2",
+              pathname === "/settings",
+            )}
+          >
+            <Avatar alt={`Avatar de ${displayName}`} className="size-8">
+              <AvatarFallback className="bg-primary">
+                <Text className="text-xs font-semibold text-primary-foreground">{initials}</Text>
+              </AvatarFallback>
+            </Avatar>
+            <Text className="flex-1 text-sm font-medium text-foreground" numberOfLines={1}>
+              {displayName}
+            </Text>
+            <Icon as={ChevronsUpDown} size={14} className="text-muted-foreground" />
+          </Button>
         </View>
       ) : (
         <View className="gap-0.5 p-3">
@@ -657,6 +655,29 @@ export function AppSidebar({
         }}
       />
       <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      {profileMenu ? (
+        <ContextMenu
+          x={profileMenu.x}
+          y={profileMenu.y}
+          onClose={() => setProfileMenu(null)}
+          items={[
+            { label: "Réglages", onPress: () => go("/settings") },
+            // Signalement direct, distinct des suggestions du modèle (§12.1) :
+            // un geste utilisateur, jamais une proposition (A.10).
+            { label: "Signaler un problème", onPress: () => setFeedbackOpen(true) },
+            // La revue des signalements n'existe que pour l'équipe.
+            ...(isAdmin ? [{ label: "Retours des testeurs", onPress: () => go("/feedback") }] : []),
+            { label: "Revenir à l'ancienne navigation", onPress: toggleSidebarLayout },
+            { label: "Se déconnecter", onPress: () => void signOut() },
+          ].map((item) => ({
+            ...item,
+            onPress: () => {
+              setProfileMenu(null);
+              item.onPress();
+            },
+          }))}
+        />
+      ) : null}
       {modern ? (
         <SearchDialog
           open={searching}
@@ -752,10 +773,7 @@ function NavRow({
     >
       <Icon as={icon} size={16} className={iconClassName} />
       <Text
-        className={cn(
-          "flex-1 text-sm text-foreground",
-          active ? "font-medium" : "font-normal",
-        )}
+        className={cn("flex-1 text-sm text-foreground", active ? "font-medium" : "font-normal")}
         numberOfLines={1}
       >
         {label}
@@ -811,13 +829,16 @@ function FolderGroup({
   onDropFolder: (targetId: string, movedId: string) => void;
 }) {
   const isEmpty = isFolderEmpty(group);
+  const modern = useSidebarLayout() === "modern";
   // Un dossier est « courant » quand la conversation ouverte est chez lui ou
   // chez l'un de ses descendants : c'est la seule sélection qu'un dossier
   // puisse avoir, n'étant pas lui-même une destination.
   const active = containsPath(group, pathname);
   // Un dossier vide s'ouvre sur la seule mention « Vide » : le déplier par
-  // défaut allongerait la barre sans rien apprendre.
-  const [open, setOpen] = useState(!isEmpty);
+  // défaut allongerait la barre sans rien apprendre. La nouvelle navigation
+  // les replie tous : la liste des dossiers se lit d'un coup d'œil, comme les
+  // projets d'une barre Claude, et se déplie à la demande.
+  const [open, setOpen] = useState(modern ? false : !isEmpty);
   const dragRef = useFolderDragSource(group.folder.id);
   const { ref: dropRef, isOver } = useFolderDropTarget({
     onConversation: (conversationId) => onDropConversation(group.folder, conversationId),
@@ -882,19 +903,11 @@ function FolderGroup({
               }
               {...contextMenuProps((x, y) => onMenu({ folder: group.folder, depth, x, y }))}
             >
-              {/* Chevron permanent, devant l'icône de dossier. Il ne
-                s'affichait qu'au survol, à sa place : au doigt, où rien ne
-                survole, on ne voyait jamais qu'un dossier se déplie, et à la
-                souris il fallait le chercher. Signalé en usage réel. La largeur
-                prise au nom est le prix de ce repère toujours visible. */}
-              <View className="flex-row items-center gap-1">
-                <Icon
-                  as={open || drafting ? ChevronDown : ChevronRight}
-                  size={14}
-                  className="text-muted-foreground"
-                />
-                <Icon as={FolderIcon} size={16} className="text-muted-foreground" />
-              </View>
+              {/* Ancienne navigation : chevron permanent devant l'icône de
+                dossier — il ne s'affichait qu'au survol, et au doigt on ne
+                voyait jamais qu'un dossier se déplie (signalé en usage réel).
+                Nouvelle navigation : voir `FolderToggleIcon`. */}
+              <FolderToggleIcon open={open || drafting} modern={modern} />
               <Text className={rowLabel(active)} numberOfLines={1}>
                 {group.folder.name}
               </Text>

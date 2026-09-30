@@ -16,7 +16,9 @@ import {
   SectionLabel,
   selected,
   UnreadBadge,
+  useSectionOpen,
 } from "@/features/navigation/SidebarSection";
+import { useSidebarLayout } from "@/features/navigation/use-sidebar-layout";
 import { useWorkspaceLists } from "@/features/workspace-list/hooks/use-workspace-lists";
 import {
   WorkspaceListDialog,
@@ -50,6 +52,9 @@ export function WorkspaceSidebarBody({
   pathname,
   onNavigate,
 }: WorkspaceSidebarBodyProps) {
+  const modern = useSidebarLayout() === "modern";
+  const [foldersOpen, toggleFolders] = useSectionOpen("folders");
+  const [conversationsOpen, toggleConversations] = useSectionOpen("conversations");
   const groups = useGroups(workspaceId);
   const folders = useWorkspaceFolders(workspaceId);
   const lists = useWorkspaceLists(workspaceId);
@@ -81,7 +86,10 @@ export function WorkspaceSidebarBody({
 
   return (
     <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
-      <SectionLabel action={{ label: "Créer un dossier", onPress: createFolder }}>
+      <SectionLabel
+        action={{ label: "Créer un dossier", onPress: createFolder }}
+        {...(modern ? { collapse: { open: foldersOpen, onToggle: toggleFolders } } : {})}
+      >
         Dossiers
       </SectionLabel>
 
@@ -102,21 +110,29 @@ export function WorkspaceSidebarBody({
         </Button>
       ) : null}
 
-      <WorkspaceFolderTree
-        nodes={folders.data ?? []}
-        groups={groups.data ?? []}
-        lists={lists.data ?? []}
-        onEdit={setEditing}
-        renderGroup={renderGroup}
-        renderList={renderList}
-        onNewConversation={setCreatingIn}
-        onNewList={(folderId) => setListDialog({ kind: "create", workspaceId, folderId })}
-      />
+      {!modern || foldersOpen ? (
+        <WorkspaceFolderTree
+          nodes={folders.data ?? []}
+          groups={groups.data ?? []}
+          lists={lists.data ?? []}
+          onEdit={setEditing}
+          renderGroup={renderGroup}
+          renderList={renderList}
+          onNewConversation={setCreatingIn}
+          onNewList={(folderId) => setListDialog({ kind: "create", workspaceId, folderId })}
+        />
+      ) : null}
 
       {/* Pas de « + », comme dans l'espace personnel : une liste partagée naît
           d'un dossier (« Nouvelle todoliste ») ou d'une proposition de
           Jean-Claude dans une conversation. */}
-      <SectionLabel>Conversations et tâches</SectionLabel>
+      <SectionLabel
+        {...(modern
+          ? { collapse: { open: conversationsOpen, onToggle: toggleConversations } }
+          : {})}
+      >
+        Conversations et tâches
+      </SectionLabel>
 
       {/* Un 4xx dit pourquoi la conversion a été refusée, dans un message
           écrit pour l'utilisateur ; au-delà, message fixe. */}
@@ -134,12 +150,16 @@ export function WorkspaceSidebarBody({
         </Text>
       ) : null}
 
-      {groups.data?.map((group) => (
-        <View key={group.id}>{renderGroup(group)}</View>
-      ))}
-      {lists.data?.map((list) => (
-        <View key={list.id}>{renderList(list)}</View>
-      ))}
+      {!modern || conversationsOpen ? (
+        <>
+          {groups.data?.map((group) => (
+            <View key={group.id}>{renderGroup(group)}</View>
+          ))}
+          {lists.data?.map((list) => (
+            <View key={list.id}>{renderList(list)}</View>
+          ))}
+        </>
+      ) : null}
 
       <WorkspaceListDialog
         target={listDialog}
