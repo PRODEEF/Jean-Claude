@@ -64,10 +64,12 @@ import {
   contextMenuProps,
   FolderToggleIcon,
   NewConversationRow,
+  RECENT_PAGE_SIZE,
   RowMenuButton,
   rowLabel,
   SectionLabel,
   selected,
+  ShowMoreRow,
   UnreadBadge,
   useSectionOpen,
 } from "./SidebarSection";
@@ -126,6 +128,7 @@ export function AppSidebar({
   const [profileMenu, setProfileMenu] = useState<{ x: number; y: number } | null>(null);
   const [foldersOpen, toggleFolders] = useSectionOpen("folders");
   const [conversationsOpen, toggleConversations] = useSectionOpen("conversations");
+  const [recentLimit, setRecentLimit] = useState(RECENT_PAGE_SIZE);
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
@@ -495,11 +498,14 @@ export function AppSidebar({
               ? { collapse: { open: conversationsOpen, onToggle: toggleConversations } }
               : {})}
           >
-            Conversations et tâches
+            {modern ? "Récents" : "Conversations et tâches"}
           </SectionLabel>
 
+          {/* Tranche prise dans ce qui est déjà chargé : les dossiers ont besoin
+              de toutes les conversations pour se remplir, un chargement paginé
+              ne ferait donc qu'un second appel pour les mêmes données. */}
           {(!modern || conversationsOpen) &&
-            all.map((conversation) =>
+            (modern ? all.slice(0, recentLimit) : all).map((conversation) =>
               renaming?.id === conversation.id ? (
                 <ConversationNameRow
                   key={conversation.id}
@@ -516,6 +522,10 @@ export function AppSidebar({
                 />
               ),
             )}
+
+          {modern && conversationsOpen && all.length > recentLimit ? (
+            <ShowMoreRow onPress={() => setRecentLimit((limit) => limit + RECENT_PAGE_SIZE)} />
+          ) : null}
         </ScrollView>
       )}
 

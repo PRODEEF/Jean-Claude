@@ -88,6 +88,24 @@ export function SectionLabel({
   );
 }
 
+/**
+ * Conversations affichées d'emblée dans « Récents », puis à chaque « Afficher
+ * plus » — nouvelle navigation uniquement. Au-delà d'une vingtaine, la section
+ * repousse le pied de barre sans rien apporter : on y cherche une conversation
+ * récente, les autres se retrouvent par la recherche.
+ */
+export const RECENT_PAGE_SIZE = 20;
+
+/** Dévoile la tranche suivante de « Récents ». */
+export function ShowMoreRow({ onPress }: { onPress: () => void }) {
+  return (
+    <Button variant="ghost" size="sm" onPress={onPress} className="justify-start gap-2 px-2">
+      <Icon as={Plus} size={14} className="text-muted-foreground" />
+      <Text className="text-xs font-normal text-muted-foreground">Afficher plus</Text>
+    </Button>
+  );
+}
+
 const SECTION_STORAGE_PREFIX = "jc.sidebar-section.";
 
 /**
