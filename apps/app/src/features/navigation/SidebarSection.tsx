@@ -34,9 +34,11 @@ export function selected(base: string, active: boolean): string {
 }
 
 /**
- * Libellé d'une rangée de la barre : gris tant que la sélection est ailleurs,
- * pour que l'œil trouve d'un coup la branche ouverte au milieu de
- * l'arborescence. Dossiers et conversations suivent la même règle.
+ * Libellé d'une rangée de la barre — dossier, conversation ou liste.
+ *
+ * Couleur de texte pleine, sélectionné ou non : en gris, les noms se lisaient
+ * mal, surtout en thème sombre (signalé en usage réel). La rangée ouverte se
+ * distingue par sa graisse et, pour une conversation, par son fond.
  *
  * `font-normal` est explicite et non omis : `Button` publie `font-medium` par
  * son `TextClassContext`, dont toute rangée hériterait sinon — l'arborescence
@@ -45,7 +47,7 @@ export function selected(base: string, active: boolean): string {
 export function rowLabel(active: boolean): string {
   return active
     ? "flex-1 text-sm font-medium text-foreground"
-    : "flex-1 text-sm font-normal text-muted-foreground";
+    : "flex-1 text-sm font-normal text-foreground";
 }
 
 export function SectionLabel({
@@ -81,7 +83,9 @@ export function SectionLabel({
           />
         </Button>
       ) : (
-        <Text className="px-2 text-xs font-medium text-muted-foreground">{children}</Text>
+        // Plus grand que le nom des dossiers (`text-sm`) : c'est le titre de ce
+        // qui suit, il doit se lire au-dessus d'eux et non à côté.
+        <Text className="px-2 text-base font-medium text-muted-foreground">{children}</Text>
       )}
       {action ? <RowAction icon={Plus} label={action.label} onPress={action.onPress} /> : null}
     </View>

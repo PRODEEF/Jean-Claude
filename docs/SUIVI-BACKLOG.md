@@ -17,6 +17,12 @@ ni sur iOS et Android**.
 profil, sections Dossiers et Récents repliables, Récents limités à 20. Détail
 dans le tableau des points à tester (§4.3). L'ancienne navigation est inchangée.
 
+**L'ancienne navigation s'allège aussi.** Les dossiers y sont repliés par
+défaut, comme dans la nouvelle, et les titres « Dossiers » et « Conversations
+et tâches » passent au-dessus du nom des dossiers en taille de police.
+Dans les deux navigations, les noms des dossiers, conversations et listes
+passent du gris à la couleur de texte pleine, plus lisible en thème sombre.
+
 **Tout l'historique d'un fil est atteignable.** Au-delà des 50 derniers
 messages, « Afficher les messages précédents » en tête du fil charge la page
 d'avant. Un bouton plutôt qu'un chargement au défilement : sur web, la liste ne
