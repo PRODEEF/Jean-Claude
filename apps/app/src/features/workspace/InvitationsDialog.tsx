@@ -52,8 +52,8 @@ export function InvitationsDialog({ open, onClose }: InvitationsDialogProps) {
     <Modal
       open
       onClose={onClose}
-      title="Invitations"
-      description="Les espaces qui vous ont invité, y compris ceux auxquels vous avez déjà répondu."
+      title="Notifications"
+      description="Retrouvez ici les invitations et notifications de vos espaces collaboratifs."
       error={error}
       actions={[{ label: "Fermer", onPress: onClose }]}
     >

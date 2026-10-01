@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
-import { Folder as FolderIcon, ListChecks, MessagesSquare, Plus } from "lucide-react-native";
+import { ChevronDown, ChevronRight, Folder as FolderIcon, ListChecks, MessagesSquare, Plus } from "lucide-react-native";
 import type { FolderTreeNode, Group, WorkspaceTaskList } from "@jc/domain";
 import { CreateGroupDialog } from "@/features/group/CreateGroupDialog";
 import { GroupDropDialog, type GroupDrop } from "@/features/group/GroupDropDialog";
@@ -14,7 +14,6 @@ import {
   contextMenuProps,
   RowMenuButton,
   rowLabel,
-  SectionLabel,
   selected,
   UnreadBadge,
   useSectionOpen,
@@ -34,6 +33,7 @@ import {
 } from "./hooks/use-workspace-folders";
 import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
+import { ContextMenu } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { Text } from "@/shared/ui/text";
@@ -48,9 +48,9 @@ export type WorkspaceSidebarBodyProps = {
 /**
  * Un espace collaboratif, sous la section « Mes collaborations ».
  *
- * Même titre repliable que « Mes dossiers » : le nom de l'espace, puis ses
- * dossiers. Une conversation sans dossier reste ici, sous l'arborescence —
- * elle figure aussi dans « Récents ».
+ * Rangée au gabarit d'une conversation, pas un titre de section : texte
+ * courant, chevron à gauche. Une conversation sans dossier reste ici, sous
+ * l'arborescence — elle figure aussi dans « Récents ».
  */
 export function WorkspaceSidebarBody({
   workspaceId,
@@ -120,21 +120,20 @@ export function WorkspaceSidebarBody({
 
   return (
     <>
-      <SectionLabel
-        menu={{
-          label: `Actions pour ${workspaceName}`,
-          items: [
+      <View className="ml-4 border-l border-border pl-2">
+        <WorkspaceHeading
+          name={workspaceName}
+          open={open}
+          unread={unread}
+          onToggle={toggle}
+          menuItems={[
             { label: "Nouveau dossier", onPress: createFolder },
             { label: "Nouvelle conversation", onPress: () => startConversation(null) },
             { label: "Membres et invitations", onPress: () => onNavigate(membersHref) },
             { label: "Fichiers", onPress: () => onNavigate(filesHref) },
-          ],
-        }}
-        collapse={{ open, onToggle: toggle }}
-        unread={unread}
-      >
-        {workspaceName}
-      </SectionLabel>
+          ]}
+        />
+      </View>
 
       {/* Message fixe, et non `error.message` : une erreur brute peut porter
           des fragments de requête. */}
@@ -315,6 +314,64 @@ function WorkspaceFolderNameRow({
       </View>
       {create.isError ? (
         <Text className="text-xs text-destructive">Enregistrement impossible. Réessayez.</Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** Espace sous « Mes collaborations » : le gabarit d'une conversation, pas d'un titre. */
+function WorkspaceHeading({
+  name,
+  open,
+  unread,
+  onToggle,
+  menuItems,
+}: {
+  name: string;
+  open: boolean;
+  unread: number;
+  onToggle: () => void;
+  menuItems: { label: string; onPress: () => void }[];
+}) {
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const openMenu = (x: number, y: number) => setMenuAt({ x, y });
+
+  return (
+    <View className="group flex-row items-center rounded-md">
+      <Button
+        variant="ghost"
+        size="sm"
+        onPress={onToggle}
+        onLongPress={(event) => openMenu(event.nativeEvent.pageX, event.nativeEvent.pageY)}
+        {...contextMenuProps(openMenu)}
+        accessibilityLabel={open ? `Replier ${name}` : `Déplier ${name}`}
+        accessibilityState={{ expanded: open }}
+        className="h-auto min-w-0 flex-1 justify-start gap-1.5 px-2"
+      >
+        <Icon
+          as={open ? ChevronDown : ChevronRight}
+          size={12}
+          className="shrink-0 text-muted-foreground"
+        />
+        <Text className={rowLabel(false, unread > 0)} numberOfLines={1}>
+          {name}
+        </Text>
+      </Button>
+      {open ? null : <UnreadBadge count={unread} />}
+      <RowMenuButton label={`Actions pour ${name}`} onOpen={openMenu} />
+      {menuAt ? (
+        <ContextMenu
+          x={menuAt.x}
+          y={menuAt.y}
+          onClose={() => setMenuAt(null)}
+          items={menuItems.map((item) => ({
+            ...item,
+            onPress: () => {
+              setMenuAt(null);
+              item.onPress();
+            },
+          }))}
+        />
       ) : null}
     </View>
   );
