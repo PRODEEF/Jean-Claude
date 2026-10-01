@@ -6,6 +6,8 @@ import { Sparkles } from "lucide-react-native";
 import { spacing } from "@jc/design";
 import { api } from "@/shared/lib/api";
 import { Composer } from "@/features/conversation/Composer";
+import { HomeDashboard } from "@/features/home/HomeDashboard";
+import { useSidebarLayout } from "@/features/navigation/use-sidebar-layout";
 import { useAttachmentPicker } from "@/features/conversation/hooks/use-attachment-picker";
 import { useComposerAttachments } from "@/features/conversation/hooks/use-composer-attachments";
 import { Icon } from "@/shared/ui/icon";
@@ -34,6 +36,7 @@ export default function ChatHomeScreen() {
   const inputRef = useRef<TextInput>(null);
   const attachments = useComposerAttachments();
   const picker = useAttachmentPicker(attachments.add, inputRef);
+  const layout = useSidebarLayout();
 
   // La conversation naît sans qu'on demande où la ranger ; le message part
   // avec elle et s'envoie à l'ouverture du fil, ce qui évite d'inventer un
@@ -75,6 +78,46 @@ export default function ChatHomeScreen() {
     create.mutate({ content, attachmentIds });
   };
 
+  const composer = (
+    <Composer
+      value={draft}
+      onChangeText={setDraft}
+      onSubmit={start}
+      placeholder="Écrivez ce que vous avez en tête"
+      busy={create.isPending}
+      autoFocus
+      inputRef={inputRef}
+      attachments={attachments.items}
+      onRemoveAttachment={attachments.remove}
+      picker={picker}
+    />
+  );
+
+  const createError = create.error ? (
+    <Text className="text-center text-sm text-destructive">
+      La conversation n'a pas pu être créée. Réessayez dans un instant.
+    </Text>
+  ) : null;
+
+  // Variante Accueil (§4.3) : la même saisie, entourée de la journée. Pas
+  // quand on arrive d'un dossier vide — l'intention est déjà d'y écrire.
+  if (layout === "home" && !folderId) {
+    return (
+      <HomeDashboard
+        composer={
+          <>
+            {createError}
+            {composer}
+          </>
+        }
+        onStarter={(text) => {
+          setDraft(text);
+          inputRef.current?.focus();
+        }}
+      />
+    );
+  }
+
   return (
     <View className="flex-1 items-center justify-center gap-3 bg-background p-6">
       <View className="size-10 items-center justify-center rounded-lg bg-primary">
@@ -87,28 +130,11 @@ export default function ChatHomeScreen() {
           : "Qu'est-ce qu'on fait aujourd'hui ?"}
       </Text>
 
-      {create.error ? (
-        <Text className="text-center text-sm text-destructive">
-          La conversation n'a pas pu être créée. Réessayez dans un instant.
-        </Text>
-      ) : null}
+      {createError}
 
       {/* Bornée comme le fil : la même saisie ne doit pas s'étaler sur un écran
           large ici et rester en colonne là-bas. */}
-      <View style={styles.composer}>
-        <Composer
-          value={draft}
-          onChangeText={setDraft}
-          onSubmit={start}
-          placeholder="Écrivez ce que vous avez en tête"
-          busy={create.isPending}
-          autoFocus
-          inputRef={inputRef}
-          attachments={attachments.items}
-          onRemoveAttachment={attachments.remove}
-          picker={picker}
-        />
-      </View>
+      <View style={styles.composer}>{composer}</View>
 
       {/* Formulation neutre : la barre latérale est à gauche sur desktop mais
           en tiroir sur téléphone. */}

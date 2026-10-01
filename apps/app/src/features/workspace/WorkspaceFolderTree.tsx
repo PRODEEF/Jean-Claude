@@ -60,7 +60,9 @@ function FolderRow({
   const filed = props.groups.filter((group) => group.folderIds.includes(node.id));
   const filedLists = props.lists.filter((list) => list.folderId === node.id);
   const isEmpty = node.children.length === 0 && filed.length === 0 && filedLists.length === 0;
-  const modern = useSidebarLayout() === "modern";
+  // La variante Accueil ouvre la même barre, en tiroir : elle en reprend la
+  // présentation latérale, pensée sans bandeau au-dessus.
+  const modern = useSidebarLayout() !== "classic";
   // Replié par défaut, comme dans l'espace personnel.
   const [open, setOpen] = useState(false);
   const openMenu = (x: number, y: number) => setMenu({ folder: node, depth, x, y });

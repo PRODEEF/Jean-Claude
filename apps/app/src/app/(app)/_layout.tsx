@@ -7,6 +7,7 @@ import { AppSidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "@/features/nav
 import { useAssistantChannel } from "@/features/navigation/use-sidebar-data";
 import { useSidebarLayout } from "@/features/navigation/use-sidebar-layout";
 import { AppBanner } from "@/features/navigation/AppBanner";
+import { HomeTopBar } from "@/features/navigation/HomeTopBar";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { InvitationBanner } from "@/features/workspace/InvitationBanner";
@@ -42,10 +43,15 @@ export default function AppLayout() {
   // démonté, et les non-lus des groupes cesseraient d'avancer.
   useGroupMessageFeed();
 
+  const layout = useSidebarLayout();
+  // Variante Accueil : la barre n'est jamais fixe, même sur desktop. Elle
+  // s'ouvre en tiroir par-dessus le contenu, le temps de choisir un dossier.
+  const docked = expanded && layout !== "home";
+
   // `null` = l'utilisateur n'a pas encore tranché : la barre suit alors la
   // taille d'écran, ouverte sur desktop et fermée sur téléphone.
   const [preference, setPreference] = useState<boolean | null>(null);
-  const visible = preference ?? expanded;
+  const visible = preference ?? docked;
 
   // La largeur vit ici et non dans la barre : celle-ci est démontée à chaque
   // repli, et l'ajustement de l'utilisateur serait perdu au passage. 20 % de
@@ -56,20 +62,23 @@ export default function AppLayout() {
     Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(windowWidth * 0.2))),
   );
 
-  // Sans bannière, la nouvelle navigation porte elle-même le bouton de repli ;
-  // le tiroir n'a alors plus 56 pt de bandeau à laisser au-dessus de lui.
-  const withBanner = useSidebarLayout() === "classic";
+  // Sans bannière, la navigation latérale porte elle-même le bouton de repli ;
+  // le tiroir n'a alors plus 56 pt de bandeau à laisser au-dessus de lui. La
+  // barre d'onglets de la variante Accueil, elle, passe sous le tiroir comme
+  // le reste du contenu.
+  const withBanner = layout === "classic";
   const bannerHeight = withBanner ? 56 : 0;
 
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
       {withBanner ? <AppBanner onToggleSidebar={() => setPreference(!visible)} /> : null}
+      {layout === "home" ? <HomeTopBar onOpenNavigation={() => setPreference(true)} /> : null}
       <InvitationBanner />
 
       <View className="flex-1 flex-row">
         {/* Le tiroir ne reçoit pas `onResize` : superposé au contenu et refermé
             à la première navigation, il n'a pas de largeur à négocier. */}
-        {expanded && visible ? (
+        {docked && visible ? (
           <AppSidebar
             width={sidebarWidth}
             onResize={setSidebarWidth}
@@ -81,7 +90,7 @@ export default function AppLayout() {
 
           {/* Seul moyen de rouvrir la barre une fois masquée, faute de bannière :
               posé en haut à gauche du contenu, là où Claude le place (§4.2). */}
-          {!withBanner && !visible ? (
+          {layout === "modern" && !visible ? (
             <View className="absolute left-2 top-2">
               <Button
                 variant="ghost"
@@ -100,7 +109,7 @@ export default function AppLayout() {
       {/* En deçà du point de rupture, la barre passe au-dessus du contenu
           plutôt que de le comprimer : à cette largeur, la partager laisserait
           les deux illisibles. */}
-      {!expanded && visible ? (
+      {!docked && visible ? (
         <View
           className="absolute inset-0 flex-row"
           style={{ paddingTop: insets.top + bannerHeight }}
