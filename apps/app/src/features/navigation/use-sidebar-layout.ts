@@ -2,16 +2,28 @@ import { useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /**
- * Deux présentations de la barre latérale, basculables à tout moment.
+ * Trois présentations de la navigation, basculables à tout moment.
  *
  * `classic` : bannière en haut, raccourcis en pied de barre.
  * `modern` : pas de bannière — l'en-tête de la barre porte le canal, les
  * raccourcis et le sélecteur d'espace, le pied porte le profil, comme Claude.
+ * `home` : pas de barre latérale permanente — une barre d'onglets en haut, et
+ * un accueil qui montre la journée (rendez-vous, listes, conversations à
+ * reprendre) au lieu d'une page vide. L'arborescence reste à un geste, en
+ * tiroir. Sur le modèle de l'accueil de Notion et de la vue Aujourd'hui de
+ * Things 3 et Todoist (§4.2).
  *
- * Les deux coexistent le temps de les comparer à l'usage (§4.3) ; la perdante
- * sera retirée du code.
+ * Les trois coexistent le temps de les comparer à l'usage (§4.3) ; les
+ * perdantes seront retirées du code.
  */
-export type SidebarLayout = "classic" | "modern";
+export type SidebarLayout = "classic" | "modern" | "home";
+
+/** Libellés présentés à l'utilisateur, dans l'ordre où les variantes sont nées. */
+export const SIDEBAR_LAYOUTS: { value: SidebarLayout; label: string }[] = [
+  { value: "classic", label: "Classique" },
+  { value: "modern", label: "Latérale" },
+  { value: "home", label: "Accueil" },
+];
 
 const STORAGE_KEY = "jc.sidebar-layout";
 
@@ -35,7 +47,8 @@ function hydrate() {
   hydrated = true;
   AsyncStorage.getItem(STORAGE_KEY)
     .then((stored) => {
-      if (stored === "classic" || stored === "modern") publish(stored);
+      const known = SIDEBAR_LAYOUTS.find((layout) => layout.value === stored);
+      if (known) publish(known.value);
     })
     // Stockage indisponible (navigation privée) : on reste sur la barre par défaut.
     .catch(() => undefined);
@@ -52,10 +65,6 @@ function subscribe(listener: () => void) {
 export function setSidebarLayout(next: SidebarLayout) {
   publish(next);
   AsyncStorage.setItem(STORAGE_KEY, next).catch(() => undefined);
-}
-
-export function toggleSidebarLayout() {
-  setSidebarLayout(current === "classic" ? "modern" : "classic");
 }
 
 export function useSidebarLayout(): SidebarLayout {

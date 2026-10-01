@@ -54,7 +54,9 @@ export function WorkspaceSidebarBody({
   pathname,
   onNavigate,
 }: WorkspaceSidebarBodyProps) {
-  const modern = useSidebarLayout() === "modern";
+  // La variante Accueil ouvre la même barre, en tiroir : elle en reprend la
+  // présentation latérale, pensée sans bandeau au-dessus.
+  const modern = useSidebarLayout() !== "classic";
   const [foldersOpen, toggleFolders] = useSectionOpen("folders");
   const [conversationsOpen, toggleConversations] = useSectionOpen("conversations");
   const [recentLimit, setRecentLimit] = useState(RECENT_PAGE_SIZE);

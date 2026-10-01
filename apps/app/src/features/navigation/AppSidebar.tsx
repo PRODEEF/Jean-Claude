@@ -73,7 +73,7 @@ import {
   UnreadBadge,
   useSectionOpen,
 } from "./SidebarSection";
-import { toggleSidebarLayout, useSidebarLayout } from "./use-sidebar-layout";
+import { setSidebarLayout, SIDEBAR_LAYOUTS, useSidebarLayout } from "./use-sidebar-layout";
 import { UTILITY_LINKS } from "./utility-links";
 
 /** Largeur de la barre latérale avant tout ajustement — les 256 pt de `w-64`. */
@@ -120,12 +120,17 @@ export function AppSidebar({
   onResize,
   onCollapse,
 }: AppSidebarProps) {
-  const modern = useSidebarLayout() === "modern";
+  // La variante Accueil ouvre la même barre, en tiroir : elle en reprend la
+  // présentation latérale, pensée sans bandeau au-dessus.
+  const layout = useSidebarLayout();
+  const modern = layout !== "classic";
   const { displayName, initials } = useCurrentUser();
   const { signOut } = useAuth();
   const [searching, setSearching] = useState(false);
   /** Point d'ouverture du menu du profil, `null` quand il est fermé. */
   const [profileMenu, setProfileMenu] = useState<{ x: number; y: number } | null>(null);
+  /** Point d'ouverture du choix de navigation (ancienne barre), `null` s'il est fermé. */
+  const [layoutMenu, setLayoutMenu] = useState<{ x: number; y: number } | null>(null);
   const [foldersOpen, toggleFolders] = useSectionOpen("folders");
   const [conversationsOpen, toggleConversations] = useSectionOpen("conversations");
   const [recentLimit, setRecentLimit] = useState(RECENT_PAGE_SIZE);
@@ -163,6 +168,13 @@ export function AppSidebar({
   const activeWorkspaceId = useActiveWorkspaceId(pathname);
   const hasFiles = useHasWorkspaceFiles(activeWorkspaceId);
   const filesHref = `/workspace/${activeWorkspaceId ?? ""}/files`;
+
+  // Les variantes comparées au §4.3, sauf celle déjà affichée : se proposer
+  // de passer à la navigation qu'on a sous les yeux n'aurait pas de sens.
+  const otherLayouts = SIDEBAR_LAYOUTS.filter((item) => item.value !== layout).map((item) => ({
+    label: `Navigation ${item.label.toLowerCase()}`,
+    onPress: () => setSidebarLayout(item.value),
+  }));
 
   const go = (href: string) => {
     router.push(href as never);
@@ -356,37 +368,43 @@ export function AppSidebar({
                 Nouvelle conversation
               </Text>
             </Button>
-            <NavRow
-              icon={MessageCircle}
-              iconClassName="text-foreground"
-              label={
-                <>
-                  <Text className="font-semibold text-foreground">{assistantName}</Text>
-                  {" - Canal permanent"}
-                </>
-              }
-              accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
-              active={pathname === "/assistant"}
-              onPress={() => go("/assistant")}
-              trailing={
-                <UnreadBadge
-                  count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
-                  pendingQuestion={
-                    pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
+            {/* La variante Accueil porte déjà ces destinations en onglets : les
+                répéter dans son tiroir ne ferait qu'allonger la liste. */}
+            {layout === "home" ? null : (
+              <>
+                <NavRow
+                  icon={MessageCircle}
+                  iconClassName="text-foreground"
+                  label={
+                    <>
+                      <Text className="font-semibold text-foreground">{assistantName}</Text>
+                      {" - Canal permanent"}
+                    </>
+                  }
+                  accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+                  active={pathname === "/assistant"}
+                  onPress={() => go("/assistant")}
+                  trailing={
+                    <UnreadBadge
+                      count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
+                      pendingQuestion={
+                        pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
+                      }
+                    />
                   }
                 />
-              }
-            />
-            {MODERN_SHORTCUTS.map((link) => (
-              <NavRow
-                key={link.href}
-                icon={link.icon}
-                iconClassName="text-foreground"
-                label={link.label}
-                active={pathname === link.href}
-                onPress={() => go(link.href)}
-              />
-            ))}
+                {MODERN_SHORTCUTS.map((link) => (
+                  <NavRow
+                    key={link.href}
+                    icon={link.icon}
+                    iconClassName="text-foreground"
+                    label={link.label}
+                    active={pathname === link.href}
+                    onPress={() => go(link.href)}
+                  />
+                ))}
+              </>
+            )}
           </View>
 
           {workspaceLinks}
@@ -575,12 +593,19 @@ export function AppSidebar({
               que la revue n'existe que pour l'équipe. */}
           {adminLink}
 
-          <NavRow
-            icon={ArrowLeftRight}
-            label="Essayer la nouvelle navigation"
-            active={false}
-            onPress={toggleSidebarLayout}
-          />
+          <Button
+            variant="ghost"
+            onPress={(event) =>
+              setLayoutMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+            }
+            accessibilityLabel="Essayer une autre navigation"
+            className="justify-start gap-3 px-2"
+          >
+            <Icon as={ArrowLeftRight} size={16} className="text-muted-foreground" />
+            <Text className="flex-1 text-sm font-normal text-foreground" numberOfLines={1}>
+              Essayer une autre navigation
+            </Text>
+          </Button>
         </View>
       )}
 
@@ -677,12 +702,26 @@ export function AppSidebar({
             { label: "Signaler un problème", onPress: () => setFeedbackOpen(true) },
             // La revue des signalements n'existe que pour l'équipe.
             ...(isAdmin ? [{ label: "Retours des testeurs", onPress: () => go("/feedback") }] : []),
-            { label: "Revenir à l'ancienne navigation", onPress: toggleSidebarLayout },
+            ...otherLayouts,
             { label: "Se déconnecter", onPress: () => void signOut() },
           ].map((item) => ({
             ...item,
             onPress: () => {
               setProfileMenu(null);
+              item.onPress();
+            },
+          }))}
+        />
+      ) : null}
+      {layoutMenu ? (
+        <ContextMenu
+          x={layoutMenu.x}
+          y={layoutMenu.y}
+          onClose={() => setLayoutMenu(null)}
+          items={otherLayouts.map((item) => ({
+            ...item,
+            onPress: () => {
+              setLayoutMenu(null);
               item.onPress();
             },
           }))}
@@ -838,17 +877,15 @@ function FolderGroup({
   /** Dossier lâché sur celui-ci : `(cible, déplacé)`. */
   onDropFolder: (targetId: string, movedId: string) => void;
 }) {
-  const isEmpty = isFolderEmpty(group);
-  const modern = useSidebarLayout() === "modern";
+  const modern = useSidebarLayout() !== "classic";
   // Un dossier est « courant » quand la conversation ouverte est chez lui ou
   // chez l'un de ses descendants : c'est la seule sélection qu'un dossier
   // puisse avoir, n'étant pas lui-même une destination.
   const active = containsPath(group, pathname);
-  // Un dossier vide s'ouvre sur la seule mention « Vide » : le déplier par
-  // défaut allongerait la barre sans rien apprendre. La nouvelle navigation
-  // les replie tous : la liste des dossiers se lit d'un coup d'œil, comme les
-  // projets d'une barre Claude, et se déplie à la demande.
-  const [open, setOpen] = useState(modern ? false : !isEmpty);
+  // Replié par défaut, dans les deux navigations : la liste des dossiers se
+  // lit d'un coup d'œil et se déplie à la demande, au lieu d'allonger la barre
+  // de tout ce qu'ils contiennent.
+  const [open, setOpen] = useState(false);
   const dragRef = useFolderDragSource(group.folder.id);
   const { ref: dropRef, isOver } = useFolderDropTarget({
     onConversation: (conversationId) => onDropConversation(group.folder, conversationId),

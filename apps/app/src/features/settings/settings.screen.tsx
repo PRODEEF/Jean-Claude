@@ -11,7 +11,11 @@ import {
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
 import { ASSISTANT_MODELS, toCatalogueModel, type AssistantScope, type Theme } from "@jc/domain";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
-import { setSidebarLayout, useSidebarLayout } from "@/features/navigation/use-sidebar-layout";
+import {
+  setSidebarLayout,
+  SIDEBAR_LAYOUTS,
+  useSidebarLayout,
+} from "@/features/navigation/use-sidebar-layout";
 import { AccountDeleteDialog } from "@/features/settings/AccountDeleteDialog";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useCurrentUser } from "@/shared/hooks/use-current-user";
@@ -302,13 +306,13 @@ export function SettingsScreen() {
           </SettingRow>
 
           <SettingRow
-            label="Nouvelle navigation"
-            hint="Sans bandeau en haut : raccourcis en tête de la barre latérale, profil en bas. Mémorisé sur cet appareil."
+            label="Navigation"
+            hint="Classique : bandeau en haut. Latérale : tout dans la barre de gauche. Accueil : onglets en haut et une page d'accueil qui résume votre journée. Mémorisé sur cet appareil."
           >
-            <Switch
-              value={sidebarLayout === "modern"}
-              onValueChange={(value) => setSidebarLayout(value ? "modern" : "classic")}
-              accessibilityLabel="Nouvelle navigation"
+            <SegmentedControl
+              options={SIDEBAR_LAYOUTS}
+              value={sidebarLayout}
+              onChange={setSidebarLayout}
             />
           </SettingRow>
 
