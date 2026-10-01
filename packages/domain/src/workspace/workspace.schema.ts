@@ -68,11 +68,21 @@ export const workspaceInvitationSchema = z.object({
 });
 export type WorkspaceInvitation = z.infer<typeof workspaceInvitationSchema>;
 
-/** Invitation en attente, vue par la personne invitée. */
+/** Réponse déjà donnée, ou encore en attente. */
+export const receivedInvitationStatusSchema = z.enum(["pending", "accepted", "declined"]);
+export type ReceivedInvitationStatus = z.infer<typeof receivedInvitationStatusSchema>;
+
+/**
+ * Invitation adressée à la personne connectée, y compris celles déjà
+ * acceptées ou refusées : l'historique reste lisible après la réponse.
+ */
 export const receivedInvitationSchema = z.object({
   id: uuidSchema,
   workspaceId: uuidSchema,
   workspaceName: z.string(),
   createdAt: isoDateTimeSchema,
+  status: receivedInvitationStatusSchema,
+  /** `null` tant que l'invitation attend une réponse. */
+  answeredAt: isoDateTimeSchema.nullable(),
 });
 export type ReceivedInvitation = z.infer<typeof receivedInvitationSchema>;

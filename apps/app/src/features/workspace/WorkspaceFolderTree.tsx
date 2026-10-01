@@ -8,9 +8,11 @@ import {
   NewConversationRow,
   RowMenuButton,
   rowLabel,
+  UnreadBadge,
 } from "@/features/navigation/SidebarSection";
-import { useSidebarLayout } from "@/features/navigation/use-sidebar-layout";
+import { useGroupDropTarget } from "@/features/navigation/sidebar-drag";
 import { Button } from "@/shared/ui/button";
+import { cn } from "@/shared/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { Text } from "@/shared/ui/text";
 import type { WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
@@ -28,6 +30,9 @@ export type WorkspaceFolderTreeProps = {
   onNewConversation: (folderId: string) => void;
   /** Crée une liste partagée déjà rangée dans ce dossier. */
   onNewList: (folderId: string) => void;
+  /** Conversation de cet espace lâchée sur le dossier. */
+  onDropGroup: (folder: FolderTreeNode, groupId: string) => void;
+  pathname: string;
 };
 
 /**
@@ -51,6 +56,25 @@ export function WorkspaceFolderTree(props: WorkspaceFolderTreeProps) {
  * gestes — clic droit, « … » au survol, appui long au doigt. Les deux barres
  * doivent se manier pareil.
  */
+/** Non-lus du dossier et de ses sous-dossiers, sans compter deux fois la même conversation. */
+function unreadInFolder(node: FolderTreeNode, groups: Group[], pathname: string): number {
+  const seen = new Set<string>();
+
+  const walk = (current: FolderTreeNode): number => {
+    let sum = 0;
+    for (const group of groups) {
+      if (!group.folderIds.includes(current.id) || seen.has(group.id)) continue;
+      seen.add(group.id);
+      if (pathname === `/workspace/${group.workspaceId}/group/${group.id}`) continue;
+      sum += group.unreadCount;
+    }
+    for (const child of current.children) sum += walk(child);
+    return sum;
+  };
+
+  return walk(node);
+}
+
 function FolderRow({
   node,
   depth,
@@ -60,16 +84,19 @@ function FolderRow({
   const filed = props.groups.filter((group) => group.folderIds.includes(node.id));
   const filedLists = props.lists.filter((list) => list.folderId === node.id);
   const isEmpty = node.children.length === 0 && filed.length === 0 && filedLists.length === 0;
-  // La variante Accueil ouvre la même barre, en tiroir : elle en reprend la
-  // présentation latérale, pensée sans bandeau au-dessus.
-  const modern = useSidebarLayout() !== "classic";
   // Replié par défaut, comme dans l'espace personnel.
   const [open, setOpen] = useState(false);
   const openMenu = (x: number, y: number) => setMenu({ folder: node, depth, x, y });
+  const { ref: dropRef, isOver } = useGroupDropTarget((groupId) =>
+    props.onDropGroup(node, groupId),
+  );
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <View className="group flex-row items-center rounded-md">
+      <View
+        ref={dropRef}
+        className={cn("group flex-row items-center rounded-md", isOver && "bg-accent")}
+      >
         <CollapsibleTrigger asChild>
           <Button
             variant="ghost"
@@ -77,13 +104,16 @@ function FolderRow({
             onLongPress={(event) => openMenu(event.nativeEvent.pageX, event.nativeEvent.pageY)}
             {...contextMenuProps(openMenu)}
           >
-            <FolderToggleIcon open={open} modern={modern} />
+            <FolderToggleIcon open={open} />
             <Text className={rowLabel(false)} numberOfLines={1}>
               {node.name}
             </Text>
           </Button>
         </CollapsibleTrigger>
 
+        {open ? null : (
+          <UnreadBadge count={unreadInFolder(node, props.groups, props.pathname)} />
+        )}
         <RowMenuButton label={`Actions pour ${node.name}`} onOpen={openMenu} />
       </View>
 

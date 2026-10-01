@@ -9,7 +9,13 @@ import type {
   WorkspaceRole,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
+import { logger } from "../../core/logger.js";
+import type { InvitationMail } from "../../core/mail/invitation-mail.js";
 import type { IWorkspaceRepository } from "./workspace.repository.interface.js";
+
+export type InvitationMailer = {
+  sendInvitation(mail: InvitationMail): Promise<void>;
+};
 
 /**
  * Espaces d'équipe : qui en fait partie, qui y entre, qui le gère.
@@ -20,7 +26,10 @@ import type { IWorkspaceRepository } from "./workspace.repository.interface.js";
  * voit pas — un espace garde toujours au moins un admin.
  */
 export class WorkspaceService {
-  constructor(private readonly workspaces: IWorkspaceRepository) {}
+  constructor(
+    private readonly workspaces: IWorkspaceRepository,
+    private readonly mailer: InvitationMailer = { sendInvitation: async () => undefined },
+  ) {}
 
   list(userId: string, accessToken: string): Promise<Workspace[]> {
     return this.workspaces.findMine(userId, accessToken);
@@ -110,7 +119,7 @@ export class WorkspaceService {
     input: InviteToWorkspace,
     accessToken: string,
   ): Promise<WorkspaceInvitation> {
-    await this.requireAdmin(id, userId, accessToken);
+    const workspace = await this.requireAdmin(id, userId, accessToken);
 
     const members = await this.workspaces.findMembers(id, accessToken);
     if (members.some((member) => member.email?.toLowerCase() === input.email)) {
@@ -119,6 +128,18 @@ export class WorkspaceService {
 
     const invitation = await this.workspaces.createInvitation(id, userId, input.email, accessToken);
     if (!invitation) throw httpError(409, "Une invitation attend déjà cette adresse.");
+
+    // L'invitation est déjà visible dans l'application. L'e-mail s'y ajoute ;
+    // s'il échoue, la personne la verra quand même en se connectant.
+    try {
+      await this.mailer.sendInvitation({
+        to: invitation.email,
+        workspaceName: workspace.name,
+      });
+    } catch (cause) {
+      logger.error("workspace.invite", "L'e-mail d'invitation n'a pas pu partir.", cause);
+    }
+
     return invitation;
   }
 

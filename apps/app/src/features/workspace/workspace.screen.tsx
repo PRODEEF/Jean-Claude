@@ -93,11 +93,9 @@ export function WorkspaceScreen() {
 /**
  * Les étapes d'un espace neuf, tant qu'il n'a aucune conversation.
  *
- * Une conversation exige une autre personne, et l'invitation ne s'accepte que
- * plus tard, hors de l'application : sans ce fil, la première visite tombait
- * sur une liste de membres réduite à soi-même et un bouton qui renvoyait
- * dessus. Un simple membre n'invite personne, il n'a donc que la dernière
- * étape.
+ * L'invitation ne s'accepte que plus tard, hors de l'application. La
+ * conversation, elle, peut démarrer seul : inutile d'attendre une réponse.
+ * Un simple membre n'invite personne, il n'a donc que la dernière étape.
  */
 function GettingStarted({ workspace }: { workspace: Workspace }) {
   const router = useRouter();
@@ -134,11 +132,11 @@ function GettingStarted({ workspace }: { workspace: Workspace }) {
         <Step
           done={false}
           title="Lancez la première conversation"
-          detail="Une conversation réunit les membres que vous choisissez ; Jean-Claude s'y joint."
+          detail="Vous pouvez la démarrer seul. Jean-Claude s'y joint."
         />
       </View>
       <View className="items-start">
-        <Button disabled={!joined} onPress={() => setCreating(true)}>
+        <Button onPress={() => setCreating(true)}>
           <Text>Démarrer une conversation</Text>
         </Button>
       </View>

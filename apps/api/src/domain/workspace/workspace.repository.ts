@@ -33,6 +33,8 @@ type ReceivedInvitationRow = {
   id: string;
   workspace_id: string;
   created_at: string;
+  accepted_at: string | null;
+  declined_at: string | null;
   workspaces: { name: string } | null;
 };
 
@@ -70,17 +72,21 @@ function toInvitation(row: InvitationRow): WorkspaceInvitation {
 
 function toReceivedInvitation(row: ReceivedInvitationRow): ReceivedInvitation | null {
   if (!row.workspaces) return null;
+  const status = row.accepted_at ? "accepted" : row.declined_at ? "declined" : "pending";
   return {
     id: row.id,
     workspaceId: row.workspace_id,
     workspaceName: row.workspaces.name,
     createdAt: row.created_at,
+    status,
+    answeredAt: row.accepted_at ?? row.declined_at,
   };
 }
 
 const MEMBERSHIP_COLUMNS = "role, workspaces(id, name, created_at, workspace_members(count))";
 const INVITATION_COLUMNS = "id, workspace_id, email, created_at";
-const RECEIVED_INVITATION_COLUMNS = "id, workspace_id, created_at, workspaces(name)";
+const RECEIVED_INVITATION_COLUMNS =
+  "id, workspace_id, created_at, accepted_at, declined_at, workspaces(name)";
 
 export const workspaceRepository: IWorkspaceRepository = {
   async findMine(userId, accessToken) {
@@ -210,12 +216,12 @@ export const workspaceRepository: IWorkspaceRepository = {
   },
 
   async findReceivedInvitations(email, accessToken) {
+    // Toutes les invitations, pas seulement celles en attente : la fenêtre
+    // d'historique doit encore montrer un refus ou une acceptation.
     const { data, error } = await forUser(accessToken)
       .from("workspace_invitations")
       .select(RECEIVED_INVITATION_COLUMNS)
       .eq("email", email)
-      .is("accepted_at", null)
-      .is("declined_at", null)
       .order("created_at", { ascending: false });
 
     if (error) throw new Error(error.message);

@@ -41,8 +41,11 @@ export type Group = z.infer<typeof groupSchema>;
 export const createGroupSchema = z.object({
   workspaceId: uuidSchema,
   title: labelSchema,
-  /** Les autres membres ; le créateur est ajouté d'office. */
-  memberIds: z.array(uuidSchema).min(1, "Choisissez au moins une personne.").max(100),
+  /**
+   * Les autres membres ; le créateur est ajouté d'office. Vide : il discute
+   * seul en attendant que quelqu'un rejoigne l'espace.
+   */
+  memberIds: z.array(uuidSchema).max(100),
 });
 export type CreateGroup = z.infer<typeof createGroupSchema>;
 

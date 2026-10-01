@@ -36,6 +36,8 @@ function makeInvitation(overrides: Partial<ReceivedInvitation> = {}): ReceivedIn
     workspaceId: WORKSPACE_ID,
     workspaceName: "Association X",
     createdAt: "2026-09-29T08:00:00.000Z",
+    status: "pending",
+    answeredAt: null,
     ...overrides,
   };
 }
@@ -271,6 +273,41 @@ describe("WorkspaceService", () => {
         "chloe@x.fr",
         TOKEN,
       );
+    });
+
+    it("envoie un e-mail une fois l'invitation enregistrée", async () => {
+      const repo = asAdmin([ALICE, BRUNO], {
+        createInvitation: jest.fn().mockResolvedValue(invitation),
+      });
+      const sendInvitation = jest.fn().mockResolvedValue(undefined);
+
+      await new WorkspaceService(repo, { sendInvitation }).invite(
+        WORKSPACE_ID,
+        "alice",
+        { email: "chloe@x.fr" },
+        TOKEN,
+      );
+
+      expect(sendInvitation).toHaveBeenCalledWith({
+        to: "chloe@x.fr",
+        workspaceName: "Association X",
+      });
+    });
+
+    it("garde l'invitation si l'e-mail échoue", async () => {
+      const repo = asAdmin([ALICE], {
+        createInvitation: jest.fn().mockResolvedValue(invitation),
+      });
+      const sendInvitation = jest.fn().mockRejectedValue(new Error("resend"));
+
+      await expect(
+        new WorkspaceService(repo, { sendInvitation }).invite(
+          WORKSPACE_ID,
+          "alice",
+          { email: "chloe@x.fr" },
+          TOKEN,
+        ),
+      ).resolves.toEqual(invitation);
     });
 
     it("refuse d'inviter une adresse déjà membre, quelle que soit la casse enregistrée", async () => {

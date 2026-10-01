@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react-native";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useSidebarCollapsed } from "@/shared/providers/sidebar-chrome";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 /**
@@ -64,9 +65,18 @@ export type ScreenHeaderProps = {
  */
 export function ScreenHeader({ title, action, onBack }: ScreenHeaderProps) {
   const { palette } = useTheme();
+  const collapsed = useSidebarCollapsed();
 
   return (
-    <View style={[styles.header, { borderBottomColor: palette.border }]}>
+    <View
+      style={[
+        styles.header,
+        { borderBottomColor: palette.border },
+        // Le bouton qui rouvre la barre occupe le coin gauche : le titre
+        // commence à sa droite. 12 pt de marge, 40 pt de bouton, 8 pt d'air.
+        collapsed ? { paddingLeft: spacing.md + 40 + spacing.sm } : null,
+      ]}
+    >
       {/* Dans la rangée et non au-dessus : une seconde ligne rendrait la
           hauteur du bandeau dépendante de l'écran affiché. */}
       {onBack ? (

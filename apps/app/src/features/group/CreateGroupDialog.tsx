@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { View } from "react-native";
-import { useRouter } from "expo-router";
 import { Check } from "lucide-react-native";
 import type { Group, WorkspaceMember } from "@jc/domain";
 import {
@@ -37,7 +36,6 @@ function GroupForm({
   onClose: () => void;
   onCreated: (group: Group) => void;
 }) {
-  const router = useRouter();
   const { session } = useAuth();
   const members = useWorkspaceMembers(workspaceId);
   const create = useCreateGroup();
@@ -47,14 +45,12 @@ function GroupForm({
   // Le créateur est membre d'office : il n'a pas à se cocher lui-même.
   const others = (members.data ?? []).filter((member) => member.userId !== session?.user.id);
   const trimmed = title.trim();
-  const ready = trimmed.length > 0 && selected.length > 0 && !create.isPending;
+  const ready = trimmed.length > 0 && !create.isPending;
 
   const toggle = (userId: string) =>
     setSelected((current) =>
       current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId],
     );
-
-  const alone = !members.isLoading && others.length === 0;
 
   const submit = () => {
     if (!ready) return;
@@ -66,25 +62,14 @@ function GroupForm({
       open
       onClose={onClose}
       title="Nouvelle conversation"
-      description="Une conversation avec les personnes de l'espace que vous choisissez."
+      description="Vous pouvez la lancer seul, ou avec des personnes de l'espace."
       error={workspaceErrorMessage(
         create.error,
         "La conversation n'a pas pu être créée. Réessayez dans un instant.",
       )}
       actions={[
         { label: "Annuler", onPress: onClose, disabled: create.isPending },
-        alone
-          ? {
-              // Seul dans l'espace, on ne peut rien créer : le geste utile est
-              // d'inviter, et l'écran de l'espace est fait pour ça.
-              label: "Inviter quelqu'un",
-              variant: "default",
-              onPress: () => {
-                onClose();
-                router.push(`/workspace/${workspaceId}`);
-              },
-            }
-          : { label: "Créer", variant: "default", onPress: submit, disabled: !ready },
+        { label: "Créer", variant: "default", onPress: submit, disabled: !ready },
       ]}
     >
       <View className="gap-2">
@@ -103,8 +88,8 @@ function GroupForm({
         <Text className="text-sm font-medium">Avec qui</Text>
         {members.isLoading ? null : others.length === 0 ? (
           <Text className="text-sm italic text-muted-foreground">
-            Personne d'autre dans l'espace pour l'instant. Une conversation réunit au moins deux
-            personnes : invitez d'abord quelqu'un.
+            Personne d'autre dans l'espace pour l'instant. La conversation démarre avec vous
+            seul.
           </Text>
         ) : (
           <View className="overflow-hidden rounded-md border border-border">

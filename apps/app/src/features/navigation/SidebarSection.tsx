@@ -7,9 +7,11 @@ import {
   Folder as FolderIcon,
   MoreHorizontal,
   Plus,
+  type LucideIcon,
 } from "lucide-react-native";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
+import { ContextMenu } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 
@@ -42,44 +44,74 @@ export function selected(base: string, active: boolean): string {
  *
  * `font-normal` est explicite et non omis : `Button` publie `font-medium` par
  * son `TextClassContext`, dont toute rangée hériterait sinon — l'arborescence
- * entière paraissait alors sélectionnée.
+ * entière paraissait alors sélectionnée. Un non-lu passe en gras, en plus de
+ * la pastille : la graisse se lit même quand la pastille est hors champ.
  */
-export function rowLabel(active: boolean): string {
-  return active
-    ? "flex-1 text-sm font-medium text-foreground"
-    : "flex-1 text-sm font-normal text-foreground";
+export function rowLabel(active: boolean, unread = false): string {
+  let weight = "font-normal";
+  if (active) weight = "font-medium";
+  if (unread) weight = "font-bold";
+  return `flex-1 text-sm ${weight} text-foreground`;
 }
+
+export type SectionMenuItem = { label: string; onPress: () => void };
 
 export function SectionLabel({
   children,
+  icon,
   action,
+  menu,
   collapse,
+  unread = 0,
 }: {
   children: string;
+  /** Silhouette, horloge, etc. — à gauche du titre, avant le chevron. */
+  icon?: LucideIcon;
+  /** « + » toujours visible — « Mes dossiers » crée un dossier en dessous. */
   action?: { label: string; onPress: () => void };
+  /**
+   * « … » au survol, et le même menu au clic droit sur le titre.
+   * Absent pour « Récents », qui n'a pas ces actions.
+   */
+  menu?: { label: string; items: SectionMenuItem[] };
   /** Rend le titre repliable — nouvelle navigation uniquement. */
   collapse?: { open: boolean; onToggle: () => void };
+  /** Pastille de non-lu, à côté du titre. Absente à zéro. */
+  unread?: number;
 }) {
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const openMenu = (x: number, y: number) => setMenuAt({ x, y });
+
   return (
-    <View className="flex-row items-center justify-between pb-1 pt-3">
+    <View className="group flex-row items-center justify-between pb-1 pt-3">
       {collapse ? (
         // Le titre entier replie la section, comme les « Starred » et
         // « Recents » de Claude (§4.2). Le chevron reste visible : au doigt,
-        // rien d'autre ne dirait que le titre se touche.
+        // rien d'autre ne dirait que le titre se touche. L'appui long et le
+        // clic droit ouvrent le menu, sans replier.
         <Button
           variant="ghost"
           size="sm"
           onPress={collapse.onToggle}
+          onLongPress={
+            menu
+              ? (event) => openMenu(event.nativeEvent.pageX, event.nativeEvent.pageY)
+              : undefined
+          }
+          {...(menu ? contextMenuProps(openMenu) : {})}
           hitSlop={4}
           accessibilityLabel={collapse.open ? `Replier ${children}` : `Déplier ${children}`}
           accessibilityState={{ expanded: collapse.open }}
-          className="h-auto gap-1 px-2 py-1"
+          className="h-auto min-w-0 flex-1 justify-start gap-1.5 px-2 py-1"
         >
-          <Text className="text-xs font-medium text-muted-foreground">{children}</Text>
+          {icon ? <Icon as={icon} size={14} className="shrink-0 text-muted-foreground" /> : null}
+          <Text className="min-w-0 shrink text-xs font-medium text-muted-foreground" numberOfLines={1}>
+            {children}
+          </Text>
           <Icon
             as={collapse.open ? ChevronDown : ChevronRight}
             size={12}
-            className="text-muted-foreground"
+            className="shrink-0 text-muted-foreground"
           />
         </Button>
       ) : (
@@ -87,7 +119,40 @@ export function SectionLabel({
         // qui suit, il doit se lire au-dessus d'eux et non à côté.
         <Text className="px-2 text-base font-medium text-muted-foreground">{children}</Text>
       )}
-      {action ? <RowAction icon={Plus} label={action.label} onPress={action.onPress} /> : null}
+      {/* Même colonne que la pastille d'une conversation : à droite du titre,
+          juste avant le « + » ou le « … ». Masquée section ouverte — les
+          rangées portent alors la leur. */}
+      {collapse && !collapse.open ? <UnreadBadge count={unread} /> : null}
+      {action ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          onPress={action.onPress}
+          hitSlop={8}
+          accessibilityLabel={action.label}
+          className="size-8"
+        >
+          <Icon as={Plus} size={16} className="text-muted-foreground" />
+        </Button>
+      ) : null}
+      {menu ? <RowMenuButton label={menu.label} onOpen={openMenu} /> : null}
+      {/* « Récents » n'a ni « + » ni « … ». Ce vide garde la pastille dans la
+          même colonne que celles des conversations, qui précèdent leur menu. */}
+      {collapse && !action && !menu && Platform.OS === "web" ? <View className="size-8" /> : null}
+      {menu && menuAt ? (
+        <ContextMenu
+          x={menuAt.x}
+          y={menuAt.y}
+          onClose={() => setMenuAt(null)}
+          items={menu.items.map((item) => ({
+            ...item,
+            onPress: () => {
+              setMenuAt(null);
+              item.onPress();
+            },
+          }))}
+        />
+      ) : null}
     </View>
   );
 }
@@ -117,7 +182,7 @@ const SECTION_STORAGE_PREFIX = "jc.sidebar-section.";
  * repliée. Mémorisé sur l'appareil, comme le choix de navigation : c'est une
  * préférence d'affichage, sans valeur d'un appareil à l'autre.
  */
-export function useSectionOpen(section: "folders" | "conversations"): [boolean, () => void] {
+export function useSectionOpen(section: string): [boolean, () => void] {
   const [open, setOpen] = useState(true);
   const key = `${SECTION_STORAGE_PREFIX}${section}`;
 
@@ -151,23 +216,13 @@ function canHover(): boolean {
 /**
  * Icône d'une rangée de dossier.
  *
- * Ancienne navigation : chevron permanent devant l'icône de dossier.
- * Nouvelle navigation : l'icône de dossier seule, que le chevron remplace au
- * survol — la rangée gagne la largeur du chevron. Sans survol possible, le
- * chevron seul, en permanence : c'est lui qui dit qu'un dossier se déplie, le
- * problème déjà signalé en usage réel quand il n'apparaissait qu'au survol.
+ * L'icône de dossier seule, que le chevron remplace au survol — la rangée
+ * gagne la largeur du chevron. Sans survol possible, le chevron seul, en
+ * permanence : c'est lui qui dit qu'un dossier se déplie, le problème déjà
+ * signalé en usage réel quand il n'apparaissait qu'au survol.
  */
-export function FolderToggleIcon({ open, modern }: { open: boolean; modern: boolean }) {
+export function FolderToggleIcon({ open }: { open: boolean }) {
   const chevron = open ? ChevronDown : ChevronRight;
-
-  if (!modern) {
-    return (
-      <View className="flex-row items-center gap-1">
-        <Icon as={chevron} size={14} className="text-muted-foreground" />
-        <Icon as={FolderIcon} size={16} className="text-muted-foreground" />
-      </View>
-    );
-  }
 
   if (!canHover()) {
     return (
@@ -188,36 +243,6 @@ export function FolderToggleIcon({ open, modern }: { open: boolean; modern: bool
         <Icon as={chevron} size={14} className="text-muted-foreground" />
       </View>
     </View>
-  );
-}
-
-/**
- * Bouton d'action d'une rangée.
- *
- * 32 pt de côté pour ne pas épaissir la barre, plus 8 pt de `hitSlop` de
- * chaque côté : la zone réellement touchable atteint les 44 pt de
- * `MIN_TOUCH_TARGET` sans que la rangée ne grandisse.
- */
-function RowAction({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: typeof Plus;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onPress={onPress}
-      hitSlop={8}
-      accessibilityLabel={label}
-      className="size-8"
-    >
-      <Icon as={icon} size={16} className="text-muted-foreground" />
-    </Button>
   );
 }
 
@@ -276,6 +301,7 @@ export function RowMenuButton({
       size="icon"
       hitSlop={8}
       onPress={(event) => onOpen(event.nativeEvent.pageX, event.nativeEvent.pageY)}
+      {...contextMenuProps(onOpen)}
       accessibilityLabel={label}
       className={cn("size-8 opacity-0", Platform.select({ web: "group-hover:opacity-100" }))}
     >

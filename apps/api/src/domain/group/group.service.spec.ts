@@ -377,13 +377,30 @@ describe("GroupService", () => {
       expect(GROUP_WELCOME).toContain("jamais vos échanges privés");
     });
 
+    it("crée une conversation dont le créateur est seul", async () => {
+      const repo = inWorkspace();
+
+      await service(repo).create(
+        "alice",
+        { workspaceId: WORKSPACE_ID, title: "Seule", memberIds: [] },
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        "alice",
+        expect.objectContaining({ memberIds: [] }),
+        TOKEN,
+      );
+      expect(repo.appendSystemMessage).toHaveBeenCalled();
+    });
+
     it("n'écrit pas de mot d'accueil quand la création est refusée", async () => {
       const repo = inWorkspace();
 
       await expect(
         service(repo).create(
           "alice",
-          { workspaceId: WORKSPACE_ID, title: "Bureau", memberIds: [] },
+          { workspaceId: WORKSPACE_ID, title: "Bureau", memberIds: ["dora"] },
           TOKEN,
         ),
       ).rejects.toMatchObject({ status: 400 });
@@ -407,17 +424,20 @@ describe("GroupService", () => {
       );
     });
 
-    it("refuse un groupe où le créateur serait seul", async () => {
+    it("ignore le créateur coché sans exiger une autre personne", async () => {
       const repo = inWorkspace();
 
-      await expect(
-        service(repo).create(
-          "alice",
-          { workspaceId: WORKSPACE_ID, title: "Seule", memberIds: ["alice"] },
-          TOKEN,
-        ),
-      ).rejects.toMatchObject({ status: 400 });
-      expect(repo.create).not.toHaveBeenCalled();
+      await service(repo).create(
+        "alice",
+        { workspaceId: WORKSPACE_ID, title: "Seule", memberIds: ["alice"] },
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        "alice",
+        expect.objectContaining({ memberIds: [] }),
+        TOKEN,
+      );
     });
 
     it("refuse une personne qui ne fait pas partie de l'espace", async () => {

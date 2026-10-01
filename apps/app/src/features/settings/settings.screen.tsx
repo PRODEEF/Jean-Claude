@@ -11,11 +11,6 @@ import {
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
 import { ASSISTANT_MODELS, toCatalogueModel, type AssistantScope, type Theme } from "@jc/domain";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
-import {
-  setSidebarLayout,
-  SIDEBAR_LAYOUTS,
-  useSidebarLayout,
-} from "@/features/navigation/use-sidebar-layout";
 import { AccountDeleteDialog } from "@/features/settings/AccountDeleteDialog";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useCurrentUser } from "@/shared/hooks/use-current-user";
@@ -113,7 +108,6 @@ export function SettingsScreen() {
   const updateProfile = useUpdateProfile();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
-  const sidebarLayout = useSidebarLayout();
 
   const health = useQuery({ queryKey: ["health"], queryFn: () => api.health.check() });
 
@@ -201,6 +195,41 @@ export function SettingsScreen() {
               placeholder="Jean-Claude"
               maxLength={40}
               accessibilityLabel="Nom de l'assistant"
+            />
+          </SettingRow>
+
+          <SettingRow
+            label="Modèle"
+            // Le bénéfice du modèle actif, sous le libellé : le menu fermé
+            // n'en montre que le nom, qui ne dit rien à qui ne les connaît pas.
+            hint={
+              activeModelChoice
+                ? `${activeModelChoice.benefit}${activeModelChoice.sovereign ? " Hébergé en Europe." : ""}`
+                : "Aucun de ces modèles n'est actif pour l'instant : choisissez-en un."
+            }
+            wide
+          >
+            <Select
+              value={activeModel}
+              options={ASSISTANT_MODELS.map((model) => ({
+                value: model.id,
+                label: model.label,
+                description: model.sovereign
+                  ? `${model.benefit} Hébergé en Europe.`
+                  : model.benefit,
+              }))}
+              onChange={(id) => updateProfile.mutate({ llmModel: id })}
+              placeholder="Choisir un modèle"
+              disabled={updateProfile.isPending}
+              accessibilityLabel="Modèle"
+            />
+          </SettingRow>
+
+          <SettingRow label="Thème">
+            <SegmentedControl
+              options={THEMES}
+              value={theme}
+              onChange={(value) => updateProfile.mutate({ theme: value })}
             />
           </SettingRow>
 
@@ -292,64 +321,6 @@ export function SettingsScreen() {
               />
             ) : null}
           </View>
-
-          <SettingRow
-            label="Bandeau uni"
-            hint="Le bandeau du haut passe à l'aplat plein de la couleur d'assistant, sans dégradé."
-          >
-            <Switch
-              value={profile?.preferences.flatBanner ?? true}
-              onValueChange={(value) => updateProfile.mutate({ flatBanner: value })}
-              disabled={!profile || updateProfile.isPending}
-              accessibilityLabel="Bandeau uni"
-            />
-          </SettingRow>
-
-          <SettingRow
-            label="Navigation"
-            hint="Classique : bandeau en haut. Latérale : tout dans la barre de gauche. Accueil : onglets en haut et une page d'accueil qui résume votre journée. Mémorisé sur cet appareil."
-          >
-            <SegmentedControl
-              options={SIDEBAR_LAYOUTS}
-              value={sidebarLayout}
-              onChange={setSidebarLayout}
-            />
-          </SettingRow>
-
-          <SettingRow label="Thème">
-            <SegmentedControl
-              options={THEMES}
-              value={theme}
-              onChange={(value) => updateProfile.mutate({ theme: value })}
-            />
-          </SettingRow>
-
-          <SettingRow
-            label="Modèle"
-            // Le bénéfice du modèle actif, sous le libellé : le menu fermé
-            // n'en montre que le nom, qui ne dit rien à qui ne les connaît pas.
-            hint={
-              activeModelChoice
-                ? `${activeModelChoice.benefit}${activeModelChoice.sovereign ? " Hébergé en Europe." : ""}`
-                : "Aucun de ces modèles n'est actif pour l'instant : choisissez-en un."
-            }
-            wide
-          >
-            <Select
-              value={activeModel}
-              options={ASSISTANT_MODELS.map((model) => ({
-                value: model.id,
-                label: model.label,
-                description: model.sovereign
-                  ? `${model.benefit} Hébergé en Europe.`
-                  : model.benefit,
-              }))}
-              onChange={(id) => updateProfile.mutate({ llmModel: id })}
-              placeholder="Choisir un modèle"
-              disabled={updateProfile.isPending}
-              accessibilityLabel="Modèle"
-            />
-          </SettingRow>
         </Section>
 
         <Section
