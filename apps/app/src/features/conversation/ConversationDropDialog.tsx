@@ -55,7 +55,7 @@ function DropChoice({ drop, onClose }: { drop: ConversationDrop; onClose: () => 
   actions.push({
     label: filedElsewhere ? "Ajouter à ce dossier" : "Ranger ici",
     variant: "default",
-    onPress: () => apply([...conversation.folderIds, folder.id]),
+    onPress: () => apply([...new Set([...conversation.folderIds, folder.id])]),
     disabled: file.isPending,
   });
 

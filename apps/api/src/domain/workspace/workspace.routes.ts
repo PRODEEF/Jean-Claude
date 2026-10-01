@@ -9,10 +9,13 @@ import {
 } from "@jc/domain";
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { validate } from "../../core/http.js";
+import { sendInvitationEmail } from "../../core/mail/invitation-mail.js";
 import { workspaceRepository } from "./workspace.repository.js";
 import { WorkspaceService } from "./workspace.service.js";
 
-const service = new WorkspaceService(workspaceRepository);
+const service = new WorkspaceService(workspaceRepository, {
+  sendInvitation: sendInvitationEmail,
+});
 
 const idParam = validate("param", z.object({ id: uuidSchema }));
 const invitationParam = validate("param", z.object({ invitationId: uuidSchema }));

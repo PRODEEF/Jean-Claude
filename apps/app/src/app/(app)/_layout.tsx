@@ -5,24 +5,21 @@ import { PanelLeft } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppSidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "@/features/navigation/AppSidebar";
 import { useAssistantChannel } from "@/features/navigation/use-sidebar-data";
-import { useSidebarLayout } from "@/features/navigation/use-sidebar-layout";
-import { AppBanner } from "@/features/navigation/AppBanner";
-import { HomeTopBar } from "@/features/navigation/HomeTopBar";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
-import { InvitationBanner } from "@/features/workspace/InvitationBanner";
 import { useGroupMessageFeed } from "@/features/group/hooks/use-group-realtime";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useSyncDeviceTimezone } from "@/shared/hooks/use-profile";
+import { SidebarChromeProvider } from "@/shared/providers/sidebar-chrome";
 
 /**
  * Coquille de l'application authentifiée.
  *
- * Bannière fixe en haut, navigation par la gauche, contenu à droite. La même
- * barre latérale sert les deux tailles d'écran : fixe au-delà de 768 pt,
- * tiroir escamotable en deçà. C'est ce qui évite d'entretenir deux
- * navigations — un navigateur en fenêtre étroite se comporte alors comme un
- * téléphone, sans qu'on ait à tester la plateforme.
+ * Navigation par la gauche, contenu à droite. La même barre latérale sert les
+ * deux tailles d'écran : fixe au-delà de 768 pt, tiroir escamotable en deçà.
+ * C'est ce qui évite d'entretenir deux navigations — un navigateur en fenêtre
+ * étroite se comporte alors comme un téléphone, sans qu'on ait à tester la
+ * plateforme.
  */
 export default function AppLayout() {
   const breakpoint = useBreakpoint();
@@ -43,10 +40,7 @@ export default function AppLayout() {
   // démonté, et les non-lus des groupes cesseraient d'avancer.
   useGroupMessageFeed();
 
-  const layout = useSidebarLayout();
-  // Variante Accueil : la barre n'est jamais fixe, même sur desktop. Elle
-  // s'ouvre en tiroir par-dessus le contenu, le temps de choisir un dossier.
-  const docked = expanded && layout !== "home";
+  const docked = expanded;
 
   // `null` = l'utilisateur n'a pas encore tranché : la barre suit alors la
   // taille d'écran, ouverte sur desktop et fermée sur téléphone.
@@ -62,19 +56,8 @@ export default function AppLayout() {
     Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(windowWidth * 0.2))),
   );
 
-  // Sans bannière, la navigation latérale porte elle-même le bouton de repli ;
-  // le tiroir n'a alors plus 56 pt de bandeau à laisser au-dessus de lui. La
-  // barre d'onglets de la variante Accueil, elle, passe sous le tiroir comme
-  // le reste du contenu.
-  const withBanner = layout === "classic";
-  const bannerHeight = withBanner ? 56 : 0;
-
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
-      {withBanner ? <AppBanner onToggleSidebar={() => setPreference(!visible)} /> : null}
-      {layout === "home" ? <HomeTopBar onOpenNavigation={() => setPreference(true)} /> : null}
-      <InvitationBanner />
-
       <View className="flex-1 flex-row">
         {/* Le tiroir ne reçoit pas `onResize` : superposé au contenu et refermé
             à la première navigation, il n'a pas de largeur à négocier. */}
@@ -85,25 +68,26 @@ export default function AppLayout() {
             onCollapse={() => setPreference(false)}
           />
         ) : null}
-        <View className="flex-1">
-          <Slot />
-
-          {/* Seul moyen de rouvrir la barre une fois masquée, faute de bannière :
-              posé en haut à gauche du contenu, là où Claude le place (§4.2). */}
-          {layout === "modern" && !visible ? (
-            <View className="absolute left-2 top-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onPress={() => setPreference(true)}
-                accessibilityLabel="Afficher la navigation"
-                className="bg-background"
-              >
-                <Icon as={PanelLeft} size={18} className="text-muted-foreground" />
-              </Button>
-            </View>
-          ) : null}
-        </View>
+        <SidebarChromeProvider collapsed={!visible}>
+          <View className="min-h-0 flex-1">
+            <Slot />
+            {/* Même coin que dans la barre ouverte (`p-3`). Le titre du
+                bandeau commence à droite de ce bouton, pas en dessous. */}
+            {!visible ? (
+              <View className="absolute left-3 top-3 z-10">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onPress={() => setPreference(true)}
+                  accessibilityLabel="Afficher la navigation"
+                  className="bg-background"
+                >
+                  <Icon as={PanelLeft} size={18} className="text-muted-foreground" />
+                </Button>
+              </View>
+            ) : null}
+          </View>
+        </SidebarChromeProvider>
       </View>
 
       {/* En deçà du point de rupture, la barre passe au-dessus du contenu
@@ -112,19 +96,13 @@ export default function AppLayout() {
       {!docked && visible ? (
         <View
           className="absolute inset-0 flex-row"
-          style={{ paddingTop: insets.top + bannerHeight }}
-          // `box-none` en prop et non mêlé à `style` : sa zone de padding,
-          // au-dessus de la barre latérale, n'a aucun enfant mais couvrait
-          // déjà la bannière — sans lui, le second appui sur le bouton
-          // hamburger (fermeture) y était capté au lieu d'atteindre le
-          // bouton, qui ne pouvait donc qu'ouvrir le tiroir, jamais le
-          // refermer. Posé ici plutôt que dans `style` (react-native-web ne
-          // sait traduire `pointerEvents` en CSS que si tout l'objet `style`
-          // est statique — `paddingTop` étant calculé à l'exécution, il
-          // basculait l'ensemble en style inline brut, où « box-none » finit
-          // écrit tel quel dans l'attribut HTML, une valeur invalide que le
-          // navigateur ignore) : sur mobile web, seul un vrai appareil ou
-          // React Native natif l'aurait honoré, jamais un navigateur.
+          style={{ paddingTop: insets.top }}
+          // `box-none` en prop et non mêlé à `style` : react-native-web ne sait
+          // traduire `pointerEvents` en CSS que si tout l'objet `style` est
+          // statique — `paddingTop` étant calculé à l'exécution, il basculait
+          // l'ensemble en style inline brut, où « box-none » finit écrit tel
+          // quel dans l'attribut HTML, une valeur invalide que le navigateur
+          // ignore.
           pointerEvents="box-none"
         >
           <AppSidebar

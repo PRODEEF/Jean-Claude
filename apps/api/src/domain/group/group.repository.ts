@@ -287,10 +287,12 @@ export const groupRepository: IGroupRepository = {
       .insert({ conversation_id: group.id, user_id: userId });
     if (selfError) throw new Error(selfError.message);
 
-    const { error: othersError } = await client
-      .from("conversation_members")
-      .insert(input.memberIds.map((id) => ({ conversation_id: group.id, user_id: id })));
-    if (othersError) throw new Error(othersError.message);
+    if (input.memberIds.length > 0) {
+      const { error: othersError } = await client
+        .from("conversation_members")
+        .insert(input.memberIds.map((id) => ({ conversation_id: group.id, user_id: id })));
+      if (othersError) throw new Error(othersError.message);
+    }
 
     return group;
   },

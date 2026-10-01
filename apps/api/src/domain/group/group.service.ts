@@ -126,9 +126,9 @@ export class GroupService {
     const memberIds = members.map((member) => member.userId);
 
     // Le créateur est membre d'office : le cocher en plus ne doit ni doubler
-    // sa ligne ni compter comme « une autre personne ».
+    // sa ligne. Une liste vide est légitime — il peut écrire seul tant que
+    // personne n'a rejoint l'espace.
     const others = [...new Set(input.memberIds)].filter((id) => id !== userId);
-    if (others.length === 0) throw httpError(400, "Choisissez au moins une personne.");
     if (others.some((id) => !memberIds.includes(id))) {
       throw httpError(400, "Une des personnes choisies ne fait pas partie de l'espace.");
     }

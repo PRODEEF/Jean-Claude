@@ -50,6 +50,7 @@ export const groupRoutes = new Hono<AuthEnv>()
     return c.json(await service.list(c.req.valid("query").workspaceId, user.id, user.accessToken));
   })
 
+  // `memberIds` peut être vide : le créateur discute seul.
   .post("/", validate("json", createGroupSchema), async (c) => {
     const user = c.get("user");
     return c.json(await service.create(user.id, c.req.valid("json"), user.accessToken), 201);

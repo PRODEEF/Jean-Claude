@@ -49,4 +49,12 @@ export const config = {
   // chaque pause de la discussion pour un simple oui ou non : un petit modèle
   // suffit, et le choix de l'utilisateur ne s'applique qu'à la réponse.
   llmDecisionModel: optional("LLM_DECISION_MODEL", "mistral/ministral-8b"),
+
+  // ── Courrier (invitations d'espace) ──────────────────────────────────────
+  // Vide : l'invitation reste dans l'application, aucun e-mail ne part.
+  // `RESEND_FROM` doit être une adresse vérifiée chez Resend.
+  resendApiKey: process.env["RESEND_API_KEY"]?.trim() ?? "",
+  resendFrom: process.env["RESEND_FROM"]?.trim() ?? "",
+  /** Adresse publique de l'app, pour le lien dans l'e-mail d'invitation. */
+  appUrl: (process.env["APP_URL"]?.trim() ?? "").replace(/\/$/, ""),
 } as const;
