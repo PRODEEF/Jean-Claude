@@ -235,12 +235,14 @@ export function UnreadBadge({
 }) {
   if (count === 0 && !pendingQuestion) return null;
 
+  // Rouge et blanc littéraux, jamais des jetons de palette : un non-lu doit se
+  // signaler de la même façon quelle que soit la couleur d'assistant choisie.
   return (
     <View
-      className="min-w-[18px] items-center justify-center rounded-full bg-primary px-1.5"
+      className="min-w-[18px] items-center justify-center rounded-full bg-[red] px-1.5"
       style={{ height: 18 }}
     >
-      <Text className="text-[10px] font-semibold leading-none text-primary-foreground">
+      <Text className="text-[10px] font-semibold leading-none text-white">
         {count > 0 ? count : "?"}
       </Text>
     </View>
