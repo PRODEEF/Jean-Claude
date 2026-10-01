@@ -1,4 +1,5 @@
 import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import type { LucideIcon } from "lucide-react-native";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -9,6 +10,8 @@ export type ContextMenuItem = {
   onPress: () => void;
   /** Rouge, et séparée de ce qui précède : une suppression ne se rattrape pas. */
   destructive?: boolean;
+  /** À gauche du libellé. Couleur du texte : le menu est hors des variables CSS. */
+  icon?: LucideIcon;
 };
 
 export type ContextMenuProps = {
@@ -19,7 +22,7 @@ export type ContextMenuProps = {
   onClose: () => void;
 };
 
-const MENU_WIDTH = 220;
+const MENU_WIDTH = 260;
 /** Marge minimale au bord de la fenêtre, pour que le menu ne soit jamais coupé. */
 const EDGE = spacing.sm;
 /** Hauteur d'une entrée, séparateur compris pour la première destructive. */
@@ -81,6 +84,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
 
 function MenuItem({ item }: { item: ContextMenuItem }) {
   const { palette } = useTheme();
+  const Glyph = item.icon;
 
   return (
     <Pressable
@@ -88,9 +92,16 @@ function MenuItem({ item }: { item: ContextMenuItem }) {
       accessibilityRole="menuitem"
       style={({ pressed }) => [styles.item, pressed ? { backgroundColor: palette.surface } : null]}
     >
+      {Glyph ? (
+        <Glyph size={16} color={item.destructive ? palette.danger : palette.textMuted} />
+      ) : null}
       <Text
         numberOfLines={1}
-        style={[styles.label, { color: item.destructive ? palette.danger : palette.text }]}
+        style={[
+          styles.label,
+          { color: item.destructive ? palette.danger : palette.text },
+          item.icon ? styles.labelWithIcon : null,
+        ]}
       >
         {item.label}
       </Text>
@@ -114,10 +125,13 @@ const styles = StyleSheet.create({
   },
   item: {
     minHeight: MIN_TOUCH_TARGET,
-    justifyContent: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radius.sm,
   },
   label: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm },
+  labelWithIcon: { flex: 1 },
   separator: { height: 1, marginVertical: spacing.xs },
 });

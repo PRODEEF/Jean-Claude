@@ -8,7 +8,7 @@ export function useWorkspaces() {
   return useQuery({ queryKey: ["workspaces"], queryFn: () => api.workspaces.list() });
 }
 
-/** Invitations qui attendent l'utilisateur connecté, retrouvées par son adresse. */
+/** Invitations adressées à l'utilisateur, en attente et déjà répondues. */
 export function useReceivedInvitations() {
   return useQuery({
     queryKey: ["workspaces", "received-invitations"],

@@ -37,7 +37,7 @@ export function WorkspaceSwitcher({ activeWorkspaceId, onNavigate }: WorkspaceSw
   const [open, setOpen] = useState<"list" | "create" | null>(null);
 
   const active = workspaces.data?.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
-  const pending = invitations.data?.length ?? 0;
+  const pending = (invitations.data ?? []).filter((invitation) => invitation.status === "pending").length;
 
   const go = (href: string) => {
     setOpen(null);
@@ -136,10 +136,12 @@ function SpaceList({
         ))}
       </View>
 
-      {invitations.data && invitations.data.length > 0 ? (
+      {(invitations.data ?? []).some((invitation) => invitation.status === "pending") ? (
         <View className="gap-2">
           <Text className="text-xs font-medium uppercase text-muted-foreground">Invitations</Text>
-          {invitations.data.map((invitation) => (
+          {(invitations.data ?? [])
+            .filter((invitation) => invitation.status === "pending")
+            .map((invitation) => (
             <View key={invitation.id} className="gap-3 rounded-lg border border-border px-3 py-3">
               <Text className="text-sm">
                 Vous êtes invité dans{" "}

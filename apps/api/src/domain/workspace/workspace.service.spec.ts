@@ -36,6 +36,8 @@ function makeInvitation(overrides: Partial<ReceivedInvitation> = {}): ReceivedIn
     workspaceId: WORKSPACE_ID,
     workspaceName: "Association X",
     createdAt: "2026-09-29T08:00:00.000Z",
+    status: "pending",
+    answeredAt: null,
     ...overrides,
   };
 }

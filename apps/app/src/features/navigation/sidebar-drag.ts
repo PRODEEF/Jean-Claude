@@ -11,6 +11,13 @@ import { Platform, type View } from "react-native";
  */
 const CONVERSATION_MIME = "application/x-jean-claude-conversation";
 const FOLDER_MIME = "application/x-jean-claude-folder";
+/**
+ * Conversation d'un espace. Type distinct : un dossier personnel ne doit pas
+ * l'accepter, et un dossier d'espace n'accepte pas une conversation personnelle.
+ * La charge ne porte que l'identifiant : le dossier qui reçoit ne l'applique
+ * que s'il retrouve la conversation dans son propre espace.
+ */
+const GROUP_MIME = "application/x-jean-claude-group";
 
 /**
  * Nœud DOM d'une vue — web uniquement.
@@ -33,12 +40,12 @@ function domNode(ref: RefObject<View | null>): HTMLElement | null {
  * accès au rangement. Un glisser tactile se confondrait avec le défilement de
  * la barre latérale, qui est le geste attendu à cet endroit.
  */
-export function useConversationDragSource(conversationId: string): RefObject<View | null> {
+export function useConversationDragSource(conversationId: string | null): RefObject<View | null> {
   const ref = useRef<View | null>(null);
 
   useEffect(() => {
     const node = domNode(ref);
-    if (!node) return;
+    if (!node || !conversationId) return;
 
     const start = (event: DragEvent) => {
       if (!event.dataTransfer) return;
@@ -54,6 +61,37 @@ export function useConversationDragSource(conversationId: string): RefObject<Vie
       node.removeEventListener("dragstart", start);
     };
   }, [conversationId]);
+
+  return ref;
+}
+
+/**
+ * Rend une conversation d'espace déplaçable à la souris.
+ *
+ * Même limite que pour une conversation personnelle : web seulement. Le
+ * dépôt ne change que les dossiers de l'espace, jamais l'espace lui-même.
+ */
+export function useGroupDragSource(groupId: string | null): RefObject<View | null> {
+  const ref = useRef<View | null>(null);
+
+  useEffect(() => {
+    const node = domNode(ref);
+    if (!node || !groupId) return;
+
+    const start = (event: DragEvent) => {
+      if (!event.dataTransfer) return;
+      event.dataTransfer.setData(GROUP_MIME, groupId);
+      event.dataTransfer.effectAllowed = "copyMove";
+    };
+
+    node.setAttribute("draggable", "true");
+    node.addEventListener("dragstart", start);
+
+    return () => {
+      node.removeAttribute("draggable");
+      node.removeEventListener("dragstart", start);
+    };
+  }, [groupId]);
 
   return ref;
 }
@@ -150,6 +188,59 @@ export function useFolderDropTarget(handlers: FolderDropHandlers): {
       if (!id) return;
       if (mime === FOLDER_MIME) latest.current.onFolder(id);
       else latest.current.onConversation?.(id);
+    };
+
+    node.addEventListener("dragover", over);
+    node.addEventListener("dragleave", leave);
+    node.addEventListener("drop", drop);
+
+    return () => {
+      node.removeEventListener("dragover", over);
+      node.removeEventListener("dragleave", leave);
+      node.removeEventListener("drop", drop);
+    };
+  }, []);
+
+  return { ref, isOver };
+}
+
+/**
+ * Cible de dépôt pour une conversation d'espace.
+ *
+ * N'accepte que ce type de charge : une conversation personnelle ou un dossier
+ * lâché ici ne fait rien. Le survol éclaire la rangée, comme pour un dossier
+ * personnel.
+ */
+export function useGroupDropTarget(onGroup: (groupId: string) => void): {
+  ref: RefObject<View | null>;
+  isOver: boolean;
+} {
+  const ref = useRef<View | null>(null);
+  const [isOver, setIsOver] = useState(false);
+  const latest = useRef(onGroup);
+  latest.current = onGroup;
+
+  useEffect(() => {
+    const node = domNode(ref);
+    if (!node) return;
+
+    const carriesGroup = (event: DragEvent) =>
+      event.dataTransfer?.types.includes(GROUP_MIME) ?? false;
+
+    const over = (event: DragEvent) => {
+      if (!carriesGroup(event)) return;
+      event.preventDefault();
+      setIsOver(true);
+    };
+
+    const leave = () => setIsOver(false);
+
+    const drop = (event: DragEvent) => {
+      if (!carriesGroup(event)) return;
+      event.preventDefault();
+      setIsOver(false);
+      const id = event.dataTransfer?.getData(GROUP_MIME);
+      if (id) latest.current(id);
     };
 
     node.addEventListener("dragover", over);

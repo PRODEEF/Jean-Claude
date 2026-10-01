@@ -255,7 +255,9 @@ export function Modal({
                     <View
                       className={cn(
                         "gap-3",
-                        compact ? "flex-col-reverse" : "flex-row items-center justify-end",
+                        compact
+                          ? "flex-col-reverse"
+                          : "flex-row flex-wrap items-center justify-end",
                       )}
                     >
                       {destructiveAction ? (
@@ -317,13 +319,13 @@ function FooterButton({
       onPress={action.onPress}
       disabled={action.disabled ?? false}
       accessibilityRole="button"
-      className={cn(compact && "w-full", className)}
+      className={cn(compact ? "w-full" : "max-w-full shrink whitespace-normal", className)}
       {...(filled ? { style: { backgroundColor: palette.accent } } : {})}
     >
       {/* Sans fond, c'est au libellé de porter la mise en garde ; sur un fond
           rouge, il la porterait deux fois et ne se lirait plus. */}
       <Text
-        className={destructive && variant === "ghost" ? "text-destructive" : undefined}
+        className={cn("text-center", destructive && variant === "ghost" && "text-destructive")}
         {...(filled ? { style: { color: palette.accentText } } : {})}
       >
         {action.label}
