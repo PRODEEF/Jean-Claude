@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { ListChecks, Users } from "lucide-react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
 import { eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
@@ -27,10 +27,11 @@ const MAX_LINES_PER_CELL = 3;
 /**
  * Grille mensuelle.
  *
- * En `compact`, les titres cèdent la place à des pastilles et le détail passe
- * dans la liste du jour sélectionné : c'est le compromis retenu par le
- * Calendrier iOS et Google Calendar sur téléphone, où un titre dans une
- * cellule de 45 pt se tronque au deuxième caractère (§4.2).
+ * Les noms de jours restent en tête. Ce sont les semaines qui défilent, dans
+ * le cadre : le haut de la grille ne quitte pas l'écran.
+ *
+ * En `compact`, les titres cèdent la place à des pastilles : un titre dans une
+ * cellule étroite se tronque au deuxième caractère (§4.2).
  */
 export function MonthGrid({
   days,
@@ -44,8 +45,11 @@ export function MonthGrid({
 }: MonthGridProps) {
   const today = new Date();
 
+  const weeks: Date[][] = [];
+  for (let index = 0; index < days.length; index += 7) weeks.push(days.slice(index, index + 7));
+
   return (
-    <View className="border-border overflow-hidden rounded-xl border">
+    <View className="border-border min-h-0 flex-1 overflow-hidden rounded-xl border">
       <View className="border-border flex-row border-b">
         {WEEKDAY_LABELS.map((label) => (
           <View key={label} className="flex-1 px-2 py-2">
@@ -54,8 +58,11 @@ export function MonthGrid({
         ))}
       </View>
 
-      <View className="flex-row flex-wrap">
-        {days.map((day) => {
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
+      <View className="min-h-full flex-1">
+        {weeks.map((week) => (
+          <View key={week[0]?.toISOString()} className="flex-1 flex-row" style={{ minHeight: compact ? 64 : 96 }}>
+        {week.map((day) => {
           const outside = day.getMonth() !== anchor.getMonth();
           const isToday = isSameDay(day, today);
           const selected = isSameDay(day, selectedDay);
@@ -71,8 +78,7 @@ export function MonthGrid({
           return (
             <View
               key={day.toISOString()}
-              style={{ width: `${100 / 7}%`, height: compact ? 64 : 96 }}
-              className={`border-border gap-1 border-b border-r p-1 ${
+              className={`border-border min-w-0 flex-1 gap-1 border-b border-r p-1 ${
                 selected ? "bg-accent-soft" : ""
               }`}
             >
@@ -148,7 +154,10 @@ export function MonthGrid({
             </View>
           );
         })}
+          </View>
+        ))}
       </View>
+      </ScrollView>
     </View>
   );
 }
@@ -158,9 +167,7 @@ export function MonthGrid({
  *
  * La pastille de tâches occupe une ligne au même titre qu'un rendez-vous, et le
  * « +N » aussi : les compter dans le même budget est ce qui empêche une journée
- * chargée de déborder. La cellule affichait jusqu'ici trois rendez-vous, plus
- * un « +N », plus la pastille — cinq lignes dans une hauteur qui en tient
- * trois. Le reste se lit dans la liste du jour, en dessous.
+ * chargée de déborder de sa cellule.
  */
 function fitEvents(
   events: CalendarEntry[],
@@ -176,7 +183,7 @@ function fitEvents(
  *
  * Un compte et non les titres : la cellule est déjà partagée avec les
  * rendez-vous, et c'est la charge de la journée qu'on lit d'un coup d'œil dans
- * une grille mensuelle. Le détail se lit dans la liste du jour, en dessous.
+ * une grille mensuelle.
  */
 function TaskBadge({ count, compact }: { count: number; compact?: boolean }) {
   if (compact) {

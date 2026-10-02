@@ -254,9 +254,11 @@ export class TaskService {
    * une sous-tâche doit pouvoir désigner un parent créé dans la même passe.
    *
    * L'éditeur ne transporte que le texte et l'indentation : la complétion, les
-   * notes et l'échéance sont reprises de la liste déjà chargée ici. Cocher et
-   * écrire sont deux gestes distincts, et taper une ligne ne doit pas décocher
-   * la voisine.
+   * notes et l'échéance d'une ligne déjà là sont reprises de la liste chargée
+   * ici. Cocher et écrire sont deux gestes distincts, et taper une ligne ne
+   * doit pas décocher la voisine. Seule une ligne nouvelle peut porter un
+   * jour (`dueOn`) : celui où on l'a écrite, quand ce n'est pas l'échéance de
+   * la liste.
    */
   async replaceTasks(
     userId: string,
@@ -266,6 +268,15 @@ export class TaskService {
   ): Promise<Task[]> {
     const list = await this.requireList(listId, accessToken);
     const known = new Map(list.tasks.map((task) => [task.id, task] as const));
+
+    const freshDays = new Set<string>();
+    for (const item of input.items) {
+      const previous = item.id === undefined ? undefined : known.get(item.id);
+      if (previous === undefined && item.dueOn) freshDays.add(item.dueOn);
+    }
+    for (const day of freshDays) {
+      await this.assertDayNotPast(userId, day, accessToken);
+    }
 
     const rows: TaskRowInput[] = [];
     let parentId: string | null = null;
@@ -286,7 +297,7 @@ export class TaskService {
         notes: previous?.notes ?? null,
         done: previous?.done ?? false,
         completedAt: previous?.completedAt ?? null,
-        dueOn: previous?.dueOn ?? null,
+        dueOn: previous?.dueOn ?? item.dueOn ?? null,
       });
       if (!nested) parentId = id;
     });
