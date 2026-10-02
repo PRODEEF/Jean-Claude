@@ -110,6 +110,11 @@ export type UpdateTask = z.infer<typeof updateTaskSchema>;
  * `depth` et non `parentId` : c'est ce que l'éditeur manipule, et le serveur
  * en déduit la filiation à partir de la ligne de premier niveau qui précède.
  * L'`id` est absent des lignes qui viennent d'être tapées.
+ *
+ * `dueOn` ne concerne que ces lignes nouvelles, quand on les écrit depuis un
+ * jour qui n'est pas l'échéance de la liste — sans lui, elles rejoindraient
+ * cette échéance et disparaîtraient de l'endroit où on les a tapées. Une
+ * ligne déjà enregistrée le garde, le serveur ne relit pas ce champ.
  */
 export const replaceTasksSchema = z.object({
   items: z
@@ -118,6 +123,7 @@ export const replaceTasksSchema = z.object({
         id: uuidSchema.optional(),
         title: labelSchema,
         depth: z.number().int().min(0).max(MAX_TASK_DEPTH),
+        dueOn: calendarDateSchema.nullable().optional(),
       }),
     )
     .max(200),

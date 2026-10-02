@@ -4,15 +4,15 @@ import { useRouter } from "expo-router";
 import { ChevronLeft, ChevronRight, ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEntry, CalendarRange, TaskList, TaskListWithTasks } from "@jc/domain";
 import { datedLists, listsOfDay, listsWithoutVisibleEvent, todoDays } from "@jc/domain";
+import { spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { Button } from "@/shared/ui/button";
-import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
+import { GRID_MAX_WIDTH, ScreenShell, contentColumn } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 import { CalendarToolbar, type CalendarView } from "./CalendarToolbar";
-import { DayAgenda } from "./DayAgenda";
 import { DueListsBoard } from "./DueListsBoard";
 import { EventDetailDialog } from "./EventDetailDialog";
 import { EventFormDialog, type EventDialogTarget } from "./EventFormDialog";
@@ -58,10 +58,9 @@ function rangeOf(days: Date[]): CalendarRange {
  * cache. Todo s'y ajoute comme cinquième lecture, sans grille : les
  * todolistes du mois, sans les rendez-vous.
  *
- * Une seule zone défilante, celle du contenu posé par `ScreenShell` : les
- * grilles se déroulent en entier dedans. Une grille qui défilerait pour son
- * compte emporterait sa barre de défilement dans la largeur de ses colonnes,
- * décalant celles-ci de leurs en-têtes.
+ * Le bandeau de vue reste hors du défilement. Hors Todo, c'est l'intérieur de
+ * la grille qui défile — les jours ou les heures — et non la page : le haut
+ * du calendrier reste visible. Todo, lui, déroule ses listes dans la page.
  */
 export function CalendarScreen() {
   const compact = useBreakpoint() === "compact";
@@ -224,49 +223,31 @@ export function CalendarScreen() {
         </View>
       }
       maxWidth={GRID_MAX_WIDTH}
-      scrollRef={scroll}
+      scrolls={false}
     >
-      <CalendarToolbar
-        label={periodLabel(view, anchor)}
-        view={view}
-        onViewChange={setView}
-        onPrevious={() => shift(-1)}
-        onNext={() => shift(1)}
-        onToday={goToToday}
-      />
-
-      {isError ? (
-        <Text className="text-destructive text-sm">
-          Le calendrier n'a pas pu être chargé. Réessayez dans un instant.
-        </Text>
-      ) : null}
-
-      {view === "month" ? (
-        <>
-          <MonthGrid
-            days={days}
-            anchor={anchor}
-            events={events}
-            lists={dueLists}
-            selectedDay={selectedDay}
-            onSelectDay={selectDay}
-            onOpenEvent={openEvent}
-            compact={compact}
+      <View className="min-h-0 flex-1">
+        <View className="bg-background">
+          <View style={[contentColumn(compact, GRID_MAX_WIDTH), { paddingVertical: spacing.md }]}>
+          <CalendarToolbar
+            label={periodLabel(view, anchor)}
+            view={view}
+            onViewChange={setView}
+            onPrevious={() => shift(-1)}
+            onNext={() => shift(1)}
+            onToday={goToToday}
           />
-          <DayAgenda
-            day={selectedDay}
-            events={events}
-            lists={dueLists}
-            onOpenEvent={openEvent}
-            onOpenList={setListDetail}
-          />
-        </>
-      ) : null}
+          </View>
+        </View>
 
-      {/* Lecture des todolistes du mois, sans grille d'événements : c'est la
-          vue par semaine de l'ancien onglet Todoliste, élargie au mois et
-          reprise ici plutôt que dupliquée dans Mes listes. */}
-      {view === "todo" ? (
+        {view === "todo" ? (
+        <ScrollView
+          ref={scroll}
+          style={{ flex: 1 }}
+          contentContainerStyle={[
+            contentColumn(compact, GRID_MAX_WIDTH),
+            { paddingVertical: spacing.lg, gap: spacing.lg },
+          ]}
+        >
         <View className="gap-2">
           <View className="flex-row items-center justify-end gap-2">
             <Text className="text-muted-foreground text-xs">Jours sans liste</Text>
@@ -286,10 +267,9 @@ export function CalendarScreen() {
             />
           )}
 
-          {/* Au bout du mois, la suite est à portée de doigt (demande
-              produit) : remonter jusqu'au bandeau pour changer de mois
-              obligerait à refaire défiler tout ce qu'on vient de lire. Le
-              défilement repart en haut, là où commence le mois ouvert. */}
+          {/* Au bout du mois, changer de période sans remonter jusqu'aux
+              flèches. Le défilement repart en haut, là où commence le mois
+              ouvert. */}
           <View className="flex-row items-center justify-between gap-2 pt-2">
             <Button
               variant="outline"
@@ -313,35 +293,60 @@ export function CalendarScreen() {
             </Button>
           </View>
         </View>
-      ) : null}
+        </ScrollView>
+        ) : (
+        <View
+          className="min-h-0 flex-1 gap-3"
+          style={[contentColumn(compact, GRID_MAX_WIDTH), { paddingVertical: spacing.md }]}
+        >
+          {isError ? (
+            <Text className="text-destructive text-sm">
+              Le calendrier n'a pas pu être chargé. Réessayez dans un instant.
+            </Text>
+          ) : null}
 
-      {view === "year" ? (
-        <YearGrid
-          anchor={anchor}
-          events={events}
-          onSelectMonth={(month) => {
-            setAnchor(month);
-            setSelectedDay(startOfDay(month));
-            setView("month");
-          }}
-        />
-      ) : null}
+          {view === "month" ? (
+            <MonthGrid
+              days={days}
+              anchor={anchor}
+              events={events}
+              lists={dueLists}
+              selectedDay={selectedDay}
+              onSelectDay={selectDay}
+              onOpenEvent={openEvent}
+              compact={compact}
+            />
+          ) : null}
 
-      {view === "day" || view === "week" ? (
-        <TimeGrid
-          days={days}
-          events={events}
-          lists={dueLists}
-          onOpenEvent={openEvent}
-          onOpenList={setListDetail}
-          onCreateAt={createAt}
-        />
-      ) : null}
+          {view === "year" ? (
+            <ScrollView style={{ flex: 1 }}>
+              <YearGrid
+                anchor={anchor}
+                events={events}
+                onSelectMonth={(month) => {
+                  setAnchor(month);
+                  setSelectedDay(startOfDay(month));
+                  setView("month");
+                }}
+              />
+            </ScrollView>
+          ) : null}
 
-      {/* Sous la grille et non à sa place : le mois déjà chargé reste
-          affiché pendant qu'on en récupère un autre, plutôt que de laisser
-          un écran vide à chaque navigation. */}
-      {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
+          {view === "day" || view === "week" ? (
+            <TimeGrid
+              days={days}
+              events={events}
+              lists={dueLists}
+              onOpenEvent={openEvent}
+              onOpenList={setListDetail}
+              onCreateAt={createAt}
+            />
+          ) : null}
+
+          {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
+        </View>
+        )}
+      </View>
 
       <EventFormDialog target={dialogTarget} onClose={() => setDialogTarget(null)} />
       <EventDetailDialog event={eventDetail} onClose={() => setEventDetail(null)} onEdit={editEvent} />

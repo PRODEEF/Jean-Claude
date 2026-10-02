@@ -368,6 +368,44 @@ describe("TaskService", () => {
       expect(rows[2]).toMatchObject({ parentId: "task-1", position: 2 });
     });
 
+    it("date une ligne nouvelle du jour où elle a été saisie", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
+      });
+
+      await makeService(repo).replaceTasks(
+        USER,
+        LIST,
+        {
+          items: [
+            { id: "task-1", title: "Acheter du terreau", depth: 0 },
+            { title: "Semer", depth: 0, dueOn: "2026-09-14" },
+          ],
+        },
+        TOKEN,
+      );
+
+      const { rows } = written(repo);
+      expect(rows[0]).toMatchObject({ id: "task-1", dueOn: null });
+      expect(rows[1]).toMatchObject({ title: "Semer", dueOn: "2026-09-14" });
+    });
+
+    it("refuse une ligne nouvelle due un jour déjà passé", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ tasks: [makeTask()] })),
+      });
+
+      await expect(
+        makeService(repo).replaceTasks(
+          USER,
+          LIST,
+          { items: [{ title: "Semer", depth: 0, dueOn: "2026-08-31" }] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.replaceTasks).not.toHaveBeenCalled();
+    });
+
     it("garde l'échéance d'une ligne réécrite, que l'éditeur ne transporte pas", async () => {
       const repo = makeRepository({
         findById: jest
