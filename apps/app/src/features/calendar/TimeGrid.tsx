@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, View, type GestureResponderEvent } from "react-native";
+import { useEffect, useRef } from "react";
+import { Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from "react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
 import { eventsOfDay, layoutDayEvents, layoutDayLists, listsOfDay } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
@@ -33,14 +34,16 @@ const MIN_EVENT_HEIGHT = 18;
 /** Au-delà, le bandeau des tâches repousserait la grille hors de l'écran. */
 const MAX_TASKS_PER_COLUMN = 3;
 
+/** Marge laissée au-dessus du premier rendez-vous à l'ouverture. */
+const LEAD_MINUTES = 60;
+
 /**
  * Grille horaire, d'un jour ou d'une semaine.
  *
  * Une colonne par jour et une échelle d'heures : c'est la forme commune au
  * Calendrier iOS, à Google Calendar et à Fantastical (§4.2), et la vue jour
- * n'en est que le cas à une colonne. La journée entière est sortie de
- * l'échelle, en bandeau sous les jours — la placer à minuit laisserait croire
- * à un événement de début de nuit.
+ * n'en est que le cas à une colonne. Les jours, la journée entière et les
+ * listes restent en tête. Seules les heures défilent, dans le cadre.
  */
 export function TimeGrid({
   days,
@@ -68,9 +71,21 @@ export function TimeGrid({
 
   const hasAllDay = perDay.some((column) => column.allDay.length > 0);
   const hasTasks = perDay.some((column) => column.lists.length > 0);
+  const hours = useRef<ScrollView>(null);
+  const earliest = earliestMinute(perDay);
+  const period = `${days[0]?.toISOString() ?? ""}:${days.length}`;
+
+  // À l'ouverture et à chaque changement de période : une heure avant le
+  // premier créneau, pour le voir arriver plutôt que collé au bord.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      hours.current?.scrollTo({ y: scrollOffset(earliest), animated: false });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [earliest, period]);
 
   return (
-    <View className="border-border overflow-hidden rounded-xl border">
+    <View className="border-border min-h-0 flex-1 overflow-hidden rounded-xl border">
       <View className="border-border flex-row border-b">
         <View style={{ width: GUTTER_WIDTH }} />
         {days.map((day) => (
@@ -154,6 +169,7 @@ export function TimeGrid({
         </View>
       ) : null}
 
+      <ScrollView ref={hours} style={{ flex: 1 }}>
       <View className="flex-row" style={{ height: HOURS.length * HOUR_HEIGHT }}>
         <View style={{ width: GUTTER_WIDTH }}>
           {HOURS.map((hour) => (
@@ -246,6 +262,7 @@ export function TimeGrid({
           </View>
         ))}
       </View>
+      </ScrollView>
     </View>
   );
 }
@@ -273,4 +290,24 @@ function pressOffsetY(gesture: GestureResponderEvent): number | null {
 
 function clampHour(hour: number): number {
   return Math.min(Math.max(hour, 0), HOURS.length - 1);
+}
+
+/** Première minute occupée par un rendez-vous ou une liste à l'heure, sur les jours affichés. */
+function earliestMinute(
+  columns: { timed: { startMinute: number }[]; timedLists: { startMinute: number }[] }[],
+): number | null {
+  let earliest: number | null = null;
+  for (const column of columns) {
+    for (const box of [...column.timed, ...column.timedLists]) {
+      if (earliest === null || box.startMinute < earliest) earliest = box.startMinute;
+    }
+  }
+  return earliest;
+}
+
+/** Défilement qui place le premier créneau une heure sous le bord, sans passer minuit. */
+function scrollOffset(earliest: number | null): number {
+  if (earliest === null) return 0;
+  const minute = Math.max(0, earliest - LEAD_MINUTES);
+  return (minute / 60) * HOUR_HEIGHT;
 }

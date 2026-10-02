@@ -48,9 +48,10 @@ export type WorkspaceSidebarBodyProps = {
 /**
  * Un espace collaboratif, sous la section « Mes collaborations ».
  *
- * Rangée au gabarit d'une conversation, pas un titre de section : texte
- * courant, chevron à gauche. Une conversation sans dossier reste ici, sous
- * l'arborescence — elle figure aussi dans « Récents ».
+ * Le nom est au même rang que les autres espaces. Ce qu'il contient — dossiers,
+ * conversations, listes — est en retrait, relié par un filet, comme un dossier
+ * personnel. Sans ce retrait, une conversation sans dossier se lit comme un
+ * espace de plus.
  */
 export function WorkspaceSidebarBody({
   workspaceId,
@@ -120,40 +121,21 @@ export function WorkspaceSidebarBody({
 
   return (
     <>
-      <View className="ml-4 border-l border-border pl-2">
-        <WorkspaceHeading
-          name={workspaceName}
-          open={open}
-          unread={unread}
-          onToggle={toggle}
-          menuItems={[
-            { label: "Nouveau dossier", onPress: createFolder },
-            { label: "Nouvelle conversation", onPress: () => startConversation(null) },
-            { label: "Membres et invitations", onPress: () => onNavigate(membersHref) },
-            { label: "Fichiers", onPress: () => onNavigate(filesHref) },
-          ]}
-        />
-      </View>
-
-      {/* Message fixe, et non `error.message` : une erreur brute peut porter
-          des fragments de requête. */}
-      {folders.error ? (
-        <Text className="px-2 py-1 text-xs text-destructive">
-          Dossiers indisponibles pour le moment.
-        </Text>
-      ) : null}
+      <WorkspaceHeading
+        name={workspaceName}
+        open={open}
+        unread={unread}
+        onToggle={toggle}
+        menuItems={[
+          { label: "Nouveau dossier", onPress: createFolder },
+          { label: "Nouvelle conversation", onPress: () => startConversation(null) },
+          { label: "Membres et invitations", onPress: () => onNavigate(membersHref) },
+          { label: "Fichiers", onPress: () => onNavigate(filesHref) },
+        ]}
+      />
 
       {open ? (
-        <>
-          {folders.data?.length === 0 && !namingRoot ? (
-            <Button variant="ghost" onPress={createFolder} className="justify-start gap-2 px-2">
-              <Icon as={Plus} size={14} className="text-muted-foreground" />
-              <Text className="text-xs font-normal text-muted-foreground">
-                Créer un premier dossier
-              </Text>
-            </Button>
-          ) : null}
-
+        <View className="ml-4 border-l border-border pl-2">
           <WorkspaceFolderTree
             nodes={folders.data ?? []}
             groups={groups.data ?? []}
@@ -182,8 +164,24 @@ export function WorkspaceSidebarBody({
             <View key={list.id}>{renderList(list)}</View>
           ))}
 
-          {/* Un 4xx dit pourquoi la conversion a été refusée, dans un message
-              écrit pour l'utilisateur ; au-delà, message fixe. */}
+          {folders.data?.length === 0 && !namingRoot ? (
+            <Button variant="ghost" onPress={createFolder} className="justify-start gap-2 px-2">
+              <Icon as={Plus} size={14} className="text-muted-foreground" />
+              <Text className="text-xs font-normal text-muted-foreground">
+                Créer un premier dossier
+              </Text>
+            </Button>
+          ) : null}
+
+          {/* Message fixe, et non `error.message` : une erreur brute peut porter
+              des fragments de requête. Un 4xx de conversion, lui, est écrit
+              pour l'utilisateur. */}
+          {folders.error ? (
+            <Text className="px-2 py-1 text-xs text-destructive">
+              Dossiers indisponibles pour le moment.
+            </Text>
+          ) : null}
+
           {extractList.error ? (
             <Text className="px-2 py-1 text-xs text-destructive">
               {extractList.error instanceof ApiError && extractList.error.status < 500
@@ -197,7 +195,7 @@ export function WorkspaceSidebarBody({
               Conversations indisponibles pour le moment.
             </Text>
           ) : null}
-        </>
+        </View>
       ) : null}
 
       <WorkspaceListDialog
