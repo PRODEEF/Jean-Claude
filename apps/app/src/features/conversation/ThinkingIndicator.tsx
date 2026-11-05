@@ -27,13 +27,21 @@ import { useTheme } from "@/shared/providers/theme-provider";
  * (création de dossiers, liste…) que le fil relit ensuite — plusieurs secondes
  * où rien ne bougeait avant que la carte n'apparaisse.
  */
-export function ThinkingIndicator() {
+export function ThinkingIndicator({
+  dense = false,
+  assistantName,
+}: {
+  dense?: boolean;
+  /** Dans un groupe, tous les membres voient le même nom, pas celui d'un profil. */
+  assistantName?: string;
+}) {
   const { palette } = useTheme();
-  const name = useAssistantName();
+  const profileName = useAssistantName();
+  const name = assistantName ?? profileName;
   const seconds = useElapsedSeconds();
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, dense && styles.dense]}>
       <SpinningCog size={14} color={palette.textMuted} />
       <Text
         style={[styles.label, { color: palette.textMuted }]}
@@ -108,5 +116,8 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingVertical: spacing.sm,
   },
+  // Dans un groupe, la ligne d'état a une hauteur réservée : sans cela le
+  // champ de saisie sauterait à l'apparition de l'indicateur.
+  dense: { paddingVertical: 0 },
   label: { fontFamily: FONT_FAMILY, fontSize: fontSize.sm },
 });
