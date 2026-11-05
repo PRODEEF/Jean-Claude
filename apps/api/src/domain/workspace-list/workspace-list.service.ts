@@ -1,6 +1,7 @@
 import type {
   CreateWorkspaceTask,
   CreateWorkspaceTaskList,
+  ReorderWorkspaceTasks,
   UpdateWorkspaceTask,
   UpdateWorkspaceTaskList,
   WorkspaceTask,
@@ -147,6 +148,41 @@ export class WorkspaceListService {
     }
 
     return this.lists.updateTask(taskId, patch, accessToken);
+  }
+
+  /**
+   * Range les tâches de la liste dans l'ordre donné.
+   *
+   * L'ordre doit nommer exactement les tâches de la liste, chacune une fois :
+   * si un autre membre en a ajouté ou retiré une entre-temps, l'ordre vu par
+   * l'appelant est périmé, et l'appliquer reléguerait ou perdrait des lignes.
+   */
+  async reorderTasks(
+    listId: string,
+    input: ReorderWorkspaceTasks,
+    accessToken: string,
+  ): Promise<WorkspaceTaskList> {
+    const list = await this.get(listId, accessToken);
+
+    const known = new Set(list.tasks.map((task) => task.id));
+    const asked = new Set(input.taskIds);
+    if (asked.size !== input.taskIds.length) {
+      throw httpError(400, "Une tâche ne peut figurer qu'une fois dans l'ordre.");
+    }
+    if (asked.size !== known.size || input.taskIds.some((id) => !known.has(id))) {
+      throw httpError(409, "La liste a changé entre-temps : rechargez-la.");
+    }
+
+    await this.lists.setTaskPositions(listId, input.taskIds, accessToken);
+
+    const byId = new Map(list.tasks.map((task) => [task.id, task]));
+    return {
+      ...list,
+      tasks: input.taskIds.flatMap((id, position) => {
+        const task = byId.get(id);
+        return task ? [{ ...task, position }] : [];
+      }),
+    };
   }
 
   async deleteTask(listId: string, taskId: string, accessToken: string): Promise<void> {

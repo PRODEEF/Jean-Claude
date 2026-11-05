@@ -61,4 +61,6 @@ export interface IWorkspaceListRepository {
     accessToken: string,
   ): Promise<WorkspaceTask>;
   deleteTask(taskId: string, accessToken: string): Promise<void>;
+  /** Range les tâches de la liste dans l'ordre donné : la première prend la position 0. */
+  setTaskPositions(listId: string, taskIds: string[], accessToken: string): Promise<void>;
 }
