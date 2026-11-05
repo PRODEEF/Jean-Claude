@@ -1717,7 +1717,9 @@ describe("ConversationService", () => {
         const repo = makeRepository({
           findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
           listMessages: jest.fn().mockResolvedValue({
-            items: [makeMessage({ id: "m1", role: "user", content: "/todo liste de courses samedi" })],
+            items: [
+              makeMessage({ id: "m1", role: "user", content: "/todo liste de courses samedi" }),
+            ],
             nextCursor: null,
           }),
         });
@@ -1788,11 +1790,14 @@ describe("ConversationService", () => {
       it("ajoute à la consigne une note qui reconnaît la commande, sans en inventer la récurrence", async () => {
         const llm = makeLlm();
 
-        await drain(makeService(withLastUserMessage("/planifier kiné tous les mardis à 18h"), llm), {
-          content: "/planifier kiné tous les mardis à 18h",
-          inputMode: "text",
-          attachmentIds: [],
-        });
+        await drain(
+          makeService(withLastUserMessage("/planifier kiné tous les mardis à 18h"), llm),
+          {
+            content: "/planifier kiné tous les mardis à 18h",
+            inputMode: "text",
+            attachmentIds: [],
+          },
+        );
 
         const system = lastRequest(llm).system ?? "";
         expect(system).toContain("Commande /planifier");
@@ -1805,7 +1810,11 @@ describe("ConversationService", () => {
           findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
           listMessages: jest.fn().mockResolvedValue({
             items: [
-              makeMessage({ id: "m1", role: "user", content: "/planifier kiné tous les mardis à 18h" }),
+              makeMessage({
+                id: "m1",
+                role: "user",
+                content: "/planifier kiné tous les mardis à 18h",
+              }),
             ],
             nextCursor: null,
           }),
@@ -1828,7 +1837,11 @@ describe("ConversationService", () => {
           findById: jest.fn().mockResolvedValue(makeConversation({ kind: "assistant" })),
           listMessages: jest.fn().mockResolvedValue({
             items: [
-              makeMessage({ id: "m1", role: "user", content: "/bug le bouton d'envoi ne répond plus" }),
+              makeMessage({
+                id: "m1",
+                role: "user",
+                content: "/bug le bouton d'envoi ne répond plus",
+              }),
             ],
             nextCursor: null,
           }),
@@ -1850,7 +1863,11 @@ describe("ConversationService", () => {
 
         await drain(
           makeService(withLastUserMessage("/bug le bouton d'envoi ne répond plus"), llm),
-          { content: "/bug le bouton d'envoi ne répond plus", inputMode: "text", attachmentIds: [] },
+          {
+            content: "/bug le bouton d'envoi ne répond plus",
+            inputMode: "text",
+            attachmentIds: [],
+          },
         );
 
         expect(lastRequest(llm).system ?? "").not.toContain("Commande /bug");
@@ -2501,9 +2518,9 @@ describe("ConversationService", () => {
       // Réponse relevée telle quelle avec ministral-14b.
       const repo = makeRepository();
       const llm = makeLlm([
-        "Je propose de créer un dossier **\"Impôts\"**. Tu veux des sous-dossiers ?\n\n*ask_",
-        "question*\nTu veux :\n1. Un dossier **\"Impôts\"** simple, sans sous-dossiers.\n",
-        "2. Un dossier **\"Impôts\"** avec des sous-dossiers pour mieux organiser.",
+        'Je propose de créer un dossier **"Impôts"**. Tu veux des sous-dossiers ?\n\n*ask_',
+        'question*\nTu veux :\n1. Un dossier **"Impôts"** simple, sans sous-dossiers.\n',
+        '2. Un dossier **"Impôts"** avec des sous-dossiers pour mieux organiser.',
       ]);
 
       const events = await drain(makeService(repo, llm));
@@ -2514,7 +2531,7 @@ describe("ConversationService", () => {
         "conv-1",
         USER,
         expect.objectContaining({
-          content: "Je propose de créer un dossier **\"Impôts\"**. Tu veux des sous-dossiers ?",
+          content: 'Je propose de créer un dossier **"Impôts"**. Tu veux des sous-dossiers ?',
           choices: [
             'Un dossier "Impôts" simple, sans sous-dossiers.',
             'Un dossier "Impôts" avec des sous-dossiers pour mieux organiser.',
@@ -2599,7 +2616,11 @@ describe("ConversationService", () => {
     it("laisse en texte une question recopiée qui ne tient pas en boutons", async () => {
       const repo = makeRepository();
       const llm = makeLlmTurns([
-        { toolCalls: [{ id: "call-1", name: "suggest_task_list", input: { message: "Ok ?", lists: [] } }] },
+        {
+          toolCalls: [
+            { id: "call-1", name: "suggest_task_list", input: { message: "Ok ?", lists: [] } },
+          ],
+        },
         {
           chunks: [
             "ask_question\nTu préfères :\n- Une **liste de courses** ?\n",
@@ -2619,7 +2640,11 @@ describe("ConversationService", () => {
 
     it("signale un tour vide quand la seule proposition est écartée à la capture", async () => {
       const llm = makeLlmTurns([
-        { toolCalls: [{ id: "call-1", name: "suggest_task_list", input: { message: "Ok ?", lists: [] } }] },
+        {
+          toolCalls: [
+            { id: "call-1", name: "suggest_task_list", input: { message: "Ok ?", lists: [] } },
+          ],
+        },
         { chunks: ["`ask_question`"] },
       ]);
 
@@ -2995,6 +3020,125 @@ describe("ConversationService", () => {
       expect(repo.update).not.toHaveBeenCalled();
     });
 
+    it('retire un bloc de code `{"title"}` placé après la phrase d\'accueil, et garde la suite', async () => {
+      const repo = untitled();
+      const llm = makeLlm([
+        "Bonjour ! Comment puis-je t'aider ?\n\n",
+        "```json\n",
+        '{ "title": "Nouvelle conversation" }\n',
+        "```\n\n",
+        "Dis-moi de quoi il s'agit.",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      const shown = events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join("");
+      // Les lignes vides qui entouraient le bloc restent : le rendu Markdown les
+      // regroupe, et rien du texte de l'utilisateur n'est modifié.
+      expect(shown).toBe("Bonjour ! Comment puis-je t'aider ?\n\n\nDis-moi de quoi il s'agit.");
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({ content: shown }),
+        TOKEN,
+      );
+      // Le libellé par défaut recopié ne nomme rien : le fil garde son titre.
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it("applique le titre lu dans un bloc de code retiré", async () => {
+      const repo = untitled();
+      const llm = makeLlm([
+        "Voici.\n",
+        "```json\n",
+        '{"title":"Zumba du mardi"}\n',
+        "```\n",
+        "Suite.",
+      ]);
+
+      const events = await drain(makeService(repo, llm));
+
+      const shown = events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join("");
+      expect(shown).toBe("Voici.\nSuite.");
+      expect(repo.update).toHaveBeenCalledWith("conv-1", { title: "Zumba du mardi" }, TOKEN);
+    });
+
+    it("retire le bloc même quand ses balises arrivent coupées entre deux fragments", async () => {
+      const repo = untitled();
+      const llm = makeLlm(["Salut\n``", '`json\n{"title":"Zumba"}\n``', "`\nOK"]);
+
+      const events = await drain(makeService(repo, llm));
+
+      const shown = events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join("");
+      expect(shown).toBe("Salut\nOK");
+      expect(repo.update).toHaveBeenCalledWith("conv-1", { title: "Zumba" }, TOKEN);
+    });
+
+    it("retire un JSON de titre seul sur sa ligne, au milieu de la réponse", async () => {
+      const repo = untitled();
+      const llm = makeLlm(["Bonjour.\n", '{"title":"Zumba"}\n', "Suite."]);
+
+      const events = await drain(makeService(repo, llm));
+
+      const shown = events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join("");
+      expect(shown).toBe("Bonjour.\nSuite.");
+      expect(repo.update).toHaveBeenCalledWith("conv-1", { title: "Zumba" }, TOKEN);
+    });
+
+    it("rend tel quel un bloc de code qui n'est pas un titre", async () => {
+      const repo = untitled();
+      const llm = makeLlm(["Exemple :\n", "```js\n", "const a = 1;\n", "```\n", "Fin."]);
+
+      const events = await drain(makeService(repo, llm));
+
+      const shown = events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join("");
+      expect(shown).toBe("Exemple :\n```js\nconst a = 1;\n```\nFin.");
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it("rend un bloc de code resté ouvert à la fin de la réponse", async () => {
+      const repo = untitled();
+      const llm = makeLlm(["Exemple :\n", "```js\n", "const a = 1;"]);
+
+      const events = await drain(makeService(repo, llm));
+
+      const shown = events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join("");
+      expect(shown).toBe("Exemple :\n```js\nconst a = 1;");
+    });
+
+    it('ne touche pas à un bloc `{"title"}` quand le fil a déjà un titre', async () => {
+      // Une fois nommé, `{"title": …}` peut être une réponse légitime.
+      const repo = makeRepository();
+      const llm = makeLlm(["Voici :\n", "```json\n", '{"title":"Exemple"}\n', "```\n"]);
+
+      const events = await drain(makeService(repo, llm));
+
+      const shown = events
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join("");
+      expect(shown).toBe('Voici :\n```json\n{"title":"Exemple"}\n```\n');
+    });
+
     it("retire les pseudo-appels d'outils collés en tête et récupère le titre (A.11)", async () => {
       const repo = untitled();
       const llm = makeLlm([
@@ -3024,7 +3168,7 @@ describe("ConversationService", () => {
     it("attend qu'un pseudo-appel soit clos avant d'émettre, même à cheval sur deux fragments", async () => {
       const repo = untitled();
       const llm = makeLlm([
-        "nameconversation(\"Zum",
+        'nameconversation("Zum',
         'ba")\nsuggestfolders(["Courses"])\nJe te propose de le poser.',
       ]);
 
@@ -3481,14 +3625,11 @@ describe("ConversationService", () => {
     it("réclame suggest_recurring_event dès qu'on demande de noter une récurrence", async () => {
       const llm = makeLlm();
 
-      await drain(
-        makeService(makeRepository(), llm),
-        {
-          content: "Je vais faire de la zumba tous les mercredi à 18h30, note le.",
-          inputMode: "text",
-          attachmentIds: [],
-        },
-      );
+      await drain(makeService(makeRepository(), llm), {
+        content: "Je vais faire de la zumba tous les mercredi à 18h30, note le.",
+        inputMode: "text",
+        attachmentIds: [],
+      });
 
       const system = lastRequest(llm).system ?? "";
       expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_recurring_event");
@@ -4312,7 +4453,8 @@ describe("ConversationService", () => {
       );
 
       await drain(makeService(makeRepository(), llm, suggestions), {
-        content: "J'ai rendez-vous chez le dentiste jeudi à 17h et chez le coiffeur vendredi à 10h.",
+        content:
+          "J'ai rendez-vous chez le dentiste jeudi à 17h et chez le coiffeur vendredi à 10h.",
         inputMode: "text",
         attachmentIds: [],
       });
@@ -4471,7 +4613,11 @@ describe("ConversationService", () => {
           makeFolderRepository(),
           makeUserRepository({ proactiveScheduling: false }),
         ),
-        { content: "J'ai rendez-vous chez le dentiste jeudi à 17h.", inputMode: "text", attachmentIds: [] },
+        {
+          content: "J'ai rendez-vous chez le dentiste jeudi à 17h.",
+          inputMode: "text",
+          attachmentIds: [],
+        },
       );
 
       const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
@@ -4769,7 +4915,11 @@ describe("ConversationService", () => {
       const suggestions = makeRecordingSuggestions([PENDING_LISTS]);
 
       await drain(
-        makeService(makeRepository(), makeLlm(["C'est détaillé dans la carte."], [CORRECTED]), suggestions),
+        makeService(
+          makeRepository(),
+          makeLlm(["C'est détaillé dans la carte."], [CORRECTED]),
+          suggestions,
+        ),
         { content: "Détaille les courses", inputMode: "text", attachmentIds: [] },
       );
 
@@ -4997,8 +5147,7 @@ describe("ConversationService", () => {
           ),
         );
         const created = (suggestions.create as jest.Mock).mock.calls[0] as
-          | [string, { payload: { items: unknown } }]
-          | undefined;
+          [string, { payload: { items: unknown } }] | undefined;
         return created?.[1].payload.items;
       };
 

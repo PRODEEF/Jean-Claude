@@ -771,7 +771,9 @@ export class ConversationService {
     // consigne pour un outil que le modèle ne peut pas appeler.
     // `command.name` exclut déjà "aide" ici : le premier `if` de la méthode
     // court-circuite ce cas avant d'atteindre ce point.
-    const activeCommand = command ? { note: COMMAND_NOTES[command.name], args: command.args } : null;
+    const activeCommand = command
+      ? { note: COMMAND_NOTES[command.name], args: command.args }
+      : null;
     const system =
       activeCommand && todo.tools.includes(activeCommand.note.tool)
         ? [baseSystem, "", ...activeCommand.note.describe(activeCommand.args)].join("\n")
@@ -800,6 +802,9 @@ export class ConversationService {
             stripTitleJson: todo.tools.includes(NAME_CONVERSATION),
           })
         : null;
+    // Le titre peut aussi être recopié plus loin que le début de la réponse,
+    // dans un bloc de code : même condition que le JSON de titre en tête.
+    const titleBlock = todo.tools.includes(NAME_CONVERSATION) ? createTitleBlockFilter() : null;
     const trailingLeak = createTrailingLeakFilter(KNOWN_TOOL_NAMES);
     // La relance sans outils a son propre filtre : privé d'outils, le modèle y
     // recopie d'autant plus volontiers les siens en texte, et le filtre du
@@ -809,7 +814,8 @@ export class ConversationService {
     try {
       for await (const chunk of this.llm.stream(request)) {
         if (chunk.type === "text") {
-          const visible = trailingLeak.push(textLeak ? textLeak.push(chunk.text) : chunk.text);
+          const head = textLeak ? textLeak.push(chunk.text) : chunk.text;
+          const visible = trailingLeak.push(titleBlock ? titleBlock.push(head) : head);
           if (visible.length > 0) {
             text += visible;
             yield { type: "text", text: visible };
@@ -822,7 +828,9 @@ export class ConversationService {
         }
       }
 
-      const tail = trailingLeak.push(textLeak?.flush() ?? "") + trailingLeak.flush();
+      const head = textLeak?.flush() ?? "";
+      const settled = titleBlock ? titleBlock.push(head) + titleBlock.flush() : head;
+      const tail = trailingLeak.push(settled) + trailingLeak.flush();
       if (tail.length > 0) {
         text += tail;
         yield { type: "text", text: tail };
@@ -983,7 +991,7 @@ export class ConversationService {
         conversationId,
         toolCalls,
         accessToken,
-        textLeak?.leakedTitle() ?? null,
+        textLeak?.leakedTitle() ?? titleBlock?.leakedTitle() ?? null,
       );
 
       await this.applyOnboardingMemory(userId, toolCalls, accessToken);
@@ -1498,12 +1506,7 @@ function inspectPseudoToolLeak(
 /** `name_conversation` → `name_?conversation`, pour matcher aussi `nameconversation`. */
 function buildToolNamePattern(toolNames: string[]): RegExp | null {
   if (toolNames.length === 0) return null;
-  const alts = toolNames.map((name) =>
-    name
-      .split("_")
-      .map(escapeRegExp)
-      .join("_?"),
-  );
+  const alts = toolNames.map((name) => name.split("_").map(escapeRegExp).join("_?"));
   return new RegExp(`^(?:${alts.join("|")})\\s*\\(`, "i");
 }
 
@@ -1600,6 +1603,151 @@ function takeJsonObject(text: string, start: number): number | "incomplete" {
     }
   }
   return "incomplete";
+}
+
+/**
+ * Titre recopié en texte **au milieu** d'une réponse : un bloc de code qui ne
+ * contient que `{"title": …}`, ou cet objet seul sur sa ligne.
+ *
+ * Relevé en usage réel : après sa phrase d'accueil, le modèle a écrit le titre
+ * dans un bloc de code, avec le texte « Nouvelle conversation » recopié. Le
+ * filtre de préambule ne regarde que le tout début de la réponse, et celui de
+ * fin coupe tout ce qui suit : ici la réponse continue après le bloc, il ne
+ * faut retirer que lui.
+ *
+ * Seul ce qui peut ouvrir un bloc ou un objet est retenu, le temps de savoir
+ * s'il en est un : le reste du texte passe au fil de l'eau. Un bloc de code qui
+ * n'est pas un titre est rendu tel quel, à sa fermeture.
+ */
+type TitleBlockFilter = {
+  push: (chunk: string) => string;
+  flush: () => string;
+  /** Le titre lu dans un bloc retiré, `null` s'il n'y en avait pas d'exploitable. */
+  leakedTitle: () => string | null;
+};
+
+/** Un JSON de titre est court : au-delà, le bloc n'en est pas un et on le rend. */
+const MAX_TITLE_BLOCK_LENGTH = 400;
+
+function createTitleBlockFilter(): TitleBlockFilter {
+  /** Début de la ligne courante, retenu tant qu'il peut ouvrir une fuite. */
+  let held = "";
+  /** La ligne courante a déjà été libérée : son début ne ressemblait à rien. */
+  let midLine = false;
+  /** Lignes d'un bloc de code ouvert, ligne d'ouverture comprise. */
+  let fence: string[] | null = null;
+  let fenceLength = 0;
+  let title: string | null = null;
+
+  const record = (leaked: string) => {
+    const parsed = labelSchema.safeParse(leaked);
+    // Le texte recopié du libellé par défaut ne nomme rien : le fil resterait
+    // intitulé « Nouvelle conversation ».
+    if (parsed.success && parsed.data !== DEFAULT_CONVERSATION_TITLE && title === null) {
+      title = parsed.data;
+    }
+  };
+
+  const endFence = (closed: boolean): string => {
+    const lines = fence ?? [];
+    fence = null;
+    fenceLength = 0;
+
+    const body = lines.slice(1, closed ? -1 : undefined).join("");
+    const leaked = readSoleTitleJson(body);
+    if (leaked !== null) {
+      record(leaked);
+      return "";
+    }
+    return lines.join("");
+  };
+
+  /** Une ligne complète, ou la dernière du flux. */
+  const settleLine = (line: string): string => {
+    if (fence !== null) {
+      fence.push(line);
+      fenceLength += line.length;
+      if (/^\s*```\s*$/.test(line)) return endFence(true);
+      if (fenceLength > MAX_TITLE_BLOCK_LENGTH) return endFence(false);
+      return "";
+    }
+
+    const trimmed = line.trim();
+    if (trimmed.startsWith("```")) {
+      fence = [line];
+      fenceLength = line.length;
+      return "";
+    }
+
+    if (trimmed.startsWith("{")) {
+      const leaked = readSoleTitleJson(trimmed);
+      if (leaked !== null) {
+        record(leaked);
+        return "";
+      }
+    }
+
+    return line;
+  };
+
+  const mayOpenLeak = (line: string): boolean => {
+    const start = line.trimStart();
+    return (
+      start === "" || start.startsWith("{") || start.startsWith("```") || "```".startsWith(start)
+    );
+  };
+
+  return {
+    push(chunk) {
+      let out = "";
+      let rest = chunk;
+      while (rest.length > 0) {
+        const newline = rest.indexOf("\n");
+        const piece = newline === -1 ? rest : rest.slice(0, newline + 1);
+        rest = newline === -1 ? "" : rest.slice(newline + 1);
+        const complete = newline !== -1;
+
+        if (fence === null && midLine) {
+          out += piece;
+          midLine = !complete;
+          continue;
+        }
+
+        held += piece;
+        if (complete) {
+          out += settleLine(held);
+          held = "";
+        } else if (fence === null && !mayOpenLeak(held)) {
+          out += held;
+          held = "";
+          midLine = true;
+        }
+      }
+      return out;
+    },
+    flush() {
+      let out = "";
+      if (held.length > 0) {
+        const line = held;
+        held = "";
+        out += settleLine(line);
+      }
+      if (fence !== null) out += endFence(false);
+      return out;
+    },
+    leakedTitle: () => title,
+  };
+}
+
+/** Le titre d'un texte qui n'est que `{"title": "…"}`, sinon `null`. */
+function readSoleTitleJson(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
+  try {
+    return readSoleTitle(JSON.parse(trimmed));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -2055,13 +2203,17 @@ function withVerifiedTaskIds(toolCall: LlmToolCall, lists: TaskListWithTasks[]):
 
   if (!changed) return toolCall;
 
-  logger.warn(SCOPE, "Ligne désignée par un identifiant qui ne correspond pas à son titre : rétablie ou écartée.");
+  logger.warn(
+    SCOPE,
+    "Ligne désignée par un identifiant qui ne correspond pas à son titre : rétablie ou écartée.",
+  );
   return { ...toolCall, input: { ...toolCall.input, items: verified } };
 }
 
 /** Une liste proposée porte-t-elle le titre d'une liste déjà née du fil ? */
 function isExistingList(entry: unknown, existing: TaskListWithTasks[]): boolean {
-  const title = typeof entry === "object" && entry !== null && "title" in entry ? entry.title : null;
+  const title =
+    typeof entry === "object" && entry !== null && "title" in entry ? entry.title : null;
   return typeof title === "string" && existing.some((list) => sameName(list.title, title));
 }
 
@@ -2486,7 +2638,10 @@ function askForListContent(toolCalls: LlmToolCall[]): string | null {
  * « Organisation samedi ») — une validation sans rien à valider. Une liste
  * existante se modifie : la réponse demande quoi y changer.
  */
-function answerExistingLists(toolCalls: LlmToolCall[], existing: TaskListWithTasks[]): string | null {
+function answerExistingLists(
+  toolCalls: LlmToolCall[],
+  existing: TaskListWithTasks[],
+): string | null {
   const proposals = toolCalls.filter((toolCall) => !APPLIED_DIRECTLY.has(toolCall.name));
   if (proposals.length === 0) return null;
   if (!proposals.every((toolCall) => toolCall.name === SUGGEST_TASK_LIST.name)) return null;
@@ -2524,7 +2679,10 @@ function describeProposedLists(toolCalls: LlmToolCall[]): string[] {
       const items: unknown = "items" in entry ? entry.items : null;
       const lines = Array.isArray(items)
         ? items.flatMap((item: unknown) =>
-            typeof item === "object" && item !== null && "title" in item && typeof item.title === "string"
+            typeof item === "object" &&
+            item !== null &&
+            "title" in item &&
+            typeof item.title === "string"
               ? [item.title]
               : [],
           )
@@ -2805,7 +2963,8 @@ function buildSystemPrompt(
 
     // Mêmes consignes qu'en conversation classique : une demande de rendez-vous
     // ou de todoliste doit produire la même carte, où qu'elle soit formulée.
-    if (todo.tools.includes(SUGGEST_TASK_LIST)) channel.push(...describeTaskListRules(todo.decided));
+    if (todo.tools.includes(SUGGEST_TASK_LIST))
+      channel.push(...describeTaskListRules(todo.decided));
     if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) channel.push(...RECURRING_EVENT_RULES);
     if (todo.tools.includes(SUGGEST_EVENTS)) channel.push(...EVENTS_RULES);
 
@@ -2928,7 +3087,7 @@ function buildSystemPrompt(
       "mieux qu'une liste de « Nouvelle conversation » indiscernables dans la barre",
       "latérale, et l'utilisateur peut le corriger. N'attends pas qu'on te le",
       "demande et n'en parle pas : le titre s'applique seul. N'écris jamais",
-      "le titre dans ta réponse, ni en JSON (`{\"title\":...}`), ni en clair,",
+      'le titre dans ta réponse, ni en JSON (`{"title":...}`), ni en clair,',
       "ni sous forme d'appel inventé (`nameconversation(...)`) : utilise l'outil.",
     );
   }
