@@ -19,7 +19,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
-Rien en attente : `dev` et la production sont identiques.
+- **Calendrier : les vues Jour et Semaine s'ouvrent sur l'heure en cours** quand aujourd'hui y figure, au lieu du premier rendez-vous. *Où : Calendrier › Jour ou Semaine.* — À tester.
 
 ### Réglage fait
 
@@ -91,8 +91,9 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 ### Calendrier
 
 - [ ] `FRONT` `Calendrier` **Vérifier le paramétrage des heures et du positionnement dans le calendrier** — Priorité initiale : P5. PR #161 : grilles qui défilent sans perdre l'en-tête. À tester à la main. <!--id:y-heures-calendrier-->
-- [ ] `FRONT` `Calendrier / TODO` **Calendrier et todo au fil de l'eau** — Priorité initiale : P4. À l'ouverture (vue Mois / Semaine / autre), afficher le jour du jour en haut à gauche. Idem pour la TODO : ajustable à l'heure près, et sur mobile s'ouvrir directement sur l'heure (donc le jour) en cours. Le haut du calendrier est ancré depuis #161. L'ouverture sur le jour courant et sur l'heure en cours sur mobile n'est pas vérifiée. <!--id:y-fil-de-leau-->
+- [ ] `FRONT` `Calendrier / TODO` **Calendrier et todo au fil de l'eau** — Priorité initiale : P4. À l'ouverture (vue Mois / Semaine / autre), afficher le jour du jour en haut à gauche. Idem pour la TODO : ajustable à l'heure près, et sur mobile s'ouvrir directement sur l'heure (donc le jour) en cours. Le haut du calendrier est ancré depuis #161. Fait (5 novembre) : les vues Jour et Semaine s'ouvrent sur l'heure en cours quand aujourd'hui est affiché ; à tester sur mobile. Reste la Todo à l'heure près. <!--id:y-fil-de-leau-->
 - [ ] `FRONT` `Calendrier` **Modeler le calendrier à la demande** — Idée (Boîte à idées, P3). Pouvoir façonner le calendrier à la demande, ajuster un rendez-vous à la demande, et cumuler/filtrer les rdv selon certains critères (ex : rdv « standby » affichés dans une couleur dédiée). <!--id:y-modeler-calendrier-->
+- [ ] `ALGO` `Calendrier` **Demander à l'IA d'ajouter des tâches au calendrier, une ou plusieurs, y compris récurrentes** — Demande de Yann le 5 novembre. Dans une conversation, dire à l'IA d'ajouter des tâches simples au calendrier, voire plusieurs d'un coup : donner un planning, ou dire « un cours tous les jeudis à 18h, sauf en février ». Reste une suggestion que l'on accepte d'un geste, jamais une action directe (§12.1). Les récurrences avec exceptions dépendent du calcul des occurrences ci-dessous. <!--id:y-ia-ajoute-calendrier-->
 - [ ] `BACKEND` `Calendrier` **Calcul des occurrences récurrentes (rrule) et rappels de rendez-vous** — Gros chantier back-end. Aujourd'hui un rendez-vous récurrent n'apparaît qu'à son premier créneau ; aucun rappel ne part. Débloque « Vocaux le matin ». <!--id:y-rappel-rdv-recurrence-->
 - [ ] `DATA` `Calendrier` **Rattacher un rendez-vous à un dossier (migration), pour « Prendre RDV »** — Chantier back-end identifié dans le suivi backlog. <!--id:y-rdv-rattache-dossier-->
 - [ ] `ALGO` `Calendrier` **suggest_events ne produit parfois qu'un rendez-vous quand le message en cite plusieurs** — Chantier back-end identifié dans le suivi backlog. <!--id:y-suggest-events-bug-->
