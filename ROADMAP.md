@@ -9,8 +9,29 @@
 - **Une tâche = une ligne** : ``- [ ] `ZONE` `Page` **Titre** — détail ⏸ raison d'attente <!--id:identifiant-->``. Zones : `DATA`, `BACKEND`, `ALGO`, `FRONT`. Le `⏸` marque un « stand by » ; `[x]` une tâche faite.
 - **Un groupe = un titre `###`**. L'ordre des groupes et des lignes est celui de l'artifact.
 - **Quand une PR avance un point**, cocher la ligne et mettre le détail à jour (numéro de PR, ce qui reste).
+- **À chaque merge**, ajouter une ligne en tête de « Quoi de neuf », en langage courant : ce qui change, où le voir, s'il est testé.
 - **Pour régénérer l'artifact** : relire la version en ligne, y remplacer ses données par celles de ce fichier, republier. Cocher dans l'artifact ne met pas ce fichier à jour : redire à Claude ce qui a été coché.
 - Dernier recoupement avec le code de `dev` et le backlog : 5 novembre 2026. Les statuts viennent du code, du backlog et de la CI ; rien n'a été joué dans une vraie app.
+
+## Quoi de neuf
+
+Les dernières modifications, en langage courant, la plus récente en haut. **« À tester »** veut dire : fait et vérifié par les contrôles automatiques, mais jamais regardé à l'écran.
+
+### Sur `dev` (pas encore en production)
+
+- **Mes listes : l'en-tête d'une liste tient sur une ligne.** Chevron, titre, icône, type, dossier, puis la date. On change le **dossier** et la **date** d'un appui, avec un choix Journée / Matin / Après-midi / Soir. *Où : Mes listes.* — À tester.
+- **Espaces : « Ajouter une tâche »** est maintenant la ligne pâle de « Mes listes », au lieu d'un champ avec un bouton. *Où : une liste d'un espace.* — À tester.
+- **Espaces : les listes ont un type (tâches ou achats) et une échéance** côté base et serveur. Rien ne change encore à l'écran : l'affichage suit. — Base de données prête.
+- **Groupes : Jean-Claude affiche « réfléchit… » avec la roue et les secondes**, comme en tête-à-tête. *Où : une discussion de groupe.* — À tester.
+
+### En production
+
+- **La pastille de non-lu est rouge**, quel que soit le thème.
+- **L'invitation par mail** fonctionne (testé par toi le 5 novembre).
+
+### En attente de ta décision
+
+- **Mise en production** de tout ce qui est sous « Sur `dev` » : une fois que tu auras regardé, dis « on déploie ».
 
 ## Vision
 
@@ -46,12 +67,12 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 ### Dossiers & Collaboration
 
 - [ ] `FRONT` `Mes Collaborations` **Remodeler la structure et l'arborescence des dossiers de « Mes Collaborations » comme « Mes dossiers »** — Priorité initiale : P5. Fait dans le code : PR #159, chaque espace est une section au même format que « Mes dossiers ». À valider visuellement. <!--id:c-remodeler-collaborations-->
-- [ ] `FRONT` `Mes listes / TODO` **Même UX/UI partout pour ajouter une tâche dans un TODO** — Priorité initiale : P5. Référence : ajout de tâche dans « Mes listes » — case à cocher + texte « Ajouter une tâche » en gros et clair. TaskListEditor réécrit en #161 ; à comparer écran par écran (Mes listes, calendrier, espaces). <!--id:c-ux-ajout-tache-->
+- [ ] `FRONT` `Mes listes / TODO` **Même UX/UI partout pour ajouter une tâche dans un TODO** — Priorité initiale : P5. Référence : ajout de tâche dans « Mes listes » — case à cocher + texte « Ajouter une tâche » en gros et clair. TaskListEditor réécrit en #161 ; à comparer écran par écran (Mes listes, calendrier, espaces). Liste d'espace alignée (PR #174) ; calendrier et autres écrans à comparer. <!--id:c-ux-ajout-tache-->
 - [ ] `FRONT` `TODO` **Déplacer les TODO en glissé-déposé** — Priorité initiale : P5. Web fait (PR #161). Mobile non fait. <!--id:y-glisse-depose-->
 - [ ] `FRONT` `Mobile` **Le bouton qui fait apparaître la marge gauche ne fonctionne pas** — Priorité initiale : P5. Barre latérale refaite depuis (#159). À retester sur téléphone avant de corriger. <!--id:mobile-marge-->
 - [ ] `ALGO` `Dossiers` **Suggestion de nom de dossier pour ranger la conversation** — Priorité initiale : P4. L'assistant propose déjà un rangement pour un fil non classé et une arborescence de projet ; une suggestion de nom pour un dossier nouveau n'est pas dédiée. <!--id:y-suggestion-nom-dossier-->
 - [ ] `FRONT` `Mes Collaborations` **Vérifier les mêmes gestes que « Mes dossiers » (déplacer, ranger, déplier)** — À tester à la main. <!--id:y-test-collaborations-gestes-->
-- [ ] `FRONT` `Mes Collaborations` **Aligner le format des todos dans Collaboration sur celui de « Mes listes » classique (mêmes options)** — Aujourd'hui une todo d'espace collaboratif (ex. « Suivi des mesures des ailerons ») est une simple liste à cocher avec auteur et suppression — moins modulable que « Mes listes » : pas de glissé-déposé, pas d'ajout de tâche inline « Ajouter une tâche », pas d'icône de type de liste ni de date, pas de menu options / repli-dépli. Reprendre le même format et les mêmes options que « Mes listes » dans les todos des espaces collaboratifs. Capture jointe : « Mes listes » est fonctionnelle mais note l'utilisateur, demande encore à évoluer un peu. <!--id:c-format-todo-collab-mes-listes-->
+- [ ] `FRONT` `Mes Collaborations` **Aligner le format des todos dans Collaboration sur celui de « Mes listes » classique (mêmes options)** — Aujourd'hui une todo d'espace collaboratif (ex. « Suivi des mesures des ailerons ») est une simple liste à cocher avec auteur et suppression — moins modulable que « Mes listes » : pas de glissé-déposé, pas d'ajout de tâche inline « Ajouter une tâche », pas d'icône de type de liste ni de date, pas de menu options / repli-dépli. Reprendre le même format et les mêmes options que « Mes listes » dans les todos des espaces collaboratifs. Capture jointe : « Mes listes » est fonctionnelle mais note l'utilisateur, demande encore à évoluer un peu. Avancement au 5 novembre : ligne « Ajouter une tâche » alignée (PR #174) ; type et échéance ajoutés aux listes d'espace côté base et API (PR #175, migration appliquée). Restent l'en-tête, les sous-tâches, le glisser-déposer et le partage de l'éditeur. <!--id:c-format-todo-collab-mes-listes-->
 
 ### Calendrier
 
@@ -62,8 +83,8 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 - [ ] `DATA` `Calendrier` **Rattacher un rendez-vous à un dossier (migration), pour « Prendre RDV »** — Chantier back-end identifié dans le suivi backlog. <!--id:y-rdv-rattache-dossier-->
 - [ ] `ALGO` `Calendrier` **suggest_events ne produit parfois qu'un rendez-vous quand le message en cite plusieurs** — Chantier back-end identifié dans le suivi backlog. <!--id:y-suggest-events-bug-->
 - [ ] `BACKEND` `Calendrier` **Lier le calendrier Jean Claude aux calendriers iPhone/iOS et Google, simplement** — Synchronisation simple avec le calendrier natif iOS et avec Google Calendar. <!--id:y-sync-calendrier-ios-google-->
-- [ ] `BACKEND` `Calendrier / TODO` **Découpage MATIN / APRÈS-MIDI / SOIRÉE / SOIR sur la date d'une tâche (todo liste et calendrier)** — Dans la logique du calendrier, et au moment de mettre une date sur un élément de la todo liste, pouvoir choisir un créneau MATIN / APRÈS-MIDI / SOIRÉE / SOIR plutôt qu'une heure précise uniquement. <!--id:y-decoupage-matin-apresmidi-soir-->
-- [ ] `FRONT` `TODO` **Pouvoir modifier ce créneau (MATIN / APRÈS-MIDI / SOIRÉE / SOIR) directement dans le header de la todo liste** — Permettre de changer le créneau horaire d'une tâche sans sortir de la todo liste, en le modifiant directement depuis son en-tête. Lié à « Découpage MATIN / APRÈS-MIDI / SOIRÉE / SOIR ». <!--id:y-modif-creneau-header-todo-->
+- [ ] `BACKEND` `Calendrier / TODO` **Découpage MATIN / APRÈS-MIDI / SOIRÉE / SOIR sur la date d'une tâche (todo liste et calendrier)** — Dans la logique du calendrier, et au moment de mettre une date sur un élément de la todo liste, pouvoir choisir un créneau MATIN / APRÈS-MIDI / SOIRÉE / SOIR plutôt qu'une heure précise uniquement. Fait pour la todo liste (PR #173) : matin avant 12h, après-midi, soir dès 19h, sans « soirée » distincte du soir. Reste le calendrier. <!--id:y-decoupage-matin-apresmidi-soir-->
+- [x] `FRONT` `TODO` **Pouvoir modifier ce créneau (MATIN / APRÈS-MIDI / SOIRÉE / SOIR) directement dans le header de la todo liste** — Permettre de changer le créneau horaire d'une tâche sans sortir de la todo liste, en le modifiant directement depuis son en-tête. Lié à « Découpage MATIN / APRÈS-MIDI / SOIRÉE / SOIR ». Fait (PR #173, 5 novembre) : l'échéance et son moment (Journée / Matin / Après-midi / Soir) se changent depuis l'en-tête. À tester à la main. <!--id:y-modif-creneau-header-todo-->
 - [ ] `FRONT` `Calendrier` **Pouvoir déplacer des tâches, et des tâches avec leur todo liste, dans le calendrier** — Demande de Yann le 5 novembre. Changer le jour (ou le moment) d'une tâche ou d'une todo liste au geste, web d'abord. Déjà au backlog (« Glisser-déposer des tâches au calendrier », A.3), noté non implémenté ; la PR #161 permet seulement de réordonner les listes, y compris sous les bandeaux du jour. <!--id:y-deplacer-calendrier-->
 
 ### Conversations & Canal permanent
@@ -101,9 +122,11 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 
 ### Infra
 
-- [ ] `BACKEND` `Infra` **Projet Supabase en région UE** — « À faire avant tout remplissage de données » (§8). Statut non confirmé. <!--id:infra-supabase-ue-->
+- [x] `BACKEND` `Infra` **Projet Supabase en région UE** — « À faire avant tout remplissage de données » (§8). Statut non confirmé. Confirmé le 5 novembre : projet « Jean-Claude », région West EU (Paris). <!--id:infra-supabase-ue-->
 - [ ] `BACKEND` `Infra` **npx supabase config push** — Tant que non fait, le projet hébergé envoie un lien et non un code à 8 chiffres (§6.1). Lié à l'invitation par mail (Connexion). <!--id:infra-supabase-config-push-->
 - [ ] `BACKEND` `Infra` **7 PR Dependabot ouvertes (#163 à #169)** — Merger celles dont la CI est verte. #168 (zod 3 → 4) échoue et demande une migration. <!--id:infra-dependabot-->
+- [ ] `BACKEND` `Infra` **Réparer l'historique des migrations Supabase** — La base connaît 5 migrations absentes du dépôt (versions 20260928080757, 20260928092328, 20260929073035, 20260929075602, 20260929085857), appliquées directement dans Supabase : `supabase db push` refuse de tourner. La migration 20261105160000 a donc été passée à la main dans l'éditeur SQL le 5 novembre. Ne pas lancer `migration repair --status reverted` : il ferait rejouer des migrations déjà appliquées. À traiter à froid, après comparaison du schéma distant et du dépôt. <!--id:infra-historique-migrations-->
+- [ ] `BACKEND` `Infra` **Adapter supabase/config.toml au CLI Supabase 3** — Le CLI 3 refuse la section [inbucket] (remplacée par [local_smtp]). Contournement actuel : utiliser `npx supabase@2`. Le format exact du nouveau réglage est à vérifier dans la documentation Supabase. <!--id:infra-config-toml-cli3-->
 
 ### Comptes
 
