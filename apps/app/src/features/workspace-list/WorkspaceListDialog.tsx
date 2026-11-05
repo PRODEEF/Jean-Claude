@@ -2,6 +2,7 @@ import { useState } from "react";
 import { View } from "react-native";
 import { Check } from "lucide-react-native";
 import type { FolderTreeNode, WorkspaceTaskList } from "@jc/domain";
+import { DueDialog } from "@/features/todo/ListDueDialog";
 import { useWorkspaceFolders } from "@/features/workspace/hooks/use-workspace-folders";
 import { workspaceErrorMessage } from "@/features/workspace/hooks/use-workspaces";
 import { Button } from "@/shared/ui/button";
@@ -16,6 +17,7 @@ export type WorkspaceListTarget =
   | { kind: "create"; workspaceId: string; folderId?: string }
   | { kind: "rename"; list: WorkspaceTaskList }
   | { kind: "folder"; list: WorkspaceTaskList }
+  | { kind: "due"; list: WorkspaceTaskList }
   | { kind: "delete"; list: WorkspaceTaskList };
 
 export type WorkspaceListDialogProps = {
@@ -43,6 +45,8 @@ export function WorkspaceListDialog({ target, onClose, onDone }: WorkspaceListDi
       return <RenameForm key={target.list.id} list={target.list} onClose={onClose} />;
     case "folder":
       return <FolderPicker key={target.list.id} list={target.list} onClose={onClose} />;
+    case "due":
+      return <DueForm key={target.list.id} list={target.list} onClose={onClose} />;
     case "delete":
       return (
         <DeleteConfirmation list={target.list} onClose={onClose} onDeleted={() => onDone?.(null)} />
@@ -144,6 +148,23 @@ function RenameForm({ list, onClose }: { list: WorkspaceTaskList; onClose: () =>
     >
       <TitleField value={title} onChange={setTitle} onSubmit={submit} />
     </Modal>
+  );
+}
+
+/** L'échéance d'une liste d'espace : la même saisie que pour une liste personnelle. */
+function DueForm({ list, onClose }: { list: WorkspaceTaskList; onClose: () => void }) {
+  const { update } = useWorkspaceListActions(list);
+
+  return (
+    <DueDialog
+      title={list.title}
+      dueAt={list.dueAt}
+      dueAllDay={list.dueAllDay}
+      pending={update.isPending}
+      failure={workspaceErrorMessage(update.error, "L'échéance n'a pas pu être enregistrée.")}
+      onSubmit={(due) => update.mutate(due, { onSuccess: onClose })}
+      onClose={onClose}
+    />
   );
 }
 
