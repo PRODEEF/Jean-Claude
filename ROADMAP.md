@@ -22,11 +22,8 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 - **Mes listes : l'en-tête d'une liste tient sur une ligne.** Chevron, titre, icône, type, dossier, puis la date. On change le **dossier** et la **date** d'un appui, avec un choix Journée / Matin / Après-midi / Soir. *Où : Mes listes.* — Testé par toi le 5 novembre : fonctionne.
 - **Espaces : « Ajouter une tâche »** est maintenant la ligne pâle de « Mes listes », au lieu d'un champ avec un bouton. *Où : une liste d'un espace.* — Testé par toi le 5 novembre : fonctionne.
 - **Espaces : les listes ont un type (tâches ou achats) et une échéance** côté base et serveur. Rien ne change encore à l'écran : l'affichage suit. — Base de données prête.
+- **Un bloc `{"title": …}` ne s'affiche plus dans la réponse de Jean-Claude** sur une nouvelle conversation (le titre recopié en texte est retiré, y compris du message enregistré). *Où : une nouvelle conversation.* — À tester après le déploiement, avec un modèle réel.
 - **Groupes : Jean-Claude affiche « réfléchit… » avec la roue et les secondes**, comme en tête-à-tête. *Où : une discussion de groupe.* — Testé par toi le 5 novembre : fonctionne.
-
-### Problème connu
-
-- **Un bloc `{"title": …}` peut s'afficher dans la réponse de Jean-Claude** sur une nouvelle conversation. Vu le 5 novembre. Correctif en cours (voir BUG).
 
 ### Réglage fait
 
@@ -118,7 +115,7 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 - [ ] `ALGO` `Suggestion de dossier` **Suggestion de dossier incohérente sur une deuxième conversation** — Sur une deuxième conversation, après une question sur un autre sujet, Jean Claude a suggéré de mettre la conversation dans le même dossier qu'avant alors que cela n'avait rien à voir. Autre cas : bon dossier suggéré, mais avec en même temps l'ancien dossier sans rapport — « Environnement » suggéré alors qu'on parlait de la date de déclaration d'impôts, « Impôts » étant le bon. Piste : consigne de détection, à rejouer avec ces deux conversations. <!--id:bug-suggestion-dossier-->
 - [ ] `ALGO` `Calendrier` **Test jours travaillés / non travaillés (suite au test de Mégane)** — En lui demandant d'ajouter que tel ou tel jour on travaille et tel ou tel jour on ne travaille pas. Aucune trace dans le code ni le backlog ; à décrire (quel écran, quel comportement attendu) avant de pouvoir le traiter. <!--id:bug-jc-jours-travail-->
 - [ ] `DATA` `Notifications` **La pastille de discussion (notification) pose de temps en temps problème** — Cause probable connue : le compteur unread_count est incrémenté par trigger mais jamais décrémenté à la suppression. Après une édition ou une reprise de tour, il peut sur-compter. À confirmer par un cas reproductible. <!--id:bug-pastille-discussion-->
-- [ ] `ALGO` `Conversations` **Un bloc {"title": …} s'affiche dans la réponse de Jean-Claude** — Vu le 5 novembre sur une nouvelle conversation (« Bonjour ») : le modèle écrit le titre en JSON dans sa réponse, avec le texte « Nouvelle conversation ». Le filtre de fuites ne regarde que le tout début de la réponse ; ici le bloc arrive après la phrase d'accueil. Correctif prévu : retirer aussi ce bloc quand il arrive plus loin, dans le message enregistré. Cause de fond : le modèle par défaut (ministral-14b) est peu fiable sur les outils. <!--id:bug-titre-json-visible-->
+- [ ] `ALGO` `Conversations` **Un bloc {"title": …} s'affiche dans la réponse de Jean-Claude** — Vu le 5 novembre sur une nouvelle conversation (« Bonjour ») : le modèle écrit le titre en JSON dans sa réponse, avec le texte « Nouvelle conversation ». Le filtre de fuites ne regarde que le tout début de la réponse ; ici le bloc arrive après la phrase d'accueil. Correctif prévu : retirer aussi ce bloc quand il arrive plus loin, dans le message enregistré. Cause de fond : le modèle par défaut (ministral-14b) est peu fiable sur les outils. Corrigé sur `dev` (PR #178, 5 novembre) : le bloc est retiré, y compris du message enregistré. À retester après le déploiement en production. <!--id:bug-titre-json-visible-->
 
 ### Accès aux données
 
