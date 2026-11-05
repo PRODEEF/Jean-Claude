@@ -49,6 +49,17 @@ _(les trois premières sont tirées de `CLAUDE.md` ; les suivantes sont des prop
 - [ ] Vue latérale droite (Calendrier / TODOs / etc.), comme sur Claude. **[ajout] ⬜** Notée au backlog (aperçu calendrier / listes en conversation, « 07 »), non implémentée, écran large seulement.
 - [ ] Suggestion de nom de dossier pour ranger la conversation. **[ajout] 🟡** L'assistant propose déjà un rangement pour un fil non classé (A.1) et une arborescence de projet (A.4). Une suggestion de **nom** pour un dossier nouveau n'est pas dédiée.
 
+## [ajout] Gros chantiers à démarrer
+
+Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre recommandé, à valider.
+
+- [ ] **1. Import des TODO Notion** (P4, test avec Clarisse). Aucun import n'existe : sans lui, tout se ressaisit. Piste la plus simple : un import par fichier CSV.
+- [ ] **2. Rappels et récurrences** (back-end, A.11). Aucun planificateur : un rendez-vous récurrent n'apparaît qu'à son premier créneau, aucun rappel ne part. Débloque aussi « Vocaux le matin ».
+- [ ] **3. « Projet » et instructions par dossier** (P4, A.4/A.5). Un contexte partagé par dossier, comme les Projets de Claude. Le plus gros chantier de conception : trancher d'abord dossier ou projet.
+- [ ] **4. Mode réunion à la voix** (P5, A.12). Dépend du choix du service de dictée, resté en suspens avec Antonin.
+
+À côté, deux points hors code qui bloquent : projet Supabase en région UE, politique de confidentialité (voir la section « Hors code » plus bas).
+
 ## À tester
 
 - [ ] Calendrier et todo au fil de l'eau — à l'ouverture, afficher le jour du jour en haut à gauche ; idem pour la TODO (ajustable à l'heure près, mobile ouvert sur l'heure en cours). **[ajout]** Le haut du calendrier est ancré depuis #161. **L'ouverture sur le jour courant et sur l'heure en cours sur mobile n'est pas vérifiée.**
