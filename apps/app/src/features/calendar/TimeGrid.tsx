@@ -4,6 +4,7 @@ import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
 import { eventsOfDay, layoutDayEvents, layoutDayLists, listsOfDay } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
 import { eventLabel, SharedMark } from "./MonthGrid";
+import { useDayPartBounds } from "@/shared/hooks/use-profile";
 import { formatDayLabel, formatTime, isSameDay } from "@/shared/lib/dates";
 
 export type TimeGridProps = {
@@ -54,12 +55,13 @@ export function TimeGrid({
   onCreateAt,
 }: TimeGridProps) {
   const today = new Date();
+  const bounds = useDayPartBounds();
 
   const perDay = days.map((day) => {
     const dayEvents = eventsOfDay(events, day);
     // Une todoliste à heure précise se place comme un rendez-vous ; sans
     // heure, elle reste dans le bandeau plat au-dessus de la grille.
-    const { timed: timedLists, untimed: dayLists } = layoutDayLists(listsOfDay(lists, day), day);
+    const { timed: timedLists, untimed: dayLists } = layoutDayLists(listsOfDay(lists, day), day, bounds);
     return {
       day,
       allDay: dayEvents.filter((event) => event.allDay),

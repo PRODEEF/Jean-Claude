@@ -61,6 +61,7 @@ import {
   type UpdateGroup,
   type CreateWorkspaceTask,
   type CreateWorkspaceTaskList,
+  type ReorderWorkspaceTasks,
   type UpdateWorkspaceTask,
   type UpdateWorkspaceTaskList,
   type WorkspaceTask,
@@ -236,6 +237,13 @@ export class JeanClaudeClient {
 
     removeTask: (listId: string, taskId: string) =>
       this.http.request<void>(`/workspace-lists/${listId}/tasks/${taskId}`, { method: "DELETE" }),
+
+    /** Nouvel ordre des tâches : tous les identifiants de la liste, dans l'ordre voulu. */
+    reorderTasks: (listId: string, input: ReorderWorkspaceTasks) =>
+      this.http.request<WorkspaceTaskList>(`/workspace-lists/${listId}/order`, {
+        method: "PUT",
+        body: input,
+      }),
   };
 
   /** Discussions de groupe d'un espace — voir docs/COLLABORATION.md. */

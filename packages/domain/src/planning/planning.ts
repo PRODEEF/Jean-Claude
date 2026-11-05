@@ -1,4 +1,5 @@
 import type { CalendarEvent } from "../calendar/calendar.schema";
+import { DEFAULT_DAY_PART_BOUNDS, dayPartOfHour, type DayPartBounds } from "../task/day-part";
 import type { Task, TaskList, TaskListWithTasks } from "../task/task.schema";
 
 /**
@@ -83,10 +84,6 @@ export const MOMENTS: Moment[] = [
   { key: "evening", label: "Soir" },
 ];
 
-/** Bornes en heures locales, celles du langage courant plutôt qu'un découpage égal. */
-const AFTERNOON_FROM = 12;
-const EVENING_FROM = 18;
-
 /**
  * Moment d'une échéance.
  *
@@ -98,13 +95,16 @@ const EVENING_FROM = 18;
  * L'heure sert encore à trancher entre matin, après-midi et soir — et là,
  * c'est bien l'horloge de l'appareil qui a raison.
  */
-export function momentOf(list: Pick<TaskList, "dueAt" | "dueAllDay">): MomentKey {
+export function momentOf(
+  list: Pick<TaskList, "dueAt" | "dueAllDay">,
+  bounds: DayPartBounds = DEFAULT_DAY_PART_BOUNDS,
+): MomentKey {
   if (list.dueAt === null || list.dueAllDay !== false) return "anytime";
 
-  const hours = new Date(list.dueAt).getHours();
-  if (hours >= EVENING_FROM) return "evening";
-  if (hours >= AFTERNOON_FROM) return "afternoon";
-  return "morning";
+  // Les bornes sont celles de l'utilisateur, lues par un seul code : la fenêtre
+  // qui pose l'échéance et cette trame du calendrier doivent ranger la même
+  // heure dans le même moment.
+  return dayPartOfHour(new Date(list.dueAt).getHours(), bounds);
 }
 
 export type MomentGroup = { moment: Moment; lists: TaskListWithTasks[] };
@@ -117,12 +117,16 @@ export type MomentGroup = { moment: Moment; lists: TaskListWithTasks[] };
  * remplit au fil des jours. « Dans la journée » n'apparaît que s'il porte
  * quelque chose — vide, il annoncerait une case que rien ne vient remplir.
  */
-export function momentsOfDay(lists: TaskListWithTasks[], day: Date): MomentGroup[] {
+export function momentsOfDay(
+  lists: TaskListWithTasks[],
+  day: Date,
+  bounds: DayPartBounds = DEFAULT_DAY_PART_BOUNDS,
+): MomentGroup[] {
   const ofDay = listsOfDay(lists, day).sort(byDueDate);
 
   return MOMENTS.map((moment) => ({
     moment,
-    lists: ofDay.filter((list) => momentOf(list) === moment.key),
+    lists: ofDay.filter((list) => momentOf(list, bounds) === moment.key),
   })).filter((group) => group.moment.key !== "anytime" || group.lists.length > 0);
 }
 
@@ -386,11 +390,12 @@ export function layoutDayEvents<T extends CalendarEvent>(
 export function layoutDayLists(
   lists: TaskListWithTasks[],
   day: Date,
+  bounds: DayPartBounds = DEFAULT_DAY_PART_BOUNDS,
 ): { timed: PositionedList[]; untimed: TaskListWithTasks[] } {
   const untimed: TaskListWithTasks[] = [];
 
   const boxes = lists.flatMap((list) => {
-    if (list.dueAt === null || momentOf(list) === "anytime") {
+    if (list.dueAt === null || momentOf(list, bounds) === "anytime") {
       untimed.push(list);
       return [];
     }

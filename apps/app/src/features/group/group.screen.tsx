@@ -20,6 +20,7 @@ import {
 } from "@jc/domain";
 import { useWorkspaceMembers } from "@/features/workspace/hooks/use-workspaces";
 import { MessageRow } from "@/features/conversation/MessageRow";
+import { ThinkingIndicator } from "@/features/conversation/ThinkingIndicator";
 import { useSpeech } from "@/features/conversation/hooks/use-speech";
 import { useAttachmentPicker } from "@/features/conversation/hooks/use-attachment-picker";
 import { useComposerAttachments } from "@/features/conversation/hooks/use-composer-attachments";
@@ -348,11 +349,12 @@ export function GroupScreen() {
             { padding: spacing.md, paddingBottom: spacing.md + insets.bottom },
           ]}
         >
-          <Text className="h-5 px-1 text-xs text-muted-foreground" numberOfLines={1}>
-            {[typingLabel(typingNames), assistantThinking ? `${assistantName} réfléchit…` : ""]
-              .filter(Boolean)
-              .join(" · ")}
-          </Text>
+          <View className="h-5 flex-row items-center gap-2 px-1">
+            <Text className="shrink text-xs text-muted-foreground" numberOfLines={1}>
+              {typingLabel(typingNames)}
+            </Text>
+            {assistantThinking ? <ThinkingIndicator dense assistantName={assistantName} /> : null}
+          </View>
           {replyTarget ? (
             <ReplyBanner
               author={authorLabel(replyTarget)}

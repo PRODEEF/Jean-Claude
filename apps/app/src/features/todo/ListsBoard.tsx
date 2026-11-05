@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import {
   CalendarClock,
   ChevronDown,
   ChevronRight,
+  Folder,
   ListChecks,
   MoreHorizontal,
   ShoppingBasket,
@@ -16,7 +17,9 @@ import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
-import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
+import { useFolderChoices, type FolderChoice } from "@/shared/hooks/use-folder-choices";
+import { useTaskActions } from "@/shared/hooks/use-task-lists";
+import { ListDueDialog } from "./ListDueDialog";
 import { TaskListEditor } from "./TaskListEditor";
 
 export type ListsBoardProps = {
@@ -69,7 +72,7 @@ export function ListsBoard({
         <ListCard
           key={list.id}
           list={list}
-          folderName={folders.find((folder) => folder.id === list.folderId)?.name}
+          folders={folders}
           highlighted={list.id === highlightedId}
           desktop={desktop}
           {...(scrollRef ? { scrollRef } : {})}
@@ -88,7 +91,7 @@ const HIGHLIGHT_SCROLL_MARGIN = 16;
 
 function ListCard({
   list,
-  folderName,
+  folders,
   highlighted,
   desktop,
   scrollRef,
@@ -98,7 +101,7 @@ function ListCard({
   onOpenTask,
 }: {
   list: TaskListWithTasks;
-  folderName: string | undefined;
+  folders: FolderChoice[];
   highlighted: boolean;
   desktop: boolean;
   scrollRef?: RefObject<ScrollView | null>;
@@ -111,6 +114,10 @@ function ListCard({
   const [open, setOpen] = useState(true);
   /** Point d'ouverture du menu, `null` s'il est fermé. */
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  /** Point d'ouverture du choix de dossier, `null` s'il est fermé. */
+  const [folderMenu, setFolderMenu] = useState<{ x: number; y: number } | null>(null);
+  const [editingDue, setEditingDue] = useState(false);
+  const { updateList } = useTaskActions();
   const card = useRef<View>(null);
 
   // Amène la carte visée depuis la barre latérale à l'écran : la mettre en
@@ -127,7 +134,10 @@ function ListCard({
       // carte peut être imbriquée sous n'importe quel nombre de vues
       // intermédiaires, `measureLayout` s'en affranchit.
       card.current?.measureLayout(scrollNode, (_x, y) => {
-        scrollRef.current?.scrollTo({ y: Math.max(0, y - HIGHLIGHT_SCROLL_MARGIN), animated: true });
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, y - HIGHLIGHT_SCROLL_MARGIN),
+          animated: true,
+        });
       });
     });
 
@@ -136,6 +146,17 @@ function ListCard({
 
   const shopping = list.kind === "shopping";
   const due = dueLabel(list);
+  const folderName = folders.find((folder) => folder.id === list.folderId)?.name;
+
+  const chooseFolder = (folderId: string | null) => {
+    setFolderMenu(null);
+    if (folderId !== list.folderId) updateList.mutate({ id: list.id, patch: { folderId } });
+  };
+
+  const folderItems: ContextMenuItem[] = [
+    { label: "Aucun dossier", onPress: () => chooseFolder(null) },
+    ...folders.map((folder) => ({ label: folder.name, onPress: () => chooseFolder(folder.id) })),
+  ];
 
   const items: ContextMenuItem[] = [
     {
@@ -162,49 +183,6 @@ function ListCard({
     >
       <Collapsible open={open} onOpenChange={setOpen}>
         <View className="flex-row items-center gap-2">
-          <Icon
-            as={shopping ? ShoppingBasket : ListChecks}
-            size={16}
-            className="text-muted-foreground"
-          />
-          <View className="min-w-0 flex-1">
-            <Text className="text-sm font-semibold" numberOfLines={1}>
-              {list.title}
-            </Text>
-            {/* Le dossier est rappelé ici parce que la liste s'y voit aussi
-              (A.2) : c'est la même liste, pas une copie rangée ailleurs. */}
-            <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-              {shopping ? "Liste d'achats" : "Liste de tâches"}
-              {folderName ? ` · ${folderName}` : ""}
-            </Text>
-          </View>
-
-          {/* L'échéance porte sur la liste entière : elle se lit en tête, pas
-              en face d'une de ses lignes. `flex-1` et non `shrink` seul :
-              avec `flex-basis: 0` des deux côtés, le titre et l'échéance se
-              partagent l'espace restant à parts égales une fois les icônes
-              et boutons posés — sinon ce bloc garde sa largeur de contenu
-              pleine et le titre, seul à céder, s'écrase à presque rien. */}
-          {due ? (
-            <View className="min-w-0 flex-1 flex-row items-center gap-1">
-              <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
-              <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-                {due}
-              </Text>
-            </View>
-          ) : null}
-
-          <Button
-            variant="ghost"
-            size="icon"
-            hitSlop={8}
-            onPress={(event) => setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
-            accessibilityLabel={`Actions pour ${list.title}`}
-            className="size-8"
-          >
-            <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
-          </Button>
-
           <CollapsibleTrigger asChild>
             <Button
               variant="ghost"
@@ -220,6 +198,65 @@ function ListCard({
               />
             </Button>
           </CollapsibleTrigger>
+
+          <Text className="shrink text-sm font-semibold" numberOfLines={1}>
+            {list.title}
+          </Text>
+          <Icon
+            as={shopping ? ShoppingBasket : ListChecks}
+            size={16}
+            className="text-muted-foreground"
+          />
+          <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
+            {shopping ? "Liste d'achats" : "Liste de tâches"}
+          </Text>
+
+          {/* Le dossier se change ici parce que la liste s'y voit aussi (A.2) :
+              c'est la même liste, pas une copie rangée ailleurs. */}
+          <Pressable
+            onPress={(event) =>
+              setFolderMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+            }
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Dossier de ${list.title} : ${folderName ?? "aucun"}`}
+            className="min-w-0 shrink flex-row items-center gap-1 rounded-md px-1.5 py-1"
+          >
+            <Icon as={Folder} size={14} className="text-muted-foreground" />
+            <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
+              {folderName ?? "Dossier"}
+            </Text>
+          </Pressable>
+
+          <View className="min-w-0 flex-1" />
+
+          {/* L'échéance porte sur la liste entière : elle se lit en tête, pas
+              en face d'une de ses lignes, et se change d'un appui sans passer
+              par « Modifier la liste ». Sans date, l'invite reste visible :
+              c'est elle qui la rend atteignable. */}
+          <Pressable
+            onPress={() => setEditingDue(true)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Échéance de ${list.title} : ${due ?? "aucune"}`}
+            className="shrink-0 flex-row items-center gap-1 rounded-md px-1.5 py-1"
+          >
+            <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
+            <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+              {due ?? "Date"}
+            </Text>
+          </Pressable>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            hitSlop={8}
+            onPress={(event) => setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
+            accessibilityLabel={`Actions pour ${list.title}`}
+            className="size-8"
+          >
+            <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
+          </Button>
         </View>
 
         <CollapsibleContent>
@@ -237,6 +274,15 @@ function ListCard({
       {menu ? (
         <ContextMenu x={menu.x} y={menu.y} items={items} onClose={() => setMenu(null)} />
       ) : null}
+      {folderMenu ? (
+        <ContextMenu
+          x={folderMenu.x}
+          y={folderMenu.y}
+          items={folderItems}
+          onClose={() => setFolderMenu(null)}
+        />
+      ) : null}
+      {editingDue ? <ListDueDialog list={list} onClose={() => setEditingDue(false)} /> : null}
     </View>
   );
 }
@@ -248,7 +294,9 @@ function ListCard({
  * plutôt que de le relire dans l'horloge de l'appareil.
  */
 export function dueLabel(list: Pick<TaskList, "dueAt" | "dueAllDay">): string | undefined {
-  if (list.dueAt === null) return undefined;
+  // `!` plutôt que `=== null` : le site et le serveur se déploient séparément, et
+  // un serveur pas encore à jour ne renvoie pas `dueAt` pour une liste d'espace.
+  if (!list.dueAt) return undefined;
 
   const due = new Date(list.dueAt);
   return list.dueAllDay === false

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { hexColorSchema, isoDateTimeSchema, uuidSchema } from "../shared/primitives";
 import { assistantScopeSchema } from "../assistant/assistant.schema";
+import { DEFAULT_DAY_PART_BOUNDS, dayPartBoundsSchema } from "../task/day-part";
 
 /** Thème de l'interface — `system` suit le réglage de l'OS. */
 export const themeSchema = z.enum(["light", "dark", "system"]);
@@ -246,6 +247,8 @@ export const userPreferencesSchema = z.object({
   llmModel: assistantModelSchema.nullable().default(null),
   /** Bandeau du haut sur fond neutre plutôt que la couleur d'assistant adoucie. */
   flatBanner: z.boolean().default(true),
+  /** Heures où l'après-midi et le soir commencent : le matin, le reste de la journée en découle. */
+  dayPartBounds: dayPartBoundsSchema.default(DEFAULT_DAY_PART_BOUNDS),
 });
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
@@ -314,6 +317,8 @@ export const updateUserProfileSchema = z
     llmModel: assistantModelSchema.nullable(),
     /** Bandeau du haut sur fond neutre plutôt que la couleur d'assistant adoucie. */
     flatBanner: z.boolean(),
+    /** Toujours les deux bornes ensemble : le client les envoie telles qu'il les affiche. */
+    dayPartBounds: dayPartBoundsSchema,
   })
   .partial();
 
