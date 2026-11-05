@@ -313,6 +313,7 @@ function makePreferences(
     assistantColor: "#6366F1",
     theme: "system",
     flatBanner: false,
+    dayPartBounds: { afternoonFrom: 12, eveningFrom: 19 },
     timezone: "Europe/Paris",
     llmModel: null,
     ...overrides,

@@ -22,6 +22,7 @@ function makeRecord(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       timezone: "Europe/Paris",
       llmModel: null,
       flatBanner: false,
+      dayPartBounds: { afternoonFrom: 12, eveningFrom: 19 },
       scope: {
         morningReminders: true,
         folderOrganization: true,

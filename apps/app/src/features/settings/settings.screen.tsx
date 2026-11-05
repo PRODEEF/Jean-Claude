@@ -9,7 +9,15 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { ASSISTANT_ACCENTS, DEFAULT_ACCENT, MIN_TOUCH_TARGET, softenAccent } from "@jc/design";
-import { ASSISTANT_MODELS, toCatalogueModel, type AssistantScope, type Theme } from "@jc/domain";
+import {
+  AFTERNOON_FROM_CHOICES,
+  ASSISTANT_MODELS,
+  DEFAULT_DAY_PART_BOUNDS,
+  EVENING_FROM_CHOICES,
+  toCatalogueModel,
+  type AssistantScope,
+  type Theme,
+} from "@jc/domain";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
 import { AccountDeleteDialog } from "@/features/settings/AccountDeleteDialog";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
@@ -128,6 +136,7 @@ export function SettingsScreen() {
   const theme = profile?.preferences.theme ?? "system";
   const accent = profile?.preferences.assistantColor ?? DEFAULT_ACCENT;
   const scope = profile?.preferences.scope;
+  const dayPartBounds = profile?.preferences.dayPartBounds ?? DEFAULT_DAY_PART_BOUNDS;
 
   // La pastille « Personnalisée » se rouvre d'elle-même si la couleur active
   // n'est déjà aucun des huit presets — sans quoi choisir une teinte brute
@@ -344,6 +353,48 @@ export function SettingsScreen() {
               />
             </SettingRow>
           ))}
+        </Section>
+
+        <Section title="Ma journée">
+          <SettingRow
+            label="L'après-midi commence à"
+            hint="Avant, c'est le matin. Sert à ranger vos listes dans le calendrier."
+            wide
+          >
+            <Select
+              value={String(dayPartBounds.afternoonFrom)}
+              options={AFTERNOON_FROM_CHOICES.map((hour) => ({
+                value: String(hour),
+                label: `${hour}h`,
+              }))}
+              onChange={(hour) =>
+                updateProfile.mutate({
+                  dayPartBounds: { ...dayPartBounds, afternoonFrom: Number(hour) },
+                })
+              }
+              placeholder="Choisir une heure"
+              disabled={updateProfile.isPending}
+              accessibilityLabel="Heure de début de l'après-midi"
+            />
+          </SettingRow>
+
+          <SettingRow label="Le soir commence à" hint="Midi et 19h par défaut." wide>
+            <Select
+              value={String(dayPartBounds.eveningFrom)}
+              options={EVENING_FROM_CHOICES.map((hour) => ({
+                value: String(hour),
+                label: `${hour}h`,
+              }))}
+              onChange={(hour) =>
+                updateProfile.mutate({
+                  dayPartBounds: { ...dayPartBounds, eveningFrom: Number(hour) },
+                })
+              }
+              placeholder="Choisir une heure"
+              disabled={updateProfile.isPending}
+              accessibilityLabel="Heure de début du soir"
+            />
+          </SettingRow>
         </Section>
 
         <Section title="Aide">
