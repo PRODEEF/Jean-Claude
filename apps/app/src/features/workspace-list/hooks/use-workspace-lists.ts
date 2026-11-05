@@ -68,7 +68,29 @@ export function useWorkspaceListActions(list: WorkspaceTaskList) {
     onSuccess: refresh,
   });
 
-  return { update, remove, addTask, updateTask, removeTask };
+  /**
+   * Appliqué à l'écran avant la réponse : sans cela, la ligne lâchée reviendrait
+   * à sa place le temps de la relecture, avant de sauter à la bonne. Un refus
+   * (ordre périmé, panne) remet la liste telle qu'elle était, puis la relit.
+   */
+  const reorder = useMutation({
+    mutationFn: (taskIds: string[]) => api.workspaceLists.reorderTasks(list.id, { taskIds }),
+    onMutate: async (taskIds) => {
+      const key = ["workspace-list", list.id];
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<WorkspaceTaskList>(key);
+      if (previous) queryClient.setQueryData(key, withOrder(previous, taskIds));
+      return { previous };
+    },
+    onError: (_error, _taskIds, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["workspace-list", list.id], context.previous);
+      }
+    },
+    onSettled: refresh,
+  });
+
+  return { update, remove, addTask, updateTask, removeTask, reorder };
 }
 
 function refreshList(queryClient: QueryClient, list: WorkspaceTaskList) {
@@ -76,4 +98,16 @@ function refreshList(queryClient: QueryClient, list: WorkspaceTaskList) {
     queryClient.invalidateQueries({ queryKey: ["workspace-list", list.id] }),
     queryClient.invalidateQueries({ queryKey: ["workspace", list.workspaceId, "lists"] }),
   ]);
+}
+
+/** La liste avec ses tâches dans l'ordre donné, positions renumérotées. */
+function withOrder(list: WorkspaceTaskList, taskIds: string[]): WorkspaceTaskList {
+  const byId = new Map(list.tasks.map((task) => [task.id, task]));
+  return {
+    ...list,
+    tasks: taskIds.flatMap((id, position) => {
+      const task = byId.get(id);
+      return task ? [{ ...task, position }] : [];
+    }),
+  };
 }

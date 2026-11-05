@@ -50,6 +50,7 @@ function makeRepository(
     addTask: jest.fn().mockImplementation(async (_userId, _listId, task) => makeTask(task)),
     updateTask: jest.fn().mockImplementation(async (id, patch) => makeTask({ id, ...patch })),
     deleteTask: jest.fn().mockResolvedValue(undefined),
+    setTaskPositions: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -402,6 +403,79 @@ describe("WorkspaceListService", () => {
         new WorkspaceListService(repo).updateTask("list-1", "autre", { done: true }, TOKEN),
       ).rejects.toMatchObject({ status: 404 });
       expect(repo.updateTask).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("reorderTasks", () => {
+    const threeTasks = () =>
+      makeList({
+        tasks: [
+          makeTask({ id: "t1", position: 0 }),
+          makeTask({ id: "t2", position: 1 }),
+          makeTask({ id: "t3", position: 2 }),
+        ],
+      });
+
+    it("range les tâches dans l'ordre demandé", async () => {
+      const repo = withList(threeTasks());
+
+      const list = await new WorkspaceListService(repo).reorderTasks(
+        "list-1",
+        { taskIds: ["t3", "t1", "t2"] },
+        TOKEN,
+      );
+
+      expect(repo.setTaskPositions).toHaveBeenCalledWith("list-1", ["t3", "t1", "t2"], TOKEN);
+      expect(list.tasks.map((task) => [task.id, task.position])).toEqual([
+        ["t3", 0],
+        ["t1", 1],
+        ["t2", 2],
+      ]);
+    });
+
+    it("refuse un ordre périmé quand un autre membre a ajouté une tâche", async () => {
+      const repo = withList(threeTasks());
+
+      await expect(
+        new WorkspaceListService(repo).reorderTasks("list-1", { taskIds: ["t2", "t1"] }, TOKEN),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(repo.setTaskPositions).not.toHaveBeenCalled();
+    });
+
+    it("refuse un ordre qui nomme une tâche étrangère à la liste", async () => {
+      const repo = withList(threeTasks());
+
+      await expect(
+        new WorkspaceListService(repo).reorderTasks(
+          "list-1",
+          { taskIds: ["t1", "t2", "ailleurs"] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(repo.setTaskPositions).not.toHaveBeenCalled();
+    });
+
+    it("refuse un ordre qui répète une tâche", async () => {
+      const repo = withList(threeTasks());
+
+      await expect(
+        new WorkspaceListService(repo).reorderTasks(
+          "list-1",
+          { taskIds: ["t1", "t1", "t2"] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.setTaskPositions).not.toHaveBeenCalled();
+    });
+
+    it("répond introuvable pour une liste inconnue", async () => {
+      await expect(
+        new WorkspaceListService(makeRepository()).reorderTasks(
+          "list-1",
+          { taskIds: ["t1"] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 404 });
     });
   });
 

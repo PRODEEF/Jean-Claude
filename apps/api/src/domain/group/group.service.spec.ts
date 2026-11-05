@@ -155,6 +155,7 @@ function makeListRepository(
     addTask: jest.fn(),
     updateTask: jest.fn(),
     deleteTask: jest.fn(),
+    setTaskPositions: jest.fn(),
     ...overrides,
   };
 }

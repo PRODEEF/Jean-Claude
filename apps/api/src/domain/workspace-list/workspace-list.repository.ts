@@ -209,6 +209,20 @@ export const workspaceListRepository: IWorkspaceListRepository = {
     return toTask(data as unknown as TaskRow);
   },
 
+  async setTaskPositions(listId, taskIds, accessToken) {
+    const client = forUser(accessToken);
+    // Une écriture par tâche : seule la position change, aucune autre colonne
+    // ne risque d'être écrasée par un autre membre qui coche au même moment.
+    const results = await Promise.all(
+      taskIds.map((taskId, position) =>
+        client.from("workspace_tasks").update({ position }).eq("id", taskId).eq("list_id", listId),
+      ),
+    );
+
+    const failed = results.find((result) => result.error);
+    if (failed?.error) throw new Error(failed.error.message);
+  },
+
   async deleteTask(taskId, accessToken) {
     const { error } = await forUser(accessToken).from("workspace_tasks").delete().eq("id", taskId);
     if (error) throw new Error(error.message);

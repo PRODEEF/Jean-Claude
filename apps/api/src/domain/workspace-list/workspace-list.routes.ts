@@ -4,6 +4,7 @@ import {
   createWorkspaceTaskListSchema,
   createWorkspaceTaskSchema,
   listWorkspaceTaskListsQuerySchema,
+  reorderWorkspaceTasksSchema,
   updateWorkspaceTaskListSchema,
   updateWorkspaceTaskSchema,
   uuidSchema,
@@ -65,6 +66,16 @@ export const workspaceListRoutes = new Hono<AuthEnv>()
       201,
     );
   })
+
+  .put("/:id/order", idParam, validate("json", reorderWorkspaceTasksSchema), async (c) =>
+    c.json(
+      await service.reorderTasks(
+        c.req.valid("param").id,
+        c.req.valid("json"),
+        c.get("user").accessToken,
+      ),
+    ),
+  )
 
   .patch(
     "/:id/tasks/:taskId",

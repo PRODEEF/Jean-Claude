@@ -84,4 +84,16 @@ export const updateWorkspaceTaskSchema = z.object({
 });
 export type UpdateWorkspaceTask = z.infer<typeof updateWorkspaceTaskSchema>;
 
+/**
+ * Nouvel ordre des tâches d'une liste : tous les identifiants, dans l'ordre voulu.
+ *
+ * La liste entière plutôt qu'un déplacement : le serveur n'a pas à deviner d'où
+ * vient la tâche, et un ordre qui ne correspond plus à la liste (un autre membre
+ * a ajouté ou retiré une tâche) se reconnaît et se refuse.
+ */
+export const reorderWorkspaceTasksSchema = z.object({
+  taskIds: z.array(uuidSchema).min(1).max(500),
+});
+export type ReorderWorkspaceTasks = z.infer<typeof reorderWorkspaceTasksSchema>;
+
 export const listWorkspaceTaskListsQuerySchema = z.object({ workspaceId: uuidSchema });
