@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Check, MoreHorizontal, UserRound, X } from "lucide-react-native";
 import type { WorkspaceMember, WorkspaceTask, WorkspaceTaskList } from "@jc/domain";
@@ -8,12 +8,12 @@ import {
   workspaceErrorMessage,
 } from "@/features/workspace/hooks/use-workspaces";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
-import { Input } from "@/shared/ui/input";
 import { READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Separator } from "@/shared/ui/separator";
 import { Text } from "@/shared/ui/text";
@@ -163,41 +163,69 @@ function ListBody({
           : `${done} sur ${list.tasks.length} faite${done > 1 ? "s" : ""}`}
       </Text>
 
-      {list.tasks.length > 0 ? (
-        <View className="overflow-hidden rounded-xl border border-border bg-card">
-          {list.tasks.map((task, index) => (
-            <View key={task.id}>
-              {index > 0 ? <Separator /> : null}
-              <TaskRow
-                task={task}
-                assignee={task.assigneeId ? (names.get(task.assigneeId) ?? "Ancien membre") : null}
-                onToggle={() => updateTask.mutate({ taskId: task.id, patch: { done: !task.done } })}
-                onAssign={(x, y) => onMenu(x, y, assigneeMenu(task))}
-                onRemove={() => removeTask.mutate(task.id)}
-              />
-            </View>
-          ))}
-        </View>
-      ) : null}
+      <View className="overflow-hidden rounded-xl border border-border bg-card">
+        {list.tasks.map((task, index) => (
+          <View key={task.id}>
+            {index > 0 ? <Separator /> : null}
+            <TaskRow
+              task={task}
+              assignee={task.assigneeId ? (names.get(task.assigneeId) ?? "Ancien membre") : null}
+              onToggle={() => updateTask.mutate({ taskId: task.id, patch: { done: !task.done } })}
+              onAssign={(x, y) => onMenu(x, y, assigneeMenu(task))}
+              onRemove={() => removeTask.mutate(task.id)}
+            />
+          </View>
+        ))}
 
-      <View className="flex-row items-center gap-2">
-        <Input
-          className="flex-1"
+        {/* Même geste que « Mes listes » : la ligne vide d'une liste est
+              l'endroit où l'on écrit, une case pâle et le texte « Ajouter une
+              tâche » — pas un champ à part suivi d'un bouton. Entrée valide. */}
+        {list.tasks.length > 0 ? <Separator /> : null}
+        <AddTaskRow
           value={draft}
-          onChangeText={setDraft}
-          onSubmitEditing={submit}
-          placeholder="Ajouter une tâche"
-          maxLength={120}
-          returnKeyType="done"
-          blurOnSubmit={false}
-          accessibilityLabel="Nouvelle tâche"
+          onChange={setDraft}
+          onSubmit={submit}
+          disabled={addTask.isPending}
         />
-        <Button onPress={submit} disabled={!draft.trim() || addTask.isPending}>
-          <Text>Ajouter</Text>
-        </Button>
       </View>
 
       {error ? <Text className="text-sm text-destructive">{error}</Text> : null}
+    </View>
+  );
+}
+
+function AddTaskRow({
+  value,
+  onChange,
+  onSubmit,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  disabled: boolean;
+}) {
+  const { palette } = useTheme();
+
+  return (
+    <View className="min-h-14 flex-row items-center gap-3 px-3 py-2">
+      <View className="size-11 items-center justify-center">
+        <View className="size-5 rounded border border-border opacity-40" />
+      </View>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        onSubmitEditing={onSubmit}
+        submitBehavior="submit"
+        editable={!disabled}
+        placeholder="Ajouter une tâche"
+        placeholderTextColor={palette.textMuted}
+        maxLength={120}
+        returnKeyType="done"
+        accessibilityLabel="Nouvelle tâche"
+        style={{ fontFamily: FONT_FAMILY, color: palette.text }}
+        className={cn("flex-1 text-sm", Platform.select({ web: "outline-none" }))}
+      />
     </View>
   );
 }
