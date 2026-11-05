@@ -8,6 +8,14 @@
 
 **Complété le 5 novembre 2026** à partir du code de `dev` (dernier commit : 2 octobre) et de `docs/SUIVI-BACKLOG.md`. Les mentions **[ajout]** viennent de ce recoupement ; tes lignes d'origine sont conservées telles quelles. Légende : ✅ fait dans le code · 🟡 partiel · ⬜ non démarré · 👁 fait mais **à tester à la main** · ❓ non vérifiable dans le code. Aucun de ces statuts n'a été joué dans une vraie app : ils viennent du code, du backlog et de la CI.
 
+## Vision
+
+**Jean-Claude est un assistant IA conversationnel qui sert aussi de second cerveau personnel.** Tu lui parles comme à n'importe quelle IA, mais ce que tu lui dis ne se perd pas : il le range, le relie et te le ressort au bon moment. Il a vocation à remplacer les multiples todolistes Notion, avec en plus une IA qui aide à aller plus vite.
+
+Tu ne choisis jamais où classer une information. Tu écris, il propose un rangement, et tu acceptes ou tu ignores d'un geste. Une conversation sur la mutuelle vit à la fois dans « Santé » et dans « Administratif ». Il détecte les tâches et les dates dans tes échanges, les transforme en todolistes et en rendez-vous, et te propose, sans jamais agir à ta place. Tout reste modifiable à la main, mais par défaut l'IA le définit mieux que nous.
+
+Il vise le grand public, sans prérequis technique. C'est le contrepoint de Notion et d'Obsidian, puissants mais exigeants : ici, aucun jargon de gestion de connaissances, juste une conversation qui s'organise toute seule. Un seul code pour le web, iOS, Android et bientôt le desktop, avec un moteur IA interchangeable et des données hébergées en Europe.
+
 ## Règles permanentes
 
 _(les trois premières sont tirées de `CLAUDE.md` ; les suivantes sont des propositions à valider)_
