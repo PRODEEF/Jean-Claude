@@ -19,14 +19,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
-- **Matin / Après-midi / Soir : les heures sont réglables.** Midi et 19h par défaut ; on les change dans Réglages › Ma journée, et la fenêtre d'échéance comme le calendrier suivent. *Où : Réglages.* — À tester. **Demande une migration sur la vraie base avant le déploiement** (`20261105180000_profile_day_part_bounds.sql`).
-- **Mes listes : l'en-tête d'une liste tient sur une ligne.** Chevron, titre, icône, type, dossier, puis la date. On change le **dossier** et la **date** d'un appui, avec un choix Journée / Matin / Après-midi / Soir. *Où : Mes listes.* — Testé par toi le 5 novembre : fonctionne.
-- **Espaces : « Ajouter une tâche »** est maintenant la ligne pâle de « Mes listes », au lieu d'un champ avec un bouton. *Où : une liste d'un espace.* — Testé par toi le 5 novembre : fonctionne.
-- **Espaces : les tâches d'une liste se réordonnent au glisser-déposer** (web), avec une poignée à gauche de chaque ligne ; l'ordre est enregistré pour tout le monde. *Où : une liste d'un espace.* — À tester.
-- **Espaces : l'en-tête d'une liste montre le type, le dossier et l'échéance**, modifiables d'un appui, comme dans « Mes listes ». *Où : une liste d'un espace.* — À tester. **L'échéance ne s'enregistre réellement qu'après le déploiement du serveur** : sur l'aperçu actuel, elle est ignorée.
-- **Espaces : les listes ont un type (tâches ou achats) et une échéance** côté base et serveur. Rien ne change encore à l'écran : l'affichage suit. — Base de données prête.
-- **Un bloc `{"title": …}` ne s'affiche plus dans la réponse de Jean-Claude** sur une nouvelle conversation (le titre recopié en texte est retiré, y compris du message enregistré). *Où : une nouvelle conversation.* — À tester après le déploiement, avec un modèle réel.
-- **Groupes : Jean-Claude affiche « réfléchit… » avec la roue et les secondes**, comme en tête-à-tête. *Où : une discussion de groupe.* — Testé par toi le 5 novembre : fonctionne.
+Rien en attente : `dev` et la production sont identiques.
 
 ### Réglage fait
 
@@ -34,12 +27,25 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### En production
 
+Mise en production du 5 novembre au soir (PR #184, avec les deux migrations déjà appliquées) :
+
+- **Matin / Après-midi / Soir : les heures sont réglables.** Midi et 19h par défaut ; on les change dans Réglages › Ma journée, et la fenêtre d'échéance comme le calendrier suivent. *Où : Réglages.* — À tester. Migration appliquée.
+- **Mes listes : l'en-tête d'une liste tient sur une ligne.** Chevron, titre, icône, type, dossier, puis la date. On change le **dossier** et la **date** d'un appui, avec un choix Journée / Matin / Après-midi / Soir. *Où : Mes listes.* — Testé par toi le 5 novembre : fonctionne.
+- **Espaces : « Ajouter une tâche »** est maintenant la ligne pâle de « Mes listes », au lieu d'un champ avec un bouton. *Où : une liste d'un espace.* — Testé par toi le 5 novembre : fonctionne.
+- **Espaces : les tâches d'une liste se réordonnent au glisser-déposer** (web), avec une poignée à gauche de chaque ligne ; l'ordre est enregistré pour tout le monde. *Où : une liste d'un espace.* — À tester.
+- **Espaces : l'en-tête d'une liste montre le type, le dossier et l'échéance**, modifiables d'un appui, comme dans « Mes listes ». *Où : une liste d'un espace.* — À tester. Le serveur est déployé : l'échéance s'enregistre.
+- **Espaces : les listes ont un type (tâches ou achats) et une échéance** côté base et serveur. Rien ne change encore à l'écran : l'affichage suit. — Base de données prête.
+- **Un bloc `{"title": …}` ne s'affiche plus dans la réponse de Jean-Claude** sur une nouvelle conversation (le titre recopié en texte est retiré, y compris du message enregistré). *Où : une nouvelle conversation.* — À tester en production, avec un modèle réel.
+- **Groupes : Jean-Claude affiche « réfléchit… » avec la roue et les secondes**, comme en tête-à-tête. *Où : une discussion de groupe.* — Testé par toi le 5 novembre : fonctionne.
+
+Avant :
+
 - **La pastille de non-lu est rouge**, quel que soit le thème.
 - **L'invitation par mail** fonctionne (testé par toi le 5 novembre).
 
 ### En attente de ta décision
 
-- **Mise en production** de tout ce qui est sous « Sur `dev` » : une fois que tu auras regardé, dis « on déploie ».
+- Rien pour l'instant.
 
 ## Vision
 
