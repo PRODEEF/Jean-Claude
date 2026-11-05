@@ -1,8 +1,19 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Check, MoreHorizontal, UserRound, X } from "lucide-react-native";
-import type { WorkspaceMember, WorkspaceTask, WorkspaceTaskList } from "@jc/domain";
+import {
+  CalendarClock,
+  Check,
+  Folder,
+  ListChecks,
+  MoreHorizontal,
+  ShoppingBasket,
+  UserRound,
+  X,
+} from "lucide-react-native";
+import type { FolderTreeNode, WorkspaceMember, WorkspaceTask, WorkspaceTaskList } from "@jc/domain";
+import { dueLabel } from "@/features/todo/ListsBoard";
+import { useWorkspaceFolders } from "@/features/workspace/hooks/use-workspace-folders";
 import {
   useWorkspaceMembers,
   workspaceErrorMessage,
@@ -87,6 +98,7 @@ export function WorkspaceListScreen() {
         <ListBody
           list={list.data}
           workspaceId={workspaceId}
+          onOpen={open}
           onMenu={(x, y, items) => setMenu({ x, y, items })}
           closeMenu={() => setMenu(null)}
         />
@@ -110,15 +122,18 @@ export function WorkspaceListScreen() {
 function ListBody({
   list,
   workspaceId,
+  onOpen,
   onMenu,
   closeMenu,
 }: {
   list: WorkspaceTaskList;
   workspaceId: string;
+  onOpen: (target: WorkspaceListTarget) => void;
   onMenu: (x: number, y: number, items: ContextMenuItem[]) => void;
   closeMenu: () => void;
 }) {
   const members = useWorkspaceMembers(workspaceId);
+  const folders = useWorkspaceFolders(workspaceId);
   const { addTask, updateTask, removeTask } = useWorkspaceListActions(list);
   const [draft, setDraft] = useState("");
   const names = useMemo(
@@ -126,6 +141,9 @@ function ListBody({
     [members.data],
   );
   const done = list.tasks.filter((task) => task.done).length;
+  const folderName = folderNameOf(folders.data ?? [], list.folderId);
+  const due = dueLabel(list);
+  const shopping = list.kind === "shopping";
 
   const submit = () => {
     const title = draft.trim();
@@ -157,11 +175,54 @@ function ListBody({
 
   return (
     <View className="gap-4 pb-8">
-      <Text className="text-sm text-muted-foreground">
-        {list.tasks.length === 0
-          ? "Aucune tâche pour l'instant."
-          : `${done} sur ${list.tasks.length} faite${done > 1 ? "s" : ""}`}
-      </Text>
+      {/* Même ligne que l'en-tête d'une liste de « Mes listes » : le type, le
+          dossier, puis l'échéance, qui se changent d'un appui. */}
+      <View className="gap-1">
+        <View className="flex-row items-center gap-2">
+          <Icon
+            as={shopping ? ShoppingBasket : ListChecks}
+            size={16}
+            className="text-muted-foreground"
+          />
+          <Text className="shrink text-xs text-muted-foreground" numberOfLines={1}>
+            {shopping ? "Liste d'achats" : "Liste de tâches"}
+          </Text>
+
+          <Pressable
+            onPress={() => onOpen({ kind: "folder", list })}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Dossier de ${list.title} : ${folderName ?? "aucun"}`}
+            className="min-w-0 shrink flex-row items-center gap-1 rounded-md px-1.5 py-1"
+          >
+            <Icon as={Folder} size={14} className="text-muted-foreground" />
+            <Text className="shrink text-xs text-muted-foreground" numberOfLines={1}>
+              {folderName ?? "Dossier"}
+            </Text>
+          </Pressable>
+
+          <View className="min-w-0 flex-1" />
+
+          <Pressable
+            onPress={() => onOpen({ kind: "due", list })}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Échéance de ${list.title} : ${due ?? "aucune"}`}
+            className="shrink-0 flex-row items-center gap-1 rounded-md px-1.5 py-1"
+          >
+            <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
+            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+              {due ?? "Date"}
+            </Text>
+          </Pressable>
+        </View>
+
+        <Text className="text-sm text-muted-foreground">
+          {list.tasks.length === 0
+            ? "Aucune tâche pour l'instant."
+            : `${done} sur ${list.tasks.length} faite${done > 1 ? "s" : ""}`}
+        </Text>
+      </View>
 
       <View className="overflow-hidden rounded-xl border border-border bg-card">
         {list.tasks.map((task, index) => (
@@ -303,4 +364,16 @@ function TaskRow({
 
 function memberName(member: WorkspaceMember): string {
   return member.displayName ?? member.email ?? "Ancien membre";
+}
+
+/** Nom du dossier d'une liste, cherché dans l'arborescence de l'espace. */
+function folderNameOf(nodes: FolderTreeNode[], folderId: string | null): string | undefined {
+  if (folderId === null) return undefined;
+
+  for (const node of nodes) {
+    if (node.id === folderId) return node.name;
+    const inChild = folderNameOf(node.children, folderId);
+    if (inChild !== undefined) return inChild;
+  }
+  return undefined;
 }

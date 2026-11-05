@@ -294,7 +294,9 @@ function ListCard({
  * plutôt que de le relire dans l'horloge de l'appareil.
  */
 export function dueLabel(list: Pick<TaskList, "dueAt" | "dueAllDay">): string | undefined {
-  if (list.dueAt === null) return undefined;
+  // `!` plutôt que `=== null` : le site et le serveur se déploient séparément, et
+  // un serveur pas encore à jour ne renvoie pas `dueAt` pour une liste d'espace.
+  if (!list.dueAt) return undefined;
 
   const due = new Date(list.dueAt);
   return list.dueAllDay === false
