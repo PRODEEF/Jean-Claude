@@ -17,6 +17,9 @@ type ListRow = {
   id: string;
   workspace_id: string;
   title: string;
+  kind: "todo" | "shopping";
+  due_at: string | null;
+  due_all_day: boolean | null;
   folder_id: string | null;
   conversation_id: string | null;
   created_at: string;
@@ -41,6 +44,9 @@ function toList(row: ListRow): WorkspaceTaskList {
     id: row.id,
     workspaceId: row.workspace_id,
     title: row.title,
+    kind: row.kind,
+    dueAt: row.due_at,
+    dueAllDay: row.due_all_day,
     folderId: row.folder_id,
     conversationId: row.conversation_id,
     tasks: (row.workspace_tasks ?? [])
@@ -52,9 +58,20 @@ function toList(row: ListRow): WorkspaceTaskList {
 }
 
 const TASK_COLUMNS = "id, list_id, title, done, assignee_id, position, created_at";
-const LIST_COLUMNS = `id, workspace_id, title, folder_id, conversation_id, created_at, updated_at, workspace_tasks(${TASK_COLUMNS})`;
+const LIST_COLUMNS = `id, workspace_id, title, kind, due_at, due_all_day, folder_id, conversation_id, created_at, updated_at, workspace_tasks(${TASK_COLUMNS})`;
 
 export const workspaceListRepository: IWorkspaceListRepository = {
+  async findTimezone(userId, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("profiles")
+      .select("timezone")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    return (data as { timezone: string } | null)?.timezone ?? "Europe/Paris";
+  },
+
   async findWorkspaceMemberIds(workspaceId, accessToken) {
     const { data, error } = await forUser(accessToken).rpc("workspace_member_profiles", {
       p_workspace: workspaceId,
@@ -103,6 +120,9 @@ export const workspaceListRepository: IWorkspaceListRepository = {
       .insert({
         workspace_id: list.workspaceId,
         title: list.title,
+        kind: list.kind,
+        due_at: list.dueAt,
+        due_all_day: list.dueAllDay,
         folder_id: list.folderId,
         conversation_id: list.conversationId,
         created_by: userId,
@@ -133,7 +153,10 @@ export const workspaceListRepository: IWorkspaceListRepository = {
   async update(id, patch, accessToken) {
     const payload: Record<string, unknown> = {};
     if (patch.title !== undefined) payload["title"] = patch.title;
+    if (patch.kind !== undefined) payload["kind"] = patch.kind;
     if (patch.folderId !== undefined) payload["folder_id"] = patch.folderId;
+    if (patch.dueAt !== undefined) payload["due_at"] = patch.dueAt;
+    if (patch.dueAllDay !== undefined) payload["due_all_day"] = patch.dueAllDay;
 
     const { error } = await forUser(accessToken)
       .from("workspace_task_lists")

@@ -23,6 +23,9 @@ function makeList(overrides: Partial<WorkspaceTaskList> = {}): WorkspaceTaskList
     id: "list-1",
     workspaceId: WORKSPACE_ID,
     title: "Courses kermesse",
+    kind: "todo",
+    dueAt: null,
+    dueAllDay: null,
     folderId: null,
     conversationId: null,
     tasks: [],
@@ -36,6 +39,7 @@ function makeRepository(
   overrides: Partial<IWorkspaceListRepository> = {},
 ): IWorkspaceListRepository {
   return {
+    findTimezone: jest.fn().mockResolvedValue("Europe/Paris"),
     findWorkspaceMemberIds: jest.fn().mockResolvedValue(["alice", "bruno"]),
     findWorkspaceFolderIds: jest.fn().mockResolvedValue(["f1"]),
     findByWorkspace: jest.fn().mockResolvedValue([]),
@@ -92,6 +96,9 @@ describe("WorkspaceListService", () => {
         {
           workspaceId: WORKSPACE_ID,
           title: "Kermesse",
+          kind: "todo",
+          dueAt: null,
+          dueAllDay: null,
           folderId: "f1",
           conversationId: null,
           tasks: [
@@ -132,6 +139,67 @@ describe("WorkspaceListService", () => {
       ).rejects.toMatchObject({ status: 400 });
     });
 
+    it("crée une liste d'achats et son échéance, avec un créneau déduit de l'heure", async () => {
+      const repo = makeRepository();
+
+      await new WorkspaceListService(repo).create(
+        "alice",
+        {
+          workspaceId: WORKSPACE_ID,
+          title: "Courses",
+          kind: "shopping",
+          dueAt: "2099-06-15T12:30:00.000Z",
+          tasks: [],
+        },
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        "alice",
+        expect.objectContaining({
+          kind: "shopping",
+          dueAt: "2099-06-15T12:30:00.000Z",
+          dueAllDay: false,
+        }),
+        TOKEN,
+      );
+    });
+
+    it("retient la journée quand l'appelant la demande, quelle que soit l'heure", async () => {
+      const repo = makeRepository();
+
+      await new WorkspaceListService(repo).create(
+        "alice",
+        {
+          workspaceId: WORKSPACE_ID,
+          title: "Courses",
+          dueAt: "2099-06-15T12:30:00.000Z",
+          dueAllDay: true,
+          tasks: [],
+        },
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        "alice",
+        expect.objectContaining({ dueAllDay: true }),
+        TOKEN,
+      );
+    });
+
+    it("refuse une échéance dans un jour déjà révolu", async () => {
+      const repo = makeRepository();
+
+      await expect(
+        new WorkspaceListService(repo).create(
+          "alice",
+          { workspaceId: WORKSPACE_ID, title: "K", dueAt: "2020-01-10T10:00:00.000Z", tasks: [] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+
     it("refuse de créer une liste dans un espace dont on n'est pas membre", async () => {
       await expect(
         new WorkspaceListService(makeRepository()).create(
@@ -147,7 +215,12 @@ describe("WorkspaceListService", () => {
     it("range la liste dans un dossier de l'espace", async () => {
       const repo = withList(makeList());
 
-      const list = await new WorkspaceListService(repo).update("list-1", { folderId: "f1" }, TOKEN);
+      const list = await new WorkspaceListService(repo).update(
+        "alice",
+        "list-1",
+        { folderId: "f1" },
+        TOKEN,
+      );
 
       expect(list.folderId).toBe("f1");
       expect(repo.update).toHaveBeenCalledWith("list-1", { folderId: "f1" }, TOKEN);
@@ -156,14 +229,98 @@ describe("WorkspaceListService", () => {
     it("sort la liste de son dossier avec un `null` explicite", async () => {
       const repo = withList(makeList({ folderId: "f1" }));
 
-      const list = await new WorkspaceListService(repo).update("list-1", { folderId: null }, TOKEN);
+      const list = await new WorkspaceListService(repo).update(
+        "alice",
+        "list-1",
+        { folderId: null },
+        TOKEN,
+      );
 
       expect(list.folderId).toBeNull();
     });
 
+    it("change l'échéance de la liste et son moment ensemble", async () => {
+      const repo = withList(makeList());
+
+      const list = await new WorkspaceListService(repo).update(
+        "alice",
+        "list-1",
+        { dueAt: "2099-06-15T12:30:00.000Z" },
+        TOKEN,
+      );
+
+      expect(repo.update).toHaveBeenCalledWith(
+        "list-1",
+        { dueAt: "2099-06-15T12:30:00.000Z", dueAllDay: false },
+        TOKEN,
+      );
+      expect(list.dueAt).toBe("2099-06-15T12:30:00.000Z");
+    });
+
+    it("efface l'échéance et son moment avec un `null` explicite", async () => {
+      const repo = withList(makeList({ dueAt: "2099-06-15T12:30:00.000Z", dueAllDay: false }));
+
+      const list = await new WorkspaceListService(repo).update(
+        "alice",
+        "list-1",
+        { dueAt: null },
+        TOKEN,
+      );
+
+      expect(repo.update).toHaveBeenCalledWith("list-1", { dueAt: null, dueAllDay: null }, TOKEN);
+      expect(list.dueAllDay).toBeNull();
+    });
+
+    it("laisse l'échéance intacte quand la requête n'y touche pas", async () => {
+      const repo = withList(makeList({ dueAt: "2099-06-15T12:30:00.000Z", dueAllDay: false }));
+
+      await new WorkspaceListService(repo).update("alice", "list-1", { title: "Autre" }, TOKEN);
+
+      expect(repo.update).toHaveBeenCalledWith("list-1", { title: "Autre" }, TOKEN);
+    });
+
+    it("ignore un moment envoyé sans échéance", async () => {
+      const repo = withList(makeList());
+
+      await new WorkspaceListService(repo).update("alice", "list-1", { dueAllDay: true }, TOKEN);
+
+      expect(repo.update).toHaveBeenCalledWith("list-1", {}, TOKEN);
+    });
+
+    it("refuse de déplacer l'échéance vers un jour déjà révolu", async () => {
+      const repo = withList(makeList());
+
+      await expect(
+        new WorkspaceListService(repo).update(
+          "alice",
+          "list-1",
+          { dueAt: "2020-01-10T10:00:00.000Z" },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it("laisse une liste déjà en retard garder son jour en changeant l'heure", async () => {
+      const repo = withList(makeList({ dueAt: "2020-01-10T10:00:00.000Z", dueAllDay: false }));
+
+      await new WorkspaceListService(repo).update(
+        "alice",
+        "list-1",
+        { dueAt: "2020-01-10T15:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(repo.update).toHaveBeenCalledWith(
+        "list-1",
+        { dueAt: "2020-01-10T15:00:00.000Z", dueAllDay: false },
+        TOKEN,
+      );
+    });
+
     it("répond introuvable pour une liste inconnue", async () => {
       await expect(
-        new WorkspaceListService(makeRepository()).update("list-1", { title: "X" }, TOKEN),
+        new WorkspaceListService(makeRepository()).update("alice", "list-1", { title: "X" }, TOKEN),
       ).rejects.toMatchObject({ status: 404 });
     });
   });

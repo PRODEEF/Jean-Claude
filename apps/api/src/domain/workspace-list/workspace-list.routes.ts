@@ -37,7 +37,12 @@ export const workspaceListRoutes = new Hono<AuthEnv>()
 
   .patch("/:id", idParam, validate("json", updateWorkspaceTaskListSchema), async (c) =>
     c.json(
-      await service.update(c.req.valid("param").id, c.req.valid("json"), c.get("user").accessToken),
+      await service.update(
+        c.get("user").id,
+        c.req.valid("param").id,
+        c.req.valid("json"),
+        c.get("user").accessToken,
+      ),
     ),
   )
 
