@@ -1,12 +1,6 @@
 import { useState } from "react";
 import { View } from "react-native";
-import {
-  DAY_PART_DEFAULT_TIME,
-  dayPartOfHour,
-  type DayPart,
-  type TaskList,
-  type UpdateTaskList,
-} from "@jc/domain";
+import { DAY_PART_DEFAULT_TIME, dayPartOfHour, type DayPart, type TaskList } from "@jc/domain";
 import { DateTimeField } from "@/shared/ui/date-time-field";
 import { Modal } from "@/shared/ui/modal";
 import { SegmentedControl, type SegmentedOption } from "@/shared/ui/segmented-control";
@@ -25,22 +19,44 @@ const MOMENTS: SegmentedOption<Moment>[] = [
   { value: "evening", label: "Soir" },
 ];
 
+/** Échéance à enregistrer : sans date, les deux champs vont ensemble (`null`, rien). */
+export type DueSubmit = { dueAt: string | null; dueAllDay?: boolean };
+
+export type DueDialogProps = {
+  /** Le nom de la liste, rappelé sous le titre. */
+  title: string;
+  dueAt: string | null;
+  dueAllDay: boolean | null;
+  pending: boolean;
+  /** Échec de l'enregistrement, déjà écrit pour l'utilisateur. */
+  failure: string | null;
+  onSubmit: (due: DueSubmit) => void;
+  onClose: () => void;
+};
+
 /**
  * Changer l'échéance d'une liste depuis son en-tête, sans passer par
- * « Modifier la liste ».
+ * « Modifier la liste ». Commun aux listes personnelles et à celles d'un
+ * espace : la saisie et ses règles sont les mêmes, seul l'enregistrement
+ * diffère.
  *
  * Le jour, le mois et l'année se règlent dans le champ de date, segment par
  * segment. Le moment de la journée n'est qu'un raccourci pour l'heure : il la
  * pose, et se relit d'après elle (`dayPartOfHour`).
  */
-export function ListDueDialog({ list, onClose }: { list: TaskList; onClose: () => void }) {
-  const { updateList } = useTaskActions();
+export function DueDialog({
+  title,
+  dueAt,
+  dueAllDay,
+  pending,
+  failure,
+  onSubmit,
+  onClose,
+}: DueDialogProps) {
   /** `JJ/MM/AAAA`, vide quand la liste n'a pas d'échéance. */
-  const [date, setDate] = useState(() =>
-    list.dueAt === null ? "" : formatDateInput(new Date(list.dueAt)),
-  );
+  const [date, setDate] = useState(() => (dueAt === null ? "" : formatDateInput(new Date(dueAt))));
   /** `HH:MM`, vide quand l'échéance ne vise pas d'heure précise. */
-  const [time, setTime] = useState(() => timeOf(list.dueAt, list.dueAllDay));
+  const [time, setTime] = useState(() => timeOf(dueAt, dueAllDay));
   const [error, setError] = useState<string | null>(null);
 
   const typed = parseTimeInput(time);
@@ -61,7 +77,7 @@ export function ListDueDialog({ list, onClose }: { list: TaskList; onClose: () =
   };
 
   const save = () => {
-    const due = parseDue(date, time, list.dueAt);
+    const due = parseDue(date, time, dueAt);
     if (!due.ok) {
       setError(due.message);
       return;
@@ -69,14 +85,7 @@ export function ListDueDialog({ list, onClose }: { list: TaskList; onClose: () =
     setError(null);
 
     // Sans date, il n'y a pas de moment : le serveur efface les deux ensemble.
-    const patch: UpdateTaskList = {
-      dueAt: due.value,
-      ...(due.allDay === null ? {} : { dueAllDay: due.allDay }),
-    };
-    updateList.mutate(
-      { id: list.id, patch },
-      { onSuccess: onClose, onError: (cause) => setError(toMessage(cause)) },
-    );
+    onSubmit({ dueAt: due.value, ...(due.allDay === null ? {} : { dueAllDay: due.allDay }) });
   };
 
   return (
@@ -84,11 +93,11 @@ export function ListDueDialog({ list, onClose }: { list: TaskList; onClose: () =
       open
       onClose={onClose}
       title="Échéance"
-      description={list.title}
-      error={error}
+      description={title}
+      error={error ?? failure}
       actions={[
-        { label: "Annuler", onPress: onClose, disabled: updateList.isPending },
-        { label: "Enregistrer", variant: "default", onPress: save, disabled: updateList.isPending },
+        { label: "Annuler", onPress: onClose, disabled: pending },
+        { label: "Enregistrer", variant: "default", onPress: save, disabled: pending },
       ]}
     >
       <View className="gap-1">
@@ -120,5 +129,28 @@ export function ListDueDialog({ list, onClose }: { list: TaskList; onClose: () =
         />
       </View>
     </Modal>
+  );
+}
+
+/** L'échéance d'une liste personnelle, enregistrée par `PATCH /tasks/:id`. */
+export function ListDueDialog({ list, onClose }: { list: TaskList; onClose: () => void }) {
+  const { updateList } = useTaskActions();
+  const [failure, setFailure] = useState<string | null>(null);
+
+  return (
+    <DueDialog
+      title={list.title}
+      dueAt={list.dueAt}
+      dueAllDay={list.dueAllDay}
+      pending={updateList.isPending}
+      failure={failure}
+      onSubmit={(patch) =>
+        updateList.mutate(
+          { id: list.id, patch },
+          { onSuccess: onClose, onError: (cause) => setFailure(toMessage(cause)) },
+        )
+      }
+      onClose={onClose}
+    />
   );
 }
