@@ -77,14 +77,19 @@ export function TimeGrid({
   const earliest = earliestMinute(perDay);
   const period = `${days[0]?.toISOString() ?? ""}:${days.length}`;
 
-  // À l'ouverture et à chaque changement de période : une heure avant le
-  // premier créneau, pour le voir arriver plutôt que collé au bord.
+  const todayInView = days.some((day) => isSameDay(day, today));
+
+  // À l'ouverture et à chaque changement de période : sur l'heure en cours
+  // quand aujourd'hui est affiché — c'est là que l'on regarde —, sinon une
+  // heure avant le premier créneau, pour le voir arriver plutôt que collé au bord.
   useEffect(() => {
+    const now = new Date();
+    const focus = todayInView ? now.getHours() * 60 + now.getMinutes() : earliest;
     const frame = requestAnimationFrame(() => {
-      hours.current?.scrollTo({ y: scrollOffset(earliest), animated: false });
+      hours.current?.scrollTo({ y: scrollOffset(focus), animated: false });
     });
     return () => cancelAnimationFrame(frame);
-  }, [earliest, period]);
+  }, [earliest, period, todayInView]);
 
   return (
     <View className="border-border min-h-0 flex-1 overflow-hidden rounded-xl border">
@@ -307,9 +312,9 @@ function earliestMinute(
   return earliest;
 }
 
-/** Défilement qui place le premier créneau une heure sous le bord, sans passer minuit. */
-function scrollOffset(earliest: number | null): number {
-  if (earliest === null) return 0;
-  const minute = Math.max(0, earliest - LEAD_MINUTES);
+/** Défilement qui place la minute visée une heure sous le bord, sans passer minuit. */
+function scrollOffset(focus: number | null): number {
+  if (focus === null) return 0;
+  const minute = Math.max(0, focus - LEAD_MINUTES);
   return (minute / 60) * HOUR_HEIGHT;
 }
