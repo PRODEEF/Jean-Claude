@@ -64,6 +64,7 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 - [ ] `BACKEND` `Calendrier` **Lier le calendrier Jean Claude aux calendriers iPhone/iOS et Google, simplement** — Synchronisation simple avec le calendrier natif iOS et avec Google Calendar. <!--id:y-sync-calendrier-ios-google-->
 - [ ] `BACKEND` `Calendrier / TODO` **Découpage MATIN / APRÈS-MIDI / SOIRÉE / SOIR sur la date d'une tâche (todo liste et calendrier)** — Dans la logique du calendrier, et au moment de mettre une date sur un élément de la todo liste, pouvoir choisir un créneau MATIN / APRÈS-MIDI / SOIRÉE / SOIR plutôt qu'une heure précise uniquement. <!--id:y-decoupage-matin-apresmidi-soir-->
 - [ ] `FRONT` `TODO` **Pouvoir modifier ce créneau (MATIN / APRÈS-MIDI / SOIRÉE / SOIR) directement dans le header de la todo liste** — Permettre de changer le créneau horaire d'une tâche sans sortir de la todo liste, en le modifiant directement depuis son en-tête. Lié à « Découpage MATIN / APRÈS-MIDI / SOIRÉE / SOIR ». <!--id:y-modif-creneau-header-todo-->
+- [ ] `FRONT` `Calendrier` **Pouvoir déplacer des tâches, et des tâches avec leur todo liste, dans le calendrier** — Demande de Yann le 5 novembre. Changer le jour (ou le moment) d'une tâche ou d'une todo liste au geste, web d'abord. Déjà au backlog (« Glisser-déposer des tâches au calendrier », A.3), noté non implémenté ; la PR #161 permet seulement de réordonner les listes, y compris sous les bandeaux du jour. <!--id:y-deplacer-calendrier-->
 
 ### Conversations & Canal permanent
 
