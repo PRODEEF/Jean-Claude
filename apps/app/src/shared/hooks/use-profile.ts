@@ -1,6 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { DEFAULT_ASSISTANT_NAME, type UpdateUserProfile, type UserProfile } from "@jc/domain";
+import {
+  DEFAULT_ASSISTANT_NAME,
+  DEFAULT_DAY_PART_BOUNDS,
+  type DayPartBounds,
+  type UpdateUserProfile,
+  type UserProfile,
+} from "@jc/domain";
 import { api } from "@/shared/lib/api";
 import { supabase } from "@/shared/lib/supabase";
 import { useAuth } from "@/shared/providers/auth-provider";
@@ -117,4 +123,17 @@ export function useDeleteAccount() {
 export function useAssistantName(): string {
   const { data } = useProfile();
   return data?.preferences.assistantName ?? DEFAULT_ASSISTANT_NAME;
+}
+
+/**
+ * Heures où l'après-midi et le soir commencent, pour ranger une échéance dans
+ * son moment de la journée.
+ *
+ * Retombe sur 12h et 19h tant que le profil n'est pas arrivé, et face à une
+ * API pas encore déployée qui ne renvoie pas le réglage : le web et l'API
+ * partent séparément.
+ */
+export function useDayPartBounds(): DayPartBounds {
+  const { data } = useProfile();
+  return data?.preferences.dayPartBounds ?? DEFAULT_DAY_PART_BOUNDS;
 }

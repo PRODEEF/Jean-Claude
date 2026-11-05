@@ -16,6 +16,8 @@ type ProfileRow = {
   llm_model: string | null;
   assistant_scope: AssistantScope;
   flat_banner: boolean;
+  day_part_afternoon_from: number;
+  day_part_evening_from: number;
   created_at: string;
   /**
    * Ligne de `admins` embarquée par PostgREST : un objet quand elle existe,
@@ -48,6 +50,10 @@ function toEntity(row: ProfileRow): ProfileRecord {
       llmModel: toAssistantModel(row.llm_model),
       scope: row.assistant_scope,
       flatBanner: row.flat_banner,
+      dayPartBounds: {
+        afternoonFrom: row.day_part_afternoon_from,
+        eveningFrom: row.day_part_evening_from,
+      },
     },
     // Tableau si PostgREST ne reconnaît pas la relation un-à-un (clé primaire
     // sur la clé étrangère) : les deux formes disent la même chose.
@@ -56,7 +62,7 @@ function toEntity(row: ProfileRow): ProfileRecord {
 }
 
 const COLUMNS =
-  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, created_at, admins(user_id)";
+  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, day_part_afternoon_from, day_part_evening_from, created_at, admins(user_id)";
 
 export const userRepository: IUserRepository = {
   async findById(userId, accessToken) {
@@ -86,6 +92,10 @@ export const userRepository: IUserRepository = {
     // entier, ce qui est la sémantique attendue ici.
     if (patch.scope !== undefined) payload["assistant_scope"] = patch.scope;
     if (patch.flatBanner !== undefined) payload["flat_banner"] = patch.flatBanner;
+    if (patch.dayPartBounds !== undefined) {
+      payload["day_part_afternoon_from"] = patch.dayPartBounds.afternoonFrom;
+      payload["day_part_evening_from"] = patch.dayPartBounds.eveningFrom;
+    }
 
     return write(userId, payload, accessToken);
   },

@@ -65,6 +65,15 @@ function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
 const DAY = new Date(2026, 8, 12);
 
 describe("momentOf", () => {
+  it("range l'heure selon les bornes réglées par l'utilisateur", () => {
+    const bounds = { afternoonFrom: 14, eveningFrom: 21 };
+    const at = (hour: number) => momentOf({ dueAt: localIso(2026, 9, 12, hour), dueAllDay: false }, bounds);
+
+    expect(at(13)).toBe("morning");
+    expect(at(20)).toBe("afternoon");
+    expect(at(21)).toBe("evening");
+  });
+
   it("range dans la journée une échéance qui ne vise pas de créneau", () => {
     expect(momentOf({ dueAt: localIso(2026, 9, 12, 9), dueAllDay: true })).toBe("anytime");
   });

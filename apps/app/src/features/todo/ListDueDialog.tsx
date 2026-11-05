@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { View } from "react-native";
-import { DAY_PART_DEFAULT_TIME, dayPartOfHour, type DayPart, type TaskList } from "@jc/domain";
+import { dayPartDefaultTime, dayPartOfHour, type DayPart, type TaskList } from "@jc/domain";
 import { DateTimeField } from "@/shared/ui/date-time-field";
 import { Modal } from "@/shared/ui/modal";
 import { SegmentedControl, type SegmentedOption } from "@/shared/ui/segmented-control";
 import { Text } from "@/shared/ui/text";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
+import { useDayPartBounds } from "@/shared/hooks/use-profile";
 import { formatDateInput, parseTimeInput } from "@/shared/lib/date-input";
 import { parseDue, timeOf, toMessage } from "./TaskListDialog";
 
@@ -59,8 +60,9 @@ export function DueDialog({
   const [time, setTime] = useState(() => timeOf(dueAt, dueAllDay));
   const [error, setError] = useState<string | null>(null);
 
+  const bounds = useDayPartBounds();
   const typed = parseTimeInput(time);
-  const moment: Moment = typed ? dayPartOfHour(typed.hours) : "day";
+  const moment: Moment = typed ? dayPartOfHour(typed.hours, bounds) : "day";
 
   const chooseMoment = (next: Moment) => {
     if (next === "day") {
@@ -71,7 +73,7 @@ export function DueDialog({
     // devenir « 9h » parce qu'on touche « Matin ».
     if (moment === next) return;
 
-    setTime(DAY_PART_DEFAULT_TIME[next]);
+    setTime(dayPartDefaultTime(next, bounds));
     // Une heure sans date n'est pas une échéance : on propose aujourd'hui.
     if (date.trim().length === 0) setDate(formatDateInput(new Date()));
   };

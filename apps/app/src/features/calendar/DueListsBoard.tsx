@@ -5,6 +5,7 @@ import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import { dueOnForDay, momentsOfDay, openTaskCount } from "@jc/domain";
 import { formatFullDay, formatTime, isSameDay } from "@/shared/lib/dates";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useDayPartBounds } from "@/shared/hooks/use-profile";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { TaskDialog } from "@/features/todo/TaskDialog";
 import { TaskListDeleteDialog } from "@/features/todo/TaskListDeleteDialog";
@@ -38,6 +39,7 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
   // sur téléphone où l'espace généreux protège du doigt, mais gagne à se
   // resserrer sur un écran large où plusieurs semaines sont visibles à la fois.
   const desktop = useBreakpoint() === "expanded";
+  const bounds = useDayPartBounds();
   // Les listes telles qu'enregistrées : une entrée de `lists` peut n'être que
   // la projection d'une liste sur le jour de certaines de ses tâches, avec une
   // échéance remplacée par ce jour.
@@ -52,7 +54,7 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
   return (
     <View className={desktop ? "gap-2" : "gap-3"}>
       {days.map((day) => {
-        const groups = momentsOfDay(lists, day);
+        const groups = momentsOfDay(lists, day, bounds);
         const remaining = groups.reduce(
           (count, group) => count + group.lists.reduce((sum, list) => sum + openTaskCount(list), 0),
           0,
