@@ -7,7 +7,11 @@ import type {
   WorkspaceTaskList,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
-import type { IWorkspaceListRepository } from "./workspace-list.repository.interface.js";
+import { hasWallTime, isPastCalendarDay, isSameCalendarDay } from "../../core/timezone.js";
+import type {
+  IWorkspaceListRepository,
+  WorkspaceListPatch,
+} from "./workspace-list.repository.interface.js";
 
 /**
  * Listes partagées d'un espace : tout membre crée, coche, confie et supprime.
@@ -47,12 +51,16 @@ export class WorkspaceListService {
     const members = await this.requireWorkspaceMembers(input.workspaceId, userId, accessToken);
     input.tasks.forEach((task) => assertAssignee(task.assigneeId ?? null, members));
     if (input.folderId) await this.assertFolder(input.workspaceId, input.folderId, accessToken);
+    const due = await this.resolveDue(userId, input.dueAt, input.dueAllDay, null, accessToken);
 
     return this.lists.create(
       userId,
       {
         workspaceId: input.workspaceId,
         title: input.title,
+        kind: input.kind ?? "todo",
+        dueAt: due?.dueAt ?? null,
+        dueAllDay: due?.dueAllDay ?? null,
         folderId: input.folderId ?? null,
         conversationId: input.conversationId ?? null,
         tasks: input.tasks.map((task, position) => ({
@@ -66,19 +74,31 @@ export class WorkspaceListService {
   }
 
   async update(
+    userId: string,
     id: string,
     patch: UpdateWorkspaceTaskList,
     accessToken: string,
   ): Promise<WorkspaceTaskList> {
     const list = await this.get(id, accessToken);
     if (patch.folderId) await this.assertFolder(list.workspaceId, patch.folderId, accessToken);
+    const due = await this.resolveDue(
+      userId,
+      patch.dueAt,
+      patch.dueAllDay,
+      list.dueAt,
+      accessToken,
+    );
 
-    await this.lists.update(id, patch, accessToken);
-    return {
-      ...list,
+    // Clé par clé : un `undefined` laisse la colonne intacte, un `null` l'efface.
+    const resolved: WorkspaceListPatch = {
       ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
       ...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
+      ...(due ?? {}),
     };
+
+    await this.lists.update(id, resolved, accessToken);
+    return { ...list, ...resolved };
   }
 
   async delete(id: string, accessToken: string): Promise<void> {
@@ -132,6 +152,33 @@ export class WorkspaceListService {
   async deleteTask(listId: string, taskId: string, accessToken: string): Promise<void> {
     requireTask(await this.get(listId, accessToken), taskId);
     await this.lists.deleteTask(taskId, accessToken);
+  }
+
+  /**
+   * Échéance telle qu'on l'enregistre, ou `null` quand la requête n'y touche pas.
+   *
+   * Même règle que les listes personnelles : jamais un jour déjà révolu dans le
+   * fuseau du profil, sauf à garder celui que la liste porte déjà ; et, faute
+   * qu'on dise « journée » ou « créneau », le moment se déduit de l'heure.
+   * Un moment envoyé sans échéance est ignoré : il n'accompagne jamais rien.
+   */
+  private async resolveDue(
+    userId: string,
+    dueAt: string | null | undefined,
+    dueAllDay: boolean | undefined,
+    currentDueAt: string | null,
+    accessToken: string,
+  ): Promise<{ dueAt: string | null; dueAllDay: boolean | null } | null> {
+    if (dueAt === undefined) return null;
+    if (dueAt === null) return { dueAt: null, dueAllDay: null };
+
+    const timezone = await this.lists.findTimezone(userId, accessToken);
+    const kept = currentDueAt !== null && isSameCalendarDay(dueAt, currentDueAt, timezone);
+    if (isPastCalendarDay(dueAt, timezone) && !kept) {
+      throw httpError(400, "Une échéance ne peut pas être dans le passé.");
+    }
+
+    return { dueAt, dueAllDay: dueAllDay ?? !hasWallTime(dueAt, timezone) };
   }
 
   /** Un non-membre reçoit un 404 : il n'a pas à apprendre que l'espace existe. */

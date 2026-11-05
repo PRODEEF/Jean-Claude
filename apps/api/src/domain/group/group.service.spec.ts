@@ -134,6 +134,9 @@ function makeListRepository(
     id: "list-9",
     workspaceId: WORKSPACE_ID,
     title: "Kermesse",
+    kind: "todo",
+    dueAt: null,
+    dueAllDay: null,
     folderId: null,
     conversationId: "group-1",
     tasks: [],
@@ -141,6 +144,7 @@ function makeListRepository(
     updatedAt: "2026-09-29T08:00:00.000Z",
   };
   return {
+    findTimezone: jest.fn().mockResolvedValue("Europe/Paris"),
     findWorkspaceMemberIds: jest.fn().mockResolvedValue(["alice", "bruno", "chloe"]),
     findWorkspaceFolderIds: jest.fn().mockResolvedValue([]),
     findByWorkspace: jest.fn().mockResolvedValue([]),

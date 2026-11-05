@@ -1,6 +1,6 @@
 import type {
+  TaskListKind,
   UpdateWorkspaceTask,
-  UpdateWorkspaceTaskList,
   WorkspaceTask,
   WorkspaceTaskList,
 } from "@jc/domain";
@@ -11,12 +11,29 @@ export type NewWorkspaceTask = { title: string; assigneeId: string | null; posit
 export type NewWorkspaceTaskList = {
   workspaceId: string;
   title: string;
+  kind: TaskListKind;
+  dueAt: string | null;
+  dueAllDay: boolean | null;
   folderId: string | null;
   conversationId: string | null;
   tasks: NewWorkspaceTask[];
 };
 
+/**
+ * Modification déjà résolue par le service : l'échéance et son moment vont
+ * ensemble, `null` pour les effacer, une clé absente pour les laisser.
+ */
+export type WorkspaceListPatch = {
+  title?: string;
+  kind?: TaskListKind;
+  folderId?: string | null;
+  dueAt?: string | null;
+  dueAllDay?: boolean | null;
+};
+
 export interface IWorkspaceListRepository {
+  /** Fuseau du profil de `userId`, pour dater « aujourd'hui » comme lui. */
+  findTimezone(userId: string, accessToken: string): Promise<string>;
   /** Membres de l'espace ; vide si l'appelant n'en fait pas partie. */
   findWorkspaceMemberIds(workspaceId: string, accessToken: string): Promise<string[]>;
   /** Dossiers de l'espace ; vide pour qui n'en est pas membre. */
@@ -30,7 +47,7 @@ export interface IWorkspaceListRepository {
     list: NewWorkspaceTaskList,
     accessToken: string,
   ): Promise<WorkspaceTaskList>;
-  update(id: string, patch: UpdateWorkspaceTaskList, accessToken: string): Promise<void>;
+  update(id: string, patch: WorkspaceListPatch, accessToken: string): Promise<void>;
   delete(id: string, accessToken: string): Promise<void>;
   addTask(
     userId: string,
