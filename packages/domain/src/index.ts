@@ -18,6 +18,7 @@ export * from "./folder/folder.schema";
 export * from "./conversation/conversation.schema";
 export * from "./message/message.schema";
 export * from "./task/task.schema";
+export * from "./task/day-part";
 export * from "./calendar/calendar.schema";
 export * from "./calendar/list-slot";
 export * from "./planning/planning";

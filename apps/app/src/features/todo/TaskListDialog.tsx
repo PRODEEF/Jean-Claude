@@ -281,7 +281,7 @@ function ListForm({
 }
 
 /** Heure de l'échéance à la saisie, vide quand elle vise la journée entière. */
-function timeOf(dueAt: string | null, allDay: boolean | null): string {
+export function timeOf(dueAt: string | null, allDay: boolean | null): string {
   if (dueAt === null || allDay !== false) return "";
   return formatTimeInput(new Date(dueAt));
 }
@@ -300,7 +300,7 @@ type DueResult =
  * Effacer la date retire l'échéance : la liste retourne parmi celles qui n'en
  * portent pas, sans pour autant disparaître.
  */
-function parseDue(date: string, time: string, originalDueAt: string | null): DueResult {
+export function parseDue(date: string, time: string, originalDueAt: string | null): DueResult {
   if (date.trim().length === 0) {
     if (time.trim().length > 0) return { ok: false, message: "Indiquez une date avant une heure." };
     return { ok: true, value: null, allDay: null };
@@ -338,7 +338,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function toMessage(cause: Error): string {
+export function toMessage(cause: Error): string {
   if (cause instanceof ApiError && cause.status === 400) return cause.message;
   return "L'enregistrement a échoué. Réessayez dans un instant.";
 }
