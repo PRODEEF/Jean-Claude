@@ -75,6 +75,16 @@ describe("momentOf", () => {
     expect(momentOf({ dueAt: localIso(2026, 9, 12, 19), dueAllDay: false })).toBe("evening");
   });
 
+  it("fait commencer l'après-midi à midi pile et le soir à 19h pile", () => {
+    const at = (hour: number, minute: number) =>
+      momentOf({ dueAt: localIso(2026, 9, 12, hour, minute), dueAllDay: false });
+
+    expect(at(11, 59)).toBe("morning");
+    expect(at(12, 0)).toBe("afternoon");
+    expect(at(18, 59)).toBe("afternoon");
+    expect(at(19, 0)).toBe("evening");
+  });
+
   it("range la fin de soirée dans le soir, sans quatrième moment", () => {
     expect(momentOf({ dueAt: localIso(2026, 9, 12, 23), dueAllDay: false })).toBe("evening");
   });

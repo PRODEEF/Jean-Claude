@@ -1,4 +1,5 @@
 import type { CalendarEvent } from "../calendar/calendar.schema";
+import { dayPartOfHour } from "../task/day-part";
 import type { Task, TaskList, TaskListWithTasks } from "../task/task.schema";
 
 /**
@@ -83,10 +84,6 @@ export const MOMENTS: Moment[] = [
   { key: "evening", label: "Soir" },
 ];
 
-/** Bornes en heures locales, celles du langage courant plutôt qu'un découpage égal. */
-const AFTERNOON_FROM = 12;
-const EVENING_FROM = 18;
-
 /**
  * Moment d'une échéance.
  *
@@ -101,10 +98,10 @@ const EVENING_FROM = 18;
 export function momentOf(list: Pick<TaskList, "dueAt" | "dueAllDay">): MomentKey {
   if (list.dueAt === null || list.dueAllDay !== false) return "anytime";
 
-  const hours = new Date(list.dueAt).getHours();
-  if (hours >= EVENING_FROM) return "evening";
-  if (hours >= AFTERNOON_FROM) return "afternoon";
-  return "morning";
+  // Les bornes (matin avant midi, soir dès 19h) vivent à un seul endroit :
+  // la fenêtre qui pose l'échéance et cette trame du calendrier doivent
+  // ranger la même heure dans le même moment.
+  return dayPartOfHour(new Date(list.dueAt).getHours());
 }
 
 export type MomentGroup = { moment: Moment; lists: TaskListWithTasks[] };
