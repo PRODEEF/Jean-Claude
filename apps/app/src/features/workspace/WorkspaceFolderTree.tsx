@@ -135,6 +135,10 @@ function FolderRow({
       <FolderContextMenu
         target={menu}
         onClose={() => setMenu(null)}
+        onNewConversation={() => {
+          setMenu(null);
+          props.onNewConversation(node.id);
+        }}
         onRename={() => edit({ kind: "rename", folder: node })}
         onAddChild={() => edit({ kind: "create", parentId: node.id })}
         onAddTaskList={() => {

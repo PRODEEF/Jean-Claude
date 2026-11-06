@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Platform, View } from "react-native";
-import { GripVertical, ListChecks, MoreHorizontal, ShoppingBasket } from "lucide-react-native";
+import { GripVertical, ListChecks, MoreHorizontal, Plus, ShoppingBasket } from "lucide-react-native";
 import type { MomentKey, Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import {
   calendarDayOf,
@@ -56,6 +56,17 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
   const { data: savedLists } = useTaskLists();
   const { updateList, updateTask } = useTaskActions();
   const [moveFailure, setMoveFailure] = useState<string | null>(null);
+
+  /**
+   * Crée une liste sur un jour, au moment visé : la fenêtre s'ouvre déjà datée,
+   * l'utilisateur n'a plus qu'à écrire le titre et ses tâches (§13.4.1).
+   */
+  const addList = (day: Date, moment: MomentKey) => {
+    const due = dueForMoment(day, moment, { dueAt: null, dueAllDay: null }, bounds);
+    setListTarget({ mode: "create", folderId: null, dueAt: due.dueAt, dueAllDay: due.dueAllDay });
+  };
+  /** Pas d'échéance dans le passé : le serveur la refuse, autant ne pas proposer le geste. */
+  const canAddOn = (day: Date) => startOfDay(day).getTime() >= startOfDay(today).getTime();
 
   const fail = () => setMoveFailure("Le déplacement a échoué. Réessayez dans un instant.");
 
@@ -125,15 +136,23 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
           >
             <View className="flex-row items-center justify-between gap-2">
               <Text
-                className={`text-base font-bold uppercase ${
+                className={`text-sm font-bold uppercase ${
                   isToday ? "text-primary" : "text-foreground"
                 }`}
               >
                 {formatFullDay(day)}
               </Text>
-              {remaining > 0 ? (
-                <Text className="text-muted-foreground text-xs">{remaining} à faire</Text>
-              ) : null}
+              <View className="flex-row items-center gap-1">
+                {remaining > 0 ? (
+                  <Text className="text-muted-foreground text-xs">{remaining} à faire</Text>
+                ) : null}
+                {canAddOn(day) ? (
+                  <AddListButton
+                    label={`Ajouter une liste le ${formatFullDay(day)}`}
+                    onPress={() => addList(day, "anytime")}
+                  />
+                ) : null}
+              </View>
             </View>
 
             {groups.map((group) => (
@@ -143,16 +162,22 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
                 accepts={(drag) => canMoveTo(drag, day, group.moment.key)}
                 onDrop={(drag) => move(drag, day, group.moment.key)}
               >
-                {/* Bandeau gris sur toute la largeur et corps plus grand que
-                    celui des tâches (demande de Yann) : le moment structure
-                    la journée, il doit se lire avant ce qu'il contient.
+                {/* Bandeau gris sur toute la largeur : le moment structure la
+                    journée. Même corps que le reste, mais en minuscules : le
+                    jour est seul en majuscules, c'est lui qu'on lit d'abord.
                     `bg-border` et non `bg-muted` : ce dernier vaut la teinte
                     de fond des surfaces, quasi blanche, et le bandeau ne se
                     détachait presque pas de la carte du jour. */}
-                <View className="bg-border rounded-md px-2 py-1">
-                  <Text className="text-foreground text-[15px] font-semibold uppercase">
+                <View className="bg-border flex-row items-center justify-between rounded-md px-2 py-1">
+                  <Text className="text-foreground text-sm font-semibold">
                     {group.moment.label}
                   </Text>
+                  {canAddOn(day) ? (
+                    <AddListButton
+                      label={`Ajouter une liste, ${group.moment.label.toLowerCase()} du ${formatFullDay(day)}`}
+                      onPress={() => addList(day, group.moment.key)}
+                    />
+                  ) : null}
                 </View>
                 {group.lists.map((list) => {
                   const saved = savedLists?.find((candidate) => candidate.id === list.id);
@@ -181,6 +206,22 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
       <TaskListDeleteDialog list={deletingList} onClose={() => setDeletingList(null)} />
       <TaskDialog task={editedTask} onClose={() => setOpenedTask(null)} />
     </View>
+  );
+}
+
+/** « + » discret au bout d'une ligne : ajouter une liste à cet endroit. */
+function AddListButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      hitSlop={8}
+      onPress={onPress}
+      accessibilityLabel={label}
+      className="size-7"
+    >
+      <Icon as={Plus} size={16} className="text-muted-foreground" />
+    </Button>
   );
 }
 

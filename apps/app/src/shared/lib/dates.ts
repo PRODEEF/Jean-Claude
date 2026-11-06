@@ -81,19 +81,32 @@ export function monthGrid(anchor: Date): Date[] {
   return Array.from({ length: weeks * 7 }, (_, index) => addDays(start, index));
 }
 
-/** Les douze mois de l'année de `anchor`, chacun ramené à son premier jour. */
+/**
+ * Les douze mois qui commencent au mois de `anchor`, chacun ramené à son premier
+ * jour.
+ *
+ * Une année glissante et non civile : on ouvre la vue Année sur le mois en
+ * cours, en haut à gauche, plutôt que sur janvier — passé la moitié de
+ * l'année, c'est l'avenir qu'on vient regarder (demande de Yann).
+ */
 export function monthsOfYear(anchor: Date): Date[] {
-  return Array.from({ length: 12 }, (_, month) => new Date(anchor.getFullYear(), month, 1));
+  return Array.from(
+    { length: 12 },
+    (_, offset) => new Date(anchor.getFullYear(), anchor.getMonth() + offset, 1),
+  );
 }
 
 /**
- * Premier et dernier jour de l'année.
+ * Premier et dernier jour de ces douze mois.
  *
  * Deux dates et non les 365 : seules les bornes servent, `rangeOf` ne lit que
  * les extrémités de ce qu'on lui donne.
  */
 export function yearBounds(anchor: Date): Date[] {
-  return [new Date(anchor.getFullYear(), 0, 1), new Date(anchor.getFullYear(), 11, 31)];
+  return [
+    new Date(anchor.getFullYear(), anchor.getMonth(), 1),
+    new Date(anchor.getFullYear(), anchor.getMonth() + 12, 0),
+  ];
 }
 
 export function weekDays(anchor: Date): Date[] {
@@ -111,7 +124,9 @@ export function monthName(anchor: Date): string {
 }
 
 export function yearLabel(anchor: Date): string {
-  return String(anchor.getFullYear());
+  const [start = anchor, end = anchor] = yearBounds(anchor);
+  const short = (date: Date) => `${(MONTH_NAMES[date.getMonth()] ?? "").slice(0, 3)} ${date.getFullYear()}`;
+  return `${short(start)} – ${short(end)}`;
 }
 
 /** Ex. « mercredi 2 septembre 2026 » — la période affichée en vue jour. */

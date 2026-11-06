@@ -5,7 +5,7 @@ import { Text } from "@/shared/ui/text";
 import { isSameDay, monthGrid, monthName, monthsOfYear } from "@/shared/lib/dates";
 
 export type YearGridProps = {
-  /** Année affichée ; seul le millésime compte. */
+  /** Premier mois affiché : les douze suivent, le mois en cours en haut à gauche. */
   anchor: Date;
   events: CalendarEntry[];
   /** Ouvre le mois choisi — la vue année sert à viser, pas à lire le détail. */
@@ -16,7 +16,7 @@ export type YearGridProps = {
 const WEEKDAY_INITIALS = ["L", "M", "M", "J", "V", "S", "D"] as const;
 
 /**
- * Vue année : douze vignettes de mois.
+ * Vue année : douze vignettes de mois, à partir du mois en cours.
  *
  * Elle ne montre pas les événements mais leur présence — un jour occupé est
  * mis en avant, le reste s'ouvre d'un appui sur le mois. C'est le parti du

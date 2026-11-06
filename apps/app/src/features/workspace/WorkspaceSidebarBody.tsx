@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
-import { ChevronDown, ChevronRight, Folder as FolderIcon, ListChecks, MessagesSquare, Plus } from "lucide-react-native";
+import {
+  ChevronDown,
+  ChevronRight,
+  Folder as FolderIcon,
+  ListChecks,
+  MessagesSquare,
+  Plus,
+} from "lucide-react-native";
 import type { FolderTreeNode, Group, WorkspaceTaskList } from "@jc/domain";
 import { CreateGroupDialog } from "@/features/group/CreateGroupDialog";
 import { GroupDropDialog, type GroupDrop } from "@/features/group/GroupDropDialog";
@@ -26,6 +33,9 @@ import {
 } from "@/features/workspace-list/WorkspaceListDialog";
 import { WorkspaceFolderDialog, type WorkspaceFolderTarget } from "./WorkspaceFolderDialog";
 import { WorkspaceFolderTree } from "./WorkspaceFolderTree";
+import { WorkspaceLeaveDialog } from "./WorkspaceLeaveDialog";
+import { WorkspaceNameDialog } from "./WorkspaceNameDialog";
+import { useWorkspaces } from "./hooks/use-workspaces";
 import {
   useFileNewGroup,
   useWorkspaceFolderActions,
@@ -76,6 +86,9 @@ export function WorkspaceSidebarBody({
   const [filing, setFiling] = useState<Group | null>(null);
   const [drop, setDrop] = useState<GroupDrop | null>(null);
   const extractList = useExtractGroupList();
+  const workspace = useWorkspaces().data?.find((candidate) => candidate.id === workspaceId) ?? null;
+  const [renaming, setRenaming] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   const renderGroup = (group: Group) => {
     const href = `/workspace/${workspaceId}/group/${group.id}`;
@@ -126,11 +139,24 @@ export function WorkspaceSidebarBody({
         open={open}
         unread={unread}
         onToggle={toggle}
+        // Même ordre que le menu d'un dossier (`FolderContextMenu`) : ce qu'on
+        // crée d'abord, puis renommer, puis ce qui est irréversible à part.
         menuItems={[
-          { label: "Nouveau dossier", onPress: createFolder },
           { label: "Nouvelle conversation", onPress: () => startConversation(null) },
+          {
+            label: "Nouvelle todoliste",
+            onPress: () => setListDialog({ kind: "create", workspaceId }),
+          },
+          { label: "Nouveau dossier", onPress: createFolder },
           { label: "Membres et invitations", onPress: () => onNavigate(membersHref) },
           { label: "Fichiers", onPress: () => onNavigate(filesHref) },
+          // Seul un admin renomme l'espace ; le serveur le refuse aux autres.
+          ...(workspace?.role === "admin"
+            ? [{ label: "Renommer l'espace", onPress: () => setRenaming(true) }]
+            : []),
+          ...(workspace
+            ? [{ label: "Quitter l'espace", destructive: true, onPress: () => setLeaving(true) }]
+            : []),
         ]}
       />
 
@@ -150,10 +176,7 @@ export function WorkspaceSidebarBody({
           />
 
           {namingRoot ? (
-            <WorkspaceFolderNameRow
-              workspaceId={workspaceId}
-              onDone={() => setNamingRoot(false)}
-            />
+            <WorkspaceFolderNameRow workspaceId={workspaceId} onDone={() => setNamingRoot(false)} />
           ) : null}
 
           {unfiledGroups.map((group) => (
@@ -197,6 +220,16 @@ export function WorkspaceSidebarBody({
           ) : null}
         </View>
       ) : null}
+
+      <WorkspaceNameDialog
+        target={renaming && workspace ? { kind: "rename", workspace } : null}
+        onClose={() => setRenaming(false)}
+        onDone={() => setRenaming(false)}
+      />
+      <WorkspaceLeaveDialog
+        workspace={leaving ? workspace : null}
+        onClose={() => setLeaving(false)}
+      />
 
       <WorkspaceListDialog
         target={listDialog}
@@ -329,7 +362,7 @@ function WorkspaceHeading({
   open: boolean;
   unread: number;
   onToggle: () => void;
-  menuItems: { label: string; onPress: () => void }[];
+  menuItems: { label: string; onPress: () => void; destructive?: boolean }[];
 }) {
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const openMenu = (x: number, y: number) => setMenuAt({ x, y });

@@ -24,6 +24,7 @@ import {
   workspaceErrorMessage,
 } from "./hooks/use-workspaces";
 import { invitationMessage } from "./invitation-message";
+import { WorkspaceLeaveDialog } from "./WorkspaceLeaveDialog";
 import { WorkspaceNameDialog } from "./WorkspaceNameDialog";
 
 /**
@@ -459,13 +460,10 @@ function InvitationRow({
 }
 
 function LeaveSection({ workspace }: { workspace: Workspace }) {
-  const router = useRouter();
   const { session } = useAuth();
-  const { removeMember } = useWorkspaceActions();
   const [confirming, setConfirming] = useState(false);
-  const selfId = session?.user.id;
 
-  if (!selfId) return null;
+  if (!session?.user.id) return null;
 
   return (
     <View className="items-start">
@@ -473,38 +471,9 @@ function LeaveSection({ workspace }: { workspace: Workspace }) {
         <Text className="text-destructive">Quitter l'espace</Text>
       </Button>
 
-      <Modal
-        open={confirming}
+      <WorkspaceLeaveDialog
+        workspace={confirming ? workspace : null}
         onClose={() => setConfirming(false)}
-        variant="confirm"
-        title={`Quitter « ${workspace.name} » ?`}
-        description="Vous perdez l'accès à l'espace et à ses conversations. Seul un admin pourra vous réinviter."
-        error={workspaceErrorMessage(
-          removeMember.error,
-          "Le départ a échoué. Réessayez dans un instant.",
-        )}
-        actions={[
-          {
-            label: "Rester",
-            onPress: () => setConfirming(false),
-            disabled: removeMember.isPending,
-          },
-          {
-            label: "Quitter",
-            variant: "destructive",
-            disabled: removeMember.isPending,
-            onPress: () =>
-              removeMember.mutate(
-                { workspaceId: workspace.id, userId: selfId },
-                {
-                  onSuccess: () => {
-                    setConfirming(false);
-                    router.replace("/chat");
-                  },
-                },
-              ),
-          },
-        ]}
       />
     </View>
   );
