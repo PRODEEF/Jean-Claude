@@ -1702,6 +1702,7 @@ describe("AssistantService", () => {
       expect(events.create).toHaveBeenCalledWith(
         USER,
         {
+          folderId: null,
           title: "Kiné",
           startsAt: KINE,
           endsAt: "2026-09-08T17:00:00.000Z",
@@ -1797,13 +1798,83 @@ describe("AssistantService", () => {
       expect(events.create).toHaveBeenNthCalledWith(
         1,
         USER,
-        { title: "Dentiste", startsAt: DESHERBAGE, endsAt: "2026-09-12T10:00:00.000Z", allDay: false },
+        {
+          folderId: null,
+          title: "Dentiste",
+          startsAt: DESHERBAGE,
+          endsAt: "2026-09-12T10:00:00.000Z",
+          allDay: false,
+        },
         TOKEN,
       );
       expect(events.create).toHaveBeenNthCalledWith(
         2,
         USER,
-        { title: "Anniversaire", startsAt: MINUIT_PARIS, endsAt: null, allDay: true },
+        {
+          folderId: null,
+          title: "Anniversaire",
+          startsAt: MINUIT_PARIS,
+          endsAt: null,
+          allDay: true,
+        },
+        TOKEN,
+      );
+    });
+
+    it("range les rendez-vous dans le sous-dossier PRENDRE RDV du projet, quand il existe (A.4)", async () => {
+      const jardin = uuid(401);
+      const rdv = uuid(402);
+      const events = makeCalendarRepository();
+      const folders = makeFolderRepository([
+        makeFolder({ id: jardin, name: "Jardin" }),
+        makeFolder({ id: rdv, name: "PRENDRE RDV", parentId: jardin, purpose: "appointment" }),
+      ]);
+      const conversations = makeConversationRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation([jardin])),
+      });
+
+      await makeService(
+        makeSuggestionStore(makeEventsSuggestion()),
+        folders,
+        conversations,
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(events.create).toHaveBeenNthCalledWith(
+        1,
+        USER,
+        expect.objectContaining({ folderId: rdv }),
+        TOKEN,
+      );
+      expect(events.create).toHaveBeenNthCalledWith(
+        2,
+        USER,
+        expect.objectContaining({ folderId: rdv }),
+        TOKEN,
+      );
+    });
+
+    it("retombe sur le dossier de la conversation quand le projet n'a pas de sous-dossier PRENDRE RDV", async () => {
+      const jardin = uuid(403);
+      const events = makeCalendarRepository();
+      const folders = makeFolderRepository([makeFolder({ id: jardin, name: "Jardin" })]);
+      const conversations = makeConversationRepository({
+        findById: jest.fn().mockResolvedValue(makeConversation([jardin])),
+      });
+
+      await makeService(
+        makeSuggestionStore(makeEventsSuggestion()),
+        folders,
+        conversations,
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(events.create).toHaveBeenNthCalledWith(
+        1,
+        USER,
+        expect.objectContaining({ folderId: jardin }),
         TOKEN,
       );
     });
