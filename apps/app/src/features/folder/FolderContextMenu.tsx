@@ -14,6 +14,7 @@ export type FolderContextMenuProps = {
   /** `null` = menu fermé. */
   target: FolderMenuTarget | null;
   onClose: () => void;
+  onNewConversation: (target: FolderMenuTarget) => void;
   onRename: (target: FolderMenuTarget) => void;
   onAddChild: (target: FolderMenuTarget) => void;
   onAddTaskList: (target: FolderMenuTarget) => void;
@@ -24,6 +25,7 @@ export type FolderContextMenuProps = {
 export function FolderContextMenu({
   target,
   onClose,
+  onNewConversation,
   onRename,
   onAddChild,
   onAddTaskList,
@@ -31,8 +33,15 @@ export function FolderContextMenu({
 }: FolderContextMenuProps) {
   if (!target) return null;
 
+  // Même ordre que le menu d'un espace (`WorkspaceSidebarBody`) : ce qu'on crée
+  // d'abord, puis renommer, puis supprimer à part.
   const items: ContextMenuItem[] = [
-    { label: "Renommer", onPress: () => onRename(target) },
+    // Une conversation créée d'ici naît déjà rangée dans ce dossier.
+    { label: "Nouvelle conversation", onPress: () => onNewConversation(target) },
+
+    // Une todoliste créée d'ici naît déjà rangée : elle restera visible dans ce
+    // dossier comme dans l'onglet Mes listes (A.2).
+    { label: "Nouvelle todoliste", onPress: () => onAddTaskList(target) },
 
     // L'arborescence est bornée à `MAX_FOLDER_DEPTH` niveaux : au dernier, un
     // sous-dossier ne rentre plus. Le serveur le refuse déjà, autant ne pas
@@ -41,9 +50,7 @@ export function FolderContextMenu({
       ? [{ label: "Ajouter un sous-dossier", onPress: () => onAddChild(target) }]
       : []),
 
-    // Une todoliste créée d'ici naît déjà rangée : elle restera visible dans ce
-    // dossier comme dans l'onglet Mes listes (A.2).
-    { label: "Nouvelle todoliste", onPress: () => onAddTaskList(target) },
+    { label: "Renommer", onPress: () => onRename(target) },
 
     { label: "Supprimer", destructive: true, onPress: () => onDelete(target) },
   ];

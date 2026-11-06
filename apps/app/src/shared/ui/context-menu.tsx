@@ -1,6 +1,7 @@
 import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import type { LucideIcon } from "lucide-react-native";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
+import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 
@@ -25,8 +26,13 @@ export type ContextMenuProps = {
 const MENU_WIDTH = 260;
 /** Marge minimale au bord de la fenêtre, pour que le menu ne soit jamais coupé. */
 const EDGE = spacing.sm;
-/** Hauteur d'une entrée, séparateur compris pour la première destructive. */
-const ITEM_HEIGHT = MIN_TOUCH_TARGET;
+/**
+ * Hauteur d'une entrée. Au doigt, la cible tactile minimale ; au curseur, celle
+ * des rangées de la barre latérale d'où le menu s'ouvre — plus haut, il en
+ * ferait une liste à part.
+ */
+const TOUCH_ITEM_HEIGHT = MIN_TOUCH_TARGET;
+const POINTER_ITEM_HEIGHT = 36;
 const SEPARATOR_HEIGHT = 1 + spacing.xs * 2;
 
 /**
@@ -41,11 +47,12 @@ const SEPARATOR_HEIGHT = 1 + spacing.xs * 2;
 export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const { palette } = useTheme();
   const window = useWindowDimensions();
+  const itemHeight = useBreakpoint() === "compact" ? TOUCH_ITEM_HEIGHT : POINTER_ITEM_HEIGHT;
 
   // Le menu s'ouvre au curseur, sauf s'il devait déborder : il se replie alors
   // vers l'intérieur plutôt que de sortir de l'écran.
   const height =
-    items.length * ITEM_HEIGHT +
+    items.length * itemHeight +
     items.filter((item) => item.destructive).length * SEPARATOR_HEIGHT +
     spacing.xs * 2;
   const left = Math.max(EDGE, Math.min(x, window.width - MENU_WIDTH - EDGE));
@@ -74,7 +81,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
             {item.destructive ? (
               <View style={[styles.separator, { backgroundColor: palette.border }]} />
             ) : null}
-            <MenuItem item={item} />
+            <MenuItem item={item} height={itemHeight} />
           </View>
         ))}
       </View>
@@ -82,7 +89,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   );
 }
 
-function MenuItem({ item }: { item: ContextMenuItem }) {
+function MenuItem({ item, height }: { item: ContextMenuItem; height: number }) {
   const { palette } = useTheme();
   const Glyph = item.icon;
 
@@ -90,7 +97,11 @@ function MenuItem({ item }: { item: ContextMenuItem }) {
     <Pressable
       onPress={item.onPress}
       accessibilityRole="menuitem"
-      style={({ pressed }) => [styles.item, pressed ? { backgroundColor: palette.surface } : null]}
+      style={({ pressed }) => [
+        styles.item,
+        { minHeight: height },
+        pressed ? { backgroundColor: palette.surface } : null,
+      ]}
     >
       {Glyph ? (
         <Glyph size={16} color={item.destructive ? palette.danger : palette.textMuted} />
@@ -124,7 +135,6 @@ const styles = StyleSheet.create({
     boxShadow: "0px 4px 16px rgba(0, 0, 0, 0.18)",
   },
   item: {
-    minHeight: MIN_TOUCH_TARGET,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
