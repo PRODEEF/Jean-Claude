@@ -9,6 +9,7 @@ import { Composer } from "@/features/conversation/Composer";
 import { useAttachmentPicker } from "@/features/conversation/hooks/use-attachment-picker";
 import { useComposerAttachments } from "@/features/conversation/hooks/use-composer-attachments";
 import { Icon } from "@/shared/ui/icon";
+import { VersionLabel } from "@/shared/ui/screen-shell";
 import { Text } from "@/shared/ui/text";
 import { useCurrentUser } from "@/shared/hooks/use-current-user";
 
@@ -98,6 +99,10 @@ export default function ChatHomeScreen() {
 
   return (
     <View className="flex-1 items-center justify-center gap-3 bg-background p-6">
+      <View style={styles.version}>
+        <VersionLabel />
+      </View>
+
       <View className="size-10 items-center justify-center rounded-lg bg-primary">
         <Icon as={Sparkles} size={20} className="text-primary-foreground" />
       </View>
@@ -125,4 +130,5 @@ export default function ChatHomeScreen() {
 
 const styles = StyleSheet.create({
   composer: { width: "100%", maxWidth: 640, marginTop: spacing.sm },
+  version: { position: "absolute", top: spacing.md, right: spacing.md },
 });
