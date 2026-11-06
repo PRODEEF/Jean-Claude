@@ -189,6 +189,15 @@ export function momentsOfDay(
 }
 
 /**
+ * Jour civil où tombe une tâche : le sien, ou à défaut celui de l'échéance de
+ * sa liste. `null` quand ni l'une ni l'autre n'est datée.
+ */
+export function dayOfTask(list: Pick<TaskList, "dueAt">, task: Pick<Task, "dueOn">): string | null {
+  if (task.dueOn !== null) return task.dueOn;
+  return list.dueAt === null ? null : calendarDayOf(new Date(list.dueAt));
+}
+
+/**
  * Jours que la vue Todo déroule pour un mois.
  *
  * Le mois en cours s'ouvre sur aujourd'hui : les jours révolus sont derrière

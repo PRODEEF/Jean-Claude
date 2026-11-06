@@ -10,6 +10,7 @@ import {
   layoutDayLists,
   listsOfDay,
   listsWithoutVisibleEvent,
+  dayOfTask,
   dueForMoment,
   dueForSlot,
   momentOf,
@@ -173,6 +174,22 @@ describe("dueForSlot", () => {
   it("ne sort pas de la journée", () => {
     expect(dueForSlot(target, -30).dueAt).toBe(localIso(2026, 9, 12, 0, 0));
     expect(dueForSlot(target, 24 * 60).dueAt).toBe(localIso(2026, 9, 12, 23, 45));
+  });
+});
+
+describe("dayOfTask", () => {
+  const list = { dueAt: localIso(2026, 9, 12, 14) };
+
+  it("préfère le jour propre de la tâche à l'échéance de sa liste", () => {
+    expect(dayOfTask(list, { dueOn: "2026-09-14" })).toBe("2026-09-14");
+  });
+
+  it("retombe sur le jour de l'échéance de la liste", () => {
+    expect(dayOfTask(list, { dueOn: null })).toBe("2026-09-12");
+  });
+
+  it("n'invente pas de jour quand rien n'est daté", () => {
+    expect(dayOfTask({ dueAt: null }, { dueOn: null })).toBeNull();
   });
 });
 
