@@ -100,14 +100,26 @@ export function ScreenHeader({ title, action, onBack }: ScreenHeaderProps) {
 
       {/* À l'extrême droite, après la commande : le même repère sur tous les
           écrans pour dire quelle version on regarde. */}
-      <Text
-        numberOfLines={1}
-        accessibilityLabel={`Version ${APP_VERSION.slice(1)}`}
-        style={[styles.version, { color: palette.textMuted }]}
-      >
-        {APP_VERSION}
-      </Text>
+      <VersionLabel />
     </View>
+  );
+}
+
+/**
+ * Version de l'app. Exportée pour l'écran d'accueil, qui n'a pas de bandeau :
+ * sans elle, le repère disparaîtrait de la première page qu'on voit.
+ */
+export function VersionLabel() {
+  const { palette } = useTheme();
+
+  return (
+    <Text
+      numberOfLines={1}
+      accessibilityLabel={`Version ${APP_VERSION.slice(1)}`}
+      style={[styles.version, { color: palette.textMuted }]}
+    >
+      {APP_VERSION}
+    </Text>
   );
 }
 

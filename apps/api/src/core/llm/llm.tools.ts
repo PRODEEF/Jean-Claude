@@ -511,7 +511,10 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
         type: "string",
         description:
           "Règle RRULE sans le préfixe « RRULE: » — ex. FREQ=WEEKLY;BYDAY=TU. " +
-          "FREQ obligatoire (DAILY, WEEKLY, MONTHLY ou YEARLY).",
+          "FREQ obligatoire (DAILY, WEEKLY, MONTHLY ou YEARLY). Les exceptions se " +
+          "disent dans la règle : « sauf en février » = BYMONTH avec tous les autres " +
+          "mois (FREQ=WEEKLY;BYDAY=TH;BYMONTH=1,3,4,5,6,7,8,9,10,11,12), « jusqu'à fin " +
+          "juin » = UNTIL=20270630T235959Z, « dix fois » = COUNT=10.",
       },
       reminderMinutesBefore: {
         type: "number",

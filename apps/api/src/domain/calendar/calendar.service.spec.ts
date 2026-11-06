@@ -110,6 +110,25 @@ describe("CalendarService", () => {
       expect(repo.findInRange).toHaveBeenCalledWith(range, TOKEN);
     });
 
+    it("déplie une série récurrente en une occurrence par créneau de la fenêtre", async () => {
+      const series = makeEvent({
+        startsAt: "2026-01-01T18:00:00.000Z",
+        endsAt: "2026-01-01T19:00:00.000Z",
+        rrule: "FREQ=WEEKLY;BYDAY=TH",
+      });
+      const repo = makeRepository({ findInRange: jest.fn().mockResolvedValue([series]) });
+
+      const found = await makeService(repo).list(
+        { from: "2026-03-01T00:00:00.000Z", to: "2026-03-15T00:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(found.map((entry) => entry.startsAt)).toEqual([
+        "2026-03-05T18:00:00.000Z",
+        "2026-03-12T18:00:00.000Z",
+      ]);
+    });
+
     it("mêle aux siens, dans l'ordre du temps, les événements de ses conversations d'espace", async () => {
       const repo = makeRepository({
         findInRange: jest

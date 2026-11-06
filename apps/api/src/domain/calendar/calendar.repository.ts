@@ -54,10 +54,14 @@ export const calendarRepository: ICalendarRepository = {
       // Un événement chevauche la fenêtre s'il commence avant sa fin et se
       // termine après son début. Sans le second filtre, un rendez-vous
       // commencé la veille disparaîtrait de la journée qu'il occupe encore.
+      // Une série commencée avant la fenêtre en est aussi : ses occurrences
+      // se calculent ensuite, côté service.
       // Les bornes sont encadrées de guillemets : dans un `or`, PostgREST
       // découpe sur `.` et `,`, et un horodatage ISO porte des points.
       .lt("starts_at", range.to)
-      .or(`ends_at.gt."${range.from}",and(ends_at.is.null,starts_at.gte."${range.from}")`)
+      .or(
+        `rrule.not.is.null,ends_at.gt."${range.from}",and(ends_at.is.null,starts_at.gte."${range.from}")`,
+      )
       .order("starts_at", { ascending: true });
 
     if (error) throw new Error(error.message);

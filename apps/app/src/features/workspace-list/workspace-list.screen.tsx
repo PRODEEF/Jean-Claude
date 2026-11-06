@@ -11,6 +11,8 @@ import {
   ShoppingBasket,
   UserRound,
   X,
+  IndentDecrease,
+  IndentIncrease,
 } from "lucide-react-native";
 import type { FolderTreeNode, WorkspaceMember, WorkspaceTask, WorkspaceTaskList } from "@jc/domain";
 import { dueLabel } from "@/features/todo/ListsBoard";
@@ -149,8 +151,20 @@ function ListBody({
   const due = dueLabel(list);
   const shopping = list.kind === "shopping";
 
-  // Les listes d'espace n'ont pas de sous-tâches : toutes les lignes sont de premier niveau.
-  const dragRows = list.tasks.map((task) => ({ key: task.id, depth: 0 as const }));
+  // Une sous-tâche suit sa tâche : le glisser emporte la famille entière.
+  // Truthiness et non `!== null` : une API pas encore déployée ne renvoie pas
+  // le champ, et ses tâches sont alors toutes de premier niveau.
+  const dragRows = list.tasks.map((task) => ({
+    key: task.id,
+    depth: task.parentId ? (1 as const) : (0 as const),
+  }));
+  const hasChildren = (taskId: string) => list.tasks.some((task) => task.parentId === taskId);
+  /** La tâche de premier niveau qui précède : celle dont elle deviendrait la sous-tâche. */
+  const previousRootOf = (index: number): WorkspaceTask | undefined =>
+    list.tasks
+      .slice(0, index)
+      .reverse()
+      .find((task) => !task.parentId);
   const draggable = Platform.OS === "web" && list.tasks.length > 1;
 
   const dropRow = (sourceKey: string, index: number) => {
@@ -257,6 +271,24 @@ function ListBody({
               onDrop={dropRow}
               assignee={task.assigneeId ? (names.get(task.assigneeId) ?? "Ancien membre") : null}
               onToggle={() => updateTask.mutate({ taskId: task.id, patch: { done: !task.done } })}
+              onRename={(title) => updateTask.mutate({ taskId: task.id, patch: { title } })}
+              child={Boolean(task.parentId)}
+              onIndent={
+                // Une tâche qui a déjà des sous-tâches ne devient pas une sous-tâche :
+                // un seul niveau.
+                !task.parentId && !hasChildren(task.id) && previousRootOf(index)
+                  ? () => {
+                      const parent = previousRootOf(index);
+                      if (parent)
+                        updateTask.mutate({ taskId: task.id, patch: { parentId: parent.id } });
+                    }
+                  : undefined
+              }
+              onOutdent={
+                task.parentId
+                  ? () => updateTask.mutate({ taskId: task.id, patch: { parentId: null } })
+                  : undefined
+              }
               onAssign={(x, y) => onMenu(x, y, assigneeMenu(task))}
               onRemove={() => removeTask.mutate(task.id)}
             />
@@ -328,6 +360,10 @@ function TaskRow({
   onDrop,
   assignee,
   onToggle,
+  onRename,
+  child,
+  onIndent,
+  onOutdent,
   onAssign,
   onRemove,
 }: {
@@ -346,6 +382,14 @@ function TaskRow({
   /** Nom du responsable, `null` si personne n'en est chargé. */
   assignee: string | null;
   onToggle: () => void;
+  /** Nouveau titre, déjà débarrassé de ses espaces et jamais vide. */
+  onRename: (title: string) => void;
+  /** Sous-tâche : la ligne est en retrait. */
+  child: boolean;
+  /** Absent quand la tâche ne peut pas devenir une sous-tâche. */
+  onIndent: (() => void) | undefined;
+  /** Absent pour une tâche de premier niveau. */
+  onOutdent: (() => void) | undefined;
   onAssign: (x: number, y: number) => void;
   onRemove: () => void;
 }) {
@@ -357,7 +401,13 @@ function TaskRow({
   });
 
   return (
-    <View ref={rowRef} className="relative min-h-14 flex-row items-center gap-3 px-3 py-2">
+    <View
+      ref={rowRef}
+      className={cn(
+        "relative min-h-14 flex-row items-center gap-3 py-2 pr-3",
+        child ? "pl-10" : "pl-3",
+      )}
+    >
       {marked ? <View className="absolute inset-x-0 top-0 h-0.5 bg-primary" /> : null}
       {markedAfter ? <View className="absolute inset-x-0 bottom-0 h-0.5 bg-primary" /> : null}
       {draggable ? (
@@ -387,14 +437,32 @@ function TaskRow({
         </View>
       </Pressable>
 
-      <Text
-        className={cn(
-          "flex-1 text-sm",
-          task.done ? "text-muted-foreground line-through" : "text-foreground",
-        )}
-      >
-        {task.title}
-      </Text>
+      <TaskTitle task={task} onRename={onRename} />
+
+      {/* Un appui pour mettre en retrait, ou remonter : le geste des téléphones,
+          où la touche Tab n'existe pas. */}
+      {onIndent ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          onPress={onIndent}
+          accessibilityLabel={`Faire de ${task.title} une sous-tâche`}
+          className="size-8"
+        >
+          <Icon as={IndentIncrease} size={14} className="text-muted-foreground" />
+        </Button>
+      ) : null}
+      {onOutdent ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          onPress={onOutdent}
+          accessibilityLabel={`Remonter ${task.title} d'un niveau`}
+          className="size-8"
+        >
+          <Icon as={IndentDecrease} size={14} className="text-muted-foreground" />
+        </Button>
+      ) : null}
 
       {/* Qui s'en charge : un appui pour confier la tâche à un autre membre. */}
       <Button
@@ -421,6 +489,63 @@ function TaskRow({
         <Icon as={X} size={14} className="text-muted-foreground" />
       </Button>
     </View>
+  );
+}
+
+/**
+ * Titre d'une tâche : un appui le rend modifiable sur place, comme dans « Mes
+ * listes ». Entrée ou quitter le champ valide ; un titre vide ou inchangé
+ * n'écrit rien.
+ */
+function TaskTitle({
+  task,
+  onRename,
+}: {
+  task: WorkspaceTask;
+  onRename: (title: string) => void;
+}) {
+  const { palette } = useTheme();
+  const [draft, setDraft] = useState<string | null>(null);
+
+  if (draft === null) {
+    return (
+      <Pressable
+        onPress={() => setDraft(task.title)}
+        accessibilityRole="button"
+        accessibilityLabel={`Modifier ${task.title}`}
+        className="flex-1"
+      >
+        <Text
+          className={cn(
+            "text-sm",
+            task.done ? "text-muted-foreground line-through" : "text-foreground",
+          )}
+        >
+          {task.title}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  const commit = () => {
+    const title = draft.trim();
+    setDraft(null);
+    if (title.length > 0 && title !== task.title) onRename(title);
+  };
+
+  return (
+    <TextInput
+      value={draft}
+      onChangeText={setDraft}
+      onSubmitEditing={commit}
+      onBlur={commit}
+      autoFocus
+      maxLength={120}
+      returnKeyType="done"
+      accessibilityLabel={`Titre de la tâche ${task.title}`}
+      style={{ fontFamily: FONT_FAMILY, color: palette.text }}
+      className={cn("flex-1 text-sm", Platform.select({ web: "outline-none" }))}
+    />
   );
 }
 
