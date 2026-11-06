@@ -77,6 +77,13 @@ export function useTaskActions() {
     onSuccess: refresh,
   });
 
+  /** Les tâches saisies avec la liste, écrites d'un coup une fois la liste créée. */
+  const fillList = useMutation({
+    mutationFn: (variables: { listId: string; input: ReplaceTasks }) =>
+      api.tasks.replaceTasks(variables.listId, variables.input),
+    onSuccess: refresh,
+  });
+
   const removeList = useMutation({
     mutationFn: (id: string) => api.tasks.removeList(id),
     onSuccess: refresh,
@@ -100,7 +107,7 @@ export function useTaskActions() {
     onSuccess: refresh,
   });
 
-  return { createList, updateList, removeList, addTask, updateTask, removeTask };
+  return { createList, updateList, fillList, removeList, addTask, updateTask, removeTask };
 }
 
 /**
