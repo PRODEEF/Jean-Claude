@@ -596,6 +596,10 @@ export function AppSidebar({
       <FolderContextMenu
         target={menuTarget}
         onClose={() => setMenuTarget(null)}
+        onNewConversation={({ folder }) => {
+          setMenuTarget(null);
+          go(`/chat?folderId=${folder.id}`);
+        }}
         onRename={({ folder }) => {
           setMenuTarget(null);
           setNaming({ kind: "rename", folder });
