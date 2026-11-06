@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { View } from "react-native";
-import { ListChecks, MoreHorizontal, ShoppingBasket } from "lucide-react-native";
-import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
-import { dueOnForDay, momentsOfDay, openTaskCount } from "@jc/domain";
+import { Platform, View } from "react-native";
+import { GripVertical, ListChecks, MoreHorizontal, ShoppingBasket } from "lucide-react-native";
+import type { MomentKey, Task, TaskList, TaskListWithTasks } from "@jc/domain";
+import { dueForMoment, dueOnForDay, momentsOfDay, openTaskCount, startOfDay } from "@jc/domain";
 import { formatFullDay, formatTime, isSameDay } from "@/shared/lib/dates";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useDayPartBounds } from "@/shared/hooks/use-profile";
-import { useTaskLists } from "@/shared/hooks/use-task-lists";
+import { useTaskActions, useTaskLists } from "@/shared/hooks/use-task-lists";
 import { TaskDialog } from "@/features/todo/TaskDialog";
 import { TaskListDeleteDialog } from "@/features/todo/TaskListDeleteDialog";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
@@ -16,6 +16,7 @@ import { Button } from "@/shared/ui/button";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
+import { useListDragHandle, useMomentDropZone } from "./lib/list-drag";
 
 export type DueListsBoardProps = {
   /** Les jours à afficher, dans l'ordre — une semaine ou un mois selon l'appelant. */
@@ -44,6 +45,37 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
   // la projection d'une liste sur le jour de certaines de ses tâches, avec une
   // échéance remplacée par ce jour.
   const { data: savedLists } = useTaskLists();
+  const { updateList } = useTaskActions();
+  const [moveFailure, setMoveFailure] = useState<string | null>(null);
+
+  /**
+   * Dépose une liste sur un moment d'un jour. Seule l'échéance d'une liste
+   * enregistrée se déplace : l'entrée recomposée pour le jour de certaines de
+   * ses tâches n'a pas d'échéance à elle.
+   */
+  const moveList = (listId: string, day: Date, moment: MomentKey) => {
+    const saved = savedLists?.find((candidate) => candidate.id === listId);
+    if (!saved) return;
+    const due = dueForMoment(day, moment, saved, bounds);
+    if (due.dueAt === saved.dueAt && due.dueAllDay === saved.dueAllDay) return;
+
+    setMoveFailure(null);
+    updateList.mutate(
+      { id: listId, patch: due },
+      {
+        onError: () => setMoveFailure("Le déplacement a échoué. Réessayez dans un instant."),
+      },
+    );
+  };
+
+  /** Une liste ne se déplace que si l'échéance qu'elle porte est la sienne, et pas vers un jour révolu. */
+  const canMoveTo = (listId: string, day: Date, moment: MomentKey) => {
+    const saved = savedLists?.find((candidate) => candidate.id === listId);
+    if (!saved || saved.dueAt === null) return false;
+    if (startOfDay(day).getTime() < startOfDay(new Date()).getTime()) return false;
+    const due = dueForMoment(day, moment, saved, bounds);
+    return due.dueAt !== saved.dueAt || due.dueAllDay !== saved.dueAllDay;
+  };
   const editedTask =
     openedTask === null
       ? null
@@ -53,6 +85,7 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
 
   return (
     <View className={desktop ? "gap-2" : "gap-3"}>
+      {moveFailure ? <Text className="text-destructive text-xs">{moveFailure}</Text> : null}
       {days.map((day) => {
         const groups = momentsOfDay(lists, day, bounds);
         const remaining = groups.reduce(
@@ -82,7 +115,12 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
             </View>
 
             {groups.map((group) => (
-              <View key={group.moment.key} className={desktop ? "gap-1" : "gap-2"}>
+              <MomentSection
+                key={group.moment.key}
+                desktop={desktop}
+                accepts={(listId) => canMoveTo(listId, day, group.moment.key)}
+                onDrop={(listId) => moveList(listId, day, group.moment.key)}
+              >
                 {/* Bandeau gris sur toute la largeur et corps plus grand que
                     celui des tâches (demande de Yann) : le moment structure
                     la journée, il doit se lire avant ce qu'il contient.
@@ -102,6 +140,7 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
                       key={`${list.id}-${dueOn ?? "due"}`}
                       list={list}
                       saved={saved}
+                      movable={saved !== undefined && saved.dueAt === list.dueAt}
                       {...(dueOn ? { dueOn } : {})}
                       desktop={desktop}
                       onOpenTask={setOpenedTask}
@@ -110,7 +149,7 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
                     />
                   );
                 })}
-              </View>
+              </MomentSection>
             ))}
           </View>
         );
@@ -119,6 +158,26 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
       <TaskListDialog target={listTarget} onClose={() => setListTarget(null)} />
       <TaskListDeleteDialog list={deletingList} onClose={() => setDeletingList(null)} />
       <TaskDialog task={editedTask} onClose={() => setOpenedTask(null)} />
+    </View>
+  );
+}
+
+/** Un moment d'un jour, cible de dépôt d'une liste. */
+function MomentSection({
+  desktop,
+  accepts,
+  onDrop,
+  children,
+}: {
+  desktop: boolean;
+  accepts: (listId: string) => boolean;
+  onDrop: (listId: string) => void;
+  children: React.ReactNode;
+}) {
+  const zoneRef = useMomentDropZone(true, accepts, onDrop);
+  return (
+    <View ref={zoneRef} className={desktop ? "gap-1" : "gap-2"}>
+      {children}
     </View>
   );
 }
@@ -134,6 +193,7 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
 function DueList({
   list,
   saved,
+  movable,
   dueOn,
   desktop,
   onOpenTask,
@@ -142,6 +202,8 @@ function DueList({
 }: {
   list: TaskListWithTasks;
   saved: TaskListWithTasks | undefined;
+  /** Vrai quand l'entrée porte l'échéance de la liste elle-même, la seule qu'on déplace. */
+  movable: boolean;
   /** Jour des lignes nouvelles — absent quand c'est déjà l'échéance de la liste. */
   dueOn?: string;
   desktop: boolean;
@@ -152,6 +214,10 @@ function DueList({
   const shopping = list.kind === "shopping";
   const time = timeLabel(list);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // Le glisser-déposer n'existe que sur le web : sans lui, la poignée serait
+  // un décor qui ne fait rien.
+  const draggable = movable && Platform.OS === "web";
+  const { cardRef, gripRef } = useListDragHandle(list.id, draggable);
   const source = saved ?? list;
   const subset = saved !== undefined && isTaskSubset(saved, list);
 
@@ -175,9 +241,19 @@ function DueList({
 
   return (
     <View
+      ref={cardRef}
       className={`border-border gap-0.5 rounded-lg border border-dashed ${desktop ? "p-1.5" : "p-2"}`}
     >
       <View className="flex-row items-center gap-1">
+        {draggable ? (
+          <View
+            ref={gripRef}
+            accessibilityLabel={`Déplacer ${list.title}`}
+            className="size-6 items-center justify-center"
+          >
+            <Icon as={GripVertical} size={14} className="text-muted-foreground" />
+          </View>
+        ) : null}
         {/* L'heure précède le titre, comme dans un agenda papier : c'est elle
             qui situe la liste dans le moment, avant ce qu'elle contient. */}
         <Icon

@@ -10,6 +10,7 @@ import {
   layoutDayLists,
   listsOfDay,
   listsWithoutVisibleEvent,
+  dueForMoment,
   momentOf,
   momentsOfDay,
   openTaskCount,
@@ -110,6 +111,50 @@ describe("momentOf", () => {
 
   it("retombe sur la journée quand le moment n'a pas été enregistré", () => {
     expect(momentOf({ dueAt: localIso(2026, 9, 12, 9), dueAllDay: null })).toBe("anytime");
+  });
+});
+
+describe("dueForMoment", () => {
+  const timed = { dueAt: localIso(2026, 9, 10, 14, 30), dueAllDay: false };
+  const target = new Date(2026, 8, 12);
+
+  it("garde l'heure exacte quand la liste change de jour sans changer de moment", () => {
+    expect(dueForMoment(target, "afternoon", timed)).toEqual({
+      dueAt: localIso(2026, 9, 12, 14, 30),
+      dueAllDay: false,
+    });
+  });
+
+  it("prend l'heure par défaut du moment quand la liste change de moment", () => {
+    expect(dueForMoment(target, "evening", timed)).toEqual({
+      dueAt: localIso(2026, 9, 12, 20, 0),
+      dueAllDay: false,
+    });
+    expect(dueForMoment(target, "morning", timed)).toEqual({
+      dueAt: localIso(2026, 9, 12, 9, 0),
+      dueAllDay: false,
+    });
+  });
+
+  it("retire l'heure sur « Dans la journée »", () => {
+    expect(dueForMoment(target, "anytime", timed)).toEqual({
+      dueAt: localIso(2026, 9, 12),
+      dueAllDay: true,
+    });
+  });
+
+  it("donne une heure à une liste sans heure déposée sur un moment", () => {
+    const allDay = { dueAt: localIso(2026, 9, 10), dueAllDay: true };
+    expect(dueForMoment(target, "morning", allDay).dueAllDay).toBe(false);
+    expect(dueForMoment(target, "morning", allDay).dueAt).toBe(localIso(2026, 9, 12, 9, 0));
+  });
+
+  it("suit les bornes de l'utilisateur pour décider si le moment change", () => {
+    const bounds = { afternoonFrom: 15, eveningFrom: 21 };
+    // 14h30 est le matin avec ces bornes : l'après-midi est donc un autre moment.
+    expect(dueForMoment(target, "afternoon", timed, bounds).dueAt).toBe(
+      localIso(2026, 9, 12, 17, 0),
+    );
   });
 });
 
