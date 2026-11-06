@@ -7,7 +7,7 @@ import { Platform, type View } from "react-native";
  * Type nommé, comme pour les dossiers : une image ou une sélection de texte
  * lâchée sur une ligne ne doit pas en changer l'ordre.
  */
-const TASK_ROW_MIME = "application/x-jean-claude-task-row";
+export const TASK_ROW_MIME = "application/x-jean-claude-task-row";
 
 export type TaskRowDrag = { key: string; depth: 0 | 1 };
 
@@ -22,6 +22,11 @@ export type TaskDropPlace = "before" | "after";
  * vient de sa propre liste.
  */
 let activeDrag: { listId: string; key: string } | null = null;
+
+/** La ligne en cours de glisser, pour les cibles hors de sa liste (un jour du calendrier). */
+export function activeTaskRowDrag(): { listId: string; key: string } | null {
+  return activeDrag;
+}
 
 function familyStart(rows: readonly TaskRowDrag[], index: number): number {
   let cursor = index;
