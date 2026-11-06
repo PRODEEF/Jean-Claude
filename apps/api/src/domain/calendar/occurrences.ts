@@ -1,6 +1,15 @@
 import type { CalendarEvent, CalendarRange } from "@jc/domain";
-import { RRule } from "rrule";
+import * as rruleModule from "rrule";
 import { logger } from "../../core/logger.js";
+
+// `rrule` est un paquet CommonJS : l'API tourne en ESM, où un import nommé
+// plante au démarrage de la fonction (« Named export not found ») et où la
+// classe n'est lisible que sur `default`. Les tests, eux, tournent en
+// CommonJS et la lisent directement : on essaie les deux. Le cast décrit la
+// forme réelle de `default` dans le monde ESM, que les types ne connaissent pas.
+const RRule =
+  rruleModule.RRule ?? (rruleModule as unknown as { default: typeof rruleModule }).default.RRule;
+type RRuleInstance = InstanceType<typeof RRule>;
 
 /**
  * Garde-fou : une règle « tous les jours » sur une fenêtre d'un an ne doit pas
@@ -26,7 +35,7 @@ export function occurrencesInRange(event: CalendarEvent, range: CalendarRange): 
   const start = new Date(event.startsAt);
   const durationMs = event.endsAt ? new Date(event.endsAt).getTime() - start.getTime() : 0;
 
-  let rule: RRule;
+  let rule: RRuleInstance;
   try {
     rule = new RRule({ ...RRule.parseString(event.rrule), dtstart: start });
   } catch (error) {
