@@ -1,5 +1,10 @@
 import type { CalendarEvent } from "../calendar/calendar.schema";
-import { DEFAULT_DAY_PART_BOUNDS, dayPartOfHour, type DayPartBounds } from "../task/day-part";
+import {
+  DEFAULT_DAY_PART_BOUNDS,
+  dayPartDefaultTime,
+  dayPartOfHour,
+  type DayPartBounds,
+} from "../task/day-part";
 import type { Task, TaskList, TaskListWithTasks } from "../task/task.schema";
 
 /**
@@ -105,6 +110,43 @@ export function momentOf(
   // qui pose l'échéance et cette trame du calendrier doivent ranger la même
   // heure dans le même moment.
   return dayPartOfHour(new Date(list.dueAt).getHours(), bounds);
+}
+
+/**
+ * Échéance d'une liste déposée sur le moment `moment` du jour `day`.
+ *
+ * Une liste qui change de jour sans changer de moment garde son heure exacte :
+ * « jeudi 14h30 » déplacée à vendredi reste à 14h30, comme dans un agenda.
+ * Posée sur un autre moment, elle prend l'heure par défaut de celui-ci — le
+ * geste dit « le soir », pas « à 20h ». Sur « Dans la journée », elle ne vise
+ * plus d'heure.
+ *
+ * Le retour est ce que le serveur attend : l'instant et le drapeau
+ * `dueAllDay` vont ensemble.
+ */
+export function dueForMoment(
+  day: Date,
+  moment: MomentKey,
+  current: Pick<TaskList, "dueAt" | "dueAllDay">,
+  bounds: DayPartBounds = DEFAULT_DAY_PART_BOUNDS,
+): { dueAt: string; dueAllDay: boolean } {
+  const date = startOfDay(day);
+  if (moment === "anytime") return { dueAt: date.toISOString(), dueAllDay: true };
+
+  let hours: number;
+  let minutes: number;
+  if (current.dueAt !== null && momentOf(current, bounds) === moment) {
+    const kept = new Date(current.dueAt);
+    hours = kept.getHours();
+    minutes = kept.getMinutes();
+  } else {
+    const [h = "0", m = "0"] = dayPartDefaultTime(moment, bounds).split(":");
+    hours = Number(h);
+    minutes = Number(m);
+  }
+
+  date.setHours(hours, minutes, 0, 0);
+  return { dueAt: date.toISOString(), dueAllDay: false };
 }
 
 export type MomentGroup = { moment: Moment; lists: TaskListWithTasks[] };
