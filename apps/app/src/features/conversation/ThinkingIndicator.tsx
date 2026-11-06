@@ -6,7 +6,9 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withDelay,
   withRepeat,
+  withSequence,
   withTiming,
 } from "react-native-reanimated";
 import { Cog } from "lucide-react-native";
@@ -16,11 +18,11 @@ import { useAssistantName } from "@/shared/hooks/use-profile";
 import { useTheme } from "@/shared/providers/theme-provider";
 
 /**
- * Attente de la réponse : une roue qui tourne et le temps déjà écoulé (§4.2).
+ * Attente de la réponse : une vaguelette de pixels et le temps déjà écoulé (§4.2).
  *
- * Le compteur seul, en texte immobile, se lisait comme un écran figé : la roue
- * dit que ça travaille, le compteur depuis combien de temps. Demande de Yann,
- * sur le modèle de Claude.
+ * Le compteur seul, en texte immobile, se lisait comme un écran figé : les
+ * pixels disent que ça travaille, le compteur depuis combien de temps. Yann a
+ * demandé une animation pixelisée à la place de la roue dentée.
  *
  * Rendu pendant tout le tour, et non plus seulement jusqu'au premier jeton :
  * une fois le texte écrit, le modèle peut encore préparer une proposition
@@ -42,7 +44,7 @@ export function ThinkingIndicator({
 
   return (
     <View style={[styles.row, dense && styles.dense]}>
-      <SpinningCog size={14} color={palette.textMuted} />
+      <PixelWave color={palette.textMuted} />
       <Text
         style={[styles.label, { color: palette.textMuted }]}
         // Le libellé annoncé ne porte pas le compteur : une synthèse vocale le
@@ -52,6 +54,50 @@ export function ThinkingIndicator({
         {name} réfléchit…{seconds > 0 ? ` ${seconds} s` : ""}
       </Text>
     </View>
+  );
+}
+
+const PIXEL_COUNT = 4;
+const PIXEL_SIZE = 4;
+const PIXEL_STEP_MS = 140;
+
+/**
+ * Quatre carrés qui sautent l'un après l'autre, sans arrondi ni dégradé : le
+ * style pixel-art demandé. Immobile quand l'appareil demande de réduire les
+ * animations, comme la roue dentée.
+ */
+export function PixelWave({ color }: { color: string }) {
+  return (
+    <View style={styles.pixels} aria-hidden>
+      {Array.from({ length: PIXEL_COUNT }, (_, index) => (
+        <Pixel key={index} index={index} color={color} />
+      ))}
+    </View>
+  );
+}
+
+function Pixel({ index, color }: { index: number; color: string }) {
+  const reducedMotion = useReducedMotion();
+  const lift = useSharedValue(0);
+
+  useEffect(() => {
+    if (reducedMotion) return;
+    // Une marche d'un pixel, pas un glissement : le mouvement reste crénelé.
+    const hop = withSequence(
+      withTiming(-PIXEL_SIZE, { duration: PIXEL_STEP_MS, easing: Easing.steps(1, true) }),
+      withTiming(0, { duration: PIXEL_STEP_MS, easing: Easing.steps(1, true) }),
+      withTiming(0, { duration: PIXEL_STEP_MS * (PIXEL_COUNT - 1) }),
+    );
+    lift.value = withDelay(index * PIXEL_STEP_MS, withRepeat(hop, -1, false));
+    return () => cancelAnimation(lift);
+  }, [index, lift, reducedMotion]);
+
+  const style = useAnimatedStyle(() => ({ transform: [{ translateY: lift.value }] }));
+
+  return (
+    <Animated.View
+      style={[{ width: PIXEL_SIZE, height: PIXEL_SIZE, backgroundColor: color }, style]}
+    />
   );
 }
 
@@ -115,6 +161,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.xs,
     paddingVertical: spacing.sm,
+  },
+  // Hauteur réservée au saut : sans elle la ligne bougerait avec les pixels.
+  pixels: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 2,
+    height: PIXEL_SIZE * 2,
+    width: PIXEL_COUNT * PIXEL_SIZE + (PIXEL_COUNT - 1) * 2,
   },
   // Dans un groupe, la ligne d'état a une hauteur réservée : sans cela le
   // champ de saisie sauterait à l'apparition de l'indicateur.
