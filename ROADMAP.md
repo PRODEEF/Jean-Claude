@@ -10,6 +10,7 @@
 - **Un groupe = un titre `###`**. L'ordre des groupes et des lignes est celui de l'artifact.
 - **Quand une PR avance un point**, cocher la ligne et mettre le détail à jour (numéro de PR, ce qui reste).
 - **À chaque merge**, ajouter une ligne en tête de « Quoi de neuf », en langage courant : ce qui change, où le voir, s'il est testé.
+- **Version affichée en haut à droite de chaque écran** (lue dans `apps/app/app.json`, champ `version`, affichée « V0.00.1 »). Claude l'incrémente à chaque PR qui change l'application : le dernier chiffre pour un correctif ou une petite évolution, celui du milieu pour une nouveauté visible, le premier pour un grand jalon. Elle sert à savoir, d'un coup d'œil, quelle version tourne en production.
 - **Pour régénérer l'artifact** : relire la version en ligne, y remplacer ses données par celles de ce fichier, republier. Cocher dans l'artifact ne met pas ce fichier à jour : redire à Claude ce qui a été coché.
 - Dernier recoupement avec le code de `dev` et le backlog : 6 novembre 2026. Les statuts viennent du code, du backlog et de la CI ; rien n'a été joué dans une vraie app.
 
@@ -19,7 +20,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
-Rien en attente : `dev` et la production sont identiques.
+- **La version de l'application s'affiche en haut à droite de chaque écran**, en commençant à V0.00.1. *Où : tous les écrans, à droite du bandeau.* — À tester.
 
 ### Réglage fait
 

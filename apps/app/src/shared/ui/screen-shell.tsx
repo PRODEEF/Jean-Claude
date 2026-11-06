@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, type ViewStyle } from "r
 import { ChevronLeft } from "lucide-react-native";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
+import { APP_VERSION } from "@/shared/lib/version";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useSidebarCollapsed } from "@/shared/providers/sidebar-chrome";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -96,6 +97,16 @@ export function ScreenHeader({ title, action, onBack }: ScreenHeaderProps) {
       </Text>
 
       {action}
+
+      {/* À l'extrême droite, après la commande : le même repère sur tous les
+          écrans pour dire quelle version on regarde. */}
+      <Text
+        numberOfLines={1}
+        accessibilityLabel={`Version ${APP_VERSION.slice(1)}`}
+        style={[styles.version, { color: palette.textMuted }]}
+      >
+        {APP_VERSION}
+      </Text>
     </View>
   );
 }
@@ -175,6 +186,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: fontSize.md,
     fontWeight: fontWeight.semibold,
+  },
+  version: {
+    fontFamily: FONT_FAMILY,
+    fontSize: fontSize.xs,
   },
   scroll: { flex: 1 },
   content: { paddingVertical: spacing.lg, gap: spacing.lg },
