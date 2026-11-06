@@ -1,5 +1,10 @@
 import type { CalendarEvent } from "../calendar/calendar.schema";
-import { DEFAULT_DAY_PART_BOUNDS, dayPartOfHour, type DayPartBounds } from "../task/day-part";
+import {
+  DEFAULT_DAY_PART_BOUNDS,
+  dayPartDefaultTime,
+  dayPartOfHour,
+  type DayPartBounds,
+} from "../task/day-part";
 import type { Task, TaskList, TaskListWithTasks } from "../task/task.schema";
 
 /**
@@ -107,6 +112,59 @@ export function momentOf(
   return dayPartOfHour(new Date(list.dueAt).getHours(), bounds);
 }
 
+/**
+ * Échéance d'une liste déposée sur le moment `moment` du jour `day`.
+ *
+ * Une liste qui change de jour sans changer de moment garde son heure exacte :
+ * « jeudi 14h30 » déplacée à vendredi reste à 14h30, comme dans un agenda.
+ * Posée sur un autre moment, elle prend l'heure par défaut de celui-ci — le
+ * geste dit « le soir », pas « à 20h ». Sur « Dans la journée », elle ne vise
+ * plus d'heure.
+ *
+ * Le retour est ce que le serveur attend : l'instant et le drapeau
+ * `dueAllDay` vont ensemble.
+ */
+export function dueForMoment(
+  day: Date,
+  moment: MomentKey,
+  current: Pick<TaskList, "dueAt" | "dueAllDay">,
+  bounds: DayPartBounds = DEFAULT_DAY_PART_BOUNDS,
+): { dueAt: string; dueAllDay: boolean } {
+  const date = startOfDay(day);
+  if (moment === "anytime") return { dueAt: date.toISOString(), dueAllDay: true };
+
+  let hours: number;
+  let minutes: number;
+  if (current.dueAt !== null && momentOf(current, bounds) === moment) {
+    const kept = new Date(current.dueAt);
+    hours = kept.getHours();
+    minutes = kept.getMinutes();
+  } else {
+    const [h = "0", m = "0"] = dayPartDefaultTime(moment, bounds).split(":");
+    hours = Number(h);
+    minutes = Number(m);
+  }
+
+  date.setHours(hours, minutes, 0, 0);
+  return { dueAt: date.toISOString(), dueAllDay: false };
+}
+
+/** Pas du glisser dans la grille horaire : un créneau se pose au quart d'heure. */
+const SLOT_SNAP_MINUTES = 15;
+
+/**
+ * Échéance d'une liste lâchée à `minute` (depuis minuit) du jour `day`, dans
+ * la grille horaire. L'heure suit le geste, arrondie au quart d'heure.
+ */
+export function dueForSlot(day: Date, minute: number): { dueAt: string; dueAllDay: false } {
+  const snapped = Math.round(minute / SLOT_SNAP_MINUTES) * SLOT_SNAP_MINUTES;
+  const clamped = clamp(snapped, 0, MINUTES_PER_DAY - SLOT_SNAP_MINUTES);
+
+  const date = startOfDay(day);
+  date.setHours(Math.floor(clamped / 60), clamped % 60, 0, 0);
+  return { dueAt: date.toISOString(), dueAllDay: false };
+}
+
 export type MomentGroup = { moment: Moment; lists: TaskListWithTasks[] };
 
 /**
@@ -128,6 +186,15 @@ export function momentsOfDay(
     moment,
     lists: ofDay.filter((list) => momentOf(list, bounds) === moment.key),
   })).filter((group) => group.moment.key !== "anytime" || group.lists.length > 0);
+}
+
+/**
+ * Jour civil où tombe une tâche : le sien, ou à défaut celui de l'échéance de
+ * sa liste. `null` quand ni l'une ni l'autre n'est datée.
+ */
+export function dayOfTask(list: Pick<TaskList, "dueAt">, task: Pick<Task, "dueOn">): string | null {
+  if (task.dueOn !== null) return task.dueOn;
+  return list.dueAt === null ? null : calendarDayOf(new Date(list.dueAt));
 }
 
 /**

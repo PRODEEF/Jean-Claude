@@ -11,7 +11,7 @@
 - **Quand une PR avance un point**, cocher la ligne et mettre le détail à jour (numéro de PR, ce qui reste).
 - **À chaque merge**, ajouter une ligne en tête de « Quoi de neuf », en langage courant : ce qui change, où le voir, s'il est testé.
 - **Pour régénérer l'artifact** : relire la version en ligne, y remplacer ses données par celles de ce fichier, republier. Cocher dans l'artifact ne met pas ce fichier à jour : redire à Claude ce qui a été coché.
-- Dernier recoupement avec le code de `dev` et le backlog : 5 novembre 2026. Les statuts viennent du code, du backlog et de la CI ; rien n'a été joué dans une vraie app.
+- Dernier recoupement avec le code de `dev` et le backlog : 6 novembre 2026. Les statuts viennent du code, du backlog et de la CI ; rien n'a été joué dans une vraie app.
 
 ## Quoi de neuf
 
@@ -19,14 +19,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
-- **Matin / Après-midi / Soir : les heures sont réglables.** Midi et 19h par défaut ; on les change dans Réglages › Ma journée, et la fenêtre d'échéance comme le calendrier suivent. *Où : Réglages.* — À tester. **Demande une migration sur la vraie base avant le déploiement** (`20261105180000_profile_day_part_bounds.sql`).
-- **Mes listes : l'en-tête d'une liste tient sur une ligne.** Chevron, titre, icône, type, dossier, puis la date. On change le **dossier** et la **date** d'un appui, avec un choix Journée / Matin / Après-midi / Soir. *Où : Mes listes.* — Testé par toi le 5 novembre : fonctionne.
-- **Espaces : « Ajouter une tâche »** est maintenant la ligne pâle de « Mes listes », au lieu d'un champ avec un bouton. *Où : une liste d'un espace.* — Testé par toi le 5 novembre : fonctionne.
-- **Espaces : les tâches d'une liste se réordonnent au glisser-déposer** (web), avec une poignée à gauche de chaque ligne ; l'ordre est enregistré pour tout le monde. *Où : une liste d'un espace.* — À tester.
-- **Espaces : l'en-tête d'une liste montre le type, le dossier et l'échéance**, modifiables d'un appui, comme dans « Mes listes ». *Où : une liste d'un espace.* — À tester. **L'échéance ne s'enregistre réellement qu'après le déploiement du serveur** : sur l'aperçu actuel, elle est ignorée.
-- **Espaces : les listes ont un type (tâches ou achats) et une échéance** côté base et serveur. Rien ne change encore à l'écran : l'affichage suit. — Base de données prête.
-- **Un bloc `{"title": …}` ne s'affiche plus dans la réponse de Jean-Claude** sur une nouvelle conversation (le titre recopié en texte est retiré, y compris du message enregistré). *Où : une nouvelle conversation.* — À tester après le déploiement, avec un modèle réel.
-- **Groupes : Jean-Claude affiche « réfléchit… » avec la roue et les secondes**, comme en tête-à-tête. *Où : une discussion de groupe.* — Testé par toi le 5 novembre : fonctionne.
+Rien en attente : `dev` et la production sont identiques.
 
 ### Réglage fait
 
@@ -34,12 +27,33 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### En production
 
+Mise en production du 6 novembre (aucune migration) :
+
+- **Calendrier › Todo : « Changer l'échéance » dans le menu d'une liste**, pour changer sa date et son moment sans glisser-déposer — c'est le geste des téléphones. *Où : Calendrier › Todo, menu « … » d'une liste.* — À tester sur mobile.
+- **Calendrier › Jour et Semaine : on déplace une liste à la souris** (web). On la saisit et on la lâche sur un autre jour, à l'heure visée (arrondie au quart d'heure) ; lâchée dans le bandeau « listes », elle devient une échéance sans heure. Un jour déjà passé est refusé. *Où : Calendrier › Jour ou Semaine.* — À tester.
+- **Calendrier › Todo : on déplace aussi une tâche seule vers un autre jour**, par la poignée de sa ligne (web). Le moment où on la lâche ne compte pas : une tâche n'a pas de créneau. *Où : Calendrier › Todo.* — À tester.
+- **Calendrier › Todo : on déplace une liste au glisser-déposer** (web). Une poignée à gauche de la liste ; on la lâche sur un autre jour ou un autre moment (Matin, Après-midi, Soir, Dans la journée). Elle garde son heure si le moment ne change pas, sinon prend l'heure habituelle du moment. Un jour déjà passé est refusé. *Où : Calendrier › Todo.* — À tester.
+- **Calendrier : les vues Jour et Semaine s'ouvrent sur l'heure en cours** quand aujourd'hui y figure, au lieu du premier rendez-vous. *Où : Calendrier › Jour ou Semaine.* — À tester.
+
+Mise en production du 5 novembre au soir (PR #184, avec les deux migrations déjà appliquées) :
+
+- **Matin / Après-midi / Soir : les heures sont réglables.** Midi et 19h par défaut ; on les change dans Réglages › Ma journée, et la fenêtre d'échéance comme le calendrier suivent. *Où : Réglages.* — À tester. Migration appliquée.
+- **Mes listes : l'en-tête d'une liste tient sur une ligne.** Chevron, titre, icône, type, dossier, puis la date. On change le **dossier** et la **date** d'un appui, avec un choix Journée / Matin / Après-midi / Soir. *Où : Mes listes.* — Testé par toi le 5 novembre : fonctionne.
+- **Espaces : « Ajouter une tâche »** est maintenant la ligne pâle de « Mes listes », au lieu d'un champ avec un bouton. *Où : une liste d'un espace.* — Testé par toi le 5 novembre : fonctionne.
+- **Espaces : les tâches d'une liste se réordonnent au glisser-déposer** (web), avec une poignée à gauche de chaque ligne ; l'ordre est enregistré pour tout le monde. *Où : une liste d'un espace.* — À tester.
+- **Espaces : l'en-tête d'une liste montre le type, le dossier et l'échéance**, modifiables d'un appui, comme dans « Mes listes ». *Où : une liste d'un espace.* — À tester. Le serveur est déployé : l'échéance s'enregistre.
+- **Espaces : les listes ont un type (tâches ou achats) et une échéance** côté base et serveur. Rien ne change encore à l'écran : l'affichage suit. — Base de données prête.
+- **Un bloc `{"title": …}` ne s'affiche plus dans la réponse de Jean-Claude** sur une nouvelle conversation (le titre recopié en texte est retiré, y compris du message enregistré). *Où : une nouvelle conversation.* — À tester en production, avec un modèle réel.
+- **Groupes : Jean-Claude affiche « réfléchit… » avec la roue et les secondes**, comme en tête-à-tête. *Où : une discussion de groupe.* — Testé par toi le 5 novembre : fonctionne.
+
+Avant :
+
 - **La pastille de non-lu est rouge**, quel que soit le thème.
 - **L'invitation par mail** fonctionne (testé par toi le 5 novembre).
 
 ### En attente de ta décision
 
-- **Mise en production** de tout ce qui est sous « Sur `dev` » : une fois que tu auras regardé, dis « on déploie ».
+- Rien pour l'instant.
 
 ## Vision
 
@@ -85,15 +99,16 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 ### Calendrier
 
 - [ ] `FRONT` `Calendrier` **Vérifier le paramétrage des heures et du positionnement dans le calendrier** — Priorité initiale : P5. PR #161 : grilles qui défilent sans perdre l'en-tête. À tester à la main. <!--id:y-heures-calendrier-->
-- [ ] `FRONT` `Calendrier / TODO` **Calendrier et todo au fil de l'eau** — Priorité initiale : P4. À l'ouverture (vue Mois / Semaine / autre), afficher le jour du jour en haut à gauche. Idem pour la TODO : ajustable à l'heure près, et sur mobile s'ouvrir directement sur l'heure (donc le jour) en cours. Le haut du calendrier est ancré depuis #161. L'ouverture sur le jour courant et sur l'heure en cours sur mobile n'est pas vérifiée. <!--id:y-fil-de-leau-->
+- [ ] `FRONT` `Calendrier / TODO` **Calendrier et todo au fil de l'eau** — Priorité initiale : P4. À l'ouverture (vue Mois / Semaine / autre), afficher le jour du jour en haut à gauche. Idem pour la TODO : ajustable à l'heure près, et sur mobile s'ouvrir directement sur l'heure (donc le jour) en cours. Le haut du calendrier est ancré depuis #161. Fait (5 novembre) : les vues Jour et Semaine s'ouvrent sur l'heure en cours quand aujourd'hui est affiché ; à tester sur mobile. Reste la Todo à l'heure près. <!--id:y-fil-de-leau-->
 - [ ] `FRONT` `Calendrier` **Modeler le calendrier à la demande** — Idée (Boîte à idées, P3). Pouvoir façonner le calendrier à la demande, ajuster un rendez-vous à la demande, et cumuler/filtrer les rdv selon certains critères (ex : rdv « standby » affichés dans une couleur dédiée). <!--id:y-modeler-calendrier-->
+- [ ] `ALGO` `Calendrier` **Demander à l'IA d'ajouter des tâches au calendrier, une ou plusieurs, y compris récurrentes** — Demande de Yann le 5 novembre. Dans une conversation, dire à l'IA d'ajouter des tâches simples au calendrier, voire plusieurs d'un coup : donner un planning, ou dire « un cours tous les jeudis à 18h, sauf en février ». Reste une suggestion que l'on accepte d'un geste, jamais une action directe (§12.1). Les récurrences avec exceptions dépendent du calcul des occurrences ci-dessous. <!--id:y-ia-ajoute-calendrier-->
 - [ ] `BACKEND` `Calendrier` **Calcul des occurrences récurrentes (rrule) et rappels de rendez-vous** — Gros chantier back-end. Aujourd'hui un rendez-vous récurrent n'apparaît qu'à son premier créneau ; aucun rappel ne part. Débloque « Vocaux le matin ». <!--id:y-rappel-rdv-recurrence-->
 - [ ] `DATA` `Calendrier` **Rattacher un rendez-vous à un dossier (migration), pour « Prendre RDV »** — Chantier back-end identifié dans le suivi backlog. <!--id:y-rdv-rattache-dossier-->
 - [ ] `ALGO` `Calendrier` **suggest_events ne produit parfois qu'un rendez-vous quand le message en cite plusieurs** — Chantier back-end identifié dans le suivi backlog. <!--id:y-suggest-events-bug-->
 - [ ] `BACKEND` `Calendrier` **Lier le calendrier Jean Claude aux calendriers iPhone/iOS et Google, simplement** — Synchronisation simple avec le calendrier natif iOS et avec Google Calendar. <!--id:y-sync-calendrier-ios-google-->
 - [ ] `BACKEND` `Calendrier / TODO` **Découpage MATIN / APRÈS-MIDI / SOIRÉE / SOIR sur la date d'une tâche (todo liste et calendrier)** — Dans la logique du calendrier, et au moment de mettre une date sur un élément de la todo liste, pouvoir choisir un créneau MATIN / APRÈS-MIDI / SOIRÉE / SOIR plutôt qu'une heure précise uniquement. Fait pour la todo liste (PR #173) : matin avant 12h, après-midi, soir dès 19h, sans « soirée » distincte du soir. Les heures de bascule sont réglables dans Réglages › Ma journée (midi et 19h par défaut) et suivent aussi la trame du calendrier. Demande la migration `20261105180000_profile_day_part_bounds.sql` sur la vraie base avant le déploiement. Reste le déplacement au geste dans le calendrier. <!--id:y-decoupage-matin-apresmidi-soir-->
 - [x] `FRONT` `TODO` **Pouvoir modifier ce créneau (MATIN / APRÈS-MIDI / SOIRÉE / SOIR) directement dans le header de la todo liste** — Permettre de changer le créneau horaire d'une tâche sans sortir de la todo liste, en le modifiant directement depuis son en-tête. Lié à « Découpage MATIN / APRÈS-MIDI / SOIRÉE / SOIR ». Fait (PR #173, 5 novembre) : l'échéance et son moment (Journée / Matin / Après-midi / Soir) se changent depuis l'en-tête. À tester à la main. Testé par Yann le 5 novembre : fonctionne. <!--id:y-modif-creneau-header-todo-->
-- [ ] `FRONT` `Calendrier` **Pouvoir déplacer des tâches, et des tâches avec leur todo liste, dans le calendrier** — Demande de Yann le 5 novembre. Changer le jour (ou le moment) d'une tâche ou d'une todo liste au geste, web d'abord. Déjà au backlog (« Glisser-déposer des tâches au calendrier », A.3), noté non implémenté ; la PR #161 permet seulement de réordonner les listes, y compris sous les bandeaux du jour. <!--id:y-deplacer-calendrier-->
+- [ ] `FRONT` `Calendrier` **Pouvoir déplacer des tâches, et des tâches avec leur todo liste, dans le calendrier** — Demande de Yann le 5 novembre. Changer le jour (ou le moment) d'une tâche ou d'une todo liste au geste, web d'abord. Déjà au backlog (« Glisser-déposer des tâches au calendrier », A.3), noté non implémenté ; la PR #161 permet seulement de réordonner les listes, y compris sous les bandeaux du jour. Faits (web, vue Todo du calendrier) : une liste se glisse par sa poignée vers un autre jour ou un autre moment, en gardant son heure si le moment ne change pas ; une tâche seule se glisse par sa poignée vers un autre jour. Fait aussi dans la grille Jour/Semaine : on saisit une liste et on la lâche sur un autre jour, à l'heure visée (au quart d'heure), ou dans le bandeau « listes » pour une échéance sans heure. Sur mobile, le geste est celui des applications de référence : le menu « … » d'une liste propose « Changer l'échéance » (sélecteur de date), et une tâche s'ouvre pour changer sa date. Reste : les rendez-vous eux-mêmes. La vue Mois n'affiche que des compteurs, il n'y a rien à y saisir. <!--id:y-deplacer-calendrier-->
 
 ### Conversations & Canal permanent
 

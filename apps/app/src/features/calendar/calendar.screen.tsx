@@ -3,10 +3,17 @@ import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronLeft, ChevronRight, ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEntry, CalendarRange, TaskList, TaskListWithTasks } from "@jc/domain";
-import { datedLists, listsOfDay, listsWithoutVisibleEvent, todoDays } from "@jc/domain";
+import {
+  datedLists,
+  dueForMoment,
+  dueForSlot,
+  listsOfDay,
+  listsWithoutVisibleEvent,
+  todoDays,
+} from "@jc/domain";
 import { spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
-import { useTaskLists } from "@/shared/hooks/use-task-lists";
+import { useTaskActions, useTaskLists } from "@/shared/hooks/use-task-lists";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell, contentColumn } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
@@ -19,7 +26,7 @@ import { EventFormDialog, type EventDialogTarget } from "./EventFormDialog";
 import { TaskListDetailDialog } from "./TaskListDetailDialog";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
 import { MonthGrid } from "./MonthGrid";
-import { TimeGrid } from "./TimeGrid";
+import { TimeGrid, type ListDropTarget } from "./TimeGrid";
 import { YearGrid } from "./YearGrid";
 import { useCalendarEvents } from "./hooks/use-calendar-events";
 import {
@@ -81,6 +88,8 @@ export function CalendarScreen() {
   const range = useMemo(() => rangeOf(days), [days]);
   const { data, isPending, isError } = useCalendarEvents(range);
   const { data: allLists } = useTaskLists();
+  const { updateList } = useTaskActions();
+  const [moveFailure, setMoveFailure] = useState<string | null>(null);
   // Rendus tels que le serveur les donne : le créneau d'une todoliste y est
   // désormais la projection de celle-ci (`slotForList`), et n'a plus à être
   // recomposé à l'affichage à partir de la liste qu'il représente.
@@ -179,6 +188,22 @@ export function CalendarScreen() {
     setSelectedDay(day);
     createAt(day, DEFAULT_CREATE_MINUTE);
   };
+  // Liste déposée sur un jour de la grille horaire : à l'heure lâchée, ou sans
+  // heure depuis le bandeau. Un dépôt qui ne change rien n'appelle pas le serveur.
+  const moveList = (listId: string, day: Date, target: ListDropTarget) => {
+    const saved = allLists?.find((candidate) => candidate.id === listId);
+    if (!saved) return;
+    const patch =
+      target.kind === "slot" ? dueForSlot(day, target.minute) : dueForMoment(day, "anytime", saved);
+    if (patch.dueAt === saved.dueAt && patch.dueAllDay === saved.dueAllDay) return;
+
+    setMoveFailure(null);
+    updateList.mutate(
+      { id: listId, patch },
+      { onError: () => setMoveFailure("Le déplacement a échoué. Réessayez dans un instant.") },
+    );
+  };
+
   // Une entrée du calendrier peut n'être que la projection des tâches d'un
   // jour (`datedLists`) : c'est la vraie liste qu'on modifie, sans quoi le
   // formulaire lui prêterait pour échéance le jour de ces tâches.
@@ -340,9 +365,11 @@ export function CalendarScreen() {
               onOpenEvent={openEvent}
               onOpenList={setListDetail}
               onCreateAt={createAt}
+              onMoveList={moveList}
             />
           ) : null}
 
+          {moveFailure ? <Text className="text-destructive text-xs">{moveFailure}</Text> : null}
           {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
         </View>
         )}
