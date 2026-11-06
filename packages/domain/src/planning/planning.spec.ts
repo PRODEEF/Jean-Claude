@@ -12,6 +12,7 @@ import {
   listsWithoutVisibleEvent,
   dayOfTask,
   dueForMoment,
+  dueForSlot,
   momentOf,
   momentsOfDay,
   openTaskCount,
@@ -156,6 +157,23 @@ describe("dueForMoment", () => {
     expect(dueForMoment(target, "afternoon", timed, bounds).dueAt).toBe(
       localIso(2026, 9, 12, 17, 0),
     );
+  });
+});
+
+describe("dueForSlot", () => {
+  const target = new Date(2026, 8, 12);
+
+  it("pose l'échéance à l'heure lâchée, arrondie au quart d'heure", () => {
+    expect(dueForSlot(target, 14 * 60 + 7)).toEqual({
+      dueAt: localIso(2026, 9, 12, 14, 0),
+      dueAllDay: false,
+    });
+    expect(dueForSlot(target, 14 * 60 + 8).dueAt).toBe(localIso(2026, 9, 12, 14, 15));
+  });
+
+  it("ne sort pas de la journée", () => {
+    expect(dueForSlot(target, -30).dueAt).toBe(localIso(2026, 9, 12, 0, 0));
+    expect(dueForSlot(target, 24 * 60).dueAt).toBe(localIso(2026, 9, 12, 23, 45));
   });
 });
 

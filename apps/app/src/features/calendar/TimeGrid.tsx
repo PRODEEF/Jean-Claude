@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
-import { Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from "react-native";
+import { useEffect, useRef, type ReactNode } from "react";
+import { Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from "react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
-import { eventsOfDay, layoutDayEvents, layoutDayLists, listsOfDay } from "@jc/domain";
+import { eventsOfDay, layoutDayEvents, layoutDayLists, listsOfDay, startOfDay } from "@jc/domain";
 import { Text } from "@/shared/ui/text";
 import { eventLabel, SharedMark } from "./MonthGrid";
+import { useListDragHandle, useMomentDropZone } from "./lib/list-drag";
 import { useDayPartBounds } from "@/shared/hooks/use-profile";
 import { formatDayLabel, formatTime, isSameDay } from "@/shared/lib/dates";
 
@@ -21,7 +22,11 @@ export type TimeGridProps = {
    * absente quand le geste ne dit pas où il a eu lieu (activation au clavier).
    */
   onCreateAt: (day: Date, minute?: number) => void;
+  /** Une liste déposée sur un jour : à l'heure lâchée dans la grille, ou « dans la journée » depuis le bandeau. */
+  onMoveList: (listId: string, day: Date, target: ListDropTarget) => void;
 };
+
+export type ListDropTarget = { kind: "slot"; minute: number } | { kind: "anytime" };
 
 const HOUR_HEIGHT = 48;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
@@ -53,6 +58,7 @@ export function TimeGrid({
   onOpenEvent,
   onOpenList,
   onCreateAt,
+  onMoveList,
 }: TimeGridProps) {
   const today = new Date();
   const bounds = useDayPartBounds();
@@ -149,29 +155,32 @@ export function TimeGrid({
             <Text className="text-muted-foreground text-[10px]">listes</Text>
           </View>
           {perDay.map((column) => (
-            <View
+            <DropZone
               key={column.day.toISOString()}
+              day={column.day}
+              today={today}
               className="border-border min-h-8 flex-1 gap-0.5 border-l p-0.5"
+              onDropList={(listId) => onMoveList(listId, column.day, { kind: "anytime" })}
             >
               {column.lists.slice(0, MAX_TASKS_PER_COLUMN).map((list) => (
-                <Pressable
+                <DraggablePressable
                   key={list.id}
+                  listId={list.id}
                   onPress={() => onOpenList(list)}
-                  accessibilityRole="button"
                   accessibilityLabel={`Ouvrir la liste ${list.title}`}
                   className="bg-muted rounded px-1 py-0.5"
                 >
                   <Text numberOfLines={1} className="text-muted-foreground text-[11px] leading-4">
                     {list.title}
                   </Text>
-                </Pressable>
+                </DraggablePressable>
               ))}
               {column.lists.length > MAX_TASKS_PER_COLUMN ? (
                 <Text className="text-muted-foreground px-1 text-[10px]">
                   +{column.lists.length - MAX_TASKS_PER_COLUMN}
                 </Text>
               ) : null}
-            </View>
+            </DropZone>
           ))}
         </View>
       ) : null}
@@ -187,7 +196,15 @@ export function TimeGrid({
         </View>
 
         {perDay.map((column) => (
-          <View key={column.day.toISOString()} className="border-border flex-1 border-l">
+          <DropZone
+            key={column.day.toISOString()}
+            day={column.day}
+            today={today}
+            className="border-border flex-1 border-l"
+            onDropList={(listId, offsetY) =>
+              onMoveList(listId, column.day, { kind: "slot", minute: (offsetY / HOUR_HEIGHT) * 60 })
+            }
+          >
             {HOURS.map((hour) => (
               <View
                 key={hour}
@@ -213,10 +230,10 @@ export function TimeGrid({
                 événements. L'appui ouvre le détail cochable, comme Google
                 Calendar ouvre la fiche d'un rendez-vous (§4.2). */}
             {column.timedLists.map((box) => (
-              <Pressable
+              <DraggablePressable
                 key={box.list.id}
+                listId={box.list.id}
                 onPress={() => onOpenList(box.list)}
-                accessibilityRole="button"
                 accessibilityLabel={`Ouvrir la liste ${box.list.title}`}
                 className="bg-muted absolute overflow-hidden rounded px-1 py-0.5"
                 style={{
@@ -232,7 +249,7 @@ export function TimeGrid({
                 <Text numberOfLines={1} className="text-muted-foreground text-[11px] leading-4">
                   {box.list.title}
                 </Text>
-              </Pressable>
+              </DraggablePressable>
             ))}
 
             {column.timed.map((box) => (
@@ -266,11 +283,75 @@ export function TimeGrid({
                 </Text>
               </Pressable>
             ))}
-          </View>
+          </DropZone>
         ))}
       </View>
       </ScrollView>
     </View>
+  );
+}
+
+/**
+ * Zone où l'on dépose une liste : un jour, passé exclu — le serveur refuse une
+ * échéance révolue, autant ne pas proposer le geste.
+ */
+function DropZone({
+  day,
+  today,
+  className,
+  onDropList,
+  children,
+}: {
+  day: Date;
+  today: Date;
+  className: string;
+  onDropList: (listId: string, offsetY: number) => void;
+  children: ReactNode;
+}) {
+  const past = startOfDay(day).getTime() < startOfDay(today).getTime();
+  const zoneRef = useMomentDropZone(
+    !past,
+    (drag) => drag.kind === "list",
+    (drag, offsetY) => onDropList(drag.listId, offsetY),
+  );
+  return (
+    <View ref={zoneRef} className={className}>
+      {children}
+    </View>
+  );
+}
+
+/**
+ * Pastille de liste que l'on peut aussi saisir pour la déplacer (web) ; l'appui
+ * simple ouvre toujours son détail.
+ */
+function DraggablePressable({
+  listId,
+  onPress,
+  accessibilityLabel,
+  className,
+  style,
+  children,
+}: {
+  listId: string;
+  onPress: () => void;
+  accessibilityLabel: string;
+  className: string;
+  style?: React.ComponentProps<typeof Pressable>["style"];
+  children: ReactNode;
+}) {
+  const { cardRef } = useListDragHandle(listId, Platform.OS === "web");
+  return (
+    <Pressable
+      ref={cardRef}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      className={className}
+      {...(style ? { style } : {})}
+    >
+      {children}
+    </Pressable>
   );
 }
 
