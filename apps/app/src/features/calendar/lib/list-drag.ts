@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { Platform, type View } from "react-native";
+import { TASK_ROW_MIME, activeTaskRowDrag } from "@/features/todo/task-row-drag";
 
 /**
  * Glisser-déposer d'une liste vers un moment d'un jour, dans la vue Todo.
@@ -73,16 +74,30 @@ export function useListDragHandle(
   return { cardRef, gripRef };
 }
 
+/** Ce qu'on glisse vers un jour : une liste entière, ou une seule de ses tâches. */
+export type DayDrag = { kind: "list"; listId: string } | { kind: "task"; listId: string; taskId: string };
+
+function currentDrag(event: DragEvent): DayDrag | null {
+  const types = event.dataTransfer?.types;
+  if (activeListId && types?.includes(LIST_MIME)) return { kind: "list", listId: activeListId };
+  const row = activeTaskRowDrag();
+  // Une ligne sans identifiant n'est pas encore enregistrée : rien à dater.
+  if (row && types?.includes(TASK_ROW_MIME) && row.key !== "draft") {
+    return { kind: "task", listId: row.listId, taskId: row.key };
+  }
+  return null;
+}
+
 /**
  * Cible de dépôt : un moment d'un jour.
  *
- * `accepts` dit si la liste glissée peut y atterrir (jour révolu, même place) ;
+ * `accepts` dit si ce qu'on glisse peut y atterrir (jour révolu, même place) ;
  * la surbrillance passe par le nœud pour la même raison que l'opacité.
  */
 export function useMomentDropZone(
   enabled: boolean,
-  accepts: (listId: string) => boolean,
-  onDrop: (listId: string) => void,
+  accepts: (drag: DayDrag) => boolean,
+  onDrop: (drag: DayDrag) => void,
 ): RefObject<View | null> {
   const zoneRef = useRef<View | null>(null);
   const latest = useRef({ accepts, onDrop });
@@ -100,9 +115,9 @@ export function useMomentDropZone(
     };
 
     const over = (event: DragEvent) => {
-      const id = activeListId;
-      if (!id || !event.dataTransfer?.types.includes(LIST_MIME)) return;
-      if (!latest.current.accepts(id)) {
+      const drag = currentDrag(event);
+      if (!drag || !event.dataTransfer) return;
+      if (!latest.current.accepts(drag)) {
         clear();
         return;
       }
@@ -113,11 +128,11 @@ export function useMomentDropZone(
     };
 
     const drop = (event: DragEvent) => {
-      const id = activeListId;
+      const drag = currentDrag(event);
       clear();
-      if (!id || !latest.current.accepts(id)) return;
+      if (!drag || !latest.current.accepts(drag)) return;
       event.preventDefault();
-      latest.current.onDrop(id);
+      latest.current.onDrop(drag);
     };
 
     zone.addEventListener("dragover", over);
