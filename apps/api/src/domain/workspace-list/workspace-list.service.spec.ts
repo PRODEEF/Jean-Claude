@@ -12,6 +12,7 @@ function makeTask(overrides: Partial<WorkspaceTask> = {}): WorkspaceTask {
     title: "Acheter les gobelets",
     done: false,
     assigneeId: null,
+    parentId: null,
     position: 0,
     createdAt: "2026-09-29T08:00:00.000Z",
     ...overrides,
@@ -103,8 +104,8 @@ describe("WorkspaceListService", () => {
           folderId: "f1",
           conversationId: null,
           tasks: [
-            { title: "Salle", assigneeId: "bruno", position: 0 },
-            { title: "Affiches", assigneeId: null, position: 1 },
+            { title: "Salle", assigneeId: "bruno", parentId: null, position: 0 },
+            { title: "Affiches", assigneeId: null, parentId: null, position: 1 },
           ],
         },
         TOKEN,
@@ -337,7 +338,7 @@ describe("WorkspaceListService", () => {
       expect(repo.addTask).toHaveBeenCalledWith(
         "alice",
         "list-1",
-        { title: "Sono", assigneeId: null, position: 4 },
+        { title: "Sono", assigneeId: null, parentId: null, position: 4 },
         TOKEN,
       );
     });
@@ -367,6 +368,81 @@ describe("WorkspaceListService", () => {
         ),
       ).rejects.toMatchObject({ status: 400 });
     });
+
+    describe("sous-tâches", () => {
+      const twoRoots = () =>
+        makeList({
+          tasks: [
+            makeTask({ id: "t1", position: 0 }),
+            makeTask({ id: "t2", position: 1 }),
+            makeTask({ id: "t3", position: 2, parentId: "t2" }),
+          ],
+        });
+
+      /** Dépôt dont l'ajout rend la tâche `new`, créée à la fin de la liste. */
+      const withCreated = (list: WorkspaceTaskList, parentId: string) =>
+        withList(list, {
+          addTask: jest
+            .fn()
+            .mockResolvedValue(makeTask({ id: "new", parentId, position: list.tasks.length })),
+        });
+
+      it("range la sous-tâche à la fin de sa famille, pas de la liste", async () => {
+        const repo = withCreated(twoRoots(), "t1");
+
+        await new WorkspaceListService(repo).addTask(
+          "alice",
+          "list-1",
+          { title: "Prises", parentId: "t1" },
+          TOKEN,
+        );
+
+        expect(repo.setTaskPositions).toHaveBeenCalledWith(
+          "list-1",
+          ["t1", "new", "t2", "t3"],
+          TOKEN,
+        );
+      });
+
+      it("n'écrit aucune position quand la sous-tâche est déjà à sa place", async () => {
+        const repo = withCreated(makeList({ tasks: [makeTask({ id: "t1" })] }), "t1");
+
+        await new WorkspaceListService(repo).addTask(
+          "alice",
+          "list-1",
+          { title: "Prises", parentId: "t1" },
+          TOKEN,
+        );
+
+        expect(repo.setTaskPositions).not.toHaveBeenCalled();
+      });
+
+      it("refuse une sous-tâche de sous-tâche", async () => {
+        const repo = withList(twoRoots());
+
+        await expect(
+          new WorkspaceListService(repo).addTask(
+            "alice",
+            "list-1",
+            { title: "Prises", parentId: "t3" },
+            TOKEN,
+          ),
+        ).rejects.toMatchObject({ status: 400 });
+      });
+
+      it("refuse une tâche parente qui n'est pas dans la liste", async () => {
+        const repo = withList(twoRoots());
+
+        await expect(
+          new WorkspaceListService(repo).addTask(
+            "alice",
+            "list-1",
+            { title: "Prises", parentId: "ailleurs" },
+            TOKEN,
+          ),
+        ).rejects.toMatchObject({ status: 400 });
+      });
+    });
   });
 
   describe("updateTask", () => {
@@ -394,6 +470,74 @@ describe("WorkspaceListService", () => {
       );
 
       expect(repo.updateTask).toHaveBeenCalledWith("t1", { assigneeId: "bruno" }, TOKEN);
+    });
+
+    describe("sous-tâches", () => {
+      const list = () =>
+        makeList({
+          tasks: [
+            makeTask({ id: "t1", position: 0 }),
+            makeTask({ id: "t2", position: 1 }),
+            makeTask({ id: "t3", position: 2, parentId: "t2" }),
+            makeTask({ id: "t4", position: 3 }),
+          ],
+        });
+
+      it("rattache une tâche à une tâche parente et la range dans sa famille", async () => {
+        const repo = withList(list());
+
+        await new WorkspaceListService(repo).updateTask("list-1", "t4", { parentId: "t1" }, TOKEN);
+
+        expect(repo.updateTask).toHaveBeenCalledWith("t4", { parentId: "t1" }, TOKEN);
+        expect(repo.setTaskPositions).toHaveBeenCalledWith(
+          "list-1",
+          ["t1", "t4", "t2", "t3"],
+          TOKEN,
+        );
+      });
+
+      it("remonte une sous-tâche au premier niveau, après son ancienne famille", async () => {
+        const repo = withList(list());
+
+        await new WorkspaceListService(repo).updateTask("list-1", "t3", { parentId: null }, TOKEN);
+
+        expect(repo.updateTask).toHaveBeenCalledWith("t3", { parentId: null }, TOKEN);
+        // Déjà à sa place : t3 suit t2 et devient de premier niveau juste après.
+        expect(repo.setTaskPositions).not.toHaveBeenCalled();
+      });
+
+      it("refuse qu'une tâche qui a des sous-tâches devienne une sous-tâche", async () => {
+        const repo = withList(list());
+
+        await expect(
+          new WorkspaceListService(repo).updateTask("list-1", "t2", { parentId: "t1" }, TOKEN),
+        ).rejects.toMatchObject({ status: 400 });
+        expect(repo.updateTask).not.toHaveBeenCalled();
+      });
+
+      it("refuse de rattacher une tâche à une sous-tâche", async () => {
+        const repo = withList(list());
+
+        await expect(
+          new WorkspaceListService(repo).updateTask("list-1", "t4", { parentId: "t3" }, TOKEN),
+        ).rejects.toMatchObject({ status: 400 });
+      });
+
+      it("refuse qu'une tâche soit sa propre parente", async () => {
+        const repo = withList(list());
+
+        await expect(
+          new WorkspaceListService(repo).updateTask("list-1", "t4", { parentId: "t4" }, TOKEN),
+        ).rejects.toMatchObject({ status: 400 });
+      });
+
+      it("ne touche pas aux positions quand le parent ne change pas", async () => {
+        const repo = withList(list());
+
+        await new WorkspaceListService(repo).updateTask("list-1", "t4", { done: true }, TOKEN);
+
+        expect(repo.setTaskPositions).not.toHaveBeenCalled();
+      });
     });
 
     it("refuse une tâche qui n'est pas dans cette liste", async () => {
@@ -431,6 +575,47 @@ describe("WorkspaceListService", () => {
         ["t1", 1],
         ["t2", 2],
       ]);
+    });
+
+    it("refuse de séparer une sous-tâche de sa tâche parente", async () => {
+      const repo = withList(
+        makeList({
+          tasks: [
+            makeTask({ id: "t1", position: 0 }),
+            makeTask({ id: "t2", position: 1, parentId: "t1" }),
+            makeTask({ id: "t3", position: 2 }),
+          ],
+        }),
+      );
+
+      await expect(
+        new WorkspaceListService(repo).reorderTasks(
+          "list-1",
+          { taskIds: ["t1", "t3", "t2"] },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.setTaskPositions).not.toHaveBeenCalled();
+    });
+
+    it("accepte de déplacer une famille entière", async () => {
+      const repo = withList(
+        makeList({
+          tasks: [
+            makeTask({ id: "t1", position: 0 }),
+            makeTask({ id: "t2", position: 1, parentId: "t1" }),
+            makeTask({ id: "t3", position: 2 }),
+          ],
+        }),
+      );
+
+      await new WorkspaceListService(repo).reorderTasks(
+        "list-1",
+        { taskIds: ["t3", "t1", "t2"] },
+        TOKEN,
+      );
+
+      expect(repo.setTaskPositions).toHaveBeenCalledWith("list-1", ["t3", "t1", "t2"], TOKEN);
     });
 
     it("refuse un ordre périmé quand un autre membre a ajouté une tâche", async () => {

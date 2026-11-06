@@ -1126,7 +1126,7 @@ describe("propositions de liste", () => {
         expect.objectContaining({
           workspaceId: WORKSPACE_ID,
           conversationId: "group-1",
-          tasks: [{ title: "Réserver la salle", assigneeId: "bruno", position: 0 }],
+          tasks: [{ title: "Réserver la salle", assigneeId: "bruno", parentId: null, position: 0 }],
         }),
         TOKEN,
       );
@@ -1149,7 +1149,9 @@ describe("propositions de liste", () => {
 
       expect(lists.create).toHaveBeenCalledWith(
         "alice",
-        expect.objectContaining({ tasks: [{ title: "Salle", assigneeId: null, position: 0 }] }),
+        expect.objectContaining({
+          tasks: [{ title: "Salle", assigneeId: null, parentId: null, position: 0 }],
+        }),
         TOKEN,
       );
     });

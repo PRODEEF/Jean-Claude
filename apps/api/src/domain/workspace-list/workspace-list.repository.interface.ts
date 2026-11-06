@@ -6,7 +6,12 @@ import type {
 } from "@jc/domain";
 
 /** Une tâche à créer, déjà validée par le service. */
-export type NewWorkspaceTask = { title: string; assigneeId: string | null; position: number };
+export type NewWorkspaceTask = {
+  title: string;
+  assigneeId: string | null;
+  parentId: string | null;
+  position: number;
+};
 
 export type NewWorkspaceTaskList = {
   workspaceId: string;

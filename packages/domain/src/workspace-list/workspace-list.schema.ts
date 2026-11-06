@@ -20,6 +20,8 @@ export const workspaceTaskSchema = z.object({
   done: z.boolean(),
   /** Le responsable ; `null` = personne en particulier. */
   assigneeId: uuidSchema.nullable(),
+  /** La tâche dont celle-ci est une sous-tâche ; `null` pour une tâche de premier niveau. */
+  parentId: uuidSchema.nullable(),
   position: z.number().int(),
   createdAt: isoDateTimeSchema,
 });
@@ -74,13 +76,18 @@ export const updateWorkspaceTaskListSchema = z.object({
 });
 export type UpdateWorkspaceTaskList = z.infer<typeof updateWorkspaceTaskListSchema>;
 
-export const createWorkspaceTaskSchema = newTaskSchema;
+export const createWorkspaceTaskSchema = newTaskSchema.extend({
+  /** Crée la tâche comme sous-tâche de celle-ci, en fin de sa famille. */
+  parentId: uuidSchema.nullable().optional(),
+});
 export type CreateWorkspaceTask = z.infer<typeof createWorkspaceTaskSchema>;
 
 export const updateWorkspaceTaskSchema = z.object({
   title: labelSchema.optional(),
   done: z.boolean().optional(),
   assigneeId: uuidSchema.nullable().optional(),
+  /** Une tâche parente en fait une sous-tâche ; `null` la remonte au premier niveau. */
+  parentId: uuidSchema.nullable().optional(),
 });
 export type UpdateWorkspaceTask = z.infer<typeof updateWorkspaceTaskSchema>;
 
