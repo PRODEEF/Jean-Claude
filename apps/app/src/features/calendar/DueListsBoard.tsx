@@ -16,6 +16,7 @@ import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useDayPartBounds } from "@/shared/hooks/use-profile";
 import { useTaskActions, useTaskLists } from "@/shared/hooks/use-task-lists";
 import { TaskDialog } from "@/features/todo/TaskDialog";
+import { ListDueDialog } from "@/features/todo/ListDueDialog";
 import { TaskListDeleteDialog } from "@/features/todo/TaskListDeleteDialog";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
 import { TaskListEditor } from "@/features/todo/TaskListEditor";
@@ -235,6 +236,7 @@ function DueList({
   const shopping = list.kind === "shopping";
   const time = timeLabel(list);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [changingDue, setChangingDue] = useState(false);
   // Le glisser-déposer n'existe que sur le web : sans lui, la poignée serait
   // un décor qui ne fait rien.
   const draggable = movable && Platform.OS === "web";
@@ -243,6 +245,19 @@ function DueList({
   const subset = saved !== undefined && isTaskSubset(saved, list);
 
   const items: ContextMenuItem[] = [
+    // Le geste des téléphones, où le glisser-déposer n'existe pas : un menu sur
+    // la liste, puis la date. Même fenêtre que depuis Mes listes.
+    ...(movable
+      ? [
+          {
+            label: "Changer l'échéance",
+            onPress: () => {
+              setMenu(null);
+              setChangingDue(true);
+            },
+          },
+        ]
+      : []),
     {
       label: "Modifier la liste",
       onPress: () => {
@@ -314,6 +329,7 @@ function DueList({
       {menu ? (
         <ContextMenu x={menu.x} y={menu.y} items={items} onClose={() => setMenu(null)} />
       ) : null}
+      {changingDue ? <ListDueDialog list={source} onClose={() => setChangingDue(false)} /> : null}
     </View>
   );
 }
