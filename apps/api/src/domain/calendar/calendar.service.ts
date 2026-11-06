@@ -9,6 +9,7 @@ import { httpError } from "../../core/http.js";
 import type { ITaskRepository } from "../task/task.repository.interface.js";
 import type { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
 import type { ICalendarRepository } from "./calendar.repository.interface.js";
+import { occurrencesInRange } from "./occurrences.js";
 
 export class CalendarService {
   /**
@@ -29,9 +30,8 @@ export class CalendarService {
   /**
    * Événements de la fenêtre demandée.
    *
-   * Les séries récurrentes ne sont pas encore expansées : une ligne portant
-   * une `rrule` n'apparaît qu'à la date de son premier créneau. Le déploiement
-   * des occurrences relève d'A.11, qui traite aussi le rappel automatique.
+   * Les séries récurrentes sont dépliées en occurrences (A.11) : l'utilisateur
+   * lit ses jeudis à 18h dans la vue, pas la règle qui les produit.
    */
   async list(range: CalendarRange, accessToken: string): Promise<CalendarEntry[]> {
     const [own, shared] = await Promise.all([
@@ -39,9 +39,12 @@ export class CalendarService {
       this.workspaceEvents.listForCalendar(range, accessToken),
     ]);
     // Une seule chronologie : l'utilisateur lit sa journée, pas deux agendas.
-    return [...own.map((event) => ({ ...event, space: null })), ...shared].sort(
-      (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
-    );
+    return [
+      ...own.flatMap((event) =>
+        occurrencesInRange(event, range).map((occurrence) => ({ ...occurrence, space: null })),
+      ),
+      ...shared,
+    ].sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
   }
 
   // `async` malgré l'absence d'`await` : la validation lève, et une méthode
