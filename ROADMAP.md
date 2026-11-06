@@ -27,7 +27,7 @@ Rien en attente : `dev` et la production sont identiques.
 
 ### En production
 
-Mise en production du 6 novembre (PR #191, aucune migration) :
+Mise en production du 6 novembre (aucune migration) :
 
 - **Calendrier › Todo : « Changer l'échéance » dans le menu d'une liste**, pour changer sa date et son moment sans glisser-déposer — c'est le geste des téléphones. *Où : Calendrier › Todo, menu « … » d'une liste.* — À tester sur mobile.
 - **Calendrier › Jour et Semaine : on déplace une liste à la souris** (web). On la saisit et on la lâche sur un autre jour, à l'heure visée (arrondie au quart d'heure) ; lâchée dans le bandeau « listes », elle devient une échéance sans heure. Un jour déjà passé est refusé. *Où : Calendrier › Jour ou Semaine.* — À tester.
