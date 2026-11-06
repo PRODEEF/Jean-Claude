@@ -149,6 +149,22 @@ export function dueForMoment(
   return { dueAt: date.toISOString(), dueAllDay: false };
 }
 
+/** Pas du glisser dans la grille horaire : un créneau se pose au quart d'heure. */
+const SLOT_SNAP_MINUTES = 15;
+
+/**
+ * Échéance d'une liste lâchée à `minute` (depuis minuit) du jour `day`, dans
+ * la grille horaire. L'heure suit le geste, arrondie au quart d'heure.
+ */
+export function dueForSlot(day: Date, minute: number): { dueAt: string; dueAllDay: false } {
+  const snapped = Math.round(minute / SLOT_SNAP_MINUTES) * SLOT_SNAP_MINUTES;
+  const clamped = clamp(snapped, 0, MINUTES_PER_DAY - SLOT_SNAP_MINUTES);
+
+  const date = startOfDay(day);
+  date.setHours(Math.floor(clamped / 60), clamped % 60, 0, 0);
+  return { dueAt: date.toISOString(), dueAllDay: false };
+}
+
 export type MomentGroup = { moment: Moment; lists: TaskListWithTasks[] };
 
 /**
