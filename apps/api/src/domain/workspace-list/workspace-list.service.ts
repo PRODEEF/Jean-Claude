@@ -9,6 +9,7 @@ import type {
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { hasWallTime, isPastCalendarDay, isSameCalendarDay } from "../../core/timezone.js";
+import { familiesStayTogether, familyOrder } from "./task-families.js";
 import type {
   IWorkspaceListRepository,
   WorkspaceListPatch,
@@ -67,6 +68,7 @@ export class WorkspaceListService {
         tasks: input.tasks.map((task, position) => ({
           title: task.title,
           assigneeId: task.assigneeId ?? null,
+          parentId: null,
           position,
         })),
       },
@@ -121,15 +123,21 @@ export class WorkspaceListService {
         await this.lists.findWorkspaceMemberIds(list.workspaceId, accessToken),
       );
     }
+    const parentId = input.parentId ?? null;
+    if (parentId) assertCanParent(list, parentId, null);
 
     // En fin de liste : une tâche ajoutée à la main vient après les autres.
     const position = Math.max(-1, ...list.tasks.map((task) => task.position)) + 1;
-    return this.lists.addTask(
+    const task = await this.lists.addTask(
       userId,
       listId,
-      { title: input.title, assigneeId, position },
+      { title: input.title, assigneeId, parentId, position },
       accessToken,
     );
+
+    // Une sous-tâche rejoint la fin de sa famille, pas la fin de la liste.
+    if (parentId) await this.keepFamilies(listId, [...list.tasks, task], accessToken);
+    return task;
   }
 
   async updateTask(
@@ -139,15 +147,36 @@ export class WorkspaceListService {
     accessToken: string,
   ): Promise<WorkspaceTask> {
     const list = await this.get(listId, accessToken);
-    requireTask(list, taskId);
+    const existing = requireTask(list, taskId);
     if (patch.assigneeId) {
       assertAssignee(
         patch.assigneeId,
         await this.lists.findWorkspaceMemberIds(list.workspaceId, accessToken),
       );
     }
+    if (patch.parentId) assertCanParent(list, patch.parentId, existing);
 
-    return this.lists.updateTask(taskId, patch, accessToken);
+    const updated = await this.lists.updateTask(taskId, patch, accessToken);
+
+    // Changer de parent déplace la tâche : elle va avec sa nouvelle famille.
+    if (patch.parentId !== undefined) {
+      const tasks = list.tasks.map((task) =>
+        task.id === taskId ? { ...task, parentId: patch.parentId ?? null } : task,
+      );
+      await this.keepFamilies(listId, tasks, accessToken);
+    }
+    return updated;
+  }
+
+  /** Réécrit les positions si l'ordre actuel sépare une sous-tâche de sa tâche parente. */
+  private async keepFamilies(
+    listId: string,
+    tasks: WorkspaceTask[],
+    accessToken: string,
+  ): Promise<void> {
+    const order = familyOrder(tasks);
+    if (order.every((id, index) => id === tasks[index]?.id)) return;
+    await this.lists.setTaskPositions(listId, order, accessToken);
   }
 
   /**
@@ -171,6 +200,12 @@ export class WorkspaceListService {
     }
     if (asked.size !== known.size || input.taskIds.some((id) => !known.has(id))) {
       throw httpError(409, "La liste a changé entre-temps : rechargez-la.");
+    }
+
+    // Une sous-tâche ne peut pas être lâchée loin de sa tâche parente : sans
+    // quoi elle changerait de parent sans que personne l'ait voulu.
+    if (!familiesStayTogether(list.tasks, input.taskIds)) {
+      throw httpError(400, "Une sous-tâche doit rester sous sa tâche.");
     }
 
     await this.lists.setTaskPositions(listId, input.taskIds, accessToken);
@@ -239,6 +274,26 @@ export class WorkspaceListService {
 function assertAssignee(assigneeId: string | null, members: string[]): void {
   if (assigneeId && !members.includes(assigneeId)) {
     throw httpError(400, "Le responsable choisi ne fait pas partie de l'espace.");
+  }
+}
+
+/**
+ * Peut-on rattacher `task` (ou une tâche à créer, `null`) à `parentId` ?
+ * Un seul niveau de sous-tâches, comme dans les listes personnelles.
+ */
+function assertCanParent(
+  list: WorkspaceTaskList,
+  parentId: string,
+  task: WorkspaceTask | null,
+): void {
+  const parent = list.tasks.find((candidate) => candidate.id === parentId);
+  if (!parent) throw httpError(400, "La tâche parente n'est pas dans cette liste.");
+  if (parent.parentId) throw httpError(400, "Une sous-tâche ne peut pas avoir de sous-tâche.");
+  if (!task) return;
+
+  if (task.id === parentId) throw httpError(400, "Une tâche ne peut pas être sa propre parente.");
+  if (list.tasks.some((candidate) => candidate.parentId === task.id)) {
+    throw httpError(400, "Cette tâche a des sous-tâches : elle ne peut pas en devenir une.");
   }
 }
 

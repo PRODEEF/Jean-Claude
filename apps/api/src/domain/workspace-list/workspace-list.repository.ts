@@ -9,6 +9,7 @@ type TaskRow = {
   title: string;
   done: boolean;
   assignee_id: string | null;
+  parent_id: string | null;
   position: number;
   created_at: string;
 };
@@ -34,6 +35,7 @@ function toTask(row: TaskRow): WorkspaceTask {
     title: row.title,
     done: row.done,
     assigneeId: row.assignee_id,
+    parentId: row.parent_id,
     position: row.position,
     createdAt: row.created_at,
   };
@@ -57,7 +59,7 @@ function toList(row: ListRow): WorkspaceTaskList {
   };
 }
 
-const TASK_COLUMNS = "id, list_id, title, done, assignee_id, position, created_at";
+const TASK_COLUMNS = "id, list_id, title, done, assignee_id, parent_id, position, created_at";
 const LIST_COLUMNS = `id, workspace_id, title, kind, due_at, due_all_day, folder_id, conversation_id, created_at, updated_at, workspace_tasks(${TASK_COLUMNS})`;
 
 export const workspaceListRepository: IWorkspaceListRepository = {
@@ -177,6 +179,7 @@ export const workspaceListRepository: IWorkspaceListRepository = {
         list_id: listId,
         title: task.title,
         assignee_id: task.assigneeId,
+        parent_id: task.parentId,
         position: task.position,
         created_by: userId,
       })
@@ -193,6 +196,7 @@ export const workspaceListRepository: IWorkspaceListRepository = {
     const payload: Record<string, unknown> = {};
     if (patch.title !== undefined) payload["title"] = patch.title;
     if (patch.assigneeId !== undefined) payload["assignee_id"] = patch.assigneeId;
+    if (patch.parentId !== undefined) payload["parent_id"] = patch.parentId;
     if (patch.done !== undefined) {
       payload["done"] = patch.done;
       payload["completed_at"] = patch.done ? new Date().toISOString() : null;
