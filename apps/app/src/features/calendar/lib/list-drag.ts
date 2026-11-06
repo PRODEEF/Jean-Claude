@@ -35,7 +35,9 @@ export function useListDragHandle(
     if (Platform.OS !== "web" || !enabled) return;
 
     const card = cardRef.current as unknown as HTMLElement | null;
-    const grip = gripRef.current as unknown as HTMLElement | null;
+    // Sans poignée, l'élément entier se saisit : une pastille du calendrier n'a
+    // ni texte à sélectionner ni case à cocher.
+    const grip = (gripRef.current as unknown as HTMLElement | null) ?? card;
     if (!card || !grip) return;
 
     const start = (event: DragEvent) => {
@@ -97,7 +99,7 @@ function currentDrag(event: DragEvent): DayDrag | null {
 export function useMomentDropZone(
   enabled: boolean,
   accepts: (drag: DayDrag) => boolean,
-  onDrop: (drag: DayDrag) => void,
+  onDrop: (drag: DayDrag, offsetY: number) => void,
 ): RefObject<View | null> {
   const zoneRef = useRef<View | null>(null);
   const latest = useRef({ accepts, onDrop });
@@ -132,7 +134,8 @@ export function useMomentDropZone(
       clear();
       if (!drag || !latest.current.accepts(drag)) return;
       event.preventDefault();
-      latest.current.onDrop(drag);
+      // Ordonnée du lâcher dans la cible : la grille horaire en tire l'heure.
+      latest.current.onDrop(drag, event.clientY - zone.getBoundingClientRect().top);
     };
 
     zone.addEventListener("dragover", over);
