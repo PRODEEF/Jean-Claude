@@ -20,6 +20,9 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
+- **Calendrier › Todo : un « + » à chaque jour et à chaque moment** (Matin, Après-midi, Soir, Dans la journée) pour ajouter une liste à cet endroit ; la fenêtre de création demande le titre et les tâches, une par ligne. Les titres du jour et du moment prennent la taille du reste (jour en majuscules, moment en minuscules). *Où : Calendrier › Todo, et « Nouvelle liste » dans les autres vues.* — À tester.
+- **Calendrier › Année : la vue s'ouvre sur le mois en cours, en haut à gauche** (douze mois glissants, « Nov 2026 – Oct 2027 »). *Où : Calendrier › Année.* — À tester.
+- **Calendrier › Semaine : les colonnes sont alignées avec les jours du haut** (la barre de défilement décalait le corps de la grille). *Où : Calendrier › Semaine.* — À tester.
 - **Les menus « … » de la barre latérale sont uniformisés** (V0.00.2). Un dossier propose partout les mêmes gestes, Supprimer compris ; un espace propose en plus Renommer l'espace et Quitter l'espace. Les lignes du menu ont la hauteur de celles de la barre. *Où : barre latérale, « … » d'un dossier ou d'un espace.* — À tester.
 - **La version de l'application s'affiche en haut à droite de chaque écran**, en commençant à V0.00.1. *Où : tous les écrans, à droite du bandeau.* — À tester.
 

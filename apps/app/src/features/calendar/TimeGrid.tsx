@@ -185,7 +185,9 @@ export function TimeGrid({
         </View>
       ) : null}
 
-      <ScrollView ref={hours} style={{ flex: 1 }}>
+      {/* Sans barre de défilement : elle prend de la largeur au corps de la grille et
+          décale ses colonnes de celles de l'en-tête, qui est hors du défilement. */}
+      <ScrollView ref={hours} style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
       <View className="flex-row" style={{ height: HOURS.length * HOUR_HEIGHT }}>
         <View style={{ width: GUTTER_WIDTH }}>
           {HOURS.map((hour) => (
