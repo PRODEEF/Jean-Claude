@@ -480,10 +480,35 @@ export class AssistantService {
   }
 
   /**
+   * Dossier où naît un rendez-vous proposé depuis une conversation rangée.
+   *
+   * Le sous-dossier PRENDRE RDV du projet quand il existe (A.4), sinon le
+   * premier dossier de la conversation, comme pour une todoliste. Sans dossier,
+   * le rendez-vous reste dans l'agenda, qui est la vue « tous dossiers
+   * confondus ».
+   */
+  private async folderForEvents(
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<string | null> {
+    if (!suggestion.conversationId) return null;
+
+    const conversation = await this.conversations.getById(suggestion.conversationId, accessToken);
+    if (conversation.folderIds.length === 0) return null;
+
+    const tree = await this.folders.getTree(accessToken);
+    return (
+      findTypedFolder(tree, conversation.folderIds, "appointment") ??
+      conversation.folderIds[0] ??
+      null
+    );
+  }
+
+  /**
    * Pose un rendez-vous récurrent dans l'agenda (A.11).
    *
-   * Une seule ligne avec `rrule` : les occurrences ne sont pas encore
-   * expansées — l'événement n'apparaît qu'à son premier créneau. Le rappel
+   * Une seule ligne avec `rrule` : les occurrences sont dépliées à la lecture
+   * par `CalendarService`. Le rappel
    * tombe à 30 min si le modèle n'en a pas proposé, pour que la série ne
    * demande pas de ressaisie.
    */
@@ -502,10 +527,12 @@ export class AssistantService {
     const profile = await this.users.findById(userId, accessToken);
     const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
     const timed = hasWallTime(payload.data.startsAt, timezone);
+    const folderId = await this.folderForEvents(suggestion, accessToken);
 
     const event = await this.calendar.create(
       userId,
       {
+        folderId,
         title: payload.data.title,
         startsAt: payload.data.startsAt,
         endsAt: timed ? oneHourAfter(payload.data.startsAt) : null,
@@ -546,6 +573,7 @@ export class AssistantService {
     const profile = await this.users.findById(userId, accessToken);
     const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
 
+    const folderId = await this.folderForEvents(suggestion, accessToken);
     const events: CalendarEvent[] = [];
 
     for (const proposed of payload.data.events) {
@@ -554,6 +582,7 @@ export class AssistantService {
         await this.calendar.create(
           userId,
           {
+            folderId,
             title: proposed.title,
             startsAt: proposed.startsAt,
             endsAt: timed ? oneHourAfter(proposed.startsAt) : null,
