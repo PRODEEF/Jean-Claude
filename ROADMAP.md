@@ -11,7 +11,7 @@
 - **Quand une PR avance un point**, cocher la ligne et mettre le détail à jour (numéro de PR, ce qui reste).
 - **À chaque merge**, ajouter une ligne en tête de « Quoi de neuf », en langage courant : ce qui change, où le voir, s'il est testé.
 - **Pour régénérer l'artifact** : relire la version en ligne, y remplacer ses données par celles de ce fichier, republier. Cocher dans l'artifact ne met pas ce fichier à jour : redire à Claude ce qui a été coché.
-- Dernier recoupement avec le code de `dev` et le backlog : 5 novembre 2026. Les statuts viennent du code, du backlog et de la CI ; rien n'a été joué dans une vraie app.
+- Dernier recoupement avec le code de `dev` et le backlog : 6 novembre 2026. Les statuts viennent du code, du backlog et de la CI ; rien n'a été joué dans une vraie app.
 
 ## Quoi de neuf
 
@@ -19,17 +19,21 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
-- **Calendrier › Todo : « Changer l'échéance » dans le menu d'une liste**, pour changer sa date et son moment sans glisser-déposer — c'est le geste des téléphones. *Où : Calendrier › Todo, menu « … » d'une liste.* — À tester sur mobile.
-- **Calendrier › Jour et Semaine : on déplace une liste à la souris** (web). On la saisit et on la lâche sur un autre jour, à l'heure visée (arrondie au quart d'heure) ; lâchée dans le bandeau « listes », elle devient une échéance sans heure. Un jour déjà passé est refusé. *Où : Calendrier › Jour ou Semaine.* — À tester.
-- **Calendrier › Todo : on déplace aussi une tâche seule vers un autre jour**, par la poignée de sa ligne (web). Le moment où on la lâche ne compte pas : une tâche n'a pas de créneau. *Où : Calendrier › Todo.* — À tester.
-- **Calendrier › Todo : on déplace une liste au glisser-déposer** (web). Une poignée à gauche de la liste ; on la lâche sur un autre jour ou un autre moment (Matin, Après-midi, Soir, Dans la journée). Elle garde son heure si le moment ne change pas, sinon prend l'heure habituelle du moment. Un jour déjà passé est refusé. *Où : Calendrier › Todo.* — À tester.
-- **Calendrier : les vues Jour et Semaine s'ouvrent sur l'heure en cours** quand aujourd'hui y figure, au lieu du premier rendez-vous. *Où : Calendrier › Jour ou Semaine.* — À tester.
+Rien en attente : `dev` et la production sont identiques.
 
 ### Réglage fait
 
 - **Les aperçus Vercel fonctionnent** : dossiers, espaces et conversations s'y chargent. Un réglage de l'API (`CORS_ORIGIN`) a été ajouté.
 
 ### En production
+
+Mise en production du 6 novembre (PR #191, aucune migration) :
+
+- **Calendrier › Todo : « Changer l'échéance » dans le menu d'une liste**, pour changer sa date et son moment sans glisser-déposer — c'est le geste des téléphones. *Où : Calendrier › Todo, menu « … » d'une liste.* — À tester sur mobile.
+- **Calendrier › Jour et Semaine : on déplace une liste à la souris** (web). On la saisit et on la lâche sur un autre jour, à l'heure visée (arrondie au quart d'heure) ; lâchée dans le bandeau « listes », elle devient une échéance sans heure. Un jour déjà passé est refusé. *Où : Calendrier › Jour ou Semaine.* — À tester.
+- **Calendrier › Todo : on déplace aussi une tâche seule vers un autre jour**, par la poignée de sa ligne (web). Le moment où on la lâche ne compte pas : une tâche n'a pas de créneau. *Où : Calendrier › Todo.* — À tester.
+- **Calendrier › Todo : on déplace une liste au glisser-déposer** (web). Une poignée à gauche de la liste ; on la lâche sur un autre jour ou un autre moment (Matin, Après-midi, Soir, Dans la journée). Elle garde son heure si le moment ne change pas, sinon prend l'heure habituelle du moment. Un jour déjà passé est refusé. *Où : Calendrier › Todo.* — À tester.
+- **Calendrier : les vues Jour et Semaine s'ouvrent sur l'heure en cours** quand aujourd'hui y figure, au lieu du premier rendez-vous. *Où : Calendrier › Jour ou Semaine.* — À tester.
 
 Mise en production du 5 novembre au soir (PR #184, avec les deux migrations déjà appliquées) :
 
