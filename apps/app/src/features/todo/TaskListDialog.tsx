@@ -75,7 +75,7 @@ function ListForm({
   onClose: () => void;
   onCreated?: (list: TaskList) => void;
 }) {
-  const { createList, updateList, removeList } = useTaskActions();
+  const { createList, updateList, fillList, removeList } = useTaskActions();
   const folders = useFolderChoices();
   const editing = target.mode === "edit";
 
@@ -92,14 +92,26 @@ function ListForm({
   );
   /** `HH:MM`, vide quand l'échéance ne vise pas d'heure précise. */
   const [time, setTime] = useState(() => timeOf(initialDue, initialAllDay));
+  /** Une tâche par ligne, saisie avec la liste : création seulement. */
+  const [itemsText, setItemsText] = useState("");
+  /** La liste déjà créée quand l'écriture de ses tâches a échoué : on ne la recrée pas. */
+  const [created, setCreated] = useState<TaskList | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Supprimer une liste emporte ses tâches : le second appui est ce qui
   // distingue le geste voulu du bouton frôlé.
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const pending = createList.isPending || updateList.isPending || removeList.isPending;
+  const pending =
+    createList.isPending || updateList.isPending || fillList.isPending || removeList.isPending;
 
   const submit = () => {
+    // Un second appui après l'échec des tâches ne recrée pas la liste : il
+    // retente seulement l'écriture des tâches.
+    if (created) {
+      saveItems(created);
+      return;
+    }
+
     const trimmed = title.trim();
     if (trimmed.length === 0) {
       setError("Donnez un titre à la liste.");
@@ -139,12 +151,33 @@ function ListForm({
       ...(folderId ? { folderId } : {}),
     };
     createList.mutate(input, {
-      onSuccess: (created) => {
-        onClose();
-        onCreated?.(created);
+      onSuccess: (list) => {
+        setCreated(list);
+        saveItems(list);
       },
       onError,
     });
+  };
+
+  const saveItems = (list: TaskList) => {
+    const items = itemsOf(itemsText);
+    const done = () => {
+      onClose();
+      onCreated?.(list);
+    };
+    if (items.length === 0) {
+      done();
+      return;
+    }
+
+    fillList.mutate(
+      { listId: list.id, input: { items: items.map((item) => ({ title: item, depth: 0 })) } },
+      {
+        onSuccess: done,
+        onError: () =>
+          setError("La liste est créée, mais ses tâches n'ont pas pu être enregistrées. Réessayez."),
+      },
+    );
   };
 
   return (
@@ -191,6 +224,19 @@ function ListForm({
           accessibilityLabel="Titre de la liste"
         />
       </Field>
+
+      {editing ? null : (
+        <Field label="Tâches">
+          <Input
+            value={itemsText}
+            onChangeText={setItemsText}
+            multiline
+            placeholder="Une tâche par ligne"
+            className="h-24 py-2"
+            accessibilityLabel="Tâches de la liste, une par ligne"
+          />
+        </Field>
+      )}
 
       {/* Deux natures et non une : une liste d'achats et une liste de tâches
           issues d'un même sujet ne se fusionnent pas (§12.1). */}
@@ -327,6 +373,14 @@ export function parseDue(date: string, time: string, originalDueAt: string | nul
   if (!parsed) return { ok: false, message: "Heure attendue au format HH:MM." };
 
   return { ok: true, value: withTime(day, parsed), allDay: false };
+}
+
+/** Une tâche par ligne : les puces saisies à la main (« - », « • ») ne font pas partie du titre. */
+function itemsOf(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim().replace(/^[-•*]\s*/, ""))
+    .filter((line) => line.length > 0);
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
