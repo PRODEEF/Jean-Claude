@@ -20,6 +20,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
+- **La version s'affiche aussi sur l'écran d'accueil** (V0.00.9). Elle manquait sur la page « Bonjour, qu'est-ce qu'on fait aujourd'hui ? », qui n'a pas de bandeau : elle est maintenant en haut à droite, comme sur les autres écrans. *Où : l'accueil des conversations.* — À regarder.
 - **Conversations : « Jean-Claude réfléchit » s'affiche avec des pixels qui sautent** (V0.00.8). La roue dentée est remplacée par quatre petits carrés qui sautent l'un après l'autre, avec toujours le compteur de secondes. Immobiles si l'appareil demande de réduire les animations. *Où : toute conversation, en attendant la réponse.* — À regarder : première version, forme, vitesse et couleur à ajuster.
 - **Calendrier : l'IA comprend « sauf en février », « jusqu'à fin juin », « dix fois »** (V0.00.7). Dans une conversation, demande par exemple « un cours tous les jeudis à 18h sauf en février » : la proposition de série doit sauter février. *Où : une conversation classique avec l'IA, puis le calendrier.* — À tester avec l'IA après le déploiement (le comportement dépend du modèle).
 - **Calendrier : un rendez-vous proposé par l'IA se range dans le dossier du projet** (V0.00.6). Accepté depuis une conversation rangée, il va dans « Prendre RDV » du projet, ou à défaut dans le dossier de la conversation. *Où : Dossiers, après avoir accepté une proposition de rendez-vous.* — À tester.
