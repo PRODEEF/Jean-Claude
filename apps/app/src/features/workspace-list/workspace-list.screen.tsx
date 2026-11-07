@@ -25,12 +25,12 @@ import {
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
+import { TASK_CHECKBOX_SIZE, TASK_INDENT, TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
-import { Separator } from "@/shared/ui/separator";
 import { Text } from "@/shared/ui/text";
 import { useWorkspaceList, useWorkspaceListActions } from "./hooks/use-workspace-lists";
 import { WorkspaceListDialog, type WorkspaceListTarget } from "./WorkspaceListDialog";
@@ -41,8 +41,10 @@ type Menu = { x: number; y: number; items: ContextMenuItem[] };
 /**
  * Une liste partagée d'un espace : chacun coche, ajoute, confie une tâche.
  *
- * Plus simple qu'une todoliste personnelle — ni échéance ni sous-tâche — et
- * chaque geste n'écrit que la tâche touchée.
+ * Elle se présente comme une carte de « Mes listes » — mêmes mesures, même
+ * en-tête, mêmes lignes — et se distingue par ce qu'elle ajoute : qui s'en
+ * charge. Chaque geste n'écrit que la tâche touchée, là où « Mes listes »
+ * réécrit la liste entière : on ne peut pas écraser la saisie d'un autre membre.
  */
 export function WorkspaceListScreen() {
   const { id: workspaceId, listId } = useLocalSearchParams<{ id: string; listId: string }>();
@@ -73,24 +75,6 @@ export function WorkspaceListScreen() {
       title={list.data?.title ?? ""}
       maxWidth={READING_MAX_WIDTH}
       onBack={compact ? () => router.back() : undefined}
-      action={
-        list.data ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            onPress={(event) =>
-              setMenu({
-                x: event.nativeEvent.pageX,
-                y: event.nativeEvent.pageY,
-                items: listMenu(list.data),
-              })
-            }
-            accessibilityLabel="Actions pour la liste"
-          >
-            <Icon as={MoreHorizontal} size={18} className="text-muted-foreground" />
-          </Button>
-        ) : undefined
-      }
     >
       {list.isLoading ? <ActivityIndicator color={palette.accent} /> : null}
       {list.error ? (
@@ -103,6 +87,7 @@ export function WorkspaceListScreen() {
           list={list.data}
           workspaceId={workspaceId}
           onOpen={open}
+          onListMenu={(x, y) => setMenu({ x, y, items: listMenu(list.data) })}
           onMenu={(x, y, items) => setMenu({ x, y, items })}
           closeMenu={() => setMenu(null)}
         />
@@ -127,18 +112,21 @@ function ListBody({
   list,
   workspaceId,
   onOpen,
+  onListMenu,
   onMenu,
   closeMenu,
 }: {
   list: WorkspaceTaskList;
   workspaceId: string;
   onOpen: (target: WorkspaceListTarget) => void;
+  onListMenu: (x: number, y: number) => void;
   onMenu: (x: number, y: number, items: ContextMenuItem[]) => void;
   closeMenu: () => void;
 }) {
   const members = useWorkspaceMembers(workspaceId);
   const folders = useWorkspaceFolders(workspaceId);
   const { addTask, updateTask, removeTask, reorder } = useWorkspaceListActions(list);
+  const compact = useBreakpoint() === "compact";
   const [draft, setDraft] = useState("");
   /** Où la ligne glissée s'insérerait, `null` hors d'un glisser. */
   const [insertBefore, setInsertBefore] = useState<number | null>(null);
@@ -203,10 +191,11 @@ function ListBody({
     workspaceErrorMessage(reorder.error, "L'ordre n'a pas pu être enregistré.");
 
   return (
-    <View className="gap-4 pb-8">
-      {/* Même ligne que l'en-tête d'une liste de « Mes listes » : le type, le
-          dossier, puis l'échéance, qui se changent d'un appui. */}
-      <View className="gap-1">
+    <View className="pb-8">
+      <View className={cn("rounded-xl border border-border", compact ? "p-3" : "p-2")}>
+        {/* Même ligne que l'en-tête d'une liste de « Mes listes » : le type, le
+            dossier, puis l'échéance, qui se changent d'un appui. Le titre est
+            déjà celui de la page. */}
         <View className="flex-row items-center gap-2">
           <Icon
             as={shopping ? ShoppingBasket : ListChecks}
@@ -244,67 +233,76 @@ function ListBody({
               {due ?? "Date"}
             </Text>
           </Pressable>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            hitSlop={8}
+            onPress={(event) => onListMenu(event.nativeEvent.pageX, event.nativeEvent.pageY)}
+            accessibilityLabel="Actions pour la liste"
+            className="size-8"
+          >
+            <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
+          </Button>
         </View>
 
-        <Text className="text-sm text-muted-foreground">
+        <Text className="px-2 pt-1 text-xs text-muted-foreground">
           {list.tasks.length === 0
             ? "Aucune tâche pour l'instant."
             : `${done} sur ${list.tasks.length} faite${done > 1 ? "s" : ""}`}
         </Text>
-      </View>
 
-      <View className="overflow-hidden rounded-xl border border-border bg-card">
-        {list.tasks.map((task, index) => (
-          <View key={task.id}>
-            {index > 0 ? <Separator /> : null}
-            <TaskRow
-              task={task}
-              index={index}
-              listId={list.id}
-              draggable={draggable}
-              marked={insertBefore === index}
-              markedAfter={index === list.tasks.length - 1 && insertBefore === list.tasks.length}
-              resolveDrop={(sourceKey, targetIndex, place) =>
-                taskDropIndex(dragRows, sourceKey, targetIndex, place)
-              }
-              onHover={setInsertBefore}
-              onDrop={dropRow}
-              assignee={task.assigneeId ? (names.get(task.assigneeId) ?? "Ancien membre") : null}
-              onToggle={() => updateTask.mutate({ taskId: task.id, patch: { done: !task.done } })}
-              onRename={(title) => updateTask.mutate({ taskId: task.id, patch: { title } })}
-              child={Boolean(task.parentId)}
-              onIndent={
-                // Une tâche qui a déjà des sous-tâches ne devient pas une sous-tâche :
-                // un seul niveau.
-                !task.parentId && !hasChildren(task.id) && previousRootOf(index)
-                  ? () => {
-                      const parent = previousRootOf(index);
-                      if (parent)
-                        updateTask.mutate({ taskId: task.id, patch: { parentId: parent.id } });
-                    }
-                  : undefined
-              }
-              onOutdent={
-                task.parentId
-                  ? () => updateTask.mutate({ taskId: task.id, patch: { parentId: null } })
-                  : undefined
-              }
-              onAssign={(x, y) => onMenu(x, y, assigneeMenu(task))}
-              onRemove={() => removeTask.mutate(task.id)}
-            />
-          </View>
-        ))}
+        <View className="gap-0.5 pt-1.5">
+          {list.tasks.map((task, index) => (
+            <View key={task.id}>
+              <TaskRow
+                task={task}
+                index={index}
+                listId={list.id}
+                draggable={draggable}
+                marked={insertBefore === index}
+                markedAfter={index === list.tasks.length - 1 && insertBefore === list.tasks.length}
+                resolveDrop={(sourceKey, targetIndex, place) =>
+                  taskDropIndex(dragRows, sourceKey, targetIndex, place)
+                }
+                onHover={setInsertBefore}
+                onDrop={dropRow}
+                assignee={task.assigneeId ? (names.get(task.assigneeId) ?? "Ancien membre") : null}
+                onToggle={() => updateTask.mutate({ taskId: task.id, patch: { done: !task.done } })}
+                onRename={(title) => updateTask.mutate({ taskId: task.id, patch: { title } })}
+                child={Boolean(task.parentId)}
+                onIndent={
+                  // Une tâche qui a déjà des sous-tâches ne devient pas une sous-tâche :
+                  // un seul niveau.
+                  !task.parentId && !hasChildren(task.id) && previousRootOf(index)
+                    ? () => {
+                        const parent = previousRootOf(index);
+                        if (parent)
+                          updateTask.mutate({ taskId: task.id, patch: { parentId: parent.id } });
+                      }
+                    : undefined
+                }
+                onOutdent={
+                  task.parentId
+                    ? () => updateTask.mutate({ taskId: task.id, patch: { parentId: null } })
+                    : undefined
+                }
+                onAssign={(x, y) => onMenu(x, y, assigneeMenu(task))}
+                onRemove={() => removeTask.mutate(task.id)}
+              />
+            </View>
+          ))}
 
-        {/* Même geste que « Mes listes » : la ligne vide d'une liste est
+          {/* Même geste que « Mes listes » : la ligne vide d'une liste est
               l'endroit où l'on écrit, une case pâle et le texte « Ajouter une
               tâche » — pas un champ à part suivi d'un bouton. Entrée valide. */}
-        {list.tasks.length > 0 ? <Separator /> : null}
-        <AddTaskRow
-          value={draft}
-          onChange={setDraft}
-          onSubmit={submit}
-          disabled={addTask.isPending}
-        />
+          <AddTaskRow
+            value={draft}
+            onChange={setDraft}
+            onSubmit={submit}
+            disabled={addTask.isPending}
+          />
+        </View>
       </View>
 
       {error ? <Text className="text-sm text-destructive">{error}</Text> : null}
@@ -326,9 +324,17 @@ function AddTaskRow({
   const { palette } = useTheme();
 
   return (
-    <View className="min-h-14 flex-row items-center gap-3 px-3 py-2">
-      <View className="size-11 items-center justify-center">
-        <View className="size-5 rounded border border-border opacity-40" />
+    <View style={{ minHeight: TASK_ROW_HEIGHT }} className="flex-row items-center gap-2">
+      {/* Même largeur que la poignée des lignes : la case reste alignée. */}
+      {Platform.OS === "web" ? <View style={{ width: TASK_ROW_HEIGHT / 2 }} /> : null}
+      <View
+        style={{ minWidth: TASK_ROW_HEIGHT / 2, minHeight: TASK_ROW_HEIGHT }}
+        className="items-center justify-center"
+      >
+        <View
+          style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
+          className="rounded border border-border opacity-40"
+        />
       </View>
       <TextInput
         value={value}
@@ -400,24 +406,44 @@ function TaskRow({
     onDrop,
   });
 
+  const assignButton = (
+    <Button
+      variant="ghost"
+      onPress={(event) => onAssign(event.nativeEvent.pageX, event.nativeEvent.pageY)}
+      accessibilityLabel={
+        assignee ? `Confiée à ${assignee}. Changer de responsable` : "Confier la tâche"
+      }
+      className="h-8 gap-1.5 px-2"
+    >
+      <Icon as={UserRound} size={14} className="text-muted-foreground" />
+      <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+        {assignee ?? "Confier"}
+      </Text>
+    </Button>
+  );
+
   return (
     <View
       ref={rowRef}
-      className={cn(
-        "relative min-h-14 flex-row items-center gap-3 py-2 pr-3",
-        child ? "pl-10" : "pl-3",
-      )}
+      style={{ paddingLeft: child ? TASK_INDENT : 0, minHeight: TASK_ROW_HEIGHT }}
+      className="group relative flex-row items-center gap-2 rounded-md"
     >
       {marked ? <View className="absolute inset-x-0 top-0 h-0.5 bg-primary" /> : null}
       {markedAfter ? <View className="absolute inset-x-0 bottom-0 h-0.5 bg-primary" /> : null}
-      {draggable ? (
-        <View
-          ref={gripRef}
-          accessibilityLabel={`Déplacer ${task.title}`}
-          className="-mr-2 size-6 items-center justify-center"
-        >
-          <Icon as={GripVertical} size={14} className="text-muted-foreground" />
-        </View>
+      {Platform.OS === "web" ? (
+        draggable ? (
+          <View
+            ref={gripRef}
+            accessibilityLabel={`Déplacer ${task.title}`}
+            style={{ minWidth: TASK_ROW_HEIGHT / 2, minHeight: TASK_ROW_HEIGHT }}
+            className="items-center justify-center"
+          >
+            <Icon as={GripVertical} size={14} className="text-muted-foreground" />
+          </View>
+        ) : (
+          // Rien à déplacer, mais la ligne reste alignée sur celles de « Mes listes ».
+          <View style={{ width: TASK_ROW_HEIGHT / 2 }} />
+        )
       ) : null}
       <Pressable
         onPress={onToggle}
@@ -425,69 +451,71 @@ function TaskRow({
         accessibilityState={{ checked: task.done }}
         accessibilityLabel={task.title}
         hitSlop={8}
-        className="size-11 items-center justify-center"
+        style={{ minWidth: TASK_ROW_HEIGHT / 2, minHeight: TASK_ROW_HEIGHT }}
+        className="items-center justify-center"
       >
         <View
+          style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
           className={cn(
-            "size-5 items-center justify-center rounded border",
+            "items-center justify-center rounded border",
             task.done ? "border-primary bg-primary" : "border-border",
           )}
         >
-          {task.done ? <Icon as={Check} size={14} className="text-primary-foreground" /> : null}
+          {task.done ? <Icon as={Check} size={11} className="text-primary-foreground" /> : null}
         </View>
       </Pressable>
 
       <TaskTitle task={task} onRename={onRename} />
 
-      {/* Un appui pour mettre en retrait, ou remonter : le geste des téléphones,
-          où la touche Tab n'existe pas. */}
-      {onIndent ? (
+      {/* Qui s'en charge reste lisible sur la ligne, comme le jour d'une tâche
+          datée dans « Mes listes ». */}
+      {assignee ? assignButton : null}
+
+      {/* Les commandes ne s'affichent que sous la souris ou au clavier, comme
+          celles de la ligne active de « Mes listes » : à demeure, elles
+          feraient de la liste un formulaire. Sur téléphone il n'y a ni survol
+          ni clavier : elles restent visibles. */}
+      <View
+        className={cn(
+          "flex-row items-center",
+          Platform.select({ web: "hidden group-focus-within:flex group-hover:flex" }),
+        )}
+      >
+        {/* Un appui pour mettre en retrait, ou remonter : le geste des
+            téléphones, où la touche Tab n'existe pas. */}
+        {onIndent ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            onPress={onIndent}
+            accessibilityLabel={`Faire de ${task.title} une sous-tâche`}
+            className="size-8"
+          >
+            <Icon as={IndentIncrease} size={14} className="text-muted-foreground" />
+          </Button>
+        ) : null}
+        {onOutdent ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            onPress={onOutdent}
+            accessibilityLabel={`Remonter ${task.title} d'un niveau`}
+            className="size-8"
+          >
+            <Icon as={IndentDecrease} size={14} className="text-muted-foreground" />
+          </Button>
+        ) : null}
+        {assignee ? null : assignButton}
         <Button
           variant="ghost"
           size="icon"
-          onPress={onIndent}
-          accessibilityLabel={`Faire de ${task.title} une sous-tâche`}
+          onPress={onRemove}
+          accessibilityLabel={`Supprimer la tâche ${task.title}`}
           className="size-8"
         >
-          <Icon as={IndentIncrease} size={14} className="text-muted-foreground" />
+          <Icon as={X} size={14} className="text-muted-foreground" />
         </Button>
-      ) : null}
-      {onOutdent ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          onPress={onOutdent}
-          accessibilityLabel={`Remonter ${task.title} d'un niveau`}
-          className="size-8"
-        >
-          <Icon as={IndentDecrease} size={14} className="text-muted-foreground" />
-        </Button>
-      ) : null}
-
-      {/* Qui s'en charge : un appui pour confier la tâche à un autre membre. */}
-      <Button
-        variant="ghost"
-        onPress={(event) => onAssign(event.nativeEvent.pageX, event.nativeEvent.pageY)}
-        accessibilityLabel={
-          assignee ? `Confiée à ${assignee}. Changer de responsable` : "Confier la tâche"
-        }
-        className="h-8 gap-1.5 px-2"
-      >
-        <Icon as={UserRound} size={14} className="text-muted-foreground" />
-        <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-          {assignee ?? "Confier"}
-        </Text>
-      </Button>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        onPress={onRemove}
-        accessibilityLabel={`Supprimer la tâche ${task.title}`}
-        className="size-8"
-      >
-        <Icon as={X} size={14} className="text-muted-foreground" />
-      </Button>
+      </View>
     </View>
   );
 }
@@ -497,13 +525,7 @@ function TaskRow({
  * listes ». Entrée ou quitter le champ valide ; un titre vide ou inchangé
  * n'écrit rien.
  */
-function TaskTitle({
-  task,
-  onRename,
-}: {
-  task: WorkspaceTask;
-  onRename: (title: string) => void;
-}) {
+function TaskTitle({ task, onRename }: { task: WorkspaceTask; onRename: (title: string) => void }) {
   const { palette } = useTheme();
   const [draft, setDraft] = useState<string | null>(null);
 
