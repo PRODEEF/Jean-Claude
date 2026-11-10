@@ -397,6 +397,20 @@ export function SettingsScreen() {
           </SettingRow>
         </Section>
 
+        <Section title="Rappels">
+          <SettingRow
+            label="Me rappeler dans le canal Jean-Claude"
+            hint="À l'heure d'un rappel de rendez-vous, Jean-Claude vous écrit dans son canal permanent. Les rappels par e-mail et par notification viendront ensuite."
+          >
+            <Switch
+              value={profile?.preferences.remindInChannel ?? true}
+              onValueChange={(value) => updateProfile.mutate({ remindInChannel: value })}
+              disabled={!profile || updateProfile.isPending}
+              accessibilityLabel="Me rappeler dans le canal Jean-Claude"
+            />
+          </SettingRow>
+        </Section>
+
         <Section title="Aide">
           <ActionRow
             icon={MessageSquareText}

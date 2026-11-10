@@ -55,6 +55,10 @@ export const config = {
   // `RESEND_FROM` doit être une adresse vérifiée chez Resend.
   resendApiKey: process.env["RESEND_API_KEY"]?.trim() ?? "",
   resendFrom: process.env["RESEND_FROM"]?.trim() ?? "",
+  // ── Planificateur (rappels de rendez-vous) ───────────────────────────────
+  // Vide : la route des rappels refuse tout appel, rien ne part. Vercel l'envoie
+  // de lui-même en `Authorization: Bearer` quand cette variable existe.
+  cronSecret: process.env["CRON_SECRET"]?.trim() ?? "",
   /** Adresse publique de l'app, pour le lien dans l'e-mail d'invitation. */
   appUrl: (process.env["APP_URL"]?.trim() ?? "").replace(/\/$/, ""),
 } as const;
