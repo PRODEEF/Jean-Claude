@@ -21,7 +21,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
-- **Espaces : une liste prend l'allure d'une liste de « Mes listes »** (V0.00.11). Même carte (type, dossier, date et menu « … » dans l'en-tête), mêmes lignes resserrées sans traits de séparation, mêmes cases et même retrait. Les commandes de chaque tâche (sous-tâche, remonter, confier, supprimer) n'apparaissent que sous la souris ou au clavier, et restent visibles sur téléphone ; le responsable reste affiché quand il y en a un. *Où : une liste d'un espace (Mes collaborations).* — À regarder : première version, non vue à l'écran.
+- **Espaces : la liste d'un espace est resserrée comme « Mes listes »** (V0.00.12). Même écart sous l'en-tête et même hauteur de ligne ; la ligne « 0 sur 18 faite » est retirée, elle agrandissait la carte. *Où : une liste d'un espace (Mes collaborations).* — À regarder : dis-moi s'il reste un écart.
 
 ### Réglage fait
 
@@ -29,6 +29,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### En production
 
+- **Espaces : une liste prend l'allure d'une liste de « Mes listes »** (V0.00.11). Même carte (type, dossier, date et menu « … » dans l'en-tête), mêmes lignes resserrées sans traits de séparation, mêmes cases et même retrait. Les commandes de chaque tâche (sous-tâche, remonter, confier, supprimer) n'apparaissent que sous la souris ou au clavier, et restent visibles sur téléphone ; le responsable reste affiché quand il y en a un. *Où : une liste d'un espace (Mes collaborations).* — À regarder : première version, non vue à l'écran.
 - **Correctif : le serveur plantait au démarrage après la V0.00.9** (V0.00.10). Dossiers et conversations s'affichaient « indisponibles ». Cause : le calcul des rendez-vous récurrents, que les tests ne détectaient pas. Corrigé, remis en production le 6 novembre et revu par Yann (tout se recharge, la version s'affiche).
 - **La version s'affiche aussi sur l'écran d'accueil** (V0.00.9). Elle manquait sur la page « Bonjour, qu'est-ce qu'on fait aujourd'hui ? », qui n'a pas de bandeau : elle est maintenant en haut à droite, comme sur les autres écrans. *Où : l'accueil des conversations.* — À regarder.
 - **Conversations : « Jean-Claude réfléchit » s'affiche avec des pixels qui sautent** (V0.00.8). La roue dentée est remplacée par quatre petits carrés qui sautent l'un après l'autre, avec toujours le compteur de secondes. Immobiles si l'appareil demande de réduire les animations. *Où : toute conversation, en attendant la réponse.* — À regarder : première version, forme, vitesse et couleur à ajuster.

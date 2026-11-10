@@ -30,7 +30,7 @@ import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
-import { READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
+import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { Text } from "@/shared/ui/text";
 import { useWorkspaceList, useWorkspaceListActions } from "./hooks/use-workspace-lists";
 import { WorkspaceListDialog, type WorkspaceListTarget } from "./WorkspaceListDialog";
@@ -73,7 +73,7 @@ export function WorkspaceListScreen() {
   return (
     <ScreenShell
       title={list.data?.title ?? ""}
-      maxWidth={READING_MAX_WIDTH}
+      maxWidth={GRID_MAX_WIDTH}
       onBack={compact ? () => router.back() : undefined}
     >
       {list.isLoading ? <ActivityIndicator color={palette.accent} /> : null}
@@ -134,7 +134,6 @@ function ListBody({
     () => new Map((members.data ?? []).map((member) => [member.userId, memberName(member)])),
     [members.data],
   );
-  const done = list.tasks.filter((task) => task.done).length;
   const folderName = folderNameOf(folders.data ?? [], list.folderId);
   const due = dueLabel(list);
   const shopping = list.kind === "shopping";
@@ -246,13 +245,9 @@ function ListBody({
           </Button>
         </View>
 
-        <Text className="px-2 pt-1 text-xs text-muted-foreground">
-          {list.tasks.length === 0
-            ? "Aucune tâche pour l'instant."
-            : `${done} sur ${list.tasks.length} faite${done > 1 ? "s" : ""}`}
-        </Text>
-
-        <View className="gap-0.5 pt-1.5">
+        {/* Même écart sous l'en-tête que dans « Mes listes », et rien entre
+            les deux : pas de ligne de décompte, qui ferait la carte plus haute. */}
+        <View className={cn("gap-0.5", compact ? "pt-2" : "pt-1.5")}>
           {list.tasks.map((task, index) => (
             <View key={task.id}>
               <TaskRow
