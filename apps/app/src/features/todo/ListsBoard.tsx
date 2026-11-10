@@ -1,20 +1,17 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { Pressable, ScrollView, View } from "react-native";
-import {
-  CalendarClock,
-  ChevronDown,
-  ChevronRight,
-  Folder,
-  ListChecks,
-  MoreHorizontal,
-  ShoppingBasket,
-} from "lucide-react-native";
+import { ScrollView, View } from "react-native";
+import { ChevronDown, ChevronRight } from "lucide-react-native";
 import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
+import {
+  TaskListCardBody,
+  TaskListCardFrame,
+  TaskListCardHeader,
+} from "@/shared/ui/task-list-card";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useFolderChoices, type FolderChoice } from "@/shared/hooks/use-folder-choices";
@@ -177,95 +174,56 @@ function ListCard({
   ];
 
   return (
-    <View
-      ref={card}
-      className={`rounded-xl border ${desktop ? "p-2" : "p-3"} ${highlighted ? "border-primary" : "border-border"}`}
-    >
+    <TaskListCardFrame cardRef={card} desktop={desktop} highlighted={highlighted}>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <View className="flex-row items-center gap-2">
-          <CollapsibleTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              hitSlop={8}
-              accessibilityLabel={open ? `Replier ${list.title}` : `Déplier ${list.title}`}
-              className="size-8"
-            >
-              <Icon
-                as={open ? ChevronDown : ChevronRight}
-                size={16}
-                className="text-muted-foreground"
-              />
-            </Button>
-          </CollapsibleTrigger>
+        <TaskListCardHeader
+          title={list.title}
+          shopping={shopping}
+          folderName={folderName}
+          due={due}
+          // Le dossier se change ici parce que la liste s'y voit aussi (A.2) :
+          // c'est la même liste, pas une copie rangée ailleurs.
+          onFolderPress={(event) =>
+            setFolderMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+          }
+          // L'échéance se change d'un appui, sans passer par « Modifier la liste ».
+          onDuePress={() => setEditingDue(true)}
+          onMenuPress={(event) =>
+            setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+          }
+          menuLabel={`Actions pour ${list.title}`}
+          leading={
+            <>
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  hitSlop={8}
+                  accessibilityLabel={open ? `Replier ${list.title}` : `Déplier ${list.title}`}
+                  className="size-8"
+                >
+                  <Icon
+                    as={open ? ChevronDown : ChevronRight}
+                    size={16}
+                    className="text-muted-foreground"
+                  />
+                </Button>
+              </CollapsibleTrigger>
 
-          <Text className="shrink text-sm font-semibold" numberOfLines={1}>
-            {list.title}
-          </Text>
-          <Icon
-            as={shopping ? ShoppingBasket : ListChecks}
-            size={16}
-            className="text-muted-foreground"
-          />
-          <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
-            {shopping ? "Liste d'achats" : "Liste de tâches"}
-          </Text>
-
-          {/* Le dossier se change ici parce que la liste s'y voit aussi (A.2) :
-              c'est la même liste, pas une copie rangée ailleurs. */}
-          <Pressable
-            onPress={(event) =>
-              setFolderMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
-            }
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Dossier de ${list.title} : ${folderName ?? "aucun"}`}
-            className="min-w-0 shrink flex-row items-center gap-1 rounded-md px-1.5 py-1"
-          >
-            <Icon as={Folder} size={14} className="text-muted-foreground" />
-            <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
-              {folderName ?? "Dossier"}
-            </Text>
-          </Pressable>
-
-          <View className="min-w-0 flex-1" />
-
-          {/* L'échéance porte sur la liste entière : elle se lit en tête, pas
-              en face d'une de ses lignes, et se change d'un appui sans passer
-              par « Modifier la liste ». Sans date, l'invite reste visible :
-              c'est elle qui la rend atteignable. */}
-          <Pressable
-            onPress={() => setEditingDue(true)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Échéance de ${list.title} : ${due ?? "aucune"}`}
-            className="shrink-0 flex-row items-center gap-1 rounded-md px-1.5 py-1"
-          >
-            <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
-            <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-              {due ?? "Date"}
-            </Text>
-          </Pressable>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            hitSlop={8}
-            onPress={(event) => setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
-            accessibilityLabel={`Actions pour ${list.title}`}
-            className="size-8"
-          >
-            <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
-          </Button>
-        </View>
+              <Text className="shrink text-sm font-semibold" numberOfLines={1}>
+                {list.title}
+              </Text>
+            </>
+          }
+        />
 
         <CollapsibleContent>
           {/* La capture ne demande rien d'autre que du texte : ni date, ni
               dossier au moment où l'on écrit (§13.4.1). Le reste se pose
               ensuite, sur la liste. */}
-          <View className={desktop ? "pt-1.5" : "pt-2"}>
+          <TaskListCardBody desktop={desktop}>
             <TaskListEditor list={list} query={query} onOpenTask={onOpenTask} />
-          </View>
+          </TaskListCardBody>
         </CollapsibleContent>
       </Collapsible>
 
@@ -283,7 +241,7 @@ function ListCard({
         />
       ) : null}
       {editingDue ? <ListDueDialog list={list} onClose={() => setEditingDue(false)} /> : null}
-    </View>
+    </TaskListCardFrame>
   );
 }
 

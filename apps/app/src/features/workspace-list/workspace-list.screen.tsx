@@ -1,19 +1,7 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import {
-  CalendarClock,
-  Check,
-  Folder,
-  GripVertical,
-  ListChecks,
-  MoreHorizontal,
-  ShoppingBasket,
-  UserRound,
-  X,
-  IndentDecrease,
-  IndentIncrease,
-} from "lucide-react-native";
+import { IndentDecrease, IndentIncrease, UserRound, X } from "lucide-react-native";
 import type { FolderTreeNode, WorkspaceMember, WorkspaceTask, WorkspaceTaskList } from "@jc/domain";
 import { dueLabel } from "@/features/todo/ListsBoard";
 import { reorderTaskRows, taskDropIndex, useTaskRowDrag } from "@/features/todo/task-row-drag";
@@ -25,12 +13,21 @@ import {
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
-import { TASK_CHECKBOX_SIZE, TASK_INDENT, TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
+import { TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
+import {
+  TaskListCardBody,
+  TaskListCardFrame,
+  TaskListCardHeader,
+  TaskRowBlankCheckbox,
+  TaskRowCheckbox,
+  TaskRowGrip,
+  taskRowStyle,
+} from "@/shared/ui/task-list-card";
 import { Text } from "@/shared/ui/text";
 import { useWorkspaceList, useWorkspaceListActions } from "./hooks/use-workspace-lists";
 import { WorkspaceListDialog, type WorkspaceListTarget } from "./WorkspaceListDialog";
@@ -191,63 +188,22 @@ function ListBody({
 
   return (
     <View className="pb-8">
-      <View className={cn("rounded-xl border border-border", compact ? "p-3" : "p-2")}>
-        {/* Même ligne que l'en-tête d'une liste de « Mes listes » : le type, le
-            dossier, puis l'échéance, qui se changent d'un appui. Le titre est
-            déjà celui de la page. */}
-        <View className="flex-row items-center gap-2">
-          <Icon
-            as={shopping ? ShoppingBasket : ListChecks}
-            size={16}
-            className="text-muted-foreground"
-          />
-          <Text className="shrink text-xs text-muted-foreground" numberOfLines={1}>
-            {shopping ? "Liste d'achats" : "Liste de tâches"}
-          </Text>
-
-          <Pressable
-            onPress={() => onOpen({ kind: "folder", list })}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Dossier de ${list.title} : ${folderName ?? "aucun"}`}
-            className="min-w-0 shrink flex-row items-center gap-1 rounded-md px-1.5 py-1"
-          >
-            <Icon as={Folder} size={14} className="text-muted-foreground" />
-            <Text className="shrink text-xs text-muted-foreground" numberOfLines={1}>
-              {folderName ?? "Dossier"}
-            </Text>
-          </Pressable>
-
-          <View className="min-w-0 flex-1" />
-
-          <Pressable
-            onPress={() => onOpen({ kind: "due", list })}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Échéance de ${list.title} : ${due ?? "aucune"}`}
-            className="shrink-0 flex-row items-center gap-1 rounded-md px-1.5 py-1"
-          >
-            <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
-            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-              {due ?? "Date"}
-            </Text>
-          </Pressable>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            hitSlop={8}
-            onPress={(event) => onListMenu(event.nativeEvent.pageX, event.nativeEvent.pageY)}
-            accessibilityLabel="Actions pour la liste"
-            className="size-8"
-          >
-            <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
-          </Button>
-        </View>
+      <TaskListCardFrame desktop={!compact}>
+        {/* Le titre est déjà celui de la page : pas de repli ni de titre ici. */}
+        <TaskListCardHeader
+          title={list.title}
+          shopping={shopping}
+          folderName={folderName}
+          due={due}
+          onFolderPress={() => onOpen({ kind: "folder", list })}
+          onDuePress={() => onOpen({ kind: "due", list })}
+          onMenuPress={(event) => onListMenu(event.nativeEvent.pageX, event.nativeEvent.pageY)}
+          menuLabel="Actions pour la liste"
+        />
 
         {/* Même écart sous l'en-tête que dans « Mes listes », et rien entre
             les deux : pas de ligne de décompte, qui ferait la carte plus haute. */}
-        <View className={cn("gap-0.5", compact ? "pt-2" : "pt-1.5")}>
+        <TaskListCardBody desktop={!compact}>
           {list.tasks.map((task, index) => (
             <View key={task.id}>
               <TaskRow
@@ -297,8 +253,8 @@ function ListBody({
             onSubmit={submit}
             disabled={addTask.isPending}
           />
-        </View>
-      </View>
+        </TaskListCardBody>
+      </TaskListCardFrame>
 
       {error ? <Text className="text-sm text-destructive">{error}</Text> : null}
     </View>
@@ -321,16 +277,8 @@ function AddTaskRow({
   return (
     <View style={{ minHeight: TASK_ROW_HEIGHT }} className="flex-row items-center gap-2">
       {/* Même largeur que la poignée des lignes : la case reste alignée. */}
-      {Platform.OS === "web" ? <View style={{ width: TASK_ROW_HEIGHT / 2 }} /> : null}
-      <View
-        style={{ minWidth: TASK_ROW_HEIGHT / 2, minHeight: TASK_ROW_HEIGHT }}
-        className="items-center justify-center"
-      >
-        <View
-          style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
-          className="rounded border border-border opacity-40"
-        />
-      </View>
+      <TaskRowGrip draggable={false} gripRef={null} label="" />
+      <TaskRowBlankCheckbox />
       <TextInput
         value={value}
         onChangeText={onChange}
@@ -420,45 +368,13 @@ function TaskRow({
   return (
     <View
       ref={rowRef}
-      style={{ paddingLeft: child ? TASK_INDENT : 0, minHeight: TASK_ROW_HEIGHT }}
+      style={taskRowStyle(child ? 1 : 0)}
       className="group relative flex-row items-center gap-2 rounded-md"
     >
       {marked ? <View className="absolute inset-x-0 top-0 h-0.5 bg-primary" /> : null}
       {markedAfter ? <View className="absolute inset-x-0 bottom-0 h-0.5 bg-primary" /> : null}
-      {Platform.OS === "web" ? (
-        draggable ? (
-          <View
-            ref={gripRef}
-            accessibilityLabel={`Déplacer ${task.title}`}
-            style={{ minWidth: TASK_ROW_HEIGHT / 2, minHeight: TASK_ROW_HEIGHT }}
-            className="items-center justify-center"
-          >
-            <Icon as={GripVertical} size={14} className="text-muted-foreground" />
-          </View>
-        ) : (
-          // Rien à déplacer, mais la ligne reste alignée sur celles de « Mes listes ».
-          <View style={{ width: TASK_ROW_HEIGHT / 2 }} />
-        )
-      ) : null}
-      <Pressable
-        onPress={onToggle}
-        role="checkbox"
-        accessibilityState={{ checked: task.done }}
-        accessibilityLabel={task.title}
-        hitSlop={8}
-        style={{ minWidth: TASK_ROW_HEIGHT / 2, minHeight: TASK_ROW_HEIGHT }}
-        className="items-center justify-center"
-      >
-        <View
-          style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
-          className={cn(
-            "items-center justify-center rounded border",
-            task.done ? "border-primary bg-primary" : "border-border",
-          )}
-        >
-          {task.done ? <Icon as={Check} size={11} className="text-primary-foreground" /> : null}
-        </View>
-      </Pressable>
+      <TaskRowGrip draggable={draggable} gripRef={gripRef} label={`Déplacer ${task.title}`} />
+      <TaskRowCheckbox done={task.done} label={task.title} onPress={onToggle} />
 
       <TaskTitle task={task} onRename={onRename} />
 
