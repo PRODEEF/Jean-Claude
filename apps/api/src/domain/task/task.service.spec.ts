@@ -129,6 +129,7 @@ function makeProfile(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       theme: "system",
       flatBanner: false,
       dayPartBounds: { afternoonFrom: 12, eveningFrom: 19 },
+      remindInChannel: true,
       timezone: "Europe/Paris",
       llmModel: null,
       scope: {

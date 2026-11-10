@@ -18,6 +18,7 @@ type ProfileRow = {
   flat_banner: boolean;
   day_part_afternoon_from: number;
   day_part_evening_from: number;
+  remind_in_channel: boolean;
   created_at: string;
   /**
    * Ligne de `admins` embarquée par PostgREST : un objet quand elle existe,
@@ -50,6 +51,7 @@ function toEntity(row: ProfileRow): ProfileRecord {
       llmModel: toAssistantModel(row.llm_model),
       scope: row.assistant_scope,
       flatBanner: row.flat_banner,
+      remindInChannel: row.remind_in_channel,
       dayPartBounds: {
         afternoonFrom: row.day_part_afternoon_from,
         eveningFrom: row.day_part_evening_from,
@@ -62,7 +64,7 @@ function toEntity(row: ProfileRow): ProfileRecord {
 }
 
 const COLUMNS =
-  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, day_part_afternoon_from, day_part_evening_from, created_at, admins(user_id)";
+  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, day_part_afternoon_from, day_part_evening_from, remind_in_channel, created_at, admins(user_id)";
 
 export const userRepository: IUserRepository = {
   async findById(userId, accessToken) {
@@ -92,6 +94,7 @@ export const userRepository: IUserRepository = {
     // entier, ce qui est la sémantique attendue ici.
     if (patch.scope !== undefined) payload["assistant_scope"] = patch.scope;
     if (patch.flatBanner !== undefined) payload["flat_banner"] = patch.flatBanner;
+    if (patch.remindInChannel !== undefined) payload["remind_in_channel"] = patch.remindInChannel;
     if (patch.dayPartBounds !== undefined) {
       payload["day_part_afternoon_from"] = patch.dayPartBounds.afternoonFrom;
       payload["day_part_evening_from"] = patch.dayPartBounds.eveningFrom;

@@ -23,6 +23,7 @@ function makeRecord(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       llmModel: null,
       flatBanner: false,
       dayPartBounds: { afternoonFrom: 12, eveningFrom: 19 },
+      remindInChannel: true,
       scope: {
         morningReminders: true,
         folderOrganization: true,
