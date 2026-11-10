@@ -7,17 +7,18 @@ import {
   type NativeSyntheticEvent,
   type TextInputKeyPressEventData,
 } from "react-native";
-import { Check, ChevronsLeft, ChevronsRight, GripVertical, NotebookPen } from "lucide-react-native";
+import { ChevronsLeft, ChevronsRight, NotebookPen } from "lucide-react-native";
 import type { Task, TaskListWithTasks } from "@jc/domain";
 import { dateOfCalendarDay } from "@jc/domain";
 import { formatDayLabel, formatFullDay } from "@/shared/lib/dates";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
-import { TASK_CHECKBOX_SIZE, TASK_INDENT, TASK_ROW_HEIGHT, titleMatchesQuery } from "@/shared/lib/tasks";
+import { TASK_ROW_HEIGHT, titleMatchesQuery } from "@/shared/lib/tasks";
 import { useReplaceTasks, useTaskActions } from "@/shared/hooks/use-task-lists";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { TaskRowCheckbox, TaskRowGrip, taskRowStyle } from "@/shared/ui/task-list-card";
 import { reorderTaskRows, taskDropIndex, useTaskRowDrag } from "./task-row-drag";
 
 /** Délai avant d'enregistrer une frappe. Un mot se tape plus vite que ça. */
@@ -541,11 +542,7 @@ function EditorRow({
   onIndent: () => void;
   onOpenTask: (task: Task) => void;
   registerInput: (instance: TextInput | null) => void;
-  resolveDrop: (
-    sourceKey: string,
-    targetIndex: number,
-    place: "before" | "after",
-  ) => number | null;
+  resolveDrop: (sourceKey: string, targetIndex: number, place: "before" | "after") => number | null;
   onHover: (insertBefore: number | null) => void;
   onDrop: (sourceKey: string, insertBefore: number) => void;
 }) {
@@ -565,46 +562,22 @@ function EditorRow({
   return (
     <View
       ref={rowRef}
-      style={{ paddingLeft: row.depth * TASK_INDENT, minHeight: TASK_ROW_HEIGHT }}
+      style={taskRowStyle(row.depth)}
       className={`relative flex-row items-center gap-2 rounded-md ${matched ? "bg-accent-soft" : ""}`}
     >
       {marked ? <View className="bg-primary absolute inset-x-0 top-0 h-0.5" /> : null}
-      {Platform.OS === "web" ? (
-        draggable ? (
-          <View
-            ref={gripRef}
-            accessibilityLabel={`Déplacer ${row.title || "cette ligne"}`}
-            style={{ minWidth: TASK_ROW_HEIGHT / 2, minHeight: TASK_ROW_HEIGHT }}
-            className="items-center justify-center"
-          >
-            <Icon as={GripVertical} size={14} className="text-muted-foreground" />
-          </View>
-        ) : (
-          // Même largeur que la poignée : la ligne vierge du bas reste alignée
-          // sur le texte des tâches, elle n'a simplement rien à déplacer.
-          <View style={{ width: TASK_ROW_HEIGHT / 2 }} />
-        )
-      ) : null}
+      <TaskRowGrip
+        draggable={draggable}
+        gripRef={gripRef}
+        label={`Déplacer ${row.title || "cette ligne"}`}
+      />
 
-      <Pressable
+      <TaskRowCheckbox
+        done={row.done}
+        pending={!row.id}
+        label={row.done ? `Décocher ${row.title}` : `Cocher ${row.title}`}
         onPress={onToggle}
-        disabled={!row.id}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: row.done, disabled: !row.id }}
-        accessibilityLabel={row.done ? `Décocher ${row.title}` : `Cocher ${row.title}`}
-        hitSlop={8}
-        style={{ minWidth: TASK_ROW_HEIGHT / 2, minHeight: TASK_ROW_HEIGHT }}
-        className="items-center justify-center"
-      >
-        <View
-          style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
-          className={`items-center justify-center rounded border ${
-            row.done ? "border-primary bg-primary" : "border-border"
-          } ${row.id ? "" : "opacity-40"}`}
-        >
-          {row.done ? <Icon as={Check} size={11} className="text-primary-foreground" /> : null}
-        </View>
-      </Pressable>
+      />
 
       <TextInput
         ref={registerInput}
@@ -841,8 +814,7 @@ function payloadSignature(items: { id?: string; title: string; depth: number }[]
 function stateSignature(tasks: Task[]): string {
   return tasks
     .map(
-      (task) =>
-        `${task.id}#${task.title}#${task.parentId === null ? 0 : 1}#${task.done ? 1 : 0}`,
+      (task) => `${task.id}#${task.title}#${task.parentId === null ? 0 : 1}#${task.done ? 1 : 0}`,
     )
     .join("|");
 }
