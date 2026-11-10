@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, TextInput, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { Plus, Search, X } from "lucide-react-native";
+import { ChevronsDownUp, ChevronsUpDown, Plus, Search, X } from "lucide-react-native";
 import type { Task, TaskList } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
@@ -13,7 +13,7 @@ import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { Text } from "@/shared/ui/text";
 import { FolderFilterBar } from "./FolderFilterBar";
-import { ListsBoard } from "./ListsBoard";
+import { ListsBoard, type FoldCommand } from "./ListsBoard";
 import { TaskDialog } from "./TaskDialog";
 import { TaskListDeleteDialog } from "./TaskListDeleteDialog";
 import { TaskListDialog, type TaskListTarget } from "./TaskListDialog";
@@ -76,6 +76,23 @@ export function TodoScreen() {
   // La loupe ferme sur elle-même : rouvrir un champ déjà ouvert le viderait,
   // et ce que l'utilisateur cherche à faire en le rappuyant, c'est sortir de
   // la recherche.
+  /** Dernier ordre « tout replier / tout déplier » : le bouton propose l'inverse. */
+  const [fold, setFold] = useState<FoldCommand | undefined>(undefined);
+  const allFolded = fold?.open === false;
+
+  const foldButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      style={{ minWidth: MIN_TOUCH_TARGET, minHeight: MIN_TOUCH_TARGET }}
+      onPress={() => setFold({ open: allFolded, version: (fold?.version ?? 0) + 1 })}
+      accessibilityRole="button"
+      accessibilityLabel={allFolded ? "Tout déplier" : "Tout replier"}
+    >
+      <Icon as={allFolded ? ChevronsUpDown : ChevronsDownUp} className="size-4" />
+    </Button>
+  );
+
   const searchButton = (
     <Button
       variant="ghost"
@@ -125,6 +142,7 @@ export function TodoScreen() {
             onChange={setFolderId}
           />
         </View>
+        {foldButton}
         {searchButton}
       </View>
 
@@ -159,6 +177,7 @@ export function TodoScreen() {
           lists={visibleLists}
           {...(openedList ? { highlightedId: openedList, scrollRef: scroll } : {})}
           query={query}
+          {...(fold ? { fold } : {})}
           onEditList={(list: TaskList) => setListTarget({ mode: "edit", list })}
           onDeleteList={setDeletingList}
           onOpenTask={setOpenedTask}

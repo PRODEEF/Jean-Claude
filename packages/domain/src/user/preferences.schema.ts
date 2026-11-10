@@ -249,6 +249,12 @@ export const userPreferencesSchema = z.object({
   flatBanner: z.boolean().default(true),
   /** Heures où l'après-midi et le soir commencent : le matin, le reste de la journée en découle. */
   dayPartBounds: dayPartBoundsSchema.default(DEFAULT_DAY_PART_BOUNDS),
+  /**
+   * Jean-Claude écrit dans son canal à l'heure d'un rappel. Vrai par défaut : un
+   * rappel n'existe que si l'utilisateur en a demandé un. L'e-mail et la
+   * notification viendront en réglages à part.
+   */
+  remindInChannel: z.boolean().default(true),
 });
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
@@ -319,6 +325,8 @@ export const updateUserProfileSchema = z
     flatBanner: z.boolean(),
     /** Toujours les deux bornes ensemble : le client les envoie telles qu'il les affiche. */
     dayPartBounds: dayPartBoundsSchema,
+    /** Un rappel de rendez-vous arrive, ou non, dans le canal Jean-Claude. */
+    remindInChannel: z.boolean(),
   })
   .partial();
 
