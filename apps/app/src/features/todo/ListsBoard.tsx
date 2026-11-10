@@ -19,6 +19,14 @@ import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { ListDueDialog } from "./ListDueDialog";
 import { TaskListEditor } from "./TaskListEditor";
 
+/**
+ * Ordre donné à toutes les cartes d'un coup : replier ou déplier.
+ *
+ * `version` change à chaque ordre, même répété : sans lui, replier deux fois de
+ * suite après avoir rouvert une carte à la main ne ferait rien la seconde fois.
+ */
+export type FoldCommand = { open: boolean; version: number };
+
 export type ListsBoardProps = {
   lists: TaskListWithTasks[];
   /** Liste ouverte depuis la barre latérale : mise en avant à l'arrivée. */
@@ -27,6 +35,8 @@ export type ListsBoardProps = {
   scrollRef?: RefObject<ScrollView | null>;
   /** Recherche en cours, transmise aux lignes pour les mettre en avant. */
   query: string;
+  /** Dernier ordre « tout replier / tout déplier ». */
+  fold?: FoldCommand;
   onEditList: (list: TaskList) => void;
   onDeleteList: (list: TaskList) => void;
   onOpenTask: (task: Task) => void;
@@ -44,6 +54,7 @@ export function ListsBoard({
   highlightedId,
   scrollRef,
   query,
+  fold,
   onEditList,
   onDeleteList,
   onOpenTask,
@@ -74,6 +85,7 @@ export function ListsBoard({
           desktop={desktop}
           {...(scrollRef ? { scrollRef } : {})}
           query={query}
+          {...(fold ? { fold } : {})}
           onEdit={() => onEditList(list)}
           onDelete={() => onDeleteList(list)}
           onOpenTask={onOpenTask}
@@ -93,6 +105,7 @@ function ListCard({
   desktop,
   scrollRef,
   query,
+  fold,
   onEdit,
   onDelete,
   onOpenTask,
@@ -103,12 +116,19 @@ function ListCard({
   desktop: boolean;
   scrollRef?: RefObject<ScrollView | null>;
   query: string;
+  fold?: FoldCommand;
   onEdit: () => void;
   onDelete: () => void;
   onOpenTask: (task: Task) => void;
 }) {
   /** Dépliée par défaut : une liste repliée d'office se ferait oublier. */
   const [open, setOpen] = useState(true);
+
+  // Suit l'ordre global, y compris pour une carte apparue après lui (filtre,
+  // nouvelle liste) : elle se range avec les autres.
+  useEffect(() => {
+    if (fold) setOpen(fold.open);
+  }, [fold]);
   /** Point d'ouverture du menu, `null` s'il est fermé. */
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   /** Point d'ouverture du choix de dossier, `null` s'il est fermé. */
