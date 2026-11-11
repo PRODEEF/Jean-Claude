@@ -309,6 +309,25 @@ export function openTaskCount(list: TaskListWithTasks): number {
 }
 
 /**
+ * Ce que les todolistes d'un jour disent de sa charge : combien de tâches
+ * restent, et si tout ce qu'il y avait à faire est fait.
+ *
+ * `allDone` n'est vrai que s'il y avait des tâches et qu'aucune ne reste : un
+ * jour sans tâche n'est pas « fait », il est vide. C'est ce qui permet au
+ * calendrier de montrer une liste cochée comme cochée plutôt que de la faire
+ * disparaître.
+ */
+export function dayTaskState(
+  lists: TaskListWithTasks[],
+  day: Date,
+): { open: number; allDone: boolean } {
+  const ofDay = listsOfDay(lists, day);
+  const open = ofDay.reduce((count, list) => count + openTaskCount(list), 0);
+  const total = ofDay.reduce((count, list) => count + list.tasks.length, 0);
+  return { open, allDone: total > 0 && open === 0 };
+}
+
+/**
  * Ordre d'affichage d'une journée : les plus tôt d'abord.
  *
  * Comparaison de chaînes et non de dates : deux horodatages ISO du même fuseau

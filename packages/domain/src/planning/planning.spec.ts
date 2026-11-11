@@ -15,6 +15,7 @@ import {
   dueForSlot,
   momentOf,
   momentsOfDay,
+  dayTaskState,
   openTaskCount,
   todoDays,
 } from "./planning";
@@ -581,3 +582,36 @@ function task(id: string): Task {
     updatedAt: localIso(2026, 9, 1),
   };
 }
+
+describe("dayTaskState", () => {
+  const dueDay = localIso(2026, 9, 12, 9);
+  const withTasks = (done: boolean[]) =>
+    makeList({
+      dueAt: dueDay,
+      dueAllDay: false,
+      tasks: done.map((isDone, index) => ({ ...task(`t${index}`), done: isDone })),
+    });
+
+  it("compte les tâches restantes d'un jour", () => {
+    expect(dayTaskState([withTasks([true, false, false])], DAY)).toEqual({
+      open: 2,
+      allDone: false,
+    });
+  });
+
+  it("dit que tout est fait quand toutes les tâches du jour sont cochées", () => {
+    expect(dayTaskState([withTasks([true, true])], DAY)).toEqual({ open: 0, allDone: true });
+  });
+
+  it("ne dit pas « fait » d'un jour qui n'a aucune tâche", () => {
+    expect(dayTaskState([], DAY)).toEqual({ open: 0, allDone: false });
+    expect(dayTaskState([withTasks([])], DAY)).toEqual({ open: 0, allDone: false });
+  });
+
+  it("garde le décompte quand une liste est finie et une autre non", () => {
+    expect(dayTaskState([withTasks([true, true]), withTasks([false])], DAY)).toEqual({
+      open: 1,
+      allDone: false,
+    });
+  });
+});

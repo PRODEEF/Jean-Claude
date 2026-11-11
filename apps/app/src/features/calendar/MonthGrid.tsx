@@ -1,7 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { ListChecks, Users } from "lucide-react-native";
+import { Check, ListChecks, Users } from "lucide-react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
-import { eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
+import { dayTaskState, eventsOfDay } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { formatTime, isSameDay, WEEKDAY_LABELS } from "@/shared/lib/dates";
@@ -73,13 +73,11 @@ export function MonthGrid({
           const isToday = isSameDay(day, today);
           const selected = isSameDay(day, selectedDay);
           const dayEvents = eventsOfDay(events, day);
-          // Ce qui reste à faire, pas ce qui a été fait : une journée entièrement
-          // cochée ne doit plus se signaler comme chargée.
-          const dayTasks = listsOfDay(lists, day).reduce(
-            (count, list) => count + openTaskCount(list),
-            0,
-          );
-          const { shown, hidden } = fitEvents(dayEvents, dayTasks > 0);
+          // Ce qui reste à faire ne charge plus la journée une fois coché, mais
+          // la journée ne disparaît pas pour autant : elle se montre « faite ».
+          const { open: dayTasks, allDone: dayDone } = dayTaskState(lists, day);
+          const hasTaskBadge = dayTasks > 0 || dayDone;
+          const { shown, hidden } = fitEvents(dayEvents, hasTaskBadge);
 
           return (
             <View
@@ -121,7 +119,7 @@ export function MonthGrid({
                   {dayEvents.slice(0, MAX_LINES_PER_CELL).map((event) => (
                     <View key={event.id} className="bg-primary h-1.5 w-1.5 rounded-full" />
                   ))}
-                  {dayTasks > 0 ? <TaskBadge count={dayTasks} compact /> : null}
+                  {hasTaskBadge ? <TaskBadge count={dayTasks} done={dayDone} compact /> : null}
                 </View>
               ) : (
                 // `box-none` et non `none` : la colonne elle-même laisse
@@ -130,9 +128,10 @@ export function MonthGrid({
                 <View className="gap-0.5" style={{ pointerEvents: "box-none" }}>
                   {/* Avant les rendez-vous : au-delà de trois lignes la cellule
                       déborde, et la charge de la journée doit rester visible. */}
-                  {dayTasks > 0 ? (
+                  {hasTaskBadge ? (
                     <TaskBadge
                       count={dayTasks}
+                      done={dayDone}
                       {...(onOpenDayTasks ? { onPress: () => onOpenDayTasks(day) } : {})}
                     />
                   ) : null}
@@ -198,26 +197,29 @@ function fitEvents(
  */
 function TaskBadge({
   count,
+  done = false,
   compact,
   onPress,
 }: {
   count: number;
+  /** Tout est coché : le repère reste, sous sa forme « fait ». */
+  done?: boolean;
   compact?: boolean;
   onPress?: () => void;
 }) {
   if (compact) {
     return (
       <View className="flex-row items-center gap-0.5" style={{ pointerEvents: "none" }}>
-        <Icon as={ListChecks} size={10} className="text-muted-foreground" />
-        <Text className="text-muted-foreground text-[10px]">{count}</Text>
+        <Icon as={done ? Check : ListChecks} size={10} className="text-muted-foreground" />
+        {done ? null : <Text className="text-muted-foreground text-[10px]">{count}</Text>}
       </View>
     );
   }
 
-  const label = count === 1 ? "1 tâche" : `${count} tâches`;
+  const label = done ? "Tout est fait" : count === 1 ? "1 tâche" : `${count} tâches`;
   const content = (
     <>
-      <Icon as={ListChecks} size={10} className="text-muted-foreground" />
+      <Icon as={done ? Check : ListChecks} size={10} className="text-muted-foreground" />
       <Text className="text-muted-foreground text-[11px] leading-4">{label}</Text>
     </>
   );
@@ -228,7 +230,7 @@ function TaskBadge({
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={`Voir les ${label}`}
+        accessibilityLabel={done ? "Voir les tâches faites" : `Voir les ${label}`}
         className="border-border flex-row items-center gap-1 rounded border px-1 py-0.5"
       >
         {content}
