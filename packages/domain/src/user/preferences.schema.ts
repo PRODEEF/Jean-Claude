@@ -251,10 +251,11 @@ export const userPreferencesSchema = z.object({
   dayPartBounds: dayPartBoundsSchema.default(DEFAULT_DAY_PART_BOUNDS),
   /**
    * Jean-Claude écrit dans son canal à l'heure d'un rappel. Vrai par défaut : un
-   * rappel n'existe que si l'utilisateur en a demandé un. L'e-mail et la
-   * notification viendront en réglages à part.
+   * rappel n'existe que si l'utilisateur en a demandé un.
    */
   remindInChannel: z.boolean().default(true),
+  /** Un e-mail à l'heure d'un rappel, en plus du canal. La notification viendra à part. */
+  remindByEmail: z.boolean().default(true),
 });
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
@@ -327,6 +328,8 @@ export const updateUserProfileSchema = z
     dayPartBounds: dayPartBoundsSchema,
     /** Un rappel de rendez-vous arrive, ou non, dans le canal Jean-Claude. */
     remindInChannel: z.boolean(),
+    /** Un rappel de rendez-vous arrive, ou non, par e-mail. */
+    remindByEmail: z.boolean(),
   })
   .partial();
 

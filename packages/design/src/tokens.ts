@@ -57,6 +57,11 @@ export type Palette = {
   surfaceElevated: string;
   border: string;
   text: string;
+  /**
+   * Le texte noir en semi-gras : un cran moins dur que `text`, qui l'écrase
+   * à cette graisse. Identique à `text` en thème sombre, où il n'y a pas de noir.
+   */
+  textStrong: string;
   textMuted: string;
   /** Couleur de l'assistant — surchargée par la préférence utilisateur. */
   accent: string;
@@ -81,6 +86,7 @@ export const lightPalette: Palette = {
   surfaceElevated: "#FFFFFF",
   border: "#E4E4E7",
   text: "#18181B",
+  textStrong: "#2C2C2B",
   textMuted: "#71717A",
   accent: "#107FEA",
   accentText: "#FFFFFF",
@@ -96,6 +102,7 @@ export const darkPalette: Palette = {
   surfaceElevated: "#1F1F26",
   border: "#2A2A33",
   text: "#FAFAFA",
+  textStrong: "#FAFAFA",
   textMuted: "#A1A1AA",
   accent: "#818CF8",
   accentText: "#0B0B0F",

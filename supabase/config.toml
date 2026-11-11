@@ -59,7 +59,7 @@ enable_confirmations = true
 
 # Longueur du code. À garder alignée sur `OTP_CODE_LENGTH` dans
 # `packages/domain/src/auth/auth.schema.ts`.
-otp_length = 8
+otp_length = 6
 
 # 15 minutes. Assez long pour absorber un e-mail lent, assez court pour qu'un
 # code intercepté ne serve pas le lendemain — le produit traite des données de

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronLeft, ChevronRight, ListPlus, Plus } from "lucide-react-native";
@@ -13,6 +13,7 @@ import {
 } from "@jc/domain";
 import { spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useDetailPane } from "@/shared/providers/detail-pane";
 import { useTaskActions, useTaskLists } from "@/shared/hooks/use-task-lists";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell, contentColumn } from "@/shared/ui/screen-shell";
@@ -34,6 +35,7 @@ import {
   addMonths,
   addYears,
   dayLabel,
+  isSameDay,
   monthGrid,
   monthLabel,
   startOfDay,
@@ -63,7 +65,7 @@ function rangeOf(days: Date[]): CalendarRange {
  * elles demandent quatre fenêtres à la même. Changer de vue ou de période ne
  * fait donc que déplacer les bornes, et le mois déjà consulté revient du
  * cache. Todo s'y ajoute comme cinquième lecture, sans grille : les
- * todolistes du mois, sans les rendez-vous.
+ * todolistes du mois, et les rendez-vous rangés dans le moment de leur heure.
  *
  * Le bandeau de vue reste hors du défilement. Hors Todo, c'est l'intérieur de
  * la grille qui défile — les jours ou les heures — et non la page : le haut
@@ -81,6 +83,13 @@ export function CalendarScreen() {
   const [eventDetail, setEventDetail] = useState<CalendarEntry | null>(null);
   /** Détail d'une todoliste échue, au clic depuis l'agenda du jour. */
   const [listDetail, setListDetail] = useState<TaskListWithTasks | null>(null);
+  const pane = useDetailPane();
+  // Le volet de droite quand il existe, la fenêtre de détail sinon (téléphone).
+  const showList = (list: TaskListWithTasks) =>
+    pane.available ? pane.open({ kind: "list", listId: list.id }) : setListDetail(list);
+  // Ce que le volet montre appartient au calendrier : il se ferme avec lui.
+  const closePane = pane.close;
+  useEffect(() => closePane, [closePane]);
   const router = useRouter();
   const scroll = useRef<ScrollView>(null);
 
@@ -107,10 +116,15 @@ export function CalendarScreen() {
     () => listsWithoutVisibleEvent(allLists ?? [], new Set(events.map((event) => event.id))),
     [allLists, events],
   );
-  // Vue Todo : elle ne montre aucun rendez-vous, seulement les listes — une
-  // liste dont le créneau a été posé n'a donc nulle part ailleurs où
-  // apparaître ici, contrairement aux autres vues.
+  // Vue Todo : les listes datées, toutes — une liste dont le créneau a été
+  // posé n'est pas écartée ici, contrairement aux autres vues — plus les
+  // rendez-vous qui ne sont pas ceux d'une liste.
   const allDatedLists = useMemo(() => datedLists(allLists ?? []), [allLists]);
+  // Les rendez-vous que porte une todoliste s'affichent déjà avec elle.
+  const standaloneEvents = useMemo(() => {
+    const linked = new Set((allLists ?? []).map((list) => list.eventId));
+    return events.filter((event) => !linked.has(event.id));
+  }, [allLists, events]);
 
   /**
    * Affichés par défaut (demande de Yann) : chaque jour porte la trame
@@ -131,8 +145,13 @@ export function CalendarScreen() {
     [days, anchor],
   );
   const monthListDays = useMemo(
-    () => monthDays.filter((day) => listsOfDay(allDatedLists, day).length > 0),
-    [monthDays, allDatedLists],
+    () =>
+      monthDays.filter(
+        (day) =>
+          listsOfDay(allDatedLists, day).length > 0 ||
+          standaloneEvents.some((event) => isSameDay(new Date(event.startsAt), day)),
+      ),
+    [monthDays, allDatedLists, standaloneEvents],
   );
 
   // La sélection suit la période affichée : sans cela, la liste du jour
@@ -171,7 +190,7 @@ export function CalendarScreen() {
   const openEvent = (event: CalendarEntry) => {
     const linkedList = allLists?.find((list) => list.eventId === event.id);
     if (linkedList) {
-      setListDetail(linkedList);
+      showList(linkedList);
       return;
     }
     setEventDetail(event);
@@ -284,11 +303,13 @@ export function CalendarScreen() {
           </View>
 
           {hideEmptyDays && monthListDays.length === 0 ? (
-            <Text className="text-muted-foreground text-sm">Aucune todoliste sur cette période.</Text>
+            <Text className="text-muted-foreground text-sm">Rien de prévu sur cette période.</Text>
           ) : (
             <DueListsBoard
               days={hideEmptyDays ? monthListDays : monthDays}
               lists={allDatedLists}
+              events={standaloneEvents}
+              onOpenEvent={openEvent}
             />
           )}
 
@@ -339,6 +360,9 @@ export function CalendarScreen() {
               selectedDay={selectedDay}
               onSelectDay={selectDay}
               onOpenEvent={openEvent}
+              {...(pane.available
+                ? { onOpenDayTasks: (day: Date) => pane.open({ kind: "day", day }) }
+                : {})}
               compact={compact}
             />
           ) : null}
@@ -363,7 +387,7 @@ export function CalendarScreen() {
               events={events}
               lists={dueLists}
               onOpenEvent={openEvent}
-              onOpenList={setListDetail}
+              onOpenList={showList}
               onCreateAt={createAt}
               onMoveList={moveList}
             />

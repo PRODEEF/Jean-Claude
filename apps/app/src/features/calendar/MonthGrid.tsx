@@ -17,6 +17,11 @@ export type MonthGridProps = {
   selectedDay: Date;
   onSelectDay: (day: Date) => void;
   onOpenEvent: (event: CalendarEntry) => void;
+  /**
+   * Ouvre les tâches d'un jour. Absent quand le volet de droite n'existe pas
+   * (téléphone) : le repère « N tâches » reste alors un simple repère.
+   */
+  onOpenDayTasks?: (day: Date) => void;
   /** En deçà du point de rupture : pastilles au lieu des titres. */
   compact: boolean;
 };
@@ -41,6 +46,7 @@ export function MonthGrid({
   selectedDay,
   onSelectDay,
   onOpenEvent,
+  onOpenDayTasks,
   compact,
 }: MonthGridProps) {
   const today = new Date();
@@ -124,7 +130,12 @@ export function MonthGrid({
                 <View className="gap-0.5" style={{ pointerEvents: "box-none" }}>
                   {/* Avant les rendez-vous : au-delà de trois lignes la cellule
                       déborde, et la charge de la journée doit rester visible. */}
-                  {dayTasks > 0 ? <TaskBadge count={dayTasks} /> : null}
+                  {dayTasks > 0 ? (
+                    <TaskBadge
+                      count={dayTasks}
+                      {...(onOpenDayTasks ? { onPress: () => onOpenDayTasks(day) } : {})}
+                    />
+                  ) : null}
                   {shown.map((event) => (
                     <Pressable
                       key={event.id}
@@ -185,7 +196,15 @@ function fitEvents(
  * rendez-vous, et c'est la charge de la journée qu'on lit d'un coup d'œil dans
  * une grille mensuelle.
  */
-function TaskBadge({ count, compact }: { count: number; compact?: boolean }) {
+function TaskBadge({
+  count,
+  compact,
+  onPress,
+}: {
+  count: number;
+  compact?: boolean;
+  onPress?: () => void;
+}) {
   if (compact) {
     return (
       <View className="flex-row items-center gap-0.5" style={{ pointerEvents: "none" }}>
@@ -195,15 +214,34 @@ function TaskBadge({ count, compact }: { count: number; compact?: boolean }) {
     );
   }
 
+  const label = count === 1 ? "1 tâche" : `${count} tâches`;
+  const content = (
+    <>
+      <Icon as={ListChecks} size={10} className="text-muted-foreground" />
+      <Text className="text-muted-foreground text-[11px] leading-4">{label}</Text>
+    </>
+  );
+
+  // Cliquable seulement quand il y a un volet où montrer ces tâches.
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`Voir les ${label}`}
+        className="border-border flex-row items-center gap-1 rounded border px-1 py-0.5"
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
   return (
     <View
       className="border-border flex-row items-center gap-1 rounded border px-1 py-0.5"
       style={{ pointerEvents: "none" }}
     >
-      <Icon as={ListChecks} size={10} className="text-muted-foreground" />
-      <Text className="text-muted-foreground text-[11px] leading-4">
-        {count === 1 ? "1 tâche" : `${count} tâches`}
-      </Text>
+      {content}
     </View>
   );
 }

@@ -15,7 +15,7 @@ import { z } from "zod";
  * À garder alignée sur `otp_length` dans `supabase/config.toml` : c'est
  * Supabase qui génère le code, cette constante ne fait que le décrire.
  */
-export const OTP_CODE_LENGTH = 8;
+export const OTP_CODE_LENGTH = 6;
 
 /**
  * Délai avant qu'un nouveau code puisse être demandé.

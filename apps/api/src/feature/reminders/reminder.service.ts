@@ -1,6 +1,6 @@
 import { logger } from "../../core/logger.js";
 import { reminderMessage } from "./reminder-message.js";
-import type { IReminderRepository } from "./reminder.repository.interface.js";
+import type { IReminderRepository, ReminderChannel } from "./reminder.repository.interface.js";
 import { MAX_LEAD_MS, dueReminders } from "./reminder-schedule.js";
 
 const SCOPE = "reminders";
@@ -13,15 +13,22 @@ const WINDOW_MS = 15 * 60_000;
 
 export type ReminderRun = { sent: number; failed: number };
 
+/** Envoi d'un e-mail de rappel : injecté, pour que le service se teste sans réseau. */
+export type ReminderMailer = (mail: { to: string; message: string }) => Promise<void>;
+
 /**
  * Envoie les rappels de rendez-vous arrivés à l'heure (A.11).
  *
  * Appelé par le planificateur, jamais par un utilisateur. Un rappel qui échoue
  * ne retient pas les autres, et se retente au passage suivant tant qu'il reste
- * dans la fenêtre.
+ * dans la fenêtre. Chaque canal (message dans le canal Jean-Claude, e-mail) se
+ * réserve et se retente séparément : l'échec de l'un ne rejoue pas l'autre.
  */
 export class ReminderService {
-  constructor(private readonly reminders: IReminderRepository) {}
+  constructor(
+    private readonly reminders: IReminderRepository,
+    private readonly sendEmail: ReminderMailer,
+  ) {}
 
   async run(now: Date = new Date()): Promise<ReminderRun> {
     const events = await this.reminders.findRemindable(
@@ -37,42 +44,63 @@ export class ReminderService {
       ),
     );
 
-    let sent = 0;
-    let failed = 0;
+    const run: ReminderRun = { sent: 0, failed: 0 };
 
     for (const { event, occurrenceAt } of due) {
       const recipient = recipients.get(event.userId);
-      if (!recipient?.remindInChannel) continue;
-      if (!(await this.reminders.claim(event.id, occurrenceAt))) continue;
+      if (!recipient) continue;
 
-      try {
-        await this.reminders.postInChannel(
-          event.userId,
-          reminderMessage({
-            title: event.title,
-            startsAt: occurrenceAt,
-            allDay: event.allDay,
-            reminderMinutesBefore: event.reminderMinutesBefore ?? 0,
-            timezone: recipient.timezone,
-          }),
+      const message = reminderMessage({
+        title: event.title,
+        startsAt: occurrenceAt,
+        allDay: event.allDay,
+        reminderMinutesBefore: event.reminderMinutesBefore ?? 0,
+        timezone: recipient.timezone,
+      });
+
+      if (recipient.remindInChannel) {
+        await this.deliver(run, event.id, occurrenceAt, "assistant_channel", () =>
+          this.reminders.postInChannel(event.userId, message),
         );
-        sent += 1;
-      } catch (error) {
-        failed += 1;
-        logger.warn(
-          SCOPE,
-          `Rappel non envoyé pour ${event.id} : ${error instanceof Error ? error.message : "erreur inconnue"}`,
+      }
+      if (recipient.remindByEmail && recipient.email) {
+        const to = recipient.email;
+        await this.deliver(run, event.id, occurrenceAt, "email", () =>
+          this.sendEmail({ to, message }),
         );
-        // Rendre la réservation, sans quoi le rappel ne serait jamais retenté.
-        await this.reminders.release(event.id, occurrenceAt).catch((releaseError: unknown) => {
-          logger.warn(
-            SCOPE,
-            `Réservation non rendue pour ${event.id} : ${releaseError instanceof Error ? releaseError.message : "erreur inconnue"}`,
-          );
-        });
       }
     }
 
-    return { sent, failed };
+    return run;
+  }
+
+  private async deliver(
+    run: ReminderRun,
+    eventId: string,
+    occurrenceAt: string,
+    channel: ReminderChannel,
+    send: () => Promise<void>,
+  ): Promise<void> {
+    if (!(await this.reminders.claim(eventId, occurrenceAt, channel))) return;
+
+    try {
+      await send();
+      run.sent += 1;
+    } catch (error) {
+      run.failed += 1;
+      logger.warn(
+        SCOPE,
+        `Rappel (${channel}) non envoyé pour ${eventId} : ${error instanceof Error ? error.message : "erreur inconnue"}`,
+      );
+      // Rendre la réservation, sans quoi le rappel ne serait jamais retenté.
+      await this.reminders
+        .release(eventId, occurrenceAt, channel)
+        .catch((releaseError: unknown) => {
+          logger.warn(
+            SCOPE,
+            `Réservation non rendue pour ${eventId} : ${releaseError instanceof Error ? releaseError.message : "erreur inconnue"}`,
+          );
+        });
+    }
   }
 }

@@ -1,0 +1,27 @@
+# Déclencheur des rappels : Vercel Hobby ne sait lancer une tâche planifiée
+# qu'une fois par jour, GitHub Actions peut le faire toutes les 5 minutes.
+# Le planificateur GitHub n'est pas à la seconde près : l'API regarde une
+# fenêtre de 15 minutes pour ne rien rater, et ne rappelle jamais deux fois.
+name: Rappels
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  rappels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Appeler l'API de production
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::notice::Secret CRON_SECRET absent : aucun rappel n'est envoyé."
+            exit 0
+          fi
+          curl --fail --silent --show-error --max-time 60 -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            https://jean-claude-rust.vercel.app/api/cron/reminders
