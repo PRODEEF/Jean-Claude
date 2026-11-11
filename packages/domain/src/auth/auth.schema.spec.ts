@@ -34,12 +34,12 @@ describe("adresse e-mail", () => {
 
 describe("code à usage unique", () => {
   it("accepte un code de la longueur attendue", () => {
-    expect(otpCodeSchema.parse("42891374")).toBe("42891374");
+    expect(otpCodeSchema.parse("428913")).toBe("428913");
   });
 
   it("accepte un code copié avec des espaces ou des tirets, mise en forme fréquente des clients mail", () => {
-    expect(otpCodeSchema.parse(" 4289 1374 ")).toBe("42891374");
-    expect(otpCodeSchema.parse("4289-1374")).toBe("42891374");
+    expect(otpCodeSchema.parse(" 428 913 ")).toBe("428913");
+    expect(otpCodeSchema.parse("428-913")).toBe("428913");
   });
 
   it("refuse un code incomplet", () => {
@@ -47,16 +47,16 @@ describe("code à usage unique", () => {
   });
 
   it("refuse un code plus long que prévu", () => {
-    expect(isCompleteOtpCode("428913745")).toBe(false);
+    expect(isCompleteOtpCode("4289137")).toBe(false);
   });
 
   it("refuse un code contenant des lettres, une fois les chiffres isolés", () => {
-    expect(isCompleteOtpCode("42AB1374")).toBe(false);
+    expect(isCompleteOtpCode("42AB13")).toBe(false);
   });
 
   it("tronque la saisie à la longueur attendue plutôt que de laisser le champ déborder", () => {
-    expect(normalizeOtpCode("428913745")).toHaveLength(OTP_CODE_LENGTH);
-    expect(normalizeOtpCode("4289 1374")).toBe("42891374");
+    expect(normalizeOtpCode("4289137")).toHaveLength(OTP_CODE_LENGTH);
+    expect(normalizeOtpCode("428 9137")).toBe("428913");
   });
 
   it("ne renvoie que des chiffres, quelle que soit la saisie", () => {
