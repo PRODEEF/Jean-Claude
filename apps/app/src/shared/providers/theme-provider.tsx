@@ -80,6 +80,7 @@ export function ThemeProvider({
       vars({
         "--background": palette.background,
         "--foreground": palette.text,
+        "--foreground-strong": palette.textStrong,
         "--card": palette.surfaceElevated,
         "--card-foreground": palette.text,
         "--popover": palette.surfaceElevated,
