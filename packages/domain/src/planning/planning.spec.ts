@@ -217,6 +217,12 @@ describe("momentsOfDay", () => {
     expect(groups[0]?.lists).toHaveLength(1);
   });
 
+  it("annonce « Dans la journée » quand un rendez-vous sans heure l'occupe, même sans liste", () => {
+    const groups = momentsOfDay([], DAY, undefined, new Set(["anytime"]));
+
+    expect(groups.map((group) => group.moment.key)).toContain("anytime");
+  });
+
   it("ordonne les listes d'un même moment de la plus tôt à la plus tard", () => {
     const groups = momentsOfDay(
       [
