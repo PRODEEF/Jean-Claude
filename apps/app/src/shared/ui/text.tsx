@@ -65,6 +65,17 @@ const ARIA_LEVEL: Partial<Record<TextVariant, string>> = {
 
 const TextClassContext = React.createContext<string | undefined>(undefined);
 
+/**
+ * Règle de Yann : un texte noir en semi-gras prend `#2C2C2B`, pas le noir du
+ * thème. Posée ici plutôt qu'à chaque écran, pour qu'elle vaille partout où
+ * un `Text` est écrit en semi-gras par classe.
+ */
+function withStrongColor(classes: string): string {
+  const semibold = /(^|\s)font-semibold(\s|$)/.test(classes);
+  const black = /(^|\s)text-(foreground|accent-soft-foreground)(\s|$)/.test(classes);
+  return semibold && black ? cn(classes, "text-foreground-strong") : classes;
+}
+
 function Text({
   className,
   asChild = false,
@@ -80,7 +91,7 @@ function Text({
   const Component = asChild ? Slot : RNText;
   return (
     <Component
-      className={cn(textVariants({ variant }), textClass, className)}
+      className={withStrongColor(cn(textVariants({ variant }), textClass, className))}
       role={variant ? ROLE[variant] : undefined}
       aria-level={variant ? ARIA_LEVEL[variant] : undefined}
       {...props}
