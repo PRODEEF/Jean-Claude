@@ -431,7 +431,7 @@ function DueList({
 }
 
 /** La carte du jour ne montre-t-elle qu'une partie des tâches de la liste ? */
-function isTaskSubset(saved: TaskListWithTasks, shown: TaskListWithTasks): boolean {
+export function isTaskSubset(saved: TaskListWithTasks, shown: TaskListWithTasks): boolean {
   if (saved.tasks.length !== shown.tasks.length) return true;
   const ids = new Set(shown.tasks.map((task) => task.id));
   return saved.tasks.some((task) => !ids.has(task.id));
@@ -444,7 +444,7 @@ function isTaskSubset(saved: TaskListWithTasks, shown: TaskListWithTasks): boole
  * l'intitulé du moment, et l'écrire « 0h » ferait croire à une échéance
  * nocturne.
  */
-function timeLabel(list: TaskListWithTasks): string | undefined {
+export function timeLabel(list: TaskListWithTasks): string | undefined {
   if (list.dueAt === null || list.dueAllDay !== false) return undefined;
   return formatTime(list.dueAt);
 }

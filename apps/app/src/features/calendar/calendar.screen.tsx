@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { ChevronLeft, ChevronRight, ListPlus, Plus } from "lucide-react-native";
@@ -13,6 +13,7 @@ import {
 } from "@jc/domain";
 import { spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useDetailPane } from "@/shared/providers/detail-pane";
 import { useTaskActions, useTaskLists } from "@/shared/hooks/use-task-lists";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell, contentColumn } from "@/shared/ui/screen-shell";
@@ -82,6 +83,13 @@ export function CalendarScreen() {
   const [eventDetail, setEventDetail] = useState<CalendarEntry | null>(null);
   /** Détail d'une todoliste échue, au clic depuis l'agenda du jour. */
   const [listDetail, setListDetail] = useState<TaskListWithTasks | null>(null);
+  const pane = useDetailPane();
+  // Le volet de droite quand il existe, la fenêtre de détail sinon (téléphone).
+  const showList = (list: TaskListWithTasks) =>
+    pane.available ? pane.open({ kind: "list", listId: list.id }) : setListDetail(list);
+  // Ce que le volet montre appartient au calendrier : il se ferme avec lui.
+  const closePane = pane.close;
+  useEffect(() => closePane, [closePane]);
   const router = useRouter();
   const scroll = useRef<ScrollView>(null);
 
@@ -182,7 +190,7 @@ export function CalendarScreen() {
   const openEvent = (event: CalendarEntry) => {
     const linkedList = allLists?.find((list) => list.eventId === event.id);
     if (linkedList) {
-      setListDetail(linkedList);
+      showList(linkedList);
       return;
     }
     setEventDetail(event);
@@ -352,6 +360,9 @@ export function CalendarScreen() {
               selectedDay={selectedDay}
               onSelectDay={selectDay}
               onOpenEvent={openEvent}
+              {...(pane.available
+                ? { onOpenDayTasks: (day: Date) => pane.open({ kind: "day", day }) }
+                : {})}
               compact={compact}
             />
           ) : null}
@@ -376,7 +387,7 @@ export function CalendarScreen() {
               events={events}
               lists={dueLists}
               onOpenEvent={openEvent}
-              onOpenList={setListDetail}
+              onOpenList={showList}
               onCreateAt={createAt}
               onMoveList={moveList}
             />
