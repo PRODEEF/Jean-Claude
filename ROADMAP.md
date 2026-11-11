@@ -166,6 +166,7 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 
 ### Notifications
 
+- [ ] `BACKEND` `Notifications` **Tout ce qui arrive dans l'enveloppe arrive aussi dans le canal Jean-Claude** — Demande de Yann le 11 novembre. L'enveloppe en haut de l'écran reçoit les notifications (invitations à un espace, etc.). Chacune doit aussi apparaître comme un message de Jean-Claude dans son canal permanent, pour que le canal soit l'endroit unique où l'on voit tout ce qui arrive. À cadrer : quelles notifications (invitations, ajouts à un espace, partages…), et ne pas écrire deux fois la même. <!--id:y-enveloppe-vers-canal-->
 - [ ] `FRONT` `Notifications` **Pastille rouge de non-lu : vérifier en thème clair/sombre avec une couleur d'assistant différente du rouge** — En production (PR #157). À tester à la main. <!--id:y-test-pastille-non-lu-->
 
 ### BUG
