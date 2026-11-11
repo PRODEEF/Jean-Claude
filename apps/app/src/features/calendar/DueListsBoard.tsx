@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { Platform, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { GripVertical, ListChecks, MoreHorizontal, Plus, ShoppingBasket } from "lucide-react-native";
-import type { MomentKey, Task, TaskList, TaskListWithTasks } from "@jc/domain";
+import type { CalendarEntry, MomentKey, Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import {
   calendarDayOf,
   dayOfTask,
   dueForMoment,
   dueOnForDay,
+  momentOf,
   momentsOfDay,
   openTaskCount,
   startOfDay,
@@ -31,6 +32,12 @@ export type DueListsBoardProps = {
   /** Les jours à afficher, dans l'ordre — une semaine ou un mois selon l'appelant. */
   days: Date[];
   lists: TaskListWithTasks[];
+  /**
+   * Rendez-vous du mois, sans ceux qu'une todoliste porte déjà : cette liste
+   * s'affiche elle-même, la montrer deux fois ferait doublon.
+   */
+  events: CalendarEntry[];
+  onOpenEvent: (event: CalendarEntry) => void;
 };
 
 /**
@@ -38,9 +45,11 @@ export type DueListsBoardProps = {
  *
  * Chaque liste s'édite comme dans Mes listes : une ligne par tâche, à cocher,
  * indenter et réordonner sur place. Les bandeaux matin, après-midi et soir
- * restent — c'est eux qui situent la journée, Mes listes ne les a pas.
+ * restent — c'est eux qui situent la journée, Mes listes ne les a pas. Les
+ * rendez-vous s'y rangent aussi, au moment de leur heure : une journée chargée
+ * de rendez-vous est une journée chargée.
  */
-export function DueListsBoard({ days, lists }: DueListsBoardProps) {
+export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoardProps) {
   const today = new Date();
   const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
   const [deletingList, setDeletingList] = useState<TaskList | null>(null);
@@ -120,7 +129,17 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
     <View className={desktop ? "gap-2" : "gap-3"}>
       {moveFailure ? <Text className="text-destructive text-xs">{moveFailure}</Text> : null}
       {days.map((day) => {
-        const groups = momentsOfDay(lists, day, bounds);
+        const dayEvents = events
+          .filter((event) => isSameDay(new Date(event.startsAt), day))
+          .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+        const eventMoment = (event: CalendarEntry) =>
+          momentOf({ dueAt: event.startsAt, dueAllDay: event.allDay }, bounds);
+        const groups = momentsOfDay(
+          lists,
+          day,
+          bounds,
+          new Set(dayEvents.map((event) => eventMoment(event))),
+        );
         const remaining = groups.reduce(
           (count, group) => count + group.lists.reduce((sum, list) => sum + openTaskCount(list), 0),
           0,
@@ -168,17 +187,23 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
                     `bg-border` et non `bg-muted` : ce dernier vaut la teinte
                     de fond des surfaces, quasi blanche, et le bandeau ne se
                     détachait presque pas de la carte du jour. */}
-                <View className="bg-border flex-row items-center justify-between rounded-md px-2 py-1">
-                  <Text className="text-foreground text-sm font-semibold">
+                <View className="bg-secondary h-5 flex-row items-center justify-between rounded-md px-2">
+                  <Text className="text-foreground text-xs font-semibold">
                     {group.moment.label}
                   </Text>
                   {canAddOn(day) ? (
                     <AddListButton
+                      small
                       label={`Ajouter une liste, ${group.moment.label.toLowerCase()} du ${formatFullDay(day)}`}
                       onPress={() => addList(day, group.moment.key)}
                     />
                   ) : null}
                 </View>
+                {dayEvents
+                  .filter((event) => eventMoment(event) === group.moment.key)
+                  .map((event) => (
+                    <EventLine key={event.id} event={event} onPress={() => onOpenEvent(event)} />
+                  ))}
                 {group.lists.map((list) => {
                   const saved = savedLists?.find((candidate) => candidate.id === list.id);
                   const dueOn = dueOnForDay(saved ?? list, day);
@@ -209,19 +234,49 @@ export function DueListsBoard({ days, lists }: DueListsBoardProps) {
   );
 }
 
-/** « + » discret au bout d'une ligne : ajouter une liste à cet endroit. */
-function AddListButton({ label, onPress }: { label: string; onPress: () => void }) {
+/**
+ * « + » discret au bout d'une ligne : ajouter une liste à cet endroit.
+ * `small` tient dans un bandeau de 20 pt ; la zone d'appui reste, elle, celle
+ * d'un doigt (`hitSlop`).
+ */
+function AddListButton({
+  label,
+  onPress,
+  small = false,
+}: {
+  label: string;
+  onPress: () => void;
+  small?: boolean;
+}) {
   return (
     <Button
       variant="ghost"
       size="icon"
-      hitSlop={8}
+      hitSlop={small ? 12 : 8}
       onPress={onPress}
       accessibilityLabel={label}
-      className="size-7"
+      className={small ? "size-5" : "size-7"}
     >
-      <Icon as={Plus} size={16} className="text-muted-foreground" />
+      <Icon as={Plus} size={small ? 14 : 16} className="text-muted-foreground" />
     </Button>
+  );
+}
+
+/** Un rendez-vous dans son moment : l'heure, puis le titre. Un appui l'ouvre. */
+function EventLine({ event, onPress }: { event: CalendarEntry; onPress: () => void }) {
+  const time = event.allDay ? null : formatTime(event.startsAt);
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Rendez-vous ${event.title}${time ? `, à ${time}` : ""}`}
+      className="bg-accent-soft flex-row items-center gap-2 rounded-md px-2 py-1"
+    >
+      {time ? <Text className="text-accent-soft-foreground text-sm font-bold">{time}</Text> : null}
+      <Text className="text-accent-soft-foreground min-w-0 flex-1 text-sm" numberOfLines={1}>
+        {event.title}
+      </Text>
+    </Pressable>
   );
 }
 
