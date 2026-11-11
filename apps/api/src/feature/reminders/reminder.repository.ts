@@ -1,5 +1,9 @@
 import { admin } from "../../core/supabase/supabase.js";
-import type { IReminderRepository, ReminderRecipient } from "./reminder.repository.interface.js";
+import type {
+  IReminderRepository,
+  ReminderChannel,
+  ReminderRecipient,
+} from "./reminder.repository.interface.js";
 import type { ReminderEvent } from "./reminder-schedule.js";
 
 /** Ligne Postgres d'un rendez-vous, avec son propriétaire. */
@@ -25,8 +29,6 @@ const EVENT_COLUMNS =
 
 /** Code Postgres d'une violation de contrainte d'unicité. */
 const UNIQUE_VIOLATION = "23505";
-
-const CHANNEL = "assistant_channel";
 
 function toReminderEvent(row: EventRow): ReminderEvent {
   return {
@@ -71,36 +73,46 @@ export const reminderRepository: IReminderRepository = {
 
     const { data, error } = await admin
       .from("profiles")
-      .select("id, timezone, remind_in_channel")
+      .select("id, timezone, remind_in_channel, remind_by_email")
       .in("id", userIds);
 
     if (error) throw new Error(error.message);
-    return (data as unknown as { id: string; timezone: string; remind_in_channel: boolean }[]).map(
-      (row): ReminderRecipient => ({
+    const rows = data as unknown as {
+      id: string;
+      timezone: string;
+      remind_in_channel: boolean;
+      remind_by_email: boolean;
+    }[];
+
+    return Promise.all(
+      rows.map(async (row): Promise<ReminderRecipient> => ({
         userId: row.id,
         timezone: row.timezone,
         remindInChannel: row.remind_in_channel,
-      }),
+        remindByEmail: row.remind_by_email,
+        // L'adresse n'est lue que pour qui veut un e-mail.
+        email: row.remind_by_email ? await emailOf(row.id) : null,
+      })),
     );
   },
 
-  async claim(eventId, occurrenceAt) {
+  async claim(eventId, occurrenceAt, channel) {
     const { error } = await admin
       .from("reminders_sent")
-      .insert({ event_id: eventId, occurrence_at: occurrenceAt, channel: CHANNEL });
+      .insert({ event_id: eventId, occurrence_at: occurrenceAt, channel });
 
     if (!error) return true;
     if (error.code === UNIQUE_VIOLATION) return false;
     throw new Error(error.message);
   },
 
-  async release(eventId, occurrenceAt) {
+  async release(eventId, occurrenceAt, channel) {
     const { error } = await admin
       .from("reminders_sent")
       .delete()
       .eq("event_id", eventId)
       .eq("occurrence_at", occurrenceAt)
-      .eq("channel", CHANNEL);
+      .eq("channel", channel);
 
     if (error) throw new Error(error.message);
   },
@@ -115,6 +127,13 @@ export const reminderRepository: IReminderRepository = {
     if (error) throw new Error(error.message);
   },
 };
+
+/** Adresse de connexion : elle n'existe que dans `auth.users`, d'où l'API d'administration. */
+async function emailOf(userId: string): Promise<string | null> {
+  const { data, error } = await admin.auth.admin.getUserById(userId);
+  if (error) throw new Error(error.message);
+  return data.user?.email ?? null;
+}
 
 /**
  * Canal permanent de l'utilisateur, créé s'il n'existe pas encore — un rappel

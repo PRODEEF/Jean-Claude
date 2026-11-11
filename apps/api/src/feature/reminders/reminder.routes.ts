@@ -2,10 +2,11 @@ import { Hono } from "hono";
 import { bearerMatches } from "../../core/cron.js";
 import { config } from "../../core/config.js";
 import { httpError } from "../../core/http.js";
+import { sendReminderEmail } from "../../core/mail/reminder-mail.js";
 import { reminderRepository } from "./reminder.repository.js";
 import { ReminderService } from "./reminder.service.js";
 
-const service = new ReminderService(reminderRepository);
+const service = new ReminderService(reminderRepository, sendReminderEmail);
 
 /**
  * Appelé par le planificateur toutes les quelques minutes, pas par l'application.
