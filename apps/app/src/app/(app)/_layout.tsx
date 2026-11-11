@@ -10,6 +10,8 @@ import { Icon } from "@/shared/ui/icon";
 import { useGroupMessageFeed } from "@/features/group/hooks/use-group-realtime";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useSyncDeviceTimezone } from "@/shared/hooks/use-profile";
+import { DetailPane } from "@/features/detail-pane/DetailPane";
+import { DetailPaneProvider } from "@/shared/providers/detail-pane";
 import { SidebarChromeProvider } from "@/shared/providers/sidebar-chrome";
 
 /**
@@ -69,24 +71,29 @@ export default function AppLayout() {
           />
         ) : null}
         <SidebarChromeProvider collapsed={!visible}>
-          <View className="min-h-0 flex-1">
-            <Slot />
-            {/* Même coin que dans la barre ouverte (`p-3`). Le titre du
+          {/* Le volet de droite n'existe que sur grand écran : sur téléphone, il
+             deviendra une page à part, et en attendant l'écran garde son geste. */}
+          <DetailPaneProvider available={expanded}>
+            <View className="min-h-0 flex-1">
+              <Slot />
+              {/* Même coin que dans la barre ouverte (`p-3`). Le titre du
                 bandeau commence à droite de ce bouton, pas en dessous. */}
-            {!visible ? (
-              <View className="absolute left-3 top-3 z-10">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onPress={() => setPreference(true)}
-                  accessibilityLabel="Afficher la navigation"
-                  className="bg-background"
-                >
-                  <Icon as={PanelLeft} size={18} className="text-muted-foreground" />
-                </Button>
-              </View>
-            ) : null}
-          </View>
+              {!visible ? (
+                <View className="absolute left-3 top-3 z-10">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onPress={() => setPreference(true)}
+                    accessibilityLabel="Afficher la navigation"
+                    className="bg-background"
+                  >
+                    <Icon as={PanelLeft} size={18} className="text-muted-foreground" />
+                  </Button>
+                </View>
+              ) : null}
+            </View>
+            <DetailPane />
+          </DetailPaneProvider>
         </SidebarChromeProvider>
       </View>
 
