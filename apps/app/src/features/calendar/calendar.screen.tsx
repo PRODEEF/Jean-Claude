@@ -34,6 +34,7 @@ import {
   addMonths,
   addYears,
   dayLabel,
+  isSameDay,
   monthGrid,
   monthLabel,
   startOfDay,
@@ -63,7 +64,7 @@ function rangeOf(days: Date[]): CalendarRange {
  * elles demandent quatre fenêtres à la même. Changer de vue ou de période ne
  * fait donc que déplacer les bornes, et le mois déjà consulté revient du
  * cache. Todo s'y ajoute comme cinquième lecture, sans grille : les
- * todolistes du mois, sans les rendez-vous.
+ * todolistes du mois, et les rendez-vous rangés dans le moment de leur heure.
  *
  * Le bandeau de vue reste hors du défilement. Hors Todo, c'est l'intérieur de
  * la grille qui défile — les jours ou les heures — et non la page : le haut
@@ -107,10 +108,15 @@ export function CalendarScreen() {
     () => listsWithoutVisibleEvent(allLists ?? [], new Set(events.map((event) => event.id))),
     [allLists, events],
   );
-  // Vue Todo : elle ne montre aucun rendez-vous, seulement les listes — une
-  // liste dont le créneau a été posé n'a donc nulle part ailleurs où
-  // apparaître ici, contrairement aux autres vues.
+  // Vue Todo : les listes datées, toutes — une liste dont le créneau a été
+  // posé n'est pas écartée ici, contrairement aux autres vues — plus les
+  // rendez-vous qui ne sont pas ceux d'une liste.
   const allDatedLists = useMemo(() => datedLists(allLists ?? []), [allLists]);
+  // Les rendez-vous que porte une todoliste s'affichent déjà avec elle.
+  const standaloneEvents = useMemo(() => {
+    const linked = new Set((allLists ?? []).map((list) => list.eventId));
+    return events.filter((event) => !linked.has(event.id));
+  }, [allLists, events]);
 
   /**
    * Affichés par défaut (demande de Yann) : chaque jour porte la trame
@@ -131,8 +137,13 @@ export function CalendarScreen() {
     [days, anchor],
   );
   const monthListDays = useMemo(
-    () => monthDays.filter((day) => listsOfDay(allDatedLists, day).length > 0),
-    [monthDays, allDatedLists],
+    () =>
+      monthDays.filter(
+        (day) =>
+          listsOfDay(allDatedLists, day).length > 0 ||
+          standaloneEvents.some((event) => isSameDay(new Date(event.startsAt), day)),
+      ),
+    [monthDays, allDatedLists, standaloneEvents],
   );
 
   // La sélection suit la période affichée : sans cela, la liste du jour
@@ -284,11 +295,13 @@ export function CalendarScreen() {
           </View>
 
           {hideEmptyDays && monthListDays.length === 0 ? (
-            <Text className="text-muted-foreground text-sm">Aucune todoliste sur cette période.</Text>
+            <Text className="text-muted-foreground text-sm">Rien de prévu sur cette période.</Text>
           ) : (
             <DueListsBoard
               days={hideEmptyDays ? monthListDays : monthDays}
               lists={allDatedLists}
+              events={standaloneEvents}
+              onOpenEvent={openEvent}
             />
           )}
 

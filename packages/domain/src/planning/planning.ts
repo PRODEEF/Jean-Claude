@@ -174,18 +174,24 @@ export type MomentGroup = { moment: Moment; lists: TaskListWithTasks[] };
  * journée, celle d'un agenda papier, qu'on lit d'un coup d'œil et qui se
  * remplit au fil des jours. « Dans la journée » n'apparaît que s'il porte
  * quelque chose — vide, il annoncerait une case que rien ne vient remplir.
+ * `busy` dit les moments que porte autre chose que des listes (des rendez-vous
+ * sans heure, par exemple) : « Dans la journée » doit alors s'afficher aussi.
  */
 export function momentsOfDay(
   lists: TaskListWithTasks[],
   day: Date,
   bounds: DayPartBounds = DEFAULT_DAY_PART_BOUNDS,
+  busy: ReadonlySet<MomentKey> = new Set(),
 ): MomentGroup[] {
   const ofDay = listsOfDay(lists, day).sort(byDueDate);
 
   return MOMENTS.map((moment) => ({
     moment,
     lists: ofDay.filter((list) => momentOf(list, bounds) === moment.key),
-  })).filter((group) => group.moment.key !== "anytime" || group.lists.length > 0);
+  })).filter(
+    (group) =>
+      group.moment.key !== "anytime" || group.lists.length > 0 || busy.has(group.moment.key),
+  );
 }
 
 /**
