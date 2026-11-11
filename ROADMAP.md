@@ -119,6 +119,7 @@ _(les trois premières sont tirées de `CLAUDE.md` ; les suivantes sont des prop
 - **[ajout] Les 6 invariants d'architecture ne se discutent pas** : aucun SDK de modèle IA hors de `core/llm/providers/` ; aucune logique métier dans un écran ; l'app n'écrit jamais en base directement ; une conversation n'a pas de dossier parent unique (`conversation_folders`) ; aucun secret dans `apps/app` ; l'assistant propose, il n'exécute pas.
 - **[ajout] Flux git** : `feat/<description>` → PR vers `dev` → PR `dev` → `main` → déploiement Vercel. Pas de push direct sur `dev` ni `main`. La CI (`verify`) doit être verte.
 - **[ajout] Langue** : code en anglais ; commentaires, messages d'erreur, docs et commits en français (Conventional Commits).
+- **[ajout, demande de Yann le 11 novembre] Un texte noir en semi-gras prend la couleur `#2C2C2B`.** Posé dans le composant `Text` (`palette.textStrong`) ; en thème sombre, rien ne change. Vaut partout où le semi-gras s'écrit par classe.
 - **[ajout, à confirmer] Ne jamais merger vers `main` sans validation explicite.** Une PR vers `main` est une mise en production.
 - **[ajout, à confirmer] Tester à la main sur `dev` avant de proposer `dev` → `main`.** Aujourd'hui la CI ne vérifie que typage, tests de l'API et build.
 

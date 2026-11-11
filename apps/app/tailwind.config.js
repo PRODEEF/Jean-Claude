@@ -26,6 +26,7 @@ module.exports = {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
+        "foreground-strong": "var(--foreground-strong)",
         card: { DEFAULT: "var(--card)", foreground: "var(--card-foreground)" },
         popover: { DEFAULT: "var(--popover)", foreground: "var(--popover-foreground)" },
         primary: { DEFAULT: "var(--primary)", foreground: "var(--primary-foreground)" },
