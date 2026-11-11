@@ -85,6 +85,29 @@ Tu ne choisis jamais où classer une information. Tu écris, il propose un range
 
 Il vise le grand public, sans prérequis technique. C'est le contrepoint de Notion et d'Obsidian, puissants mais exigeants : ici, aucun jargon de gestion de connaissances, juste une conversation qui s'organise toute seule. Un seul code pour le web, iOS, Android et bientôt le desktop, avec un moteur IA interchangeable et des données hébergées en Europe.
 
+### Réflexion de fond de Yann (11 novembre) : une action, plusieurs dimensions
+
+*Notée intégralement à la demande de Yann. Elle appelle une réflexion globale plus tard, et doit rester en tête dans toute décision de conception d'ici là.*
+
+> Je pense qu'il y a un problème dans la compréhension globale du projet.
+>
+> Je me dis que pour avoir une logique parfaite, il faudrait que chaque action corresponde à une conversation.
+>
+> Si j'ouvre une conversation et que je dis « crée-moi un rdv pour jeudi 12 à 15h » : si dans cette conversation il y a un jour, un horaire, etc., cela implique de la voir partout (calendrier, Mes listes, ma todo, calendrier, etc.).
+>
+> Si je viens dire dans la conversation « annule-moi le rdv », cela vient annuler le rdv. Si je viens déplacer le rdv dans le calendrier à la main, ou avec la todo, le jour suivant, dans la conversation je dois avoir quelque chose qui indique l'action : donc l'IA doit répondre quelque chose du type « Tu as déplacé ton rdv de jeudi au lendemain à 13h », comme si la conversation continuait.
+>
+> Tu vois l'idée : là, j'ai l'impression que chaque action est cloisonnée, alors qu'elle est dans plusieurs dimensions, et que tout doit se passer dans chaque dimension (conversation, calendrier (et chaque partie du calendrier), et dans mes listes, etc.).
+
+**Ce que j'en retiens, pour ne pas le perdre.**
+
+- Une chose (un rendez-vous, une tâche, une liste) a **une seule existence**, vue de plusieurs endroits : la conversation qui l'a fait naître, les vues du calendrier (jour, semaine, mois, année, Todo), Mes listes, les espaces. Pas des copies.
+- Le fil de la conversation d'origine est **le journal de la chose** : l'IA y écrit ce qui lui arrive, même quand le geste vient d'ailleurs (« Tu as déplacé ton rendez-vous de jeudi au lendemain à 13h »). Une action faite à la main dans le calendrier ou la todo se retrouve donc dans la conversation, comme si celle-ci continuait.
+- Dans l'autre sens, ce qu'on demande dans la conversation (annuler, déplacer, modifier) agit sur la chose, et se voit partout.
+- Aujourd'hui chaque geste est cloisonné : il n'y a pas de lien durable entre une chose et la conversation d'où elle vient, ni de trace dans la conversation des gestes faits ailleurs.
+
+**Points à trancher lors de la réflexion globale** (sans y répondre ici) : le lien chose ↔ conversation d'origine (un rendez-vous a-t-il un seul fil, ou plusieurs ?) ; la forme de la trace dans la conversation (message de l'IA, ligne discrète, regroupement des gestes rapprochés) ; ce qui se passe quand une chose naît hors conversation (à la main dans le calendrier) ; le lien avec la règle « l'assistant propose, il n'exécute pas » (§12.1), car l'annulation demandée en conversation doit rester un geste de l'utilisateur, jamais une action de l'IA de sa propre initiative ; le rapport avec le canal permanent (l'enveloppe, les rappels, la tâche « tout ce qui arrive dans l'enveloppe arrive aussi dans le canal »).
+
 ## Règles permanentes
 
 _(les trois premières sont tirées de `CLAUDE.md` ; les suivantes sont des propositions à valider)_
@@ -103,6 +126,7 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 - [ ] **2. Rappels et récurrences** (back-end, A.11). Aucun planificateur : un rendez-vous récurrent n'apparaît qu'à son premier créneau, aucun rappel ne part. Débloque aussi « Vocaux le matin ».
 - [ ] **3. « Projet » et instructions par dossier** (P4, A.4/A.5). Un contexte partagé par dossier, comme les Projets de Claude. Le plus gros chantier de conception : trancher d'abord dossier ou projet.
 - [ ] **4. Mode réunion à la voix** (P5, A.12). Dépend du choix du service de dictée, resté en suspens avec Antonin.
+- [ ] **5. Une action, plusieurs dimensions** (réflexion globale, demande de Yann du 11 novembre). Chaque chose (rendez-vous, tâche, liste) doit vivre au même moment dans la conversation, les vues du calendrier et Mes listes, et chaque geste fait ailleurs doit laisser une trace dans la conversation d'origine. À penser avant de bâtir : voir la réflexion complète dans la section Vision. <!--id:y-action-plusieurs-dimensions-->
 
 **Programme validé par Yann le 11 novembre**, dans cet ordre :
 
