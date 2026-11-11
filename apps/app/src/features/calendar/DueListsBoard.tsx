@@ -127,7 +127,7 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
 
   return (
     <View className={desktop ? "gap-2" : "gap-3"}>
-      {moveFailure ? <Text className="text-destructive text-xs">{moveFailure}</Text> : null}
+      {moveFailure ? <Text className="text-destructive text-sm">{moveFailure}</Text> : null}
       {days.map((day) => {
         const dayEvents = events
           .filter((event) => isSameDay(new Date(event.startsAt), day))
@@ -155,7 +155,7 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
           >
             <View className="flex-row items-center justify-between gap-2">
               <Text
-                className={`text-sm font-bold uppercase ${
+                className={`text-sm font-semibold uppercase ${
                   isToday ? "text-primary" : "text-foreground"
                 }`}
               >
@@ -163,7 +163,7 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
               </Text>
               <View className="flex-row items-center gap-1">
                 {remaining > 0 ? (
-                  <Text className="text-muted-foreground text-xs">{remaining} à faire</Text>
+                  <Text className="text-muted-foreground text-sm">{remaining} à faire</Text>
                 ) : null}
                 {canAddOn(day) ? (
                   <AddListButton
@@ -187,8 +187,8 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
                     `bg-border` et non `bg-muted` : ce dernier vaut la teinte
                     de fond des surfaces, quasi blanche, et le bandeau ne se
                     détachait presque pas de la carte du jour. */}
-                <View className="bg-secondary h-5 flex-row items-center justify-between rounded-md px-2">
-                  <Text className="text-foreground text-xs font-semibold">
+                <View className="bg-secondary h-7 flex-row items-center justify-between rounded-md px-2">
+                  <Text className="text-foreground text-sm font-semibold">
                     {group.moment.label}
                   </Text>
                   {canAddOn(day) ? (
@@ -236,7 +236,7 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
 
 /**
  * « + » discret au bout d'une ligne : ajouter une liste à cet endroit.
- * `small` tient dans un bandeau de 20 pt ; la zone d'appui reste, elle, celle
+ * `small` tient dans un bandeau de 28 pt ; la zone d'appui reste, elle, celle
  * d'un doigt (`hitSlop`).
  */
 function AddListButton({
@@ -255,7 +255,7 @@ function AddListButton({
       hitSlop={small ? 12 : 8}
       onPress={onPress}
       accessibilityLabel={label}
-      className={small ? "size-5" : "size-7"}
+      className={small ? "size-6" : "size-7"}
     >
       <Icon as={Plus} size={small ? 14 : 16} className="text-muted-foreground" />
     </Button>
@@ -270,9 +270,9 @@ function EventLine({ event, onPress }: { event: CalendarEntry; onPress: () => vo
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`Rendez-vous ${event.title}${time ? `, à ${time}` : ""}`}
-      className="bg-accent-soft flex-row items-center gap-2 rounded-md px-2 py-1"
+      className="bg-accent-soft h-7 flex-row items-center gap-2 rounded-md px-2"
     >
-      {time ? <Text className="text-accent-soft-foreground text-sm font-bold">{time}</Text> : null}
+      {time ? <Text className="text-accent-soft-foreground text-sm font-semibold">{time}</Text> : null}
       <Text className="text-accent-soft-foreground min-w-0 flex-1 text-sm" numberOfLines={1}>
         {event.title}
       </Text>
@@ -393,7 +393,7 @@ function DueList({
           size={14}
           className="text-muted-foreground"
         />
-        {time ? <Text className="text-sm font-bold">{time}</Text> : null}
+        {time ? <Text className="text-sm font-semibold">{time}</Text> : null}
         <Text className="min-w-0 flex-1 text-sm font-medium" numberOfLines={1}>
           {list.title}
         </Text>

@@ -21,6 +21,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
+- **Vue Todo du calendrier : texte à 14 px, gras en semi-gras, bandeaux de la hauteur des rendez-vous** (V0.00.19). Tout le texte de cette vue passe à 14 px, ce qui était en gras passe en semi-gras, et les bandeaux Matin / Après-midi / Soir ont la même hauteur (28 px) que la ligne d'un rendez-vous. Demande de Yann du 11 novembre : une base uniforme. *Où : Calendrier › Todo.* — Ne touche que cette vue pour l'instant ; l'étendre aux autres écrans reste à décider.
 - **Vue Todo du calendrier : les rendez-vous y apparaissent, et les bandeaux Matin / Après-midi / Soir s'affinent** (V0.00.17). Un rendez-vous s'affiche dans le moment de son heure (un rendez-vous sans heure sous « Dans la journée »), cliquable pour l'ouvrir ; ceux qu'une todoliste porte déjà ne sont pas doublés. Les bandeaux passent à 20 pt de haut, sur le gris de la marge gauche. *Où : Calendrier › Todo.* — Cette vue ne montrait volontairement que les listes ; Yann l'a relevée comme un manque le 11 novembre.
 - **Rappels de rendez-vous par e-mail** (V0.00.16). À l'heure d'un rappel, un e-mail part à l'adresse du compte, avec la même phrase que dans le canal. Deux réglages dans Réglages › Rappels : « Me rappeler dans le canal Jean-Claude » et « Me rappeler par e-mail », **tous deux activés par défaut le temps des essais**. *Où : Réglages, boîte mail.* — **Demande une migration sur la vraie base avant le déploiement** (`20261111150000_reminders_by_email.sql`) : sans elle, les profils ne se chargent plus. Le rappel ne part que si le déclencheur tourne (voir le point sur la fiabilité du planificateur).
 - **Rappels de rendez-vous : Jean-Claude t'écrit dans son canal à l'heure du rappel** (V0.00.15). Un rendez-vous (ou une série) qui porte un rappel, par exemple 30 minutes avant, fait écrire Jean-Claude dans son canal permanent : « Rappel : Kiné, à 18h (dans 30 minutes). ». Un réglage « Me rappeler dans le canal Jean-Claude » est dans Réglages › Rappels (activé par défaut). *Où : le canal Jean-Claude, et Réglages.* — **Rien ne part encore tant que le planificateur n'est pas branché** (voir la tâche des rappels). **Demande une migration sur la vraie base avant le déploiement** (`20261110160000_reminders_in_channel.sql`) : sans elle, les profils ne se chargent plus.
@@ -109,6 +110,8 @@ Il vise le grand public, sans prérequis technique. C'est le contrepoint de Noti
 
 **Points à trancher lors de la réflexion globale** (sans y répondre ici) : le lien chose ↔ conversation d'origine (un rendez-vous a-t-il un seul fil, ou plusieurs ?) ; la forme de la trace dans la conversation (message de l'IA, ligne discrète, regroupement des gestes rapprochés) ; ce qui se passe quand une chose naît hors conversation (à la main dans le calendrier) ; le lien avec la règle « l'assistant propose, il n'exécute pas » (§12.1), car l'annulation demandée en conversation doit rester un geste de l'utilisateur, jamais une action de l'IA de sa propre initiative ; le rapport avec le canal permanent (l'enveloppe, les rappels, la tâche « tout ce qui arrive dans l'enveloppe arrive aussi dans le canal »).
 
+**Ajout de Yann, 11 novembre.** La logique des dimensions multiples vaut aussi pour la saisie faite depuis le calendrier : un rendez-vous ajouté dans la Todo du calendrier doit apparaître partout. À trancher : apparaît-il aussi dans le fil de la conversation ? (Yann pense que oui, à voir plus tard.) Et il doit finir à un moment dans les **dossiers**, sous la forme d'un rendez-vous, d'une todo, ou d'une « todo-rendez-vous » : par exemple sous Santé pour un rendez-vous chez le kiné, sous Sport ou Planche, et d'autres à ajouter à la réflexion. Cela touche la règle « une conversation appartient à plusieurs dossiers » (§5.2, A.1) : à penser avec elle, et avec le rangement automatique sans friction (§13.4.1).
+
 ## Règles permanentes
 
 _(les trois premières sont tirées de `CLAUDE.md` ; les suivantes sont des propositions à valider)_
@@ -131,11 +134,11 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 
 **Programme validé par Yann le 11 novembre**, dans cet ordre :
 
-1. Rappels par e-mail (réglage « Me rappeler par e-mail » dans Réglages › Rappels, désactivé par défaut ; en plus du message dans le canal, sauf avis contraire de Yann).
-2. Uniformiser les fonctionnalités entre tous les endroits où l'on trouve des todos (Mes listes, espaces collaboratifs, et les autres le cas échéant) : même structure, mêmes options.
-3. Les petits points d'ergonomie du calendrier (position de la fenêtre, heure de fin par défaut…).
-4. Les retours de lenteurs de Yann (groupe « Lenteurs »).
-5. Calendrier : la liste de tâches au clic (arbitrage de Yann attendu : fenêtre qui s'ouvre sur le côté).
+1. Rappels par e-mail (réglage « Me rappeler par e-mail » dans Réglages › Rappels, activé par défaut le temps des essais ; en plus du message dans le canal). **Fait sur `dev` (V0.00.16), pas encore en production.** Restent : un planificateur fiable toutes les 5 minutes, et le bouton « voir le rendez-vous » dans le rappel.
+2. Uniformiser les fonctionnalités entre tous les endroits où l'on trouve des todos (Mes listes, espaces collaboratifs, et les autres le cas échéant) : même structure, mêmes options. **Pas commencé** : à cadrer d'abord avec Yann (quels écrans, quelles options).
+3. Les petits points d'ergonomie du calendrier (position de la fenêtre, heure de fin par défaut…). **En cours** : bandeaux et rendez-vous dans la vue Todo faits (V0.00.17, puis V0.00.19 pour la taille du texte) ; restent la fenêtre « Nouvel événement » décalée et la fin par défaut à début + 1 h.
+4. Les retours de lenteurs de Yann (groupe « Lenteurs »). **En attente** des retours de Yann.
+5. Calendrier : la liste de tâches au clic (arbitrage de Yann attendu : fenêtre qui s'ouvre sur le côté). **En attente** de l'arbitrage de Yann.
 
 À côté, deux points hors code qui bloquent : projet Supabase en région UE, politique de confidentialité (voir la section « Hors code » plus bas).
 
