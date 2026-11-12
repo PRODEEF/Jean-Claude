@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import { ChevronLeft, ChevronRight, ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEntry, CalendarRange, TaskList, TaskListWithTasks } from "@jc/domain";
 import {
+  calendarDayOf,
   datedLists,
   dueForMoment,
   dueForSlot,
@@ -98,7 +99,7 @@ export function CalendarScreen() {
   const range = useMemo(() => rangeOf(days), [days]);
   const { data, isPending, isError } = useCalendarEvents(range);
   const { data: allLists } = useTaskLists();
-  const { updateList } = useTaskActions();
+  const { updateList, updateTask } = useTaskActions();
   const [moveFailure, setMoveFailure] = useState<string | null>(null);
   // Rendus tels que le serveur les donne : le créneau d'une todoliste y est
   // désormais la projection de celle-ci (`slotForList`), et n'a plus à être
@@ -224,18 +225,65 @@ export function CalendarScreen() {
     );
   };
 
+  const MOVE_FAILED = "Le déplacement a échoué. Réessayez dans un instant.";
+
+  // Une liste figure à un jour par sa propre échéance, ou — sans elle — par
+  // les tâches qu'on y a datées (`datedLists`). Dans le second cas, ce n'est
+  // pas l'échéance de la liste qu'on déplace mais la date de ces tâches : sans
+  // quoi la liste revenait à sa place, la projection restant sur l'ancien jour.
+  const hasOwnDay = (list: TaskListWithTasks, day: string) =>
+    list.dueAt !== null && calendarDayOf(new Date(list.dueAt)) === day;
+
   // Liste lâchée sur un jour de la vue mois : elle garde son heure (ou son
   // absence d'heure), seul le jour change, comme dans un agenda.
-  const moveListToDay = (listId: string, day: Date) => {
+  const moveListToDay = (listId: string, day: Date, fromDay: string) => {
     const saved = allLists?.find((candidate) => candidate.id === listId);
     if (!saved) return;
+    setMoveFailure(null);
+
+    if (!hasOwnDay(saved, fromDay)) {
+      const toDay = calendarDayOf(day);
+      if (toDay === fromDay) return;
+      for (const task of saved.tasks.filter((candidate) => candidate.dueOn === fromDay)) {
+        updateTask.mutate(
+          { listId, taskId: task.id, patch: { dueOn: toDay } },
+          { onError: () => setMoveFailure(MOVE_FAILED) },
+        );
+      }
+      return;
+    }
+
     const patch = dueForMoment(day, momentOf(saved), saved);
     if (patch.dueAt === saved.dueAt && patch.dueAllDay === saved.dueAllDay) return;
+    updateList.mutate({ id: listId, patch }, { onError: () => setMoveFailure(MOVE_FAILED) });
+  };
 
+  // Même règle que dans le volet : échanger les heures plutôt que deviner un rang.
+  const swapListHours = (draggedId: string, targetId: string, day: string) => {
+    const dragged = allLists?.find((candidate) => candidate.id === draggedId);
+    const target = allLists?.find((candidate) => candidate.id === targetId);
+    if (!dragged || !target) return;
     setMoveFailure(null);
+
+    // Une liste présente par ses tâches seules n'a pas d'heure à échanger.
+    const draggedDue = dragged.dueAt;
+    const targetDue = target.dueAt;
+    if (!draggedDue || !targetDue || !hasOwnDay(dragged, day) || !hasOwnDay(target, day)) {
+      setMoveFailure(
+        "Cette liste n'a pas d'heure à elle ce jour-là. Ouvrez-la pour lui en donner une.",
+      );
+      return;
+    }
+    if (draggedDue === targetDue && dragged.dueAllDay === target.dueAllDay) return;
+
+    const onError = () => setMoveFailure(MOVE_FAILED);
     updateList.mutate(
-      { id: listId, patch },
-      { onError: () => setMoveFailure("Le déplacement a échoué. Réessayez dans un instant.") },
+      { id: dragged.id, patch: { dueAt: targetDue, dueAllDay: target.dueAllDay ?? true } },
+      { onError },
+    );
+    updateList.mutate(
+      { id: target.id, patch: { dueAt: draggedDue, dueAllDay: dragged.dueAllDay ?? true } },
+      { onError },
     );
   };
 
@@ -380,6 +428,7 @@ export function CalendarScreen() {
                 ? { onOpenList: (list) => pane.open({ kind: "list", listId: list.id }) }
                 : {})}
               onMoveList={moveListToDay}
+              onSwapLists={swapListHours}
               compact={compact}
             />
           ) : null}

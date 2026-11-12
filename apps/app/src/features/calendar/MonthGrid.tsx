@@ -1,12 +1,12 @@
 import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { ListChecks, Users } from "lucide-react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
-import { eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
+import { calendarDayOf, eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { formatTime, isSameDay, startOfDay, WEEKDAY_LABELS } from "@/shared/lib/dates";
-import { useListDragHandle, useMomentDropZone } from "./lib/list-drag";
+import { usePointerDropTarget, usePointerListDrag } from "./lib/pointer-drag";
 
 export type MonthGridProps = {
   /** Les 42 jours de la grille, lundi en tête. */
@@ -24,8 +24,14 @@ export type MonthGridProps = {
    * la ligne de la liste reste alors un simple repère.
    */
   onOpenList?: (list: TaskListWithTasks) => void;
-  /** Une liste lâchée sur un jour (web) : elle garde son heure, seul le jour change. */
-  onMoveList: (listId: string, day: Date) => void;
+  /**
+   * Une liste lâchée sur un jour (web) : elle garde son heure, seul le jour
+   * change. `fromDay` est le jour (`AAAA-MM-JJ`) d'où on l'a prise : une liste
+   * qui figure là par ses seules tâches datées ne se déplace pas comme les autres.
+   */
+  onMoveList: (listId: string, day: Date, fromDay: string) => void;
+  /** Une liste lâchée sur une autre du même jour (`day`) : elles échangent leurs heures. */
+  onSwapLists: (draggedId: string, targetId: string, day: string) => void;
   /** En deçà du point de rupture : pastilles au lieu des titres. */
   compact: boolean;
 };
@@ -52,6 +58,7 @@ export function MonthGrid({
   onOpenEvent,
   onOpenList,
   onMoveList,
+  onSwapLists,
   compact,
 }: MonthGridProps) {
   const today = new Date();
@@ -99,7 +106,10 @@ export function MonthGrid({
                     // horaire : dater dans le passé est un geste rare, qui passe
                     // par « Changer l'échéance ».
                     droppable={startOfDay(day).getTime() >= startOfDay(today).getTime()}
-                    onDropList={(listId) => onMoveList(listId, day)}
+                    onDropList={(dragKey) => {
+                      const [listId = "", fromDay = ""] = dragKey.split("@");
+                      onMoveList(listId, day, fromDay);
+                    }}
                     className={`border-border min-w-0 flex-1 gap-1 border-b border-r p-1 ${
                       selected ? "bg-accent-soft" : ""
                     }`}
@@ -138,6 +148,10 @@ export function MonthGrid({
                           key={entry.key}
                           entry={entry}
                           onOpenEvent={onOpenEvent}
+                          // Poser une liste sur une autre du même jour échange
+                          // leurs heures ; d'un autre jour, le dépôt tombe sur la case.
+                          dayKey={calendarDayOf(day)}
+                          onSwap={onSwapLists}
                           {...(onOpenList ? { onOpenList } : {})}
                         />
                       ))}
@@ -210,10 +224,14 @@ function EntryLine({
   entry,
   onOpenEvent,
   onOpenList,
+  dayKey,
+  onSwap,
 }: {
   entry: CellEntry;
   onOpenEvent: (event: CalendarEntry) => void;
   onOpenList?: (list: TaskListWithTasks) => void;
+  dayKey: string;
+  onSwap: (draggedId: string, targetId: string, day: string) => void;
 }) {
   if (entry.kind === "event") {
     const { event } = entry;
@@ -255,7 +273,18 @@ function EntryLine({
   // Cliquable seulement quand il y a un volet où montrer la liste.
   if (onOpenList) {
     return (
-      <DraggableListLine list={list} onOpen={() => onOpenList(list)}>
+      <DraggableListLine
+        list={list}
+        onOpen={() => onOpenList(list)}
+        dragKey={`${list.id}@${dayKey}`}
+        // Seule une liste prise le même jour s'échange ; d'un autre jour, le
+        // dépôt tombe sur la case.
+        canSwapWith={(dragKey) => {
+          const [draggedId = "", fromDay = ""] = dragKey.split("@");
+          return draggedId !== list.id && fromDay === dayKey;
+        }}
+        onSwap={(dragKey) => onSwap(dragKey.split("@")[0] ?? "", list.id, dayKey)}
+      >
         {content}
       </DraggableListLine>
     );
@@ -272,7 +301,7 @@ function EntryLine({
 }
 
 /**
- * Cellule d'un jour : cible de dépôt d'une liste (web).
+ * Cellule d'un jour : cible de dépôt d'une liste (web, souris).
  *
  * Composant à part parce que la cible est un hook, qu'on ne peut pas appeler
  * dans la boucle des jours. Seule une liste entière s'y pose : une ligne de
@@ -289,11 +318,8 @@ function DayCell({
   className: string;
   children: ReactNode;
 }) {
-  const zoneRef = useMomentDropZone(
-    droppable,
-    (drag) => drag.kind === "list",
-    (drag) => onDropList(drag.listId),
-  );
+  const zoneRef = useRef<View | null>(null);
+  usePointerDropTarget(zoneRef, droppable, () => true, onDropList);
   return (
     <View ref={zoneRef} className={className}>
       {children}
@@ -304,14 +330,21 @@ function DayCell({
 /** Ligne de liste que l'on saisit pour la déplacer (web) ; l'appui simple l'ouvre. */
 function DraggableListLine({
   list,
+  dragKey,
   onOpen,
+  canSwapWith,
+  onSwap,
   children,
 }: {
   list: TaskListWithTasks;
+  dragKey: string;
   onOpen: () => void;
+  canSwapWith: (draggedId: string) => boolean;
+  onSwap: (draggedId: string) => void;
   children: ReactNode;
 }) {
-  const { cardRef } = useListDragHandle(list.id, Platform.OS === "web");
+  const { cardRef } = usePointerListDrag(dragKey, Platform.OS === "web");
+  usePointerDropTarget(cardRef, Platform.OS === "web", canSwapWith, onSwap);
   return (
     <Pressable
       ref={cardRef}
