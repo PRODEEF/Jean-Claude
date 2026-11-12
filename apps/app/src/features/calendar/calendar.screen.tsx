@@ -226,6 +226,25 @@ export function CalendarScreen() {
 
   // Liste lâchée sur un jour de la vue mois : elle garde son heure (ou son
   // absence d'heure), seul le jour change, comme dans un agenda.
+  // Même règle que dans le volet : échanger les heures plutôt que deviner un rang.
+  const swapListHours = (draggedId: string, targetId: string) => {
+    const dragged = allLists?.find((candidate) => candidate.id === draggedId);
+    const target = allLists?.find((candidate) => candidate.id === targetId);
+    if (!dragged?.dueAt || !target?.dueAt) return;
+    if (dragged.dueAt === target.dueAt && dragged.dueAllDay === target.dueAllDay) return;
+
+    setMoveFailure(null);
+    const onError = () => setMoveFailure("Le déplacement a échoué. Réessayez dans un instant.");
+    updateList.mutate(
+      { id: dragged.id, patch: { dueAt: target.dueAt, dueAllDay: target.dueAllDay ?? true } },
+      { onError },
+    );
+    updateList.mutate(
+      { id: target.id, patch: { dueAt: dragged.dueAt, dueAllDay: dragged.dueAllDay ?? true } },
+      { onError },
+    );
+  };
+
   const moveListToDay = (listId: string, day: Date) => {
     const saved = allLists?.find((candidate) => candidate.id === listId);
     if (!saved) return;
@@ -380,6 +399,7 @@ export function CalendarScreen() {
                 ? { onOpenList: (list) => pane.open({ kind: "list", listId: list.id }) }
                 : {})}
               onMoveList={moveListToDay}
+              onSwapLists={swapListHours}
               compact={compact}
             />
           ) : null}
