@@ -21,6 +21,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
+- **Audit des conventions noté** (V0.00.29). Un audit global « mise aux normes » est inscrit dans « Plus tard ». Rien ne change à l'écran. *Où : ROADMAP.*
 - **Réflexion notée : tout ce qui se date est une todo** (V0.00.28). Un rendez-vous devient un todo simple (titre, sans sous-action obligatoire) ; une liste est un todo qui porte des sous-todos. Rien ne change à l'écran. *Où : ROADMAP, section Vision.*
 - **Sous-tâches un peu plus décalées** (V0.00.27). Le décalage entre une tâche et ses sous-tâches passe de 22 à 32 pt : la case d'une sous-tâche ne colle plus à celle de la tâche principale. *Où : Mes listes, volet de droite, espaces.*
 - **Volet de droite : la carte entière de « Mes listes »** (V0.00.25). Les listes du volet s'affichent comme dans Mes listes : en-tête avec type, dossier, échéance et menu, repli, et éditeur. On y change le dossier ou l'échéance, on modifie ou on supprime la liste. *Où : Calendrier, volet de droite.* — Première étape de l'uniformisation des todolistes : la carte vit désormais dans un seul composant (`ListCard`), que la vue Todo du calendrier reprendra ensuite.
@@ -134,6 +135,11 @@ Il vise le grand public, sans prérequis technique. C'est le contrepoint de Noti
 - **Durée par défaut : 1 heure** quand rien n'est dit (comme la règle déjà notée « fin = début + 1h » du calendrier).
 
 **Reste à trancher :** à quoi correspond « cocher » un todo qui se répète : seule l'occurrence du jour (proposition A, comme Things 3, Todoist et TickTick) ou toute la série (B). Cela reste soumis à la règle « l'assistant propose, il n'exécute pas » (§12.1) : la création en conversation de toute une série devient une suggestion en attente que l'utilisateur accepte d'un geste.
+
+**Décisions de Yann, 12 novembre (fin).**
+
+- **Cocher, déplacer, modifier ou supprimer un todo qui se répète : on demande à chaque fois** « seulement cette date » ou « toute la série », comme dans les calendriers du marché. Pas de réglage global.
+- **Boutons de déplacement des tâches : option A.** À gauche, seulement la case à cocher. À droite, au survol : indenter, désindenter, poignée ⠿ et corbeille. Sur téléphone, les boutons restent visibles. À faire juste après l'étape 2 de l'uniformisation des vues Todo.
 
 ## Règles permanentes
 
@@ -272,6 +278,7 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 
 ### Plus tard
 
+- [ ] `INFRA` `Audit` **Audit global : mettre les conventions aux normes** — Demande de Yann, 12 novembre : noter ce point pour un futur audit global. Il s'agit de vérifier que le projet suit les conventions et normes du marché, y compris celles propres à chaque système (OS : web, iOS, Android, desktop) et autres. *Pistes à confirmer avec Yann :* conventions de code, de nommage et de structure du dépôt ; conventions de chaque plateforme (navigation, gestes, permissions, notifications) ; accessibilité ; sécurité et protection des données (RGPD) ; messages de commit et flux Git. Aucune action tant que l'audit n'est pas lancé. <!--id:idea-audit-conventions-->
 - [ ] `BACKEND` `Notifications` **Vocaux le matin + voix personnalisable** — Idée (P4). Jean Claude écrit, mais peut aussi parler : messages vocaux le matin, assistant renommable, voix au choix (dont voix « imitation »). Ces options pourraient faire partie du pack payant. ⏸ Dépend du planificateur de rappels (chantier back-end, Accès aux données). <!--id:idea-vocaux-matin-->
 - [ ] `FRONT` `Assistant` **Outils de l'assistant peu clairs, équivalent de la commande « / »** — Idée (P4). Pas moyen de savoir les outils précis de l'assistant. Ajouter des notions claires à l'assistant outillé. <!--id:idea-outils-flous-->
 - [ ] `BACKEND` `Admin` **Messages groupés à tous les users via Jean Claude** — Idée (P3). Notifs et/ou SMS, avec réglage de cadence et de mode de sollicitation. <!--id:idea-messages-groupes-->
