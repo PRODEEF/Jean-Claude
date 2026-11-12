@@ -31,6 +31,7 @@
 
 ### Calendrier
 
+- [x] `FRONT` `Calendrier / TODO` **Les listes de la vue Todo ont la même structure que « Mes listes »** — Demande de Yann le 12 novembre (captures : en-tête réduit dans le calendrier, complet dans « Mes listes »). Fait (V0.00.51) : la vue Todo utilise la carte de « Mes listes » (case, repli, titre, type, dossier, échéance, menu), poignée de déplacement conservée. À tester. <!--id:y-todo-calendrier-meme-carte-->
 - [ ] `FRONT` `Calendrier` **Vérifier le paramétrage des heures et du positionnement dans le calendrier** — Priorité initiale : P5. PR #161 : grilles qui défilent sans perdre l'en-tête. À tester à la main. <!--id:y-heures-calendrier-->
 - [ ] `FRONT` `Calendrier / TODO` **Calendrier et todo au fil de l'eau** — Priorité initiale : P4. À l'ouverture (vue Mois / Semaine / autre), afficher le jour du jour en haut à gauche. Idem pour la TODO : ajustable à l'heure près, et sur mobile s'ouvrir directement sur l'heure (donc le jour) en cours. Le haut du calendrier est ancré depuis #161. Fait (5 novembre) : les vues Jour et Semaine s'ouvrent sur l'heure en cours quand aujourd'hui est affiché ; à tester sur mobile. Reste la Todo à l'heure près. <!--id:y-fil-de-leau-->
 - [ ] `FRONT` `Calendrier` **Modeler le calendrier à la demande** — Idée (Boîte à idées, P3). Pouvoir façonner le calendrier à la demande, ajuster un rendez-vous à la demande, et cumuler/filtrer les rdv selon certains critères (ex : rdv « standby » affichés dans une couleur dédiée). <!--id:y-modeler-calendrier-->
