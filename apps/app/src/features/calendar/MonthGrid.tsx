@@ -1,7 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { Check, ListChecks, Users } from "lucide-react-native";
+import { ListChecks, Users } from "lucide-react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
-import { dayTaskState, eventsOfDay } from "@jc/domain";
+import { eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { formatTime, isSameDay, WEEKDAY_LABELS } from "@/shared/lib/dates";
@@ -18,10 +18,10 @@ export type MonthGridProps = {
   onSelectDay: (day: Date) => void;
   onOpenEvent: (event: CalendarEntry) => void;
   /**
-   * Ouvre les tâches d'un jour. Absent quand le volet de droite n'existe pas
-   * (téléphone) : le repère « N tâches » reste alors un simple repère.
+   * Ouvre une liste. Absent quand le volet de droite n'existe pas (téléphone) :
+   * la ligne de la liste reste alors un simple repère.
    */
-  onOpenDayTasks?: (day: Date) => void;
+  onOpenList?: (list: TaskListWithTasks) => void;
   /** En deçà du point de rupture : pastilles au lieu des titres. */
   compact: boolean;
 };
@@ -46,7 +46,7 @@ export function MonthGrid({
   selectedDay,
   onSelectDay,
   onOpenEvent,
-  onOpenDayTasks,
+  onOpenList,
   compact,
 }: MonthGridProps) {
   const today = new Date();
@@ -65,173 +65,191 @@ export function MonthGrid({
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
-      <View className="min-h-full flex-1">
-        {weeks.map((week) => (
-          <View key={week[0]?.toISOString()} className="flex-1 flex-row" style={{ minHeight: compact ? 64 : 96 }}>
-        {week.map((day) => {
-          const outside = day.getMonth() !== anchor.getMonth();
-          const isToday = isSameDay(day, today);
-          const selected = isSameDay(day, selectedDay);
-          const dayEvents = eventsOfDay(events, day);
-          // Ce qui reste à faire ne charge plus la journée une fois coché, mais
-          // la journée ne disparaît pas pour autant : elle se montre « faite ».
-          const { open: dayTasks, allDone: dayDone } = dayTaskState(lists, day);
-          const hasTaskBadge = dayTasks > 0 || dayDone;
-          const { shown, hidden } = fitEvents(dayEvents, hasTaskBadge);
-
-          return (
+        <View className="min-h-full flex-1">
+          {weeks.map((week) => (
             <View
-              key={day.toISOString()}
-              className={`border-border min-w-0 flex-1 gap-1 border-b border-r p-1 ${
-                selected ? "bg-accent-soft" : ""
-              }`}
+              key={week[0]?.toISOString()}
+              className="flex-1 flex-row"
+              style={{ minHeight: compact ? 64 : 96 }}
             >
-              {/* La cellule n'est pas elle-même pressable : elle porte les
+              {week.map((day) => {
+                const outside = day.getMonth() !== anchor.getMonth();
+                const isToday = isSameDay(day, today);
+                const selected = isSameDay(day, selectedDay);
+                // Chaque liste garde son titre : une liste est une chose à part entière,
+                // pas un compte de tâches fusionné avec celles du même jour (Yann,
+                // 12 novembre). Rendez-vous et listes partagent donc le même budget
+                // de lignes et le même « N autres » que Google Agenda.
+                const entries = cellEntries(eventsOfDay(events, day), listsOfDay(lists, day));
+                const openTasks = entries.reduce(
+                  (count, entry) => count + (entry.kind === "list" ? openTaskCount(entry.list) : 0),
+                  0,
+                );
+                const { shown, hidden } = fitEntries(entries, compact);
+
+                return (
+                  <View
+                    key={day.toISOString()}
+                    className={`border-border min-w-0 flex-1 gap-1 border-b border-r p-1 ${
+                      selected ? "bg-accent-soft" : ""
+                    }`}
+                  >
+                    {/* La cellule n'est pas elle-même pressable : elle porte les
                   rendez-vous, qui le sont, et un bouton dans un bouton n'est
                   pas du HTML valide. Le sélecteur de jour est donc posé en
                   fond — avant eux dans la pile, pour qu'ils captent l'appui
                   qui les vise — et le contenu inerte le laisse passer. */}
-              <Pressable
-                style={StyleSheet.absoluteFill}
-                onPress={() => onSelectDay(day)}
-                accessibilityRole="button"
-                accessibilityLabel={`${day.getDate()}, ${dayEvents.length} événement(s), ${dayTasks} tâche(s) à faire`}
-                accessibilityState={{ selected }}
-              />
-
-              <View className="flex-row justify-end" style={{ pointerEvents: "none" }}>
-                <Text
-                  className={`text-xs ${outside ? "text-muted-foreground" : "text-foreground"} ${
-                    isToday
-                      ? "bg-primary text-primary-foreground h-5 w-5 rounded-full text-center leading-5"
-                      : ""
-                  }`}
-                >
-                  {day.getDate()}
-                </Text>
-              </View>
-
-              {compact ? (
-                <View
-                  className="flex-row flex-wrap items-center gap-0.5"
-                  style={{ pointerEvents: "none" }}
-                >
-                  {dayEvents.slice(0, MAX_LINES_PER_CELL).map((event) => (
-                    <View key={event.id} className="bg-primary h-1.5 w-1.5 rounded-full" />
-                  ))}
-                  {hasTaskBadge ? <TaskBadge count={dayTasks} done={dayDone} compact /> : null}
-                </View>
-              ) : (
-                // `box-none` et non `none` : la colonne elle-même laisse
-                // passer l'appui vers le sélecteur de jour, mais les
-                // rendez-vous qu'elle porte restent pressables.
-                <View className="gap-0.5" style={{ pointerEvents: "box-none" }}>
-                  {/* Avant les rendez-vous : au-delà de trois lignes la cellule
-                      déborde, et la charge de la journée doit rester visible. */}
-                  {hasTaskBadge ? (
-                    <TaskBadge
-                      count={dayTasks}
-                      done={dayDone}
-                      {...(onOpenDayTasks ? { onPress: () => onOpenDayTasks(day) } : {})}
-                    />
-                  ) : null}
-                  {shown.map((event) => (
                     <Pressable
-                      key={event.id}
-                      onPress={() => onOpenEvent(event)}
+                      style={StyleSheet.absoluteFill}
+                      onPress={() => onSelectDay(day)}
                       accessibilityRole="button"
-                      accessibilityLabel={eventLabel(event)}
-                      className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
-                    >
-                      {event.space ? <SharedMark /> : null}
+                      accessibilityLabel={`${day.getDate()}, ${entries.length} élément(s), ${openTasks} tâche(s) à faire`}
+                      accessibilityState={{ selected }}
+                    />
+
+                    <View className="flex-row justify-end" style={{ pointerEvents: "none" }}>
                       <Text
-                        numberOfLines={1}
-                        className="text-accent-soft-foreground flex-1 text-[11px] leading-4"
+                        className={`text-xs ${outside ? "text-muted-foreground" : "text-foreground"} ${
+                          isToday
+                            ? "bg-primary text-primary-foreground h-5 w-5 rounded-full text-center leading-5"
+                            : ""
+                        }`}
                       >
-                        {event.allDay
-                          ? event.title
-                          : `${formatTime(event.startsAt)} ${event.title}`}
+                        {day.getDate()}
                       </Text>
-                    </Pressable>
-                  ))}
-                  {hidden > 0 ? (
-                    <View style={{ pointerEvents: "none" }}>
-                      <Text className="text-muted-foreground px-1 text-[11px]">+{hidden}</Text>
                     </View>
-                  ) : null}
-                </View>
-              )}
+
+                    {/* `box-none` et non `none` : la colonne elle-même laisse passer
+                  l'appui vers le sélecteur de jour, mais les lignes qu'elle
+                  porte restent pressables. */}
+                    <View className="gap-0.5" style={{ pointerEvents: "box-none" }}>
+                      {shown.map((entry) => (
+                        <EntryLine
+                          key={entry.key}
+                          entry={entry}
+                          onOpenEvent={onOpenEvent}
+                          {...(onOpenList ? { onOpenList } : {})}
+                        />
+                      ))}
+                      {hidden > 0 ? (
+                        <View style={{ pointerEvents: "none" }}>
+                          <Text className="text-muted-foreground px-1 text-[11px]">
+                            {hidden === 1 ? "1 autre" : `${hidden} autres`}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
             </View>
-          );
-        })}
-          </View>
-        ))}
-      </View>
+          ))}
+        </View>
       </ScrollView>
     </View>
   );
 }
 
+/** Une ligne de cellule : un rendez-vous ou une liste, mêlés dans l'ordre du jour. */
+type CellEntry =
+  | { kind: "event"; key: string; sortAt: string; event: CalendarEntry }
+  | { kind: "list"; key: string; sortAt: string; list: TaskListWithTasks };
+
 /**
- * Ce qu'une cellule montre de ses rendez-vous, et ce qu'elle en tait.
- *
- * La pastille de tâches occupe une ligne au même titre qu'un rendez-vous, et le
- * « +N » aussi : les compter dans le même budget est ce qui empêche une journée
- * chargée de déborder de sa cellule.
+ * Les rendez-vous et les listes d'un jour, dans l'ordre du temps : ce qui dure
+ * toute la journée d'abord, puis par heure.
  */
-function fitEvents(
-  events: CalendarEntry[],
-  hasTaskBadge: boolean,
-): { shown: CalendarEntry[]; hidden: number } {
-  const room = MAX_LINES_PER_CELL - (hasTaskBadge ? 1 : 0);
-  const shown = events.length <= room ? events : events.slice(0, Math.max(room - 1, 0));
-  return { shown, hidden: events.length - shown.length };
+function cellEntries(events: CalendarEntry[], lists: TaskListWithTasks[]): CellEntry[] {
+  const all: CellEntry[] = [
+    ...events.map((event): CellEntry => ({
+      kind: "event",
+      key: `event-${event.id}`,
+      sortAt: event.allDay ? "" : event.startsAt,
+      event,
+    })),
+    ...lists.map((list): CellEntry => ({
+      kind: "list",
+      key: `list-${list.id}-${list.dueAt ?? ""}`,
+      sortAt: list.dueAllDay === false ? (list.dueAt ?? "") : "",
+      list,
+    })),
+  ];
+  return all.sort((a, b) => a.sortAt.localeCompare(b.sortAt));
 }
 
 /**
- * Ce qu'une journée porte de tâches à faire.
+ * Ce qu'une cellule montre, et ce qu'elle en tait.
  *
- * Un compte et non les titres : la cellule est déjà partagée avec les
- * rendez-vous, et c'est la charge de la journée qu'on lit d'un coup d'œil dans
- * une grille mensuelle.
+ * Le « N autres » occupe une ligne au même titre que les autres : le compter
+ * dans le même budget est ce qui empêche une journée chargée de déborder de sa
+ * cellule. Sur téléphone, la cellule est trop étroite pour plus d'un titre : on
+ * montre le premier, puis « N autres » (décision de Yann, 12 novembre).
  */
-function TaskBadge({
-  count,
-  done = false,
-  compact,
-  onPress,
+function fitEntries(
+  entries: CellEntry[],
+  compact: boolean,
+): { shown: CellEntry[]; hidden: number } {
+  const room = compact ? 1 : MAX_LINES_PER_CELL;
+  const shown =
+    entries.length <= room ? entries : entries.slice(0, Math.max(room - 1, compact ? 1 : 0));
+  return { shown, hidden: entries.length - shown.length };
+}
+
+/** La ligne d'un rendez-vous ou d'une liste, même allure : un titre précédé de son heure. */
+function EntryLine({
+  entry,
+  onOpenEvent,
+  onOpenList,
 }: {
-  count: number;
-  /** Tout est coché : le repère reste, sous sa forme « fait ». */
-  done?: boolean;
-  compact?: boolean;
-  onPress?: () => void;
+  entry: CellEntry;
+  onOpenEvent: (event: CalendarEntry) => void;
+  onOpenList?: (list: TaskListWithTasks) => void;
 }) {
-  if (compact) {
+  if (entry.kind === "event") {
+    const { event } = entry;
     return (
-      <View className="flex-row items-center gap-0.5" style={{ pointerEvents: "none" }}>
-        <Icon as={done ? Check : ListChecks} size={10} className="text-muted-foreground" />
-        {done ? null : <Text className="text-muted-foreground text-[10px]">{count}</Text>}
-      </View>
+      <Pressable
+        onPress={() => onOpenEvent(event)}
+        accessibilityRole="button"
+        accessibilityLabel={eventLabel(event)}
+        className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
+      >
+        {event.space ? <SharedMark /> : null}
+        <Text
+          numberOfLines={1}
+          className="text-accent-soft-foreground flex-1 text-[11px] leading-4"
+        >
+          {event.allDay ? event.title : `${formatTime(event.startsAt)} ${event.title}`}
+        </Text>
+      </Pressable>
     );
   }
 
-  const label = done ? "Tout est fait" : count === 1 ? "1 tâche" : `${count} tâches`;
+  const { list } = entry;
+  const done = list.tasks.length > 0 && openTaskCount(list) === 0;
+  const timed = list.dueAllDay === false && list.dueAt !== null;
   const content = (
     <>
-      <Icon as={done ? Check : ListChecks} size={10} className="text-muted-foreground" />
-      <Text className="text-muted-foreground text-[11px] leading-4">{label}</Text>
+      <Icon as={ListChecks} size={10} className="text-accent-soft-foreground" />
+      <Text
+        numberOfLines={1}
+        className={`text-accent-soft-foreground flex-1 text-[11px] leading-4 ${
+          done ? "line-through opacity-60" : ""
+        }`}
+      >
+        {timed && list.dueAt ? `${formatTime(list.dueAt)} ${list.title}` : list.title}
+      </Text>
     </>
   );
 
-  // Cliquable seulement quand il y a un volet où montrer ces tâches.
-  if (onPress) {
+  // Cliquable seulement quand il y a un volet où montrer la liste.
+  if (onOpenList) {
     return (
       <Pressable
-        onPress={onPress}
+        onPress={() => onOpenList(list)}
         accessibilityRole="button"
-        accessibilityLabel={done ? "Voir les tâches faites" : `Voir les ${label}`}
-        className="border-border flex-row items-center gap-1 rounded border px-1 py-0.5"
+        accessibilityLabel={`Voir la liste ${list.title}`}
+        className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
       >
         {content}
       </Pressable>
@@ -240,7 +258,7 @@ function TaskBadge({
 
   return (
     <View
-      className="border-border flex-row items-center gap-1 rounded border px-1 py-0.5"
+      className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
       style={{ pointerEvents: "none" }}
     >
       {content}

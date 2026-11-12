@@ -361,7 +361,7 @@ export function CalendarScreen() {
               onSelectDay={selectDay}
               onOpenEvent={openEvent}
               {...(pane.available
-                ? { onOpenDayTasks: (day: Date) => pane.open({ kind: "day", day }) }
+                ? { onOpenList: (list) => pane.open({ kind: "list", listId: list.id }) }
                 : {})}
               compact={compact}
             />
