@@ -67,6 +67,8 @@ function makeRepository(overrides: Partial<ITaskRepository> = {}): ITaskReposito
       ),
     updateTask: jest.fn().mockResolvedValue(makeTask()),
     deleteTask: jest.fn().mockResolvedValue(undefined),
+    findOccurrences: jest.fn().mockResolvedValue([]),
+    upsertOccurrence: jest.fn().mockResolvedValue(undefined),
     replaceTasks: jest
       .fn()
       .mockImplementation((_userId, listId: string, content: { rows: TaskRowInput[] }) =>
@@ -432,9 +434,9 @@ describe("TaskService", () => {
 
     it("refuse de reculer la fin avant le début existant", async () => {
       const repo = makeRepository({
-        findById: jest.fn().mockResolvedValue(
-          makeList({ dueAt: "2099-01-01T14:30:00.000Z", dueAllDay: false }),
-        ),
+        findById: jest
+          .fn()
+          .mockResolvedValue(makeList({ dueAt: "2099-01-01T14:30:00.000Z", dueAllDay: false })),
       });
       const service = makeService(repo);
 
@@ -459,6 +461,212 @@ describe("TaskService", () => {
 
       const patch = (repo.updateList as jest.Mock).mock.calls[0]?.[1] as Record<string, unknown>;
       expect(patch).not.toHaveProperty("endsAt");
+    });
+  });
+
+  describe("série : une seule date", () => {
+    const SERIES = makeList({
+      dueAt: "2026-01-01T18:00:00.000Z",
+      dueAllDay: false,
+      endsAt: "2026-01-01T19:00:00.000Z",
+      rrule: "FREQ=WEEKLY;BYDAY=TH",
+    });
+    const THURSDAY = "2026-03-05T18:00:00.000Z";
+
+    function serviceWith(
+      list: TaskListWithTasks | null,
+      existing: {
+        occurrenceAt: string;
+        doneAt: string | null;
+        movedTo: string | null;
+        cancelled: boolean;
+      }[] = [],
+    ) {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(list),
+        findOccurrences: jest
+          .fn()
+          .mockResolvedValue(existing.map((row) => ({ ...row, listId: LIST }))),
+      });
+      return { repo, service: makeService(repo) };
+    }
+
+    it("coche seulement la date demandée", async () => {
+      const { repo, service } = serviceWith(SERIES);
+
+      await service.setOccurrence(USER, LIST, { occurrenceAt: THURSDAY, done: true }, TOKEN);
+
+      expect(repo.upsertOccurrence).toHaveBeenCalledWith(
+        USER,
+        LIST,
+        expect.objectContaining({ occurrenceAt: THURSDAY, cancelled: false, movedTo: null }),
+        TOKEN,
+      );
+      const row = (repo.upsertOccurrence as jest.Mock).mock.calls[0]?.[2] as { doneAt: string };
+      expect(row.doneAt).not.toBeNull();
+    });
+
+    it("déplace une date sans la cocher ni la supprimer", async () => {
+      const { repo, service } = serviceWith(SERIES);
+
+      await service.setOccurrence(
+        USER,
+        LIST,
+        { occurrenceAt: THURSDAY, movedTo: "2026-03-06T09:00:00.000Z" },
+        TOKEN,
+      );
+
+      expect(repo.upsertOccurrence).toHaveBeenCalledWith(
+        USER,
+        LIST,
+        {
+          occurrenceAt: THURSDAY,
+          doneAt: null,
+          movedTo: "2026-03-06T09:00:00.000Z",
+          cancelled: false,
+        },
+        TOKEN,
+      );
+    });
+
+    it("garde ce qui était déjà décidé pour cette date quand on en change un autre aspect", async () => {
+      const { repo, service } = serviceWith(SERIES, [
+        {
+          occurrenceAt: THURSDAY,
+          doneAt: "2026-03-05T20:00:00.000Z",
+          movedTo: null,
+          cancelled: false,
+        },
+      ]);
+
+      await service.setOccurrence(USER, LIST, { occurrenceAt: THURSDAY, cancelled: true }, TOKEN);
+
+      expect(repo.upsertOccurrence).toHaveBeenCalledWith(
+        USER,
+        LIST,
+        {
+          occurrenceAt: THURSDAY,
+          doneAt: "2026-03-05T20:00:00.000Z",
+          movedTo: null,
+          cancelled: true,
+        },
+        TOKEN,
+      );
+    });
+
+    it("décoche une date en effaçant sa complétion", async () => {
+      const { repo, service } = serviceWith(SERIES, [
+        {
+          occurrenceAt: THURSDAY,
+          doneAt: "2026-03-05T20:00:00.000Z",
+          movedTo: null,
+          cancelled: false,
+        },
+      ]);
+
+      await service.setOccurrence(USER, LIST, { occurrenceAt: THURSDAY, done: false }, TOKEN);
+
+      expect(repo.upsertOccurrence).toHaveBeenCalledWith(
+        USER,
+        LIST,
+        expect.objectContaining({ doneAt: null }),
+        TOKEN,
+      );
+    });
+
+    it("refuse une date que la série ne produit pas", async () => {
+      const { repo, service } = serviceWith(SERIES);
+
+      await expect(
+        service.setOccurrence(
+          USER,
+          LIST,
+          { occurrenceAt: "2026-03-06T18:00:00.000Z", done: true },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(repo.upsertOccurrence).not.toHaveBeenCalled();
+    });
+
+    it("refuse une liste qui ne se répète pas", async () => {
+      const { service } = serviceWith(
+        makeList({ dueAt: "2026-03-05T18:00:00.000Z", dueAllDay: false }),
+      );
+
+      await expect(
+        service.setOccurrence(USER, LIST, { occurrenceAt: THURSDAY, done: true }, TOKEN),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it("refuse une liste introuvable", async () => {
+      const { service } = serviceWith(null);
+
+      await expect(
+        service.setOccurrence(USER, LIST, { occurrenceAt: THURSDAY, done: true }, TOKEN),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe("occurrences", () => {
+    const MARCH = { from: "2026-03-01T00:00:00.000Z", to: "2026-04-01T00:00:00.000Z" };
+
+    it("réunit les listes datées dans l'ordre du temps, sans les listes sans échéance", async () => {
+      const repo = makeRepository({
+        findAll: jest.fn().mockResolvedValue({
+          items: [
+            makeList({ id: "b", dueAt: "2026-03-20T10:00:00.000Z", dueAllDay: false }),
+            makeList({ id: "a", dueAt: "2026-03-02T10:00:00.000Z", dueAllDay: false }),
+            makeList({ id: "c", dueAt: null, dueAllDay: null }),
+          ],
+          nextCursor: null,
+        }),
+      });
+      const service = makeService(repo);
+
+      const occurrences = await service.occurrences(MARCH, TOKEN);
+
+      expect(occurrences.map((item) => item.listId)).toEqual(["a", "b"]);
+    });
+
+    it("n'interroge les exceptions que pour les listes qui se répètent", async () => {
+      const repo = makeRepository({
+        findAll: jest.fn().mockResolvedValue({
+          items: [
+            makeList({ id: "once", dueAt: "2026-03-02T10:00:00.000Z", dueAllDay: false }),
+            makeList({
+              id: "series",
+              dueAt: "2026-03-02T10:00:00.000Z",
+              dueAllDay: false,
+              rrule: "FREQ=WEEKLY",
+            }),
+          ],
+          nextCursor: null,
+        }),
+      });
+      const service = makeService(repo);
+
+      await service.occurrences(MARCH, TOKEN);
+
+      expect(repo.findOccurrences).toHaveBeenCalledWith(["series"], TOKEN);
+    });
+
+    it("enchaîne les pages jusqu'à la dernière", async () => {
+      const findAll = jest
+        .fn()
+        .mockResolvedValueOnce({
+          items: [makeList({ id: "a", dueAt: "2026-03-02T10:00:00.000Z", dueAllDay: false })],
+          nextCursor: "curseur",
+        })
+        .mockResolvedValueOnce({
+          items: [makeList({ id: "b", dueAt: "2026-03-03T10:00:00.000Z", dueAllDay: false })],
+          nextCursor: null,
+        });
+      const service = makeService(makeRepository({ findAll }));
+
+      const occurrences = await service.occurrences(MARCH, TOKEN);
+
+      expect(occurrences.map((item) => item.listId)).toEqual(["a", "b"]);
+      expect(findAll).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -705,7 +913,9 @@ describe("TaskService", () => {
     });
 
     it("ne touche à aucun rendez-vous quand la liste n'en porte pas", async () => {
-      const repo = makeRepository({ findById: jest.fn().mockResolvedValue(makeList({ eventId: null })) });
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(makeList({ eventId: null })),
+      });
       const events = makeCalendarRepository();
 
       await makeService(repo, events).updateList(
@@ -821,9 +1031,11 @@ describe("TaskService", () => {
 
     it("reprojette le nouveau titre sur le créneau déjà posé", async () => {
       const repo = makeRepository({
-        findById: jest.fn().mockResolvedValue(
-          makeList({ eventId: EVENT, dueAt: "2026-09-12T07:00:00.000Z", dueAllDay: false }),
-        ),
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeList({ eventId: EVENT, dueAt: "2026-09-12T07:00:00.000Z", dueAllDay: false }),
+          ),
       });
       const events = makeCalendarRepository();
 
@@ -840,9 +1052,11 @@ describe("TaskService", () => {
 
     it("libère le créneau quand on efface l'échéance de la liste", async () => {
       const repo = makeRepository({
-        findById: jest.fn().mockResolvedValue(
-          makeList({ eventId: EVENT, dueAt: "2026-09-12T07:00:00.000Z", dueAllDay: false }),
-        ),
+        findById: jest
+          .fn()
+          .mockResolvedValue(
+            makeList({ eventId: EVENT, dueAt: "2026-09-12T07:00:00.000Z", dueAllDay: false }),
+          ),
       });
       const events = makeCalendarRepository();
 
@@ -1007,13 +1221,11 @@ describe("TaskService", () => {
 
     it("efface la date de complétion quand la tâche est décochée", async () => {
       const repo = makeRepository({
-        findById: jest
-          .fn()
-          .mockResolvedValue(
-            makeList({
-              tasks: [makeTask({ done: true, completedAt: "2026-09-01T09:00:00.000Z" })],
-            }),
-          ),
+        findById: jest.fn().mockResolvedValue(
+          makeList({
+            tasks: [makeTask({ done: true, completedAt: "2026-09-01T09:00:00.000Z" })],
+          }),
+        ),
       });
 
       await makeService(repo).updateTask(USER, LIST, "task-1", { done: false }, TOKEN);

@@ -180,3 +180,34 @@ export type CreateTaskList = z.infer<typeof createTaskListSchema>;
 export const updateTaskListSchema = createTaskListSchema.partial();
 
 export type UpdateTaskList = z.infer<typeof updateTaskListSchema>;
+
+/**
+ * Une occurrence d'une liste, telle que la vue la lit.
+ *
+ * `occurrenceAt` est la clé : le début que la série calcule, qui ne change
+ * jamais même si l'occurrence est déplacée (`startsAt` dit alors où elle est
+ * vraiment). Une liste ponctuelle n'a qu'une occurrence, à son échéance.
+ */
+export const listOccurrenceSchema = z.object({
+  listId: uuidSchema,
+  occurrenceAt: isoDateTimeSchema,
+  startsAt: isoDateTimeSchema,
+  endsAt: isoDateTimeSchema.nullable(),
+  allDay: z.boolean(),
+  doneAt: isoDateTimeSchema.nullable(),
+});
+
+export type ListOccurrence = z.infer<typeof listOccurrenceSchema>;
+
+/**
+ * Ce qu'on peut faire à UNE date d'une série : la cocher, la déplacer, la
+ * supprimer. Un champ absent laisse l'état de cette date intact.
+ */
+export const setOccurrenceSchema = z.object({
+  occurrenceAt: isoDateTimeSchema,
+  done: z.boolean().optional(),
+  movedTo: isoDateTimeSchema.nullable().optional(),
+  cancelled: z.boolean().optional(),
+});
+
+export type SetOccurrence = z.infer<typeof setOccurrenceSchema>;

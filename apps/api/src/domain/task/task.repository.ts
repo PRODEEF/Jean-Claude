@@ -43,6 +43,14 @@ type TaskRow = {
   updated_at: string;
 };
 
+type OccurrenceRow = {
+  list_id: string;
+  occurrence_at: string;
+  done_at: string | null;
+  moved_to: string | null;
+  cancelled: boolean;
+};
+
 function toList(row: TaskListRow): TaskList {
   return {
     id: row.id,
@@ -207,6 +215,42 @@ export const taskRepository: ITaskRepository = {
     if (error) throw new Error(error.message);
     if (!data) throw httpError(404, "Liste introuvable.");
     return toList(data as unknown as TaskListRow);
+  },
+
+  async findOccurrences(listIds, accessToken) {
+    if (listIds.length === 0) return [];
+
+    const { data, error } = await forUser(accessToken)
+      .from("task_list_occurrences")
+      .select("list_id, occurrence_at, done_at, moved_to, cancelled")
+      .in("list_id", listIds);
+
+    if (error) throw new Error(error.message);
+    return (data as unknown as OccurrenceRow[]).map((row) => ({
+      listId: row.list_id,
+      occurrenceAt: row.occurrence_at,
+      doneAt: row.done_at,
+      movedTo: row.moved_to,
+      cancelled: row.cancelled,
+    }));
+  },
+
+  async upsertOccurrence(userId, listId, row, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("task_list_occurrences")
+      .upsert(
+        {
+          user_id: userId,
+          list_id: listId,
+          occurrence_at: row.occurrenceAt,
+          done_at: row.doneAt,
+          moved_to: row.movedTo,
+          cancelled: row.cancelled,
+        },
+        { onConflict: "list_id,occurrence_at" },
+      );
+
+    if (error) throw new Error(error.message);
   },
 
   async deleteList(id, accessToken) {

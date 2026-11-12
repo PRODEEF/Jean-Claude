@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type {
+  CalendarRange,
   CreateTask,
   CreateTaskList,
   CursorPagination,
+  ListOccurrence,
   Paginated,
   ReplaceTasks,
+  SetOccurrence,
   Task,
   TaskList,
   TaskListWithTasks,
@@ -21,8 +24,10 @@ import {
   isPastCalendarDay,
   isSameCalendarDay,
 } from "../../core/timezone.js";
+import { seriesDates } from "../calendar/occurrences.js";
 import type { ICalendarRepository } from "../calendar/calendar.repository.interface.js";
 import type { IUserRepository } from "../user/user.repository.interface.js";
+import { listOccurrencesInRange } from "./list-occurrences.js";
 import type {
   ITaskRepository,
   TaskListOrigin,
@@ -36,6 +41,9 @@ const DEFAULT_TIMEZONE: UserPreferences["timezone"] = userPreferencesSchema.shap
 );
 
 const SCOPE = "task.service";
+
+/** La plus grande page que l'API accepte (`cursorPaginationSchema`). */
+const OCCURRENCES_PAGE_SIZE = 100;
 
 export class TaskService {
   constructor(
@@ -69,6 +77,91 @@ export class TaskService {
    */
   listForConversation(conversationId: string, accessToken: string): Promise<TaskListWithTasks[]> {
     return this.lists.findByConversation(conversationId, accessToken);
+  }
+
+  /**
+   * Les occurrences de toutes les listes datées qui chevauchent la fenêtre,
+   * séries dépliées et exceptions appliquées, dans l'ordre du temps.
+   *
+   * Même contrat « tout d'un coup » que `list` côté client : la vue lit une
+   * fenêtre entière, un chargement partiel y laisserait des trous.
+   */
+  async occurrences(range: CalendarRange, accessToken: string): Promise<ListOccurrence[]> {
+    const lists: TaskListWithTasks[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.lists.findAll(accessToken, {
+        ...(cursor ? { cursor } : {}),
+        limit: OCCURRENCES_PAGE_SIZE,
+      });
+      lists.push(...page.items);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+
+    const dated = lists.filter((list) => list.dueAt !== null);
+    const overrides = await this.lists.findOccurrences(
+      dated.filter((list) => list.rrule !== null).map((list) => list.id),
+      accessToken,
+    );
+
+    return dated
+      .flatMap((list) =>
+        listOccurrencesInRange(
+          list,
+          overrides.filter((override) => override.listId === list.id),
+          range,
+        ),
+      )
+      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  }
+
+  /**
+   * Cocher, déplacer ou supprimer UNE date d'une série, sans toucher à la série.
+   *
+   * « Toute la série » reste une modification de la liste elle-même. La date
+   * doit être une vraie date de la série : sans cela, une exception sur une
+   * date que la série ne produit pas resterait là, invisible, à jamais.
+   */
+  async setOccurrence(
+    userId: string,
+    listId: string,
+    input: SetOccurrence,
+    accessToken: string,
+  ): Promise<void> {
+    const list = await this.requireList(listId, accessToken);
+    if (list.rrule === null || list.dueAt === null) {
+      throw httpError(400, "Cette liste ne se répète pas.");
+    }
+
+    const at = new Date(input.occurrenceAt);
+    const dates = seriesDates(list.id, list.rrule, new Date(list.dueAt), {
+      from: at.toISOString(),
+      to: new Date(at.getTime() + 1000).toISOString(),
+    });
+    if (!dates?.some((date) => date.getTime() === at.getTime())) {
+      throw httpError(400, "Cette date n'appartient pas à la série.");
+    }
+
+    const [current] = (await this.lists.findOccurrences([listId], accessToken)).filter(
+      (row) => new Date(row.occurrenceAt).getTime() === at.getTime(),
+    );
+
+    await this.lists.upsertOccurrence(
+      userId,
+      listId,
+      {
+        occurrenceAt: at.toISOString(),
+        doneAt:
+          input.done === undefined
+            ? (current?.doneAt ?? null)
+            : input.done
+              ? new Date().toISOString()
+              : null,
+        movedTo: input.movedTo !== undefined ? input.movedTo : (current?.movedTo ?? null),
+        cancelled: input.cancelled ?? current?.cancelled ?? false,
+      },
+      accessToken,
+    );
   }
 
   async createList(

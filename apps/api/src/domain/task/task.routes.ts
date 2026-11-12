@@ -1,10 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import {
+  calendarRangeSchema,
   createTaskListSchema,
   createTaskSchema,
   cursorPaginationSchema,
   replaceTasksSchema,
+  setOccurrenceSchema,
   updateTaskListSchema,
   updateTaskSchema,
   uuidSchema,
@@ -36,6 +38,11 @@ export const taskRoutes = new Hono<AuthEnv>()
     c.json(await service.list(c.get("user").accessToken, c.req.valid("query"))),
   )
 
+  // Avant les routes paramétrées : `occurrences` serait lu comme un identifiant.
+  .get("/occurrences", validate("query", calendarRangeSchema), async (c) =>
+    c.json(await service.occurrences(c.req.valid("query"), c.get("user").accessToken)),
+  )
+
   .post("/", validate("json", createTaskListSchema), async (c) => {
     const user = c.get("user");
     return c.json(await service.createList(user.id, c.req.valid("json"), user.accessToken), 201);
@@ -49,6 +56,13 @@ export const taskRoutes = new Hono<AuthEnv>()
 
   .delete("/:id", idParam, async (c) => {
     await service.deleteList(c.req.valid("param").id, c.get("user").accessToken);
+    return c.body(null, 204);
+  })
+
+  .put("/:id/occurrences", idParam, validate("json", setOccurrenceSchema), async (c) => {
+    const user = c.get("user");
+    const { id } = c.req.valid("param");
+    await service.setOccurrence(user.id, id, c.req.valid("json"), user.accessToken);
     return c.body(null, 204);
   })
 
