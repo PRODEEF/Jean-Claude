@@ -23,7 +23,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 - **Poignées de déplacement derrière la ligne** (V0.00.49). Les six points ⠿ qui servent à changer l'ordre d'une tâche (et d'une liste dans le volet) passent de gauche à droite de la ligne : devant, il ne reste que la case à cocher (et le repli pour une liste). Vaut dans « Mes listes », le volet de droite et les listes d'espace. Aucun changement sur téléphone (pas de poignée). *Où : « Mes listes », volet, espaces.* — Vu dans un navigateur simulé ; à tester sur le site réel quand Vercel pourra le construire.
 
-`dev` porte V0.00.49 ; la production affichée est V0.00.42 (voir plus bas).
+`dev` porte V0.00.50 ; la production affichée est V0.00.42 (voir plus bas).
 
 ### Mis en production le 12 novembre (jusqu'à V0.00.42 en ligne ; V0.00.43 à V0.00.48 pas encore visibles)
 
