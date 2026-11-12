@@ -100,7 +100,7 @@ export function titleMatchesQuery(title: string, query: string): boolean {
  * à la todoliste, pas un jeton générique de `spacing`. Partagé entre
  * `TaskListEditor` et `TaskRow` pour que les deux rendus restent alignés.
  */
-export const TASK_INDENT = 22;
+export const TASK_INDENT = 32;
 
 /**
  * Hauteur de ligne et taille de case à cocher resserrées, en dessous de
