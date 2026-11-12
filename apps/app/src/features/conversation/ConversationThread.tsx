@@ -18,6 +18,7 @@ import type { Conversation, Message, MessageInputMode, Suggestion } from "@jc/do
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useDetailPane } from "@/shared/providers/detail-pane";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Markdown } from "@/shared/ui/Markdown";
 import { contentColumn, READING_MAX_WIDTH } from "@/shared/ui/screen-shell";
@@ -30,6 +31,7 @@ import { useSuggestions } from "./hooks/use-suggestions";
 import { MessageRow } from "./MessageRow";
 import { QuestionCard } from "./QuestionCard";
 import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
+import { SuggestionPointer } from "./SuggestionPaneBody";
 import { SwitchAsideCard } from "./SwitchAsideCard";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 
@@ -152,7 +154,35 @@ export function ConversationThread({
     pendingUserText,
   } = useConversationThread(conversationId, goToDedicatedConversation, restoreDraft);
   const olderCursor = messages.data?.nextCursor ?? null;
-  const { pending, resolved, resolve } = useSuggestions(conversationId);
+  const { pending, resolved, resolve, loaded: suggestionsLoaded } = useSuggestions(conversationId);
+  const pane = useDetailPane();
+
+  // Quand le volet existe, la proposition s'y ouvre toute seule dès qu'elle
+  // arrive (décision de Yann, 12 novembre). Seules les propositions apparues
+  // après l'ouverture du fil comptent : rouvrir une conversation ne doit pas
+  // rouvrir d'office une proposition laissée de côté.
+  const knownPending = useRef<Set<string> | null>(null);
+  const { available: paneAvailable, open: openPane, close: closePane } = pane;
+
+  // Le volet ne garde pas la proposition d'un fil que l'on quitte : elle
+  // n'aurait plus de contexte à côté.
+  const paneContent = useRef(pane.content);
+  paneContent.current = pane.content;
+  useEffect(
+    () => () => {
+      const shown = paneContent.current;
+      if (shown?.kind === "suggestion" && shown.conversationId === conversationId) closePane();
+    },
+    [conversationId, closePane],
+  );
+  useEffect(() => {
+    if (!suggestionsLoaded) return;
+    const known = knownPending.current;
+    knownPending.current = new Set(pending.map((suggestion) => suggestion.id));
+    if (known === null || !paneAvailable) return;
+    const fresh = pending.find((suggestion) => !known.has(suggestion.id));
+    if (fresh) openPane({ kind: "suggestion", conversationId, suggestionId: fresh.id });
+  }, [pending, suggestionsLoaded, paneAvailable, openPane, conversationId]);
   const { speakingId, toggle: toggleSpeech } = useSpeech();
 
   const failure = messages.error ?? send.error ?? resolve.error ?? switchAside.error;
@@ -410,25 +440,39 @@ export function ConversationThread({
 
                 {/* L'assistant propose, il n'exécute pas : les dossiers ne sont
                     créés que si l'utilisateur touche « Créer » (§12.1). */}
-                {pending.map((suggestion) => (
-                  <SuggestionCard
-                    key={suggestion.id}
-                    suggestion={suggestion}
-                    pendingAction={
-                      resolve.isPending && resolve.variables?.id === suggestion.id
-                        ? resolve.variables.action
-                        : null
-                    }
-                    onAccept={(input) =>
-                      resolve.mutate({
-                        id: suggestion.id,
-                        action: "accept",
-                        ...input,
-                      })
-                    }
-                    onDismiss={() => resolve.mutate({ id: suggestion.id, action: "dismiss" })}
-                  />
-                ))}
+                {pending.map((suggestion) =>
+                  pane.available ? (
+                    <SuggestionPointer
+                      key={suggestion.id}
+                      suggestion={suggestion}
+                      onOpen={() =>
+                        pane.open({
+                          kind: "suggestion",
+                          conversationId,
+                          suggestionId: suggestion.id,
+                        })
+                      }
+                    />
+                  ) : (
+                    <SuggestionCard
+                      key={suggestion.id}
+                      suggestion={suggestion}
+                      pendingAction={
+                        resolve.isPending && resolve.variables?.id === suggestion.id
+                          ? resolve.variables.action
+                          : null
+                      }
+                      onAccept={(input) =>
+                        resolve.mutate({
+                          id: suggestion.id,
+                          action: "accept",
+                          ...input,
+                        })
+                      }
+                      onDismiss={() => resolve.mutate({ id: suggestion.id, action: "dismiss" })}
+                    />
+                  ),
+                )}
 
                 {/* Tout le tour, et pas seulement jusqu'au premier jeton : après
                     le texte, le serveur prépare encore la proposition et le fil

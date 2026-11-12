@@ -16,6 +16,7 @@ import { ListCard } from "@/features/todo/ListCard";
 import { TaskListDeleteDialog } from "@/features/todo/TaskListDeleteDialog";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
 import { isTaskSubset } from "@/features/calendar/DueListsBoard";
+import { SuggestionPaneBody } from "@/features/conversation/SuggestionPaneBody";
 
 /** En deçà, l'en-tête d'une liste se tronque ; au-delà, le milieu n'est plus lisible. */
 const PANE_MIN_WIDTH = 360;
@@ -123,10 +124,23 @@ function ResizeHandle({
 function PaneTitle({ content }: { content: PaneContent }) {
   const { data: lists } = useTaskLists();
   if (content.kind === "day") return <>{formatFullDay(content.day)}</>;
+  if (content.kind === "suggestion") return <>Proposition de Jean-Claude</>;
   return <>{lists?.find((list) => list.id === content.listId)?.title ?? "Liste"}</>;
 }
 
 function PaneBody({ content }: { content: PaneContent }) {
+  if (content.kind === "suggestion") {
+    return (
+      <SuggestionPaneBody
+        conversationId={content.conversationId}
+        suggestionId={content.suggestionId}
+      />
+    );
+  }
+  return <ListPaneBody content={content} />;
+}
+
+function ListPaneBody({ content }: { content: Exclude<PaneContent, { kind: "suggestion" }> }) {
   const { data: lists } = useTaskLists();
   const [openedTask, setOpenedTask] = useState<Task | null>(null);
   const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
@@ -213,7 +227,7 @@ function PaneList({
 
 /** Les listes à montrer pour ce contenu : une liste entière, ou celles d'un jour. */
 function entriesOf(
-  content: PaneContent,
+  content: Exclude<PaneContent, { kind: "suggestion" }>,
   saved: TaskListWithTasks[],
 ): { list: TaskListWithTasks; day: Date | null }[] {
   if (content.kind === "list") {

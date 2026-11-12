@@ -47,7 +47,7 @@ export function useSuggestions(conversationId: string) {
   // retourne à sa place dans l'historique.
   const { pending, resolved } = useMemo(() => split(suggestions.data ?? []), [suggestions.data]);
 
-  return { pending, resolved, resolve };
+  return { pending, resolved, resolve, loaded: suggestions.isSuccess };
 }
 
 function split(all: Suggestion[]): { pending: Suggestion[]; resolved: Suggestion[] } {
