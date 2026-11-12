@@ -309,6 +309,16 @@ export function openTaskCount(list: TaskListWithTasks): number {
 }
 
 /**
+ * Une liste est cochée quand elle a des tâches et qu'aucune ne reste.
+ *
+ * Elle n'a pas d'état propre : cocher la liste coche ses tâches, cocher toutes
+ * ses tâches la coche. Une liste vide n'est pas « faite », elle est vide.
+ */
+export function isListDone(list: TaskListWithTasks): boolean {
+  return list.tasks.length > 0 && openTaskCount(list) === 0;
+}
+
+/**
  * Les listes dans l'ordre du temps : les échues par date croissante, puis
  * celles sans date à la fin.
  *

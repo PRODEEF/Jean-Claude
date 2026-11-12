@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type Ref, type RefObject } from "react";
 import { ScrollView, View } from "react-native";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
-import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
+import { isListDone, type Task, type TaskList, type TaskListWithTasks } from "@jc/domain";
 import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
@@ -11,6 +11,7 @@ import {
   TaskListCardBody,
   TaskListCardFrame,
   TaskListCardHeader,
+  TaskRowCheckbox,
   TaskRowGrip,
 } from "@/shared/ui/task-list-card";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
@@ -86,7 +87,7 @@ export function ListCard({
   /** Point d'ouverture du choix de dossier, `null` s'il est fermé. */
   const [folderMenu, setFolderMenu] = useState<{ x: number; y: number } | null>(null);
   const [editingDue, setEditingDue] = useState(false);
-  const { updateList } = useTaskActions();
+  const { updateList, updateTask } = useTaskActions();
   const card = useRef<View>(null);
 
   // Amène la carte visée depuis la barre latérale à l'écran : la mettre en
@@ -115,6 +116,18 @@ export function ListCard({
 
     return () => cancelAnimationFrame(frame);
   }, [scrollTarget, scrollRef]);
+
+  const allDone = isListDone(list);
+
+  // Cocher la liste coche ses tâches, la décocher les décoche : la liste n'a
+  // pas d'état à elle, elle se lit dans ses tâches (aucune colonne en base).
+  const toggleAll = () => {
+    const done = !allDone;
+    for (const task of list.tasks) {
+      if (task.done !== done)
+        updateTask.mutate({ listId: list.id, taskId: task.id, patch: { done } });
+    }
+  };
 
   const shopping = list.kind === "shopping";
   const due = dueLabel(list);
@@ -184,6 +197,17 @@ export function ListCard({
                   />
                 </Button>
               </CollapsibleTrigger>
+
+              <TaskRowCheckbox
+                done={allDone}
+                pending={list.tasks.length === 0}
+                label={
+                  allDone
+                    ? `Décocher toute la liste ${list.title}`
+                    : `Cocher toute la liste ${list.title}`
+                }
+                onPress={toggleAll}
+              />
 
               <Text className="shrink text-sm font-semibold" numberOfLines={1}>
                 {list.title}
