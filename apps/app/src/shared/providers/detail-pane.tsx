@@ -8,7 +8,11 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  * seule fois : il reçoit un contenu et affiche le bon panneau, avec les mêmes
  * éditeurs que les écrans du milieu.
  */
-export type PaneContent = { kind: "day"; day: Date } | { kind: "list"; listId: string };
+export type PaneContent =
+  | { kind: "day"; day: Date }
+  | { kind: "list"; listId: string }
+  // Une proposition de l'assistant, à valider ou ignorer sans quitter le fil.
+  | { kind: "suggestion"; conversationId: string; suggestionId: string };
 
 type DetailPaneState = {
   content: PaneContent | null;
