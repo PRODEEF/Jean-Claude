@@ -1,6 +1,6 @@
 import { ReminderService } from "./reminder.service.js";
 import type { IReminderRepository } from "./reminder.repository.interface.js";
-import type { ReminderEvent } from "./reminder-schedule.js";
+import type { RemindableList, ReminderEvent } from "./reminder-schedule.js";
 
 const NOW = new Date("2026-11-12T17:35:00.000Z");
 
@@ -24,9 +24,35 @@ function makeEvent(overrides: Partial<ReminderEvent> = {}): ReminderEvent {
   };
 }
 
+function makeRemindableList(): RemindableList {
+  return {
+    list: {
+      userId: "user-1",
+      id: "list-1",
+      title: "Danse",
+      kind: "todo",
+      dueAt: "2026-11-12T18:00:00.000Z",
+      dueAllDay: false,
+      endsAt: "2026-11-12T19:00:00.000Z",
+      rrule: null,
+      reminderMinutesBefore: 30,
+      doneAt: null,
+      notes: null,
+      eventId: null,
+      conversationId: null,
+      folderId: null,
+      createdByAssistant: false,
+      createdAt: "2026-11-01T08:00:00.000Z",
+      updatedAt: "2026-11-01T08:00:00.000Z",
+    },
+    overrides: [],
+  };
+}
+
 function makeRepository(overrides: Partial<IReminderRepository> = {}): IReminderRepository {
   return {
     findRemindable: jest.fn().mockResolvedValue([]),
+    findRemindableLists: jest.fn().mockResolvedValue([]),
     findRecipients: jest.fn().mockResolvedValue([
       {
         userId: "user-1",
@@ -38,6 +64,8 @@ function makeRepository(overrides: Partial<IReminderRepository> = {}): IReminder
     ]),
     claim: jest.fn().mockResolvedValue(true),
     release: jest.fn().mockResolvedValue(undefined),
+    claimList: jest.fn().mockResolvedValue(true),
+    releaseList: jest.fn().mockResolvedValue(undefined),
     postInChannel: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -203,6 +231,88 @@ describe("ReminderService", () => {
       expect(run).toEqual({ sent: 1, failed: 1 });
       expect(repo.release).toHaveBeenCalledTimes(1);
       expect(repo.release).toHaveBeenCalledWith("evt-1", "2026-11-12T18:00:00.000Z", "email");
+    });
+  });
+  describe("rappels de listes", () => {
+    it("écrit dans le canal le rappel d'une liste arrivée à l'heure, réservé sous sa propre clé", async () => {
+      const repo = makeRepository({
+        findRemindableLists: jest.fn().mockResolvedValue([makeRemindableList()]),
+      });
+
+      const run = await new ReminderService(repo, mailer).run(NOW);
+
+      expect(run).toEqual({ sent: 1, failed: 0 });
+      expect(repo.claimList).toHaveBeenCalledWith(
+        "list-1",
+        "2026-11-12T18:00:00.000Z",
+        "assistant_channel",
+      );
+      expect(repo.claim).not.toHaveBeenCalled();
+      expect(repo.postInChannel).toHaveBeenCalledWith(
+        "user-1",
+        "Rappel : Danse, à 19h (dans 30 minutes).",
+      );
+    });
+
+    it("n'envoie pas deux fois le rappel d'une liste déjà réservé", async () => {
+      const repo = makeRepository({
+        findRemindableLists: jest.fn().mockResolvedValue([makeRemindableList()]),
+        claimList: jest.fn().mockResolvedValue(false),
+      });
+
+      const run = await new ReminderService(repo, mailer).run(NOW);
+
+      expect(run).toEqual({ sent: 0, failed: 0 });
+      expect(repo.postInChannel).not.toHaveBeenCalled();
+    });
+
+    it("rend la réservation d'une liste quand l'envoi échoue", async () => {
+      const repo = makeRepository({
+        findRemindableLists: jest.fn().mockResolvedValue([makeRemindableList()]),
+        postInChannel: jest.fn().mockRejectedValue(new Error("base injoignable")),
+      });
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const run = await new ReminderService(repo, mailer).run(NOW);
+
+      expect(run).toEqual({ sent: 0, failed: 1 });
+      expect(repo.releaseList).toHaveBeenCalledWith(
+        "list-1",
+        "2026-11-12T18:00:00.000Z",
+        "assistant_channel",
+      );
+    });
+
+    it("envoie quand même les rappels des rendez-vous quand la lecture des listes échoue", async () => {
+      const repo = makeRepository({
+        findRemindable: jest.fn().mockResolvedValue([makeEvent()]),
+        findRemindableLists: jest
+          .fn()
+          .mockRejectedValue(new Error('relation "task_lists" absente')),
+      });
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const run = await new ReminderService(repo, mailer).run(NOW);
+
+      expect(run).toEqual({ sent: 1, failed: 0 });
+      expect(repo.postInChannel).toHaveBeenCalledTimes(1);
+    });
+
+    it("envoie les rappels des rendez-vous avant de toucher aux listes, même si la réservation des listes plante", async () => {
+      const repo = makeRepository({
+        findRemindable: jest.fn().mockResolvedValue([makeEvent()]),
+        findRemindableLists: jest.fn().mockResolvedValue([makeRemindableList()]),
+        claimList: jest
+          .fn()
+          .mockRejectedValue(new Error('relation "task_list_reminders_sent" absente')),
+      });
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const run = await new ReminderService(repo, mailer).run(NOW);
+
+      expect(run.sent).toBe(1);
+      expect(run.failed).toBe(1);
+      expect(repo.postInChannel).toHaveBeenCalledWith("user-1", expect.stringContaining("Kiné"));
     });
   });
 });

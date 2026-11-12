@@ -1,4 +1,4 @@
-import type { ReminderEvent } from "./reminder-schedule.js";
+import type { ReminderEvent, RemindableList } from "./reminder-schedule.js";
 
 /** Ce que le planificateur retient d'un utilisateur. */
 export type ReminderRecipient = {
@@ -26,6 +26,14 @@ export interface IReminderRepository {
    * les séries commencées avant `to`.
    */
   findRemindable(from: Date, to: Date): Promise<ReminderEvent[]>;
+  /**
+   * Listes datées qui portent un rappel et dont une occurrence peut tomber entre
+   * `from` et `to`, avec les exceptions de leurs séries.
+   *
+   * Une liste née de la conversion d'un rendez-vous qui existe encore est écartée :
+   * le rendez-vous rappelle déjà, la liste le ferait une seconde fois.
+   */
+  findRemindableLists(from: Date, to: Date): Promise<RemindableList[]>;
   findRecipients(userIds: string[]): Promise<ReminderRecipient[]>;
   /**
    * Réserve l'envoi d'un rappel. Faux si une autre exécution l'a déjà pris :
@@ -34,6 +42,9 @@ export interface IReminderRepository {
   claim(eventId: string, occurrenceAt: string, channel: ReminderChannel): Promise<boolean>;
   /** Rend la réservation, quand l'envoi a échoué et doit pouvoir être retenté. */
   release(eventId: string, occurrenceAt: string, channel: ReminderChannel): Promise<void>;
+  /** Comme `claim`, pour une occurrence de liste. */
+  claimList(listId: string, occurrenceAt: string, channel: ReminderChannel): Promise<boolean>;
+  releaseList(listId: string, occurrenceAt: string, channel: ReminderChannel): Promise<void>;
   /** Écrit un message de Jean-Claude dans le canal de l'utilisateur, en le créant au besoin. */
   postInChannel(userId: string, content: string): Promise<void>;
 }
