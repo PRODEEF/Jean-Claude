@@ -20,7 +20,9 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 - **Deux documents : `ROADMAP.md` et `TODOLIST.md`** (sans changement de version). Toutes les tâches (groupes Dossiers, Calendrier, Conversations, Lenteurs, Notifications, BUG, Accès aux données, Connexion, Infra, Comptes, Support, Mobile, À tester, Plus tard) quittent la ROADMAP pour `TODOLIST.md`, qui devient la source de vérité de la todo. La ROADMAP garde la vision, « Quoi de neuf », les règles et les six gros chantiers. *Où : fichiers à la racine du dépôt.* — Rien à tester dans l'application.
 - **Vercel : moins de constructions inutiles** (sans changement de version). Le 12 novembre au soir, Vercel a refusé de construire le site web : limite gratuite de 100 déploiements par jour atteinte, pendant 24 h. Chaque projet (site web, API) ne se reconstruit désormais que si ses propres fichiers, les paquets partagés (`packages/`) ou les dépendances (`package-lock.json`) ont changé : une PR de documentation, ou qui ne touche que l'API, ne relance plus l'autre projet. En cas de doute (historique indisponible) Vercel construit quand même. *Où : réglages Vercel, `apps/app/vercel.json` et `apps/api/vercel.json`.* — À vérifier au premier merge : une construction ignorée doit apparaître comme « ignorée » et non comme un échec.
 
-`dev` et la production portaient la même chose avant cette ligne, **V0.00.48**.
+- **Poignées de déplacement derrière la ligne** (V0.00.49). Les six points ⠿ qui servent à changer l'ordre d'une tâche (et d'une liste dans le volet) passent de gauche à droite de la ligne : devant, il ne reste que la case à cocher (et le repli pour une liste). Vaut dans « Mes listes », le volet de droite et les listes d'espace. Aucun changement sur téléphone (pas de poignée). *Où : « Mes listes », volet, espaces.* — Vu dans un navigateur simulé ; à tester sur le site réel quand Vercel pourra le construire.
+
+`dev` porte V0.00.49 ; la production affichée est V0.00.42 (voir plus bas).
 
 ### Mis en production le 12 novembre (jusqu'à V0.00.42 en ligne ; V0.00.43 à V0.00.48 pas encore visibles)
 
