@@ -21,6 +21,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
+- **Section « Mobile » dans la ROADMAP** (V0.00.35). Décisions, essais à faire sur téléphone depuis la V0.00.23, et deux points à trancher : le geste d'appui long pour déplacer, et le calendrier Mois sur téléphone. Rien ne change à l'écran. *Où : ROADMAP, section Mobile.*
 - **Jean-Claude propose dans le volet de droite** (V0.00.34). Dans une conversation seul à seul, sur grand écran, la proposition de l'assistant (liste, rangement, rendez-vous…) s'ouvre toute seule dans le volet de droite, avec les gestes pour la valider ou l'ignorer ; le fil n'en garde que le message et « Voir la proposition ». Rien n'est créé avant ton geste. Sur téléphone, la carte reste dans le fil. *Où : une conversation, grand écran.* — Restent : les discussions de groupe, et l'ouverture sur le jour du calendrier pour un élément daté.
 - **Espaces : la liste prend l'en-tête de « Mes listes », avec titre et repli** (V0.00.33). Dans un espace collaboratif, la carte de la liste montre la flèche de repli et le titre, puis type, dossier, échéance et menu, comme dans « Mes listes ». La colonne « responsable » à droite des tâches reste. *Où : Mes collaborations, une liste d'un espace.* — Restent les boutons de déplacement à droite (option A), avec l'uniformisation des vues Todo.
 - **Noté, urgent : cartes d'espace et propositions dans le volet** (V0.00.32). Deux tâches urgentes ajoutées : la liste d'un espace prend la carte de « Mes listes », et Jean-Claude propose listes et rendez-vous dans le volet de droite avec un bouton « Valider ». Rien ne change à l'écran. *Où : ROADMAP, « Conversations & Canal permanent ».*
@@ -276,6 +277,36 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 
 - [ ] `FRONT` `Signaler un problème` **Décider du sort du bouton « Signaler un problème »** — Lié à la réflexion sur le canal PROBLÈME transformé en conversation. <!--id:support-signaler-probleme-->
 - [ ] `BACKEND` `Mode réunion vocal` **Arbitrer le service de dictée avec Antonin** — Dictée native provisoire. Bloque « Mode réunion qui enregistre à la voix ». ⏸ À trancher avec Antonin — bloque « Mode réunion vocal ». <!--id:support-dictee-antonin-->
+
+### Mobile (téléphone et tablette)
+
+*Section ouverte à la demande de Yann, 12 novembre : un seul endroit pour tout ce qui concerne le téléphone, avec les essais à faire, les décisions prises dans la discussion et les questions encore ouvertes. Presque rien n'a été joué sur iOS et Android à ce jour : les essais ci-dessous sont à faire sur un vrai appareil, ce que le code seul ne peut pas vérifier.*
+
+**Décisions déjà prises, valables pour le mobile**
+
+- **Pas de volet de droite sur téléphone** (taille d'écran « compact », moins de 768 pt) : l'écran garde son geste d'avant. La proposition de Jean-Claude reste donc dans le fil, avec ses boutons. Prévu à terme : le volet devient une page en plein écran avec un retour (tâche « Interface en 3 parties », étape 4).
+- **Boutons de déplacement des tâches (option A, 12 novembre) :** à gauche seulement la case à cocher ; à droite, indenter, désindenter, poignée et corbeille. **Sur téléphone, ces boutons restent visibles en permanence** (pas de survol).
+- **Répétition :** cocher, déplacer, modifier ou supprimer un todo qui se répète demande à chaque fois « seulement cette date » ou « toute la série ».
+- **Toute zone qu'on touche fait au moins 44 pt**, thème clair et thème sombre à tester.
+- **Le geste du téléphone pour changer une date aujourd'hui :** « Changer l'échéance » dans le menu « … » de la liste.
+
+**Idée de Yann à étudier : soulever un élément par un appui long** — 12 novembre. Au lieu d'un glisser-déposer à la souris, un **appui fort sur une liste ou une tâche, comme on soulève un post-it** (l'élément se soulève, avec un léger effet de travers), puis on le déplace vers un autre jour, une autre heure ou une autre place. C'est le geste de Things 3, de Todoist et des Rappels d'Apple, donc il passe la règle des 3 apps. **Faisable :** `react-native-gesture-handler` et `react-native-reanimated` sont déjà dans l'application. **À régler :** le conflit avec le défilement (l'appui long doit gagner sur le défilement), un léger retour vibrant, et le dépôt sur les petites cases du mois. À faire d'abord pour une tâche dans une liste, puis pour une liste dans le calendrier. <!--id:y-mobile-appui-long-->
+
+**Question ouverte : le calendrier, vue Mois, sur téléphone.** Chaque liste doit garder son titre (décision du 12 novembre), mais une case de téléphone est trop étroite pour un titre. Pistes : (A) une petite barre colorée par liste, le titre apparaissant au toucher du jour ; (B) la seule première liste avec son titre, puis « 2 autres » ; (C) la vue Mois sert de repère, et le titre se lit en touchant le jour. Je recommande (B), comme Google Agenda sur téléphone. **À trancher par Yann.** <!--id:y-mobile-mois-titres-->
+
+**Essais à faire sur téléphone** — tout ce qui a changé depuis la version 0.00.23 :
+
+- **Connexion :** le code reçu par e-mail a **6 chiffres** (V0.00.22) ; le champ propose bien le remplissage automatique du code, sur iPhone comme sur Android.
+- **Rappels :** réglages « Me rappeler par e-mail » et dans l'application (Réglages › Rappels) ; recevoir un rappel 10 minutes avant un rendez-vous ou une todo datée.
+- **Mes listes (V0.00.24) :** les listes sont dans l'ordre du temps, l'écran s'ouvre sur la liste du moment, le défilement vers le passé et le futur reste fluide.
+- **Carte de liste (V0.00.25) :** en-tête sur une ligne (flèche, titre, type, dossier, échéance, menu) sans être tronqué à 360 pt de large ; changer le dossier et l'échéance d'un appui.
+- **Sous-tâches (V0.00.27) :** le décalage de 32 pt lisible sans manger la ligne ; mettre en retrait et remonter d'un niveau au doigt.
+- **Listes d'un espace collaboratif (V0.00.33) :** flèche de repli et titre, repli et dépli au doigt, colonne « responsable » lisible sur écran étroit.
+- **Calendrier :** vues Jour, Semaine, Mois, Année et Todo ; « N tâches » touchable ou inerte (sur téléphone, le volet n'existe pas : vérifier ce qui se passe au toucher) ; fenêtre « Nouvel événement ».
+- **Proposition de Jean-Claude (V0.00.34) :** sur téléphone la carte reste dans le fil avec ses boutons ; valider et ignorer au doigt ; liste de courses, rangement en dossiers, rendez-vous.
+- **Partout :** zones à toucher assez grandes, thème sombre, rotation de l'écran, clavier qui ne cache pas la ligne qu'on écrit.
+
+**À faire de côté** (pas du code) : monter l'application sur un iPhone et un Android de test (TestFlight / version interne) pour ces essais ; les faire avec Clarisse en plus de Yann.
 
 ### À tester
 
