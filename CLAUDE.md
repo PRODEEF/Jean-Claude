@@ -71,9 +71,10 @@ elles ont été prises. À lire avant toute modification structurelle.
 `docs/SUIVI-BACKLOG.md` donne l'état d'avancement point par point — c'est un
 livrable de fin de stage (§10), à tenir à jour.
 
-`ROADMAP.md` (racine) porte la vision du produit, les priorités et la todo de
-Yann, avec le statut de chaque point. À lire pour savoir quoi faire ensuite ; à
-tenir à jour quand une PR avance un point. Elle pilote, le backlog constate.
+`ROADMAP.md` (racine) porte la vision du produit, les priorités et les gros
+chantiers ; `TODOLIST.md` (racine) porte la todo de Yann, avec le statut de
+chaque point. À lire pour savoir quoi faire ensuite ; à tenir à jour quand une
+PR avance un point. Elles pilotent, le backlog constate.
 
 ---
 
@@ -109,7 +110,7 @@ Ce sont les trois commandes du job CI `verify`. `dev` et `main` sont protégés 
 une PR dont la CI est rouge ne se merge pas, et `main` déploie sur Vercel.
 Le flux complet est dans `.claude/rules/000-general.md`.
 
-Puis mettre à jour `docs/SUIVI-BACKLOG.md` et `ROADMAP.md` si un point a avancé.
+Puis mettre à jour `docs/SUIVI-BACKLOG.md`, `ROADMAP.md` et `TODOLIST.md` si un point a avancé.
 
 ## Contexte du sprint
 
