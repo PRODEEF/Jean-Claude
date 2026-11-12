@@ -18,6 +18,7 @@ import {
   dayTaskState,
   listsInTimeOrder,
   currentListId,
+  isListDone,
   openTaskCount,
   todoDays,
 } from "./planning";
@@ -321,6 +322,27 @@ describe("openTaskCount", () => {
 
   it("rend zéro sur une liste vide", () => {
     expect(openTaskCount(makeList())).toBe(0);
+  });
+});
+
+describe("isListDone", () => {
+  it("est vraie quand toutes les tâches sont cochées", () => {
+    const list = makeList({
+      tasks: [
+        { ...task("a"), done: true },
+        { ...task("b"), done: true },
+      ],
+    });
+    expect(isListDone(list)).toBe(true);
+  });
+
+  it("est fausse dès qu'une tâche reste", () => {
+    const list = makeList({ tasks: [{ ...task("a"), done: true }, task("b")] });
+    expect(isListDone(list)).toBe(false);
+  });
+
+  it("est fausse sur une liste vide : elle est vide, pas faite", () => {
+    expect(isListDone(makeList())).toBe(false);
   });
 });
 

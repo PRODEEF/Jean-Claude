@@ -2,7 +2,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native"
 import { useRef, type ReactNode } from "react";
 import { ListChecks, Users } from "lucide-react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
-import { calendarDayOf, eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
+import { calendarDayOf, eventsOfDay, isListDone, listsOfDay, openTaskCount } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { formatTime, isSameDay, startOfDay, WEEKDAY_LABELS } from "@/shared/lib/dates";
@@ -254,7 +254,7 @@ function EntryLine({
   }
 
   const { list } = entry;
-  const done = list.tasks.length > 0 && openTaskCount(list) === 0;
+  const done = isListDone(list);
   const timed = list.dueAllDay === false && list.dueAt !== null;
   const content = (
     <>
