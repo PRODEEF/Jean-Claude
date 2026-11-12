@@ -150,6 +150,45 @@
 - [ ] `FRONT` `Feedback` **Restaurer le pouce sélectionné après rechargement** — La notation est enregistrée mais pas renvoyée. <!--id:front-pouce-reload-->
 - [ ] `FRONT` `Dossiers` **Lisibilité de la barre latérale au 5e niveau de dossiers** — À voir avec un vrai volume. <!--id:front-lisibilite-5e-niveau-->
 
+### Livré (depuis le 10 novembre)
+
+> Ce que nous avons fait ensemble depuis le début de la discussion, une ligne par livraison (détail dans « Quoi de neuf » de la ROADMAP). Les numéros de version se lisent en bas de l'écran. V0.00.43 à V0.00.49 sont sur `dev` ; la production affiche V0.00.42 tant que le site web n'a pas été reconstruit.
+
+- [x] `FRONT` `Mois` **Déplacer une liste comme dans Google Agenda** — V0.00.41 : la liste suit la souris, la case visée s'encadre, on la dépose où on relâche ; poser sur une autre liste du même jour échange leurs heures. <!--id:l-mois-glisser-->
+- [x] `FRONT` `Mois` **Le glisser ne revient plus à sa place** — V0.00.42 : corrigé après reproduction (sélection de texte du navigateur, liste datée par ses seules tâches). Confirmé par Yann : « ça fonctionne ». <!--id:l-mois-glisser-corrige-->
+- [x] `FRONT` `Toutes les listes` **Déplacement instantané** — V0.00.44 : déplacer une liste ou dater une tâche se voit tout de suite, l'écran revient en arrière si le serveur refuse. <!--id:l-deplacement-instantane-->
+- [x] `FRONT` `Mes listes / Volet / Espaces` **Poignées de déplacement derrière la ligne** — V0.00.49 : devant, il ne reste que la case à cocher. <!--id:l-poignees-droite-->
+- [x] `FRONT` `Volet de droite` **Glisser les listes d'un jour, avec échange des heures** — V0.00.37. <!--id:l-volet-glisser-->
+- [x] `FRONT` `Volet de droite` **Le volet s'appelle « Mes listes »** — V0.00.38. <!--id:l-volet-nom-->
+- [x] `FRONT` `Volet de droite` **La carte entière de « Mes listes » dans le volet** — V0.00.25 : type, dossier, échéance, menu, repli, éditeur. <!--id:l-volet-carte-->
+- [x] `FRONT` `Volet de droite` **Voir et modifier les tâches d'un jour depuis le Mois** — V0.00.22 : « 6 tâches » devient cliquable. <!--id:l-volet-ouvre-->
+- [x] `FRONT` `Volet de droite` **Volet redimensionnable, bandeau à la même hauteur** — V0.00.31 : on tire la bordure gauche (360 à 720 pt). <!--id:l-volet-redimensionnable-->
+- [x] `FRONT` `Volet de droite` **Jean-Claude propose dans le volet de droite** — V0.00.34 : la proposition s'ouvre toute seule, avec les gestes pour valider ou ignorer. <!--id:l-volet-propositions-->
+- [x] `FRONT` `Mois` **Chaque liste garde son titre** — V0.00.36 : fini « 11 tâches » qui fusionnait deux listes. <!--id:l-mois-titres-->
+- [x] `FRONT` `Mois` **Une journée entièrement cochée reste visible comme « faite »** — V0.00.23. <!--id:l-mois-jour-fait-->
+- [x] `FRONT` `Mes listes` **Dans l'ordre du temps, ouvert sur la liste du moment** — V0.00.24. <!--id:l-mes-listes-ordre-->
+- [x] `FRONT` `Mes listes` **Un bouton pour tout replier ou déplier** — V0.00.14. <!--id:l-mes-listes-replier-->
+- [x] `FRONT` `Mes listes / Espaces` **Une seule carte de liste partagée** — V0.00.11 à V0.00.13 : « Mes listes » et les espaces ne divergent plus. <!--id:l-carte-partagee-->
+- [x] `FRONT` `Espaces` **La liste d'un espace prend l'en-tête de « Mes listes »** — V0.00.33 : titre, repli, type, dossier, échéance, menu. <!--id:l-espaces-entete-->
+- [x] `FRONT` `Mes listes / Volet / Espaces` **Sous-tâches plus décalées** — V0.00.27 : 22 → 32 pt. <!--id:l-sous-taches-decalage-->
+- [x] `FRONT` `Calendrier` **Vue Todo : rendez-vous visibles, texte à 14 px, bandeaux affinés** — V0.00.17 et V0.00.19. <!--id:l-vue-todo-->
+- [x] `FRONT` `Toute l'app` **Texte noir en semi-gras en `#2C2C2B`** — V0.00.21. <!--id:l-texte-semi-gras-->
+- [x] `FRONT` `Connexion` **Code de connexion à 6 chiffres au lieu de 8** — V0.00.20. <!--id:l-code-6-chiffres-->
+- [x] `BACKEND` `Notifications` **Rappels de rendez-vous dans le canal et par e-mail** — V0.00.15 et V0.00.16. <!--id:l-rappels-canal-email-->
+- [x] `BACKEND` `Calendrier` **Les rendez-vous qui se répètent apparaissent à chaque occurrence** — V0.00.5. <!--id:l-occurrences-affichees-->
+- [x] `ALGO` `Calendrier` **L'IA comprend « sauf en février », « jusqu'à fin juin », « dix fois »** — V0.00.7. <!--id:l-ia-exceptions-->
+- [x] `DATA` `Calendrier` **Un rendez-vous proposé par l'IA se range dans le dossier du projet** — V0.00.6. <!--id:l-rdv-dossier-->
+- [x] `FRONT` `Conversations` **« Jean-Claude réfléchit » sans pixels qui sautent** — V0.00.8. <!--id:l-reflechit-->
+- [x] `BACKEND` `Fusion RDV / todo` **Étape 1 : colonnes de la base** — V0.00.39 (SQL collé par Yann). <!--id:l-fusion-1-->
+- [x] `DATA` `Fusion RDV / todo` **Étape 2 : occurrences d'une série** — V0.00.40 : cochée, déplacée ou supprimée à une seule date (SQL collé). <!--id:l-fusion-2-->
+- [x] `DATA` `Fusion RDV / todo` **Étape 3 : conversion prête** — V0.00.43 : notes et trace du rendez-vous d'origine (SQL collé) ; script de basculement testé, à jouer plus tard. <!--id:l-fusion-3-->
+- [x] `BACKEND` `Fusion RDV / todo` **Étape 4a : le serveur porte un rendez-vous dans une liste** — V0.00.45. <!--id:l-fusion-4a-->
+- [x] `BACKEND` `Fusion RDV / todo` **Étape 4b : les séries d'une liste, « cette date seulement »** — V0.00.46. <!--id:l-fusion-4b-->
+- [x] `BACKEND` `Fusion RDV / todo` **Étape 4c : les rappels lisent les listes datées** — V0.00.47 (SQL collé). <!--id:l-fusion-4c-->
+- [x] `INFRA` `Vercel` **Moins de constructions inutiles** — chaque projet ne se reconstruit que si ses fichiers changent (limite de 100 par jour). <!--id:l-vercel-moins-builds-->
+- [x] `INFRA` `Documents` **ROADMAP.md + TODOLIST.md, page TODO cliquable avec progression par groupe** — la todo a sa propre source de vérité. <!--id:l-deux-documents-->
+- [x] `INFRA` `Documents` **Section Mobile, audit noté, réflexion « tout ce qui se date est une todo »** — V0.00.28, V0.00.29, V0.00.30, V0.00.35. <!--id:l-notes-roadmap-->
+
 ### Plus tard
 
 - [ ] `INFRA` `Audit` **Audit global : mettre les conventions aux normes** — Demande de Yann, 12 novembre : noter ce point pour un futur audit global. Il s'agit de vérifier que le projet suit les conventions et normes du marché, y compris celles propres à chaque système (OS : web, iOS, Android, desktop) et autres. *Pistes à confirmer avec Yann :* conventions de code, de nommage et de structure du dépôt ; conventions de chaque plateforme (navigation, gestes, permissions, notifications) ; accessibilité ; sécurité et protection des données (RGPD) ; messages de commit et flux Git. Aucune action tant que l'audit n'est pas lancé. <!--id:idea-audit-conventions-->
