@@ -151,8 +151,9 @@ export function taskRowStyle(depth: 0 | 1) {
 /**
  * Poignée de déplacement, sur le web.
  *
- * Quand la ligne n'a rien à déplacer, une cale de même largeur garde les cases
- * alignées d'une ligne à l'autre, y compris avec la ligne vierge du bas.
+ * Placée après le texte de la ligne : devant, il ne reste que la case à cocher.
+ * Quand la ligne n'a rien à déplacer, une cale de même largeur garde le bord
+ * droit aligné d'une ligne à l'autre.
  */
 export function TaskRowGrip({
   draggable,

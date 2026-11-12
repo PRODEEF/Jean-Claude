@@ -566,12 +566,6 @@ function EditorRow({
       className={`relative flex-row items-center gap-2 rounded-md ${matched ? "bg-accent-soft" : ""}`}
     >
       {marked ? <View className="bg-primary absolute inset-x-0 top-0 h-0.5" /> : null}
-      <TaskRowGrip
-        draggable={draggable}
-        gripRef={gripRef}
-        label={`Déplacer ${row.title || "cette ligne"}`}
-      />
-
       <TaskRowCheckbox
         done={row.done}
         pending={!row.id}
@@ -645,6 +639,14 @@ function EditorRow({
           />
         </View>
       ) : null}
+
+      {/* La poignée est derrière la ligne : devant, il ne reste que la case à
+          cocher (demande de Yann, 12 novembre). */}
+      <TaskRowGrip
+        draggable={draggable}
+        gripRef={gripRef}
+        label={`Déplacer ${row.title || "cette ligne"}`}
+      />
     </View>
   );
 }
