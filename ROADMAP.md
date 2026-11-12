@@ -21,6 +21,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
+- **Réflexion notée : tout ce qui se date est une todo** (V0.00.28). Un rendez-vous devient un todo simple (titre, sans sous-action obligatoire) ; une liste est un todo qui porte des sous-todos. Rien ne change à l'écran. *Où : ROADMAP, section Vision.*
 - **Sous-tâches un peu plus décalées** (V0.00.27). Le décalage entre une tâche et ses sous-tâches passe de 22 à 32 pt : la case d'une sous-tâche ne colle plus à celle de la tâche principale. *Où : Mes listes, volet de droite, espaces.*
 - **Volet de droite : la carte entière de « Mes listes »** (V0.00.25). Les listes du volet s'affichent comme dans Mes listes : en-tête avec type, dossier, échéance et menu, repli, et éditeur. On y change le dossier ou l'échéance, on modifie ou on supprime la liste. *Où : Calendrier, volet de droite.* — Première étape de l'uniformisation des todolistes : la carte vit désormais dans un seul composant (`ListCard`), que la vue Todo du calendrier reprendra ensuite.
 - **Mes listes dans l'ordre du temps, ouvert sur la liste du moment** (V0.00.24). Les listes se rangent par date croissante (plus de 1er décembre avant le 10 novembre), celles sans date à la fin. À l'ouverture, l'écran défile jusqu'à la liste d'aujourd'hui ou, à défaut, la prochaine (le 20 novembre dans l'exemple de Yann) ; si tout est passé, jusqu'à la dernière. Le passé et le futur restent à portée en faisant défiler. *Où : Mes listes.* — Les boutons **Passé** et **Sans date** en haut ne sont pas encore faits.
@@ -118,6 +119,21 @@ Il vise le grand public, sans prérequis technique. C'est le contrepoint de Noti
 **Points à trancher lors de la réflexion globale** (sans y répondre ici) : le lien chose ↔ conversation d'origine (un rendez-vous a-t-il un seul fil, ou plusieurs ?) ; la forme de la trace dans la conversation (message de l'IA, ligne discrète, regroupement des gestes rapprochés) ; ce qui se passe quand une chose naît hors conversation (à la main dans le calendrier) ; le lien avec la règle « l'assistant propose, il n'exécute pas » (§12.1), car l'annulation demandée en conversation doit rester un geste de l'utilisateur, jamais une action de l'IA de sa propre initiative ; le rapport avec le canal permanent (l'enveloppe, les rappels, la tâche « tout ce qui arrive dans l'enveloppe arrive aussi dans le canal »).
 
 **Ajout de Yann, 11 novembre.** La logique des dimensions multiples vaut aussi pour la saisie faite depuis le calendrier : un rendez-vous ajouté dans la Todo du calendrier doit apparaître partout. À trancher : apparaît-il aussi dans le fil de la conversation ? (Yann pense que oui, à voir plus tard.) Et il doit finir à un moment dans les **dossiers**, sous la forme d'un rendez-vous, d'une todo, ou d'une « todo-rendez-vous » : par exemple sous Santé pour un rendez-vous chez le kiné, sous Sport ou Planche, et d'autres à ajouter à la réflexion. Cela touche la règle « une conversation appartient à plusieurs dossiers » (§5.2, A.1) : à penser avec elle, et avec le rangement automatique sans friction (§13.4.1).
+
+**Ajout de Yann, 12 novembre : tout ce qui se date est une todo.** Notée à la demande de la logique ci-dessus.
+
+> Sur la conception globale du cerveau de Jean-Claude : chaque chose qui va se « dater » doit être pensée et créée comme un todo. L'autre jour j'ai fait créer des rdv : ce sont des rdv simples, alors que, comme TOUT le reste, cela doit être un todo. La nuance à apporter : c'est un todo simple, avec un titre, qui n'a pas forcément de sous-action. Et une todo-liste dépendante, comme une liste de course, peut être « course Carrefour », puis en dessous la liste de course point à point.
+
+**Ce que j'en retiens.** Il n'y a qu'**un seul objet de base : le todo**. Un rendez-vous n'est plus un type à part : c'est un todo daté, réduit à son titre, sans sous-actions obligatoires. Une liste est un todo qui porte des sous-todos (« Course Carrefour » → les articles un à un). Le calendrier, Mes listes et la vue Todo montrent donc les mêmes objets. Cela touche la table des événements (`calendar`), les rappels, et l'uniformisation des vues en cours. **À trancher :** faut-il fusionner les rendez-vous existants dans les todos (migration), et comment représenter heure de début/fin et récurrence sur un todo. Pas de changement de code tant que Yann n'a pas tranché.
+
+**Précisions de Yann, 12 novembre (suite).** Réponses aux points à trancher :
+
+- **Convertir les rendez-vous existants en todos : oui**, puisqu'il n'y aura plus de rendez-vous « classique » à partir de maintenant. La notion de rendez-vous et celle de todo ont **clairement fusionné**.
+- **Un todo porte une heure de début, une heure de fin et une répétition**, parce que sinon on perd des fonctions en fusionnant (choix technique laissé à Claude).
+- **Par principe, tout doit pouvoir se créer en conversation.** Exemple de Yann : « créez-moi mes rendez-vous de cours de danse tous les jeudis soir à 18h jusqu'à fin janvier 2027 ». Il faut donc une **répétition avec date de fin**, demandée en langage courant.
+- **Durée par défaut : 1 heure** quand rien n'est dit (comme la règle déjà notée « fin = début + 1h » du calendrier).
+
+**Reste à trancher :** à quoi correspond « cocher » un todo qui se répète : seule l'occurrence du jour (proposition A, comme Things 3, Todoist et TickTick) ou toute la série (B). Cela reste soumis à la règle « l'assistant propose, il n'exécute pas » (§12.1) : la création en conversation de toute une série devient une suggestion en attente que l'utilisateur accepte d'un geste.
 
 ## Règles permanentes
 
