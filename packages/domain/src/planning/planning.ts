@@ -309,6 +309,45 @@ export function openTaskCount(list: TaskListWithTasks): number {
 }
 
 /**
+ * Les listes dans l'ordre du temps : les échues par date croissante, puis
+ * celles sans date à la fin.
+ *
+ * Une liste sans date n'a pas de place dans une chronologie : elle ne se perd
+ * pas pour autant, elle se range après tout ce qui est daté. À date égale, la
+ * plus ancienne créée passe d'abord, pour que l'ordre ne change pas d'un
+ * chargement à l'autre.
+ */
+export function listsInTimeOrder(lists: TaskListWithTasks[]): TaskListWithTasks[] {
+  return [...lists].sort((a, b) => {
+    if (a.dueAt === null && b.dueAt === null) return a.createdAt.localeCompare(b.createdAt);
+    if (a.dueAt === null) return 1;
+    if (b.dueAt === null) return -1;
+    return (
+      new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime() ||
+      a.createdAt.localeCompare(b.createdAt)
+    );
+  });
+}
+
+/**
+ * La liste sur laquelle « Mes listes » s'ouvre : celle d'aujourd'hui ou, à
+ * défaut, la prochaine ; si tout est passé, la dernière.
+ *
+ * Le jour compte, pas l'heure : une liste du matin reste « en cours » tout
+ * l'après-midi, c'est ce qu'on cherche en ouvrant l'écran. Les listes sans date
+ * sont ignorées — elles n'ont pas de moment. `sorted` est déjà dans l'ordre du
+ * temps (`listsInTimeOrder`).
+ */
+export function currentListId(sorted: TaskListWithTasks[], now: Date): string | null {
+  const dated = sorted.filter((list) => list.dueAt !== null);
+  if (dated.length === 0) return null;
+
+  const today = startOfDay(now).getTime();
+  const current = dated.find((list) => new Date(list.dueAt as string).getTime() >= today);
+  return (current ?? dated[dated.length - 1])?.id ?? null;
+}
+
+/**
  * Ce que les todolistes d'un jour disent de sa charge : combien de tâches
  * restent, et si tout ce qu'il y avait à faire est fait.
  *

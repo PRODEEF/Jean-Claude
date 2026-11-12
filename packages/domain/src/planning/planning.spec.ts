@@ -16,6 +16,8 @@ import {
   momentOf,
   momentsOfDay,
   dayTaskState,
+  listsInTimeOrder,
+  currentListId,
   openTaskCount,
   todoDays,
 } from "./planning";
@@ -613,5 +615,70 @@ describe("dayTaskState", () => {
       open: 1,
       allDone: false,
     });
+  });
+});
+
+describe("listsInTimeOrder", () => {
+  const dated = (id: string, month: number, day: number) =>
+    makeList({ id, dueAt: localIso(2026, month, day, 9), dueAllDay: false });
+
+  it("range les listes par date croissante, quel que soit l'ordre d'arrivée", () => {
+    const sorted = listsInTimeOrder([
+      dated("1-dec", 12, 1),
+      dated("10-nov", 11, 10),
+      dated("20-nov", 11, 20),
+    ]);
+
+    expect(sorted.map((list) => list.id)).toEqual(["10-nov", "20-nov", "1-dec"]);
+  });
+
+  it("met les listes sans date à la fin", () => {
+    const sorted = listsInTimeOrder([
+      makeList({ id: "sans-date" }),
+      dated("20-nov", 11, 20),
+      dated("10-nov", 11, 10),
+    ]);
+
+    expect(sorted.map((list) => list.id)).toEqual(["10-nov", "20-nov", "sans-date"]);
+  });
+
+  it("ne modifie pas le tableau reçu", () => {
+    const input = [dated("b", 11, 20), dated("a", 11, 10)];
+    listsInTimeOrder(input);
+
+    expect(input.map((list) => list.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("currentListId", () => {
+  const dated = (id: string, month: number, day: number, hour = 9) =>
+    makeList({ id, dueAt: localIso(2026, month, day, hour), dueAllDay: false });
+  const NOW = new Date(2026, 10, 12, 15, 0);
+
+  it("ouvre sur la prochaine liste quand les autres sont passées ou lointaines", () => {
+    const sorted = listsInTimeOrder([
+      dated("1-dec", 12, 1),
+      dated("10-nov", 11, 10),
+      dated("20-nov", 11, 20),
+    ]);
+
+    expect(currentListId(sorted, NOW)).toBe("20-nov");
+  });
+
+  it("garde une liste d'aujourd'hui même si son heure est passée", () => {
+    const sorted = listsInTimeOrder([dated("10-nov", 11, 10), dated("ce-matin", 11, 12, 8)]);
+
+    expect(currentListId(sorted, NOW)).toBe("ce-matin");
+  });
+
+  it("ouvre sur la dernière quand tout est passé", () => {
+    const sorted = listsInTimeOrder([dated("5-nov", 11, 5), dated("10-nov", 11, 10)]);
+
+    expect(currentListId(sorted, NOW)).toBe("10-nov");
+  });
+
+  it("ignore les listes sans date, et rend rien s'il n'y en a que de ce genre", () => {
+    expect(currentListId(listsInTimeOrder([makeList({ id: "x" })]), NOW)).toBeNull();
+    expect(currentListId([], NOW)).toBeNull();
   });
 });
