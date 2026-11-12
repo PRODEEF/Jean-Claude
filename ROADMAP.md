@@ -21,6 +21,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
+- **Le volet de droite s'appelle « Mes listes »** (V0.00.38). Quand on ouvre une liste dans le volet, son bandeau dit « Mes listes » au lieu de répéter le titre de la carte. Notées aussi dans la ROADMAP : la vue Todo reste un calendrier Matin / Après-midi / Soir, la fusion rendez-vous / todo est au programme en six étapes, et le service extérieur pour les rappels est validé. *Où : Calendrier, volet de droite.*
 - **Volet de droite : on glisse les listes d'un jour pour changer leur ordre** (V0.00.37). Dans le volet d'un jour, chaque liste a une poignée ⠿ à gauche de son titre (web). Poser une liste sur une autre **échange leurs heures** : celle de 19h posée sur celle de 14h passe à 14h, et l'autre à 19h. Sans heure, rien à échanger. On peut aussi la lâcher sur un autre jour du Mois, visible à côté. *Où : Calendrier, volet de droite, un jour.* — Restent : la vue Année, et l'appui long sur téléphone.
 - **Calendrier › Mois : chaque liste garde son titre** (V0.00.36). Fini « 11 tâches » qui fusionnait deux listes du même jour : chaque liste a sa ligne, avec son heure et son titre (« 14h Documents manquants à commander »), au même style qu'un rendez-vous et avec une petite icône de liste. Au-delà de trois lignes, la cellule dit « 2 autres », comme Google Agenda. Un clic sur une liste l'ouvre dans le volet de droite. Une liste entièrement cochée est barrée. Sur téléphone : le premier titre, puis « N autres » (choix B). **On glisse aussi une liste d'un jour à l'autre** (web) : elle garde son heure, seul le jour change ; un jour passé ne reçoit pas de liste. *Où : Calendrier › Mois.* — Restent : glisser dans le volet (échange des heures), puis l'Année, puis le geste d'appui long sur téléphone.
 - **Section « Mobile » dans la ROADMAP** (V0.00.35). Décisions, essais à faire sur téléphone depuis la V0.00.23, et deux points à trancher : le geste d'appui long pour déplacer, et le calendrier Mois sur téléphone. Rien ne change à l'écran. *Où : ROADMAP, section Mobile.*
@@ -147,6 +148,9 @@ Il vise le grand public, sans prérequis technique. C'est le contrepoint de Noti
 **Décisions de Yann, 12 novembre (fin).**
 
 - **Cocher, déplacer, modifier ou supprimer un todo qui se répète : on demande à chaque fois** « seulement cette date » ou « toute la série », comme dans les calendriers du marché. Pas de réglage global.
+- **La vue Todo du calendrier reste un calendrier**, avec sa structure **Matin / Après-midi / Soir** (12 novembre). On ne la fusionne pas avec « Mes listes » : deux écrans, deux usages.
+- **Le titre du volet de droite s'appelle « Mes listes »** quand il ouvre une liste, puisqu'on y accède bien à « Mes listes » dans les faits.
+- **Rappels toutes les 5 minutes : oui à un service extérieur gratuit** (cron-job.org), à mettre en place avec Yann ; le déclencheur de GitHub Actions sera retiré une fois le nouveau fiable.
 - **Boutons de déplacement des tâches : option A.** À gauche, seulement la case à cocher. À droite, au survol : indenter, désindenter, poignée ⠿ et corbeille. Sur téléphone, les boutons restent visibles. À faire juste après l'étape 2 de l'uniformisation des vues Todo.
 
 ## Règles permanentes
@@ -169,6 +173,7 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 - [ ] **3. « Projet » et instructions par dossier** (P4, A.4/A.5). Un contexte partagé par dossier, comme les Projets de Claude. Le plus gros chantier de conception : trancher d'abord dossier ou projet.
 - [ ] **4. Mode réunion à la voix** (P5, A.12). Dépend du choix du service de dictée, resté en suspens avec Antonin.
 - [ ] **5. Une action, plusieurs dimensions** (réflexion globale, demande de Yann du 11 novembre). Chaque chose (rendez-vous, tâche, liste) doit vivre au même moment dans la conversation, les vues du calendrier et Mes listes, et chaque geste fait ailleurs doit laisser une trace dans la conversation d'origine. À penser avant de bâtir : voir la réflexion complète dans la section Vision. <!--id:y-action-plusieurs-dimensions-->
+- [ ] **6. Fusion rendez-vous et todo** (go de Yann, 12 novembre). Un seul objet, le todo : un rendez-vous devient un todo simple (un titre, sans sous-tâche obligatoire), une liste est un todo qui porte des sous-todos. Étapes, chacune livrable seule ; rien de l'existant ne casse avant l'étape 4 : **(1) Base, additive** : `task_lists` gagne `ends_at`, `rrule`, `reminder_minutes_before` et un état « fait » propre ; **(2) Séries** : une table des occurrences cochées ou déplacées, pour « seulement cette date ou toute la série » ; **(3) Conversion** : un SQL idempotent, collé par Yann, transforme chaque rendez-vous en todo (rappels repris, durée par défaut 1 h) ; **(4) Serveur** : l'API calendrier, les rappels et les outils de l'assistant lisent et créent des todos ; **(5) Écrans** : le calendrier montre des todos, « Nouvel événement » crée un todo ; **(6) Retrait** de `calendar_events` une fois tout migré. <!--id:y-fusion-rdv-todo-->
 
 **Programme validé par Yann le 11 novembre**, dans cet ordre :
 
