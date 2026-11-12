@@ -1,7 +1,14 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Platform, Pressable, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { IndentDecrease, IndentIncrease, UserRound, X } from "lucide-react-native";
+import {
+  ChevronDown,
+  ChevronRight,
+  IndentDecrease,
+  IndentIncrease,
+  UserRound,
+  X,
+} from "lucide-react-native";
 import type { FolderTreeNode, WorkspaceMember, WorkspaceTask, WorkspaceTaskList } from "@jc/domain";
 import { dueLabel } from "@/features/todo/ListsBoard";
 import { reorderTaskRows, taskDropIndex, useTaskRowDrag } from "@/features/todo/task-row-drag";
@@ -16,6 +23,7 @@ import { cn } from "@/shared/lib/utils";
 import { TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { GRID_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
@@ -125,6 +133,8 @@ function ListBody({
   const { addTask, updateTask, removeTask, reorder } = useWorkspaceListActions(list);
   const compact = useBreakpoint() === "compact";
   const [draft, setDraft] = useState("");
+  /** Dépliée par défaut, comme dans « Mes listes » : une liste repliée d'office se ferait oublier. */
+  const [open, setOpen] = useState(true);
   /** Où la ligne glissée s'insérerait, `null` hors d'un glisser. */
   const [insertBefore, setInsertBefore] = useState<number | null>(null);
   const names = useMemo(
@@ -189,71 +199,108 @@ function ListBody({
   return (
     <View className="pb-8">
       <TaskListCardFrame desktop={!compact}>
-        {/* Le titre est déjà celui de la page : pas de repli ni de titre ici. */}
-        <TaskListCardHeader
-          title={list.title}
-          shopping={shopping}
-          folderName={folderName}
-          due={due}
-          onFolderPress={() => onOpen({ kind: "folder", list })}
-          onDuePress={() => onOpen({ kind: "due", list })}
-          onMenuPress={(event) => onListMenu(event.nativeEvent.pageX, event.nativeEvent.pageY)}
-          menuLabel="Actions pour la liste"
-        />
+        <Collapsible open={open} onOpenChange={setOpen}>
+          {/* Même en-tête que dans « Mes listes » : flèche de repli et titre,
+            puis type, dossier, échéance et menu (demande de Yann, 12 novembre). */}
+          <TaskListCardHeader
+            title={list.title}
+            leading={
+              <>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    hitSlop={8}
+                    accessibilityLabel={open ? `Replier ${list.title}` : `Déplier ${list.title}`}
+                    className="size-8"
+                  >
+                    <Icon
+                      as={open ? ChevronDown : ChevronRight}
+                      size={16}
+                      className="text-muted-foreground"
+                    />
+                  </Button>
+                </CollapsibleTrigger>
 
-        {/* Même écart sous l'en-tête que dans « Mes listes », et rien entre
+                <Text className="shrink text-sm font-semibold" numberOfLines={1}>
+                  {list.title}
+                </Text>
+              </>
+            }
+            shopping={shopping}
+            folderName={folderName}
+            due={due}
+            onFolderPress={() => onOpen({ kind: "folder", list })}
+            onDuePress={() => onOpen({ kind: "due", list })}
+            onMenuPress={(event) => onListMenu(event.nativeEvent.pageX, event.nativeEvent.pageY)}
+            menuLabel="Actions pour la liste"
+          />
+
+          {/* Même écart sous l'en-tête que dans « Mes listes », et rien entre
             les deux : pas de ligne de décompte, qui ferait la carte plus haute. */}
-        <TaskListCardBody desktop={!compact}>
-          {list.tasks.map((task, index) => (
-            <View key={task.id}>
-              <TaskRow
-                task={task}
-                index={index}
-                listId={list.id}
-                draggable={draggable}
-                marked={insertBefore === index}
-                markedAfter={index === list.tasks.length - 1 && insertBefore === list.tasks.length}
-                resolveDrop={(sourceKey, targetIndex, place) =>
-                  taskDropIndex(dragRows, sourceKey, targetIndex, place)
-                }
-                onHover={setInsertBefore}
-                onDrop={dropRow}
-                assignee={task.assigneeId ? (names.get(task.assigneeId) ?? "Ancien membre") : null}
-                onToggle={() => updateTask.mutate({ taskId: task.id, patch: { done: !task.done } })}
-                onRename={(title) => updateTask.mutate({ taskId: task.id, patch: { title } })}
-                child={Boolean(task.parentId)}
-                onIndent={
-                  // Une tâche qui a déjà des sous-tâches ne devient pas une sous-tâche :
-                  // un seul niveau.
-                  !task.parentId && !hasChildren(task.id) && previousRootOf(index)
-                    ? () => {
-                        const parent = previousRootOf(index);
-                        if (parent)
-                          updateTask.mutate({ taskId: task.id, patch: { parentId: parent.id } });
-                      }
-                    : undefined
-                }
-                onOutdent={
-                  task.parentId
-                    ? () => updateTask.mutate({ taskId: task.id, patch: { parentId: null } })
-                    : undefined
-                }
-                onAssign={(x, y) => onMenu(x, y, assigneeMenu(task))}
-                onRemove={() => removeTask.mutate(task.id)}
-              />
-            </View>
-          ))}
+          <CollapsibleContent>
+            <TaskListCardBody desktop={!compact}>
+              {list.tasks.map((task, index) => (
+                <View key={task.id}>
+                  <TaskRow
+                    task={task}
+                    index={index}
+                    listId={list.id}
+                    draggable={draggable}
+                    marked={insertBefore === index}
+                    markedAfter={
+                      index === list.tasks.length - 1 && insertBefore === list.tasks.length
+                    }
+                    resolveDrop={(sourceKey, targetIndex, place) =>
+                      taskDropIndex(dragRows, sourceKey, targetIndex, place)
+                    }
+                    onHover={setInsertBefore}
+                    onDrop={dropRow}
+                    assignee={
+                      task.assigneeId ? (names.get(task.assigneeId) ?? "Ancien membre") : null
+                    }
+                    onToggle={() =>
+                      updateTask.mutate({ taskId: task.id, patch: { done: !task.done } })
+                    }
+                    onRename={(title) => updateTask.mutate({ taskId: task.id, patch: { title } })}
+                    child={Boolean(task.parentId)}
+                    onIndent={
+                      // Une tâche qui a déjà des sous-tâches ne devient pas une sous-tâche :
+                      // un seul niveau.
+                      !task.parentId && !hasChildren(task.id) && previousRootOf(index)
+                        ? () => {
+                            const parent = previousRootOf(index);
+                            if (parent)
+                              updateTask.mutate({
+                                taskId: task.id,
+                                patch: { parentId: parent.id },
+                              });
+                          }
+                        : undefined
+                    }
+                    onOutdent={
+                      task.parentId
+                        ? () => updateTask.mutate({ taskId: task.id, patch: { parentId: null } })
+                        : undefined
+                    }
+                    onAssign={(x, y) => onMenu(x, y, assigneeMenu(task))}
+                    onRemove={() => removeTask.mutate(task.id)}
+                  />
+                </View>
+              ))}
 
-          {/* Même geste que « Mes listes » : la ligne vide d'une liste est
+              {/* Même geste que « Mes listes » : la ligne vide d'une liste est
               l'endroit où l'on écrit, une case pâle et le texte « Ajouter une
               tâche » — pas un champ à part suivi d'un bouton. Entrée valide. */}
-          <AddTaskRow
-            value={draft}
-            onChange={setDraft}
-            onSubmit={submit}
-            disabled={addTask.isPending}
-          />
-        </TaskListCardBody>
+              <AddTaskRow
+                value={draft}
+                onChange={setDraft}
+                onSubmit={submit}
+                disabled={addTask.isPending}
+              />
+            </TaskListCardBody>
+          </CollapsibleContent>
+        </Collapsible>
       </TaskListCardFrame>
 
       {error ? <Text className="text-sm text-destructive">{error}</Text> : null}
