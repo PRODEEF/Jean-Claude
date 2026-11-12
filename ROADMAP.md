@@ -125,6 +125,15 @@ Il vise le grand public, sans prérequis technique. C'est le contrepoint de Noti
 
 **Ce que j'en retiens.** Il n'y a qu'**un seul objet de base : le todo**. Un rendez-vous n'est plus un type à part : c'est un todo daté, réduit à son titre, sans sous-actions obligatoires. Une liste est un todo qui porte des sous-todos (« Course Carrefour » → les articles un à un). Le calendrier, Mes listes et la vue Todo montrent donc les mêmes objets. Cela touche la table des événements (`calendar`), les rappels, et l'uniformisation des vues en cours. **À trancher :** faut-il fusionner les rendez-vous existants dans les todos (migration), et comment représenter heure de début/fin et récurrence sur un todo. Pas de changement de code tant que Yann n'a pas tranché.
 
+**Précisions de Yann, 12 novembre (suite).** Réponses aux points à trancher :
+
+- **Convertir les rendez-vous existants en todos : oui**, puisqu'il n'y aura plus de rendez-vous « classique » à partir de maintenant. La notion de rendez-vous et celle de todo ont **clairement fusionné**.
+- **Un todo porte une heure de début, une heure de fin et une répétition**, parce que sinon on perd des fonctions en fusionnant (choix technique laissé à Claude).
+- **Par principe, tout doit pouvoir se créer en conversation.** Exemple de Yann : « créez-moi mes rendez-vous de cours de danse tous les jeudis soir à 18h jusqu'à fin janvier 2027 ». Il faut donc une **répétition avec date de fin**, demandée en langage courant.
+- **Durée par défaut : 1 heure** quand rien n'est dit (comme la règle déjà notée « fin = début + 1h » du calendrier).
+
+**Reste à trancher :** à quoi correspond « cocher » un todo qui se répète : seule l'occurrence du jour (proposition A, comme Things 3, Todoist et TickTick) ou toute la série (B). Cela reste soumis à la règle « l'assistant propose, il n'exécute pas » (§12.1) : la création en conversation de toute une série devient une suggestion en attente que l'utilisateur accepte d'un geste.
+
 ## Règles permanentes
 
 _(les trois premières sont tirées de `CLAUDE.md` ; les suivantes sont des propositions à valider)_
