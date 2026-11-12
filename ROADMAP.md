@@ -21,6 +21,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
+- **Volet de droite redimensionnable, bandeau à la même hauteur** (V0.00.31). On tire la bordure gauche du volet pour l'élargir ou le réduire (de 360 à 720 pt, sans jamais écraser le milieu) ; il s'ouvre un peu plus large (480 pt) pour que l'en-tête d'une liste ne soit plus tronqué. Le bandeau du volet a la même hauteur que celui du calendrier (56 pt), donc les deux lignes tombent à la même hauteur. *Où : Calendrier, volet de droite, grand écran.* — La largeur choisie n'est pas retenue après rechargement de la page.
 - **Audit des conventions noté** (V0.00.29). Un audit global « mise aux normes » est inscrit dans « Plus tard ». Rien ne change à l'écran. *Où : ROADMAP.*
 - **Réflexion notée : tout ce qui se date est une todo** (V0.00.28). Un rendez-vous devient un todo simple (titre, sans sous-action obligatoire) ; une liste est un todo qui porte des sous-todos. Rien ne change à l'écran. *Où : ROADMAP, section Vision.*
 - **Sous-tâches un peu plus décalées** (V0.00.27). Le décalage entre une tâche et ses sous-tâches passe de 22 à 32 pt : la case d'une sous-tâche ne colle plus à celle de la tâche principale. *Où : Mes listes, volet de droite, espaces.*

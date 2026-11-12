@@ -25,7 +25,7 @@ export const GRID_MAX_WIDTH = 1100;
 export const FORM_MAX_WIDTH = 640;
 
 /** Hauteur du bandeau, alignée sur celle de la bannière de l'application. */
-const HEADER_HEIGHT = 56;
+export const HEADER_HEIGHT = 56;
 
 /** Part de la largeur disponible qu'occupe le contenu au-delà du point de rupture. */
 const CONTENT_WIDTH_RATIO = "80%";
