@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type Ref, type RefObject } from "react";
 import { ScrollView, View } from "react-native";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
 import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
@@ -11,6 +11,7 @@ import {
   TaskListCardBody,
   TaskListCardFrame,
   TaskListCardHeader,
+  TaskRowGrip,
 } from "@/shared/ui/task-list-card";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import type { FolderChoice } from "@/shared/hooks/use-folder-choices";
@@ -49,6 +50,7 @@ export function ListCard({
   fold,
   visibleTaskIds,
   dueOnForNew,
+  gripRef,
   onEdit,
   onDelete,
   onOpenTask,
@@ -65,6 +67,8 @@ export function ListCard({
   visibleTaskIds?: readonly string[];
   /** Jour des lignes nouvelles, quand on écrit depuis un autre jour que l'échéance de la liste. */
   dueOnForNew?: string;
+  /** Poignée pour déplacer la liste (web) : absente, la carte ne se déplace pas. */
+  gripRef?: Ref<View>;
   onEdit: () => void;
   onDelete: () => void;
   onOpenTask: (task: Task) => void;
@@ -165,6 +169,13 @@ export function ListCard({
           menuLabel={`Actions pour ${list.title}`}
           leading={
             <>
+              {gripRef ? (
+                <TaskRowGrip
+                  draggable
+                  gripRef={gripRef}
+                  label={`Déplacer la liste ${list.title}`}
+                />
+              ) : null}
               <CollapsibleTrigger asChild>
                 <Button
                   variant="ghost"
