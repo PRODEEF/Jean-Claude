@@ -169,13 +169,6 @@ export function ListCard({
           menuLabel={`Actions pour ${list.title}`}
           leading={
             <>
-              {gripRef ? (
-                <TaskRowGrip
-                  draggable
-                  gripRef={gripRef}
-                  label={`Déplacer la liste ${list.title}`}
-                />
-              ) : null}
               <CollapsibleTrigger asChild>
                 <Button
                   variant="ghost"
@@ -195,6 +188,14 @@ export function ListCard({
               <Text className="shrink text-sm font-semibold" numberOfLines={1}>
                 {list.title}
               </Text>
+              {/* Derrière le titre : devant, il ne reste que le repli. */}
+              {gripRef ? (
+                <TaskRowGrip
+                  draggable
+                  gripRef={gripRef}
+                  label={`Déplacer la liste ${list.title}`}
+                />
+              ) : null}
             </>
           }
         />
