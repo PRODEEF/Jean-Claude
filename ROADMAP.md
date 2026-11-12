@@ -136,6 +136,11 @@ Il vise le grand public, sans prérequis technique. C'est le contrepoint de Noti
 
 **Reste à trancher :** à quoi correspond « cocher » un todo qui se répète : seule l'occurrence du jour (proposition A, comme Things 3, Todoist et TickTick) ou toute la série (B). Cela reste soumis à la règle « l'assistant propose, il n'exécute pas » (§12.1) : la création en conversation de toute une série devient une suggestion en attente que l'utilisateur accepte d'un geste.
 
+**Décisions de Yann, 12 novembre (fin).**
+
+- **Cocher, déplacer, modifier ou supprimer un todo qui se répète : on demande à chaque fois** « seulement cette date » ou « toute la série », comme dans les calendriers du marché. Pas de réglage global.
+- **Boutons de déplacement des tâches : option A.** À gauche, seulement la case à cocher. À droite, au survol : indenter, désindenter, poignée ⠿ et corbeille. Sur téléphone, les boutons restent visibles. À faire juste après l'étape 2 de l'uniformisation des vues Todo.
+
 ## Règles permanentes
 
 _(les trois premières sont tirées de `CLAUDE.md` ; les suivantes sont des propositions à valider)_
