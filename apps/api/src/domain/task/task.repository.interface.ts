@@ -1,3 +1,4 @@
+import type { OccurrenceOverride } from "./list-occurrences.js";
 import type {
   CreateTask,
   CreateTaskList,
@@ -108,6 +109,18 @@ export interface ITaskRepository {
   /** Filtre aussi sur la liste : une tâche ne se modifie que depuis la sienne. */
   updateTask(listId: string, taskId: string, patch: TaskPatch, accessToken: string): Promise<Task>;
   deleteTask(listId: string, taskId: string, accessToken: string): Promise<void>;
+  /** Ce qui est arrivé à une seule date de chacune de ces séries (table des occurrences). */
+  findOccurrences(
+    listIds: string[],
+    accessToken: string,
+  ): Promise<(OccurrenceOverride & { listId: string })[]>;
+  /** Écrit l'état d'une date d'une série, en remplaçant celui d'avant. */
+  upsertOccurrence(
+    userId: string,
+    listId: string,
+    row: OccurrenceOverride,
+    accessToken: string,
+  ): Promise<void>;
   /**
    * Réécrit le contenu d'une liste.
    *

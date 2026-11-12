@@ -265,6 +265,11 @@ function makeTaskRepository(): ITaskRepository {
           kind: input.kind,
           dueAt: input.dueAt ?? null,
           dueAllDay: input.dueAllDay ?? null,
+          endsAt: input.endsAt ?? null,
+          rrule: input.rrule ?? null,
+          reminderMinutesBefore: input.reminderMinutesBefore ?? null,
+          doneAt: null,
+          notes: input.notes ?? null,
           eventId: null,
           conversationId: input.conversationId ?? null,
           folderId: input.folderId ?? null,
@@ -319,6 +324,8 @@ function makeTaskRepository(): ITaskRepository {
       if (list) list.tasks = list.tasks.filter((task) => task.id !== taskId);
       return Promise.resolve();
     }),
+    findOccurrences: jest.fn().mockResolvedValue([]),
+    upsertOccurrence: jest.fn().mockResolvedValue(undefined),
     replaceTasks: jest.fn(),
   };
 }

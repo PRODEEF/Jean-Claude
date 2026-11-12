@@ -62,9 +62,39 @@ function refreshTaskLists(queryClient: QueryClient): void {
   queryClient.invalidateQueries({ queryKey: ["calendar"] });
 }
 
+/** Clé commune des changements montrés avant la réponse du serveur. */
+const OPTIMISTIC_KEY = ["taskLists", "optimistic"] as const;
+
+/** `target` avec les seules clés renseignées de `patch` : un `undefined` laisse intact, un `null` efface. */
+function withPatch<T extends object>(target: T, patch: object): T {
+  const next = { ...target };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value !== undefined) Object.assign(next, { [key]: value });
+  }
+  return next;
+}
+
 export function useTaskActions() {
   const queryClient = useQueryClient();
   const refresh = () => refreshTaskLists(queryClient);
+
+  // Un déplacement ou un changement de date se voit tout de suite, avant la
+  // réponse du serveur — comme dans Google Agenda. Si le serveur refuse, l'écran
+  // revient à l'état d'avant. Le rechargement n'attend que le dernier geste en
+  // cours : sans cela, la réponse du premier d'une rafale replaçait à l'écran
+  // ce que le second n'avait pas encore confirmé.
+  const showFirst = async (change: (lists: TaskListWithTasks[]) => TaskListWithTasks[]) => {
+    await queryClient.cancelQueries({ queryKey: ["taskLists"] });
+    const before = queryClient.getQueryData<TaskListWithTasks[]>(["taskLists"]);
+    if (before) queryClient.setQueryData<TaskListWithTasks[]>(["taskLists"], change(before));
+    return { before };
+  };
+  const putBack = (context: { before: TaskListWithTasks[] | undefined } | undefined) => {
+    if (context?.before) queryClient.setQueryData(["taskLists"], context.before);
+  };
+  const refreshWhenLast = () => {
+    if (queryClient.isMutating({ mutationKey: OPTIMISTIC_KEY }) <= 1) refresh();
+  };
 
   const createList = useMutation({
     mutationFn: (input: CreateTaskList) => api.tasks.createList(input),
@@ -72,9 +102,15 @@ export function useTaskActions() {
   });
 
   const updateList = useMutation({
+    mutationKey: OPTIMISTIC_KEY,
     mutationFn: (variables: { id: string; patch: UpdateTaskList }) =>
       api.tasks.updateList(variables.id, variables.patch),
-    onSuccess: refresh,
+    onMutate: (variables) =>
+      showFirst((lists) =>
+        lists.map((list) => (list.id === variables.id ? withPatch(list, variables.patch) : list)),
+      ),
+    onError: (_error, _variables, context) => putBack(context),
+    onSettled: refreshWhenLast,
   });
 
   /** Les tâches saisies avec la liste, écrites d'un coup une fois la liste créée. */
@@ -96,9 +132,24 @@ export function useTaskActions() {
   });
 
   const updateTask = useMutation({
+    mutationKey: OPTIMISTIC_KEY,
     mutationFn: (variables: { listId: string; taskId: string; patch: UpdateTask }) =>
       api.tasks.updateTask(variables.listId, variables.taskId, variables.patch),
-    onSuccess: refresh,
+    onMutate: (variables) =>
+      showFirst((lists) =>
+        lists.map((list) =>
+          list.id === variables.listId
+            ? {
+                ...list,
+                tasks: list.tasks.map((task) =>
+                  task.id === variables.taskId ? withPatch(task, variables.patch) : task,
+                ),
+              }
+            : list,
+        ),
+      ),
+    onError: (_error, _variables, context) => putBack(context),
+    onSettled: refreshWhenLast,
   });
 
   const removeTask = useMutation({

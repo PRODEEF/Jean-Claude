@@ -377,6 +377,8 @@ function makeTaskRepository(lists: TaskListWithTasks[] = []): ITaskRepository {
     createTask: jest.fn(),
     updateTask: jest.fn(),
     deleteTask: jest.fn(),
+    findOccurrences: jest.fn().mockResolvedValue([]),
+    upsertOccurrence: jest.fn().mockResolvedValue(undefined),
     replaceTasks: jest.fn(),
   };
 }
@@ -439,6 +441,11 @@ function makeTaskList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithT
     kind: "shopping",
     dueAt: null,
     dueAllDay: null,
+    endsAt: null,
+    rrule: null,
+    reminderMinutesBefore: null,
+    doneAt: null,
+    notes: null,
     eventId: null,
     conversationId: "conv-1",
     folderId: null,

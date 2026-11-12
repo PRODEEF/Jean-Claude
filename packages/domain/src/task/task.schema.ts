@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { rruleSchema } from "../calendar/calendar.schema";
 import { calendarDateSchema } from "../shared/search.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 
@@ -44,6 +45,19 @@ export const taskListSchema = z.object({
    * et la base le vérifie (`task_lists_due_all_day_pairing`).
    */
   dueAllDay: z.boolean().nullable(),
+  /**
+   * Fin du créneau, quand la liste tient lieu de rendez-vous : `dueAt` en est le
+   * début. `null` pour une échéance sans durée (fusion rendez-vous / todo).
+   */
+  endsAt: isoDateTimeSchema.nullable(),
+  /** Répétition au format RRULE, comme `calendar_events` ; `null` pour une liste ponctuelle. */
+  rrule: rruleSchema.nullable(),
+  /** Rappel avant chaque occurrence, en minutes (A.11) ; `null` sans rappel. */
+  reminderMinutesBefore: z.number().int().min(0).max(10_080).nullable(),
+  /** « Fait » propre à la liste : une liste sans tâche n'a rien dont le déduire. */
+  doneAt: isoDateTimeSchema.nullable(),
+  /** Texte libre, repris des rendez-vous. */
+  notes: z.string().max(4_000).nullable(),
   /** Créneau posé dans l'agenda pour cette liste, le cas échéant (A.3, A.8). */
   eventId: uuidSchema.nullable(),
   /** Conversation d'origine, quand la liste vient d'une conversion (A.2). */
@@ -155,6 +169,10 @@ export const createTaskListSchema = z.object({
   folderId: uuidSchema.nullable().optional(),
   dueAt: isoDateTimeSchema.nullable().optional(),
   dueAllDay: z.boolean().optional(),
+  endsAt: isoDateTimeSchema.nullable().optional(),
+  rrule: rruleSchema.nullable().optional(),
+  reminderMinutesBefore: z.number().int().min(0).max(10_080).nullable().optional(),
+  notes: z.string().max(4_000).nullable().optional(),
 });
 
 export type CreateTaskList = z.infer<typeof createTaskListSchema>;
@@ -162,3 +180,34 @@ export type CreateTaskList = z.infer<typeof createTaskListSchema>;
 export const updateTaskListSchema = createTaskListSchema.partial();
 
 export type UpdateTaskList = z.infer<typeof updateTaskListSchema>;
+
+/**
+ * Une occurrence d'une liste, telle que la vue la lit.
+ *
+ * `occurrenceAt` est la clé : le début que la série calcule, qui ne change
+ * jamais même si l'occurrence est déplacée (`startsAt` dit alors où elle est
+ * vraiment). Une liste ponctuelle n'a qu'une occurrence, à son échéance.
+ */
+export const listOccurrenceSchema = z.object({
+  listId: uuidSchema,
+  occurrenceAt: isoDateTimeSchema,
+  startsAt: isoDateTimeSchema,
+  endsAt: isoDateTimeSchema.nullable(),
+  allDay: z.boolean(),
+  doneAt: isoDateTimeSchema.nullable(),
+});
+
+export type ListOccurrence = z.infer<typeof listOccurrenceSchema>;
+
+/**
+ * Ce qu'on peut faire à UNE date d'une série : la cocher, la déplacer, la
+ * supprimer. Un champ absent laisse l'état de cette date intact.
+ */
+export const setOccurrenceSchema = z.object({
+  occurrenceAt: isoDateTimeSchema,
+  done: z.boolean().optional(),
+  movedTo: isoDateTimeSchema.nullable().optional(),
+  cancelled: z.boolean().optional(),
+});
+
+export type SetOccurrence = z.infer<typeof setOccurrenceSchema>;

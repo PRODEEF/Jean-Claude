@@ -16,6 +16,11 @@ type TaskListRow = {
   kind: string;
   due_at: string | null;
   due_all_day: boolean | null;
+  ends_at: string | null;
+  rrule: string | null;
+  reminder_minutes_before: number | null;
+  done_at: string | null;
+  notes: string | null;
   event_id: string | null;
   conversation_id: string | null;
   folder_id: string | null;
@@ -38,6 +43,14 @@ type TaskRow = {
   updated_at: string;
 };
 
+type OccurrenceRow = {
+  list_id: string;
+  occurrence_at: string;
+  done_at: string | null;
+  moved_to: string | null;
+  cancelled: boolean;
+};
+
 function toList(row: TaskListRow): TaskList {
   return {
     id: row.id,
@@ -45,6 +58,11 @@ function toList(row: TaskListRow): TaskList {
     kind: row.kind as TaskList["kind"],
     dueAt: row.due_at,
     dueAllDay: row.due_all_day,
+    endsAt: row.ends_at,
+    rrule: row.rrule,
+    reminderMinutesBefore: row.reminder_minutes_before,
+    doneAt: row.done_at,
+    notes: row.notes,
     eventId: row.event_id,
     conversationId: row.conversation_id,
     folderId: row.folder_id,
@@ -83,7 +101,7 @@ function toListWithTasks(row: TaskListRow & { tasks: TaskRow[] }): TaskListWithT
 }
 
 const LIST_COLUMNS =
-  "id, title, kind, due_at, due_all_day, event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
+  "id, title, kind, due_at, due_all_day, ends_at, rrule, reminder_minutes_before, done_at, notes, event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
 const TASK_COLUMNS =
   "id, list_id, title, notes, done, completed_at, parent_id, due_on, position, created_at, updated_at";
 const LIST_WITH_TASKS_COLUMNS = `${LIST_COLUMNS}, tasks(${TASK_COLUMNS})`;
@@ -155,6 +173,10 @@ export const taskRepository: ITaskRepository = {
         kind: input.kind,
         due_at: input.dueAt ?? null,
         due_all_day: input.dueAllDay ?? null,
+        ends_at: input.endsAt ?? null,
+        rrule: input.rrule ?? null,
+        reminder_minutes_before: input.reminderMinutesBefore ?? null,
+        notes: input.notes ?? null,
         folder_id: input.folderId ?? null,
         conversation_id: input.conversationId ?? null,
         created_by_assistant: input.createdByAssistant ?? false,
@@ -175,6 +197,12 @@ export const taskRepository: ITaskRepository = {
     if (patch.folderId !== undefined) payload["folder_id"] = patch.folderId;
     if (patch.dueAt !== undefined) payload["due_at"] = patch.dueAt;
     if (patch.dueAllDay !== undefined) payload["due_all_day"] = patch.dueAllDay;
+    if (patch.endsAt !== undefined) payload["ends_at"] = patch.endsAt;
+    if (patch.rrule !== undefined) payload["rrule"] = patch.rrule;
+    if (patch.reminderMinutesBefore !== undefined) {
+      payload["reminder_minutes_before"] = patch.reminderMinutesBefore;
+    }
+    if (patch.notes !== undefined) payload["notes"] = patch.notes;
     if (patch.eventId !== undefined) payload["event_id"] = patch.eventId;
 
     const { data, error } = await forUser(accessToken)
@@ -187,6 +215,42 @@ export const taskRepository: ITaskRepository = {
     if (error) throw new Error(error.message);
     if (!data) throw httpError(404, "Liste introuvable.");
     return toList(data as unknown as TaskListRow);
+  },
+
+  async findOccurrences(listIds, accessToken) {
+    if (listIds.length === 0) return [];
+
+    const { data, error } = await forUser(accessToken)
+      .from("task_list_occurrences")
+      .select("list_id, occurrence_at, done_at, moved_to, cancelled")
+      .in("list_id", listIds);
+
+    if (error) throw new Error(error.message);
+    return (data as unknown as OccurrenceRow[]).map((row) => ({
+      listId: row.list_id,
+      occurrenceAt: row.occurrence_at,
+      doneAt: row.done_at,
+      movedTo: row.moved_to,
+      cancelled: row.cancelled,
+    }));
+  },
+
+  async upsertOccurrence(userId, listId, row, accessToken) {
+    const { error } = await forUser(accessToken)
+      .from("task_list_occurrences")
+      .upsert(
+        {
+          user_id: userId,
+          list_id: listId,
+          occurrence_at: row.occurrenceAt,
+          done_at: row.doneAt,
+          moved_to: row.movedTo,
+          cancelled: row.cancelled,
+        },
+        { onConflict: "list_id,occurrence_at" },
+      );
+
+    if (error) throw new Error(error.message);
   },
 
   async deleteList(id, accessToken) {
