@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
-import { PanResponder, ScrollView, View, useWindowDimensions } from "react-native";
+import { PanResponder, Platform, ScrollView, View, useWindowDimensions } from "react-native";
 import { X } from "lucide-react-native";
 import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import { datedLists, dueOnForDay, listsOfDay } from "@jc/domain";
-import { formatFullDay } from "@/shared/lib/dates";
+import { formatFullDay, isSameDay } from "@/shared/lib/dates";
 import { useDetailPane, type PaneContent } from "@/shared/providers/detail-pane";
 import { useFolderChoices, type FolderChoice } from "@/shared/hooks/use-folder-choices";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
@@ -16,6 +16,8 @@ import { ListCard } from "@/features/todo/ListCard";
 import { TaskListDeleteDialog } from "@/features/todo/TaskListDeleteDialog";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
 import { isTaskSubset } from "@/features/calendar/DueListsBoard";
+import { useListDragHandle, useMomentDropZone } from "@/features/calendar/lib/list-drag";
+import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { SuggestionPaneBody } from "@/features/conversation/SuggestionPaneBody";
 
 /** En deçà, l'en-tête d'une liste se tronque ; au-delà, le milieu n'est plus lisible. */
@@ -153,6 +155,37 @@ function ListPaneBody({ content }: { content: Exclude<PaneContent, { kind: "sugg
   const day = content.kind === "day" ? content.day : null;
   const entries = entriesOf(content, saved);
 
+  const { updateList } = useTaskActions();
+
+  // Deux listes du même jour échangent leurs heures : poser la liste de 19h
+  // au-dessus de celle de 14h met la première à 14h et l'autre à 19h. Sans
+  // heure ni l'une ni l'autre, il n'y a rien à échanger.
+  const swapDue = (draggedId: string, targetId: string) => {
+    const dragged = saved.find((candidate) => candidate.id === draggedId);
+    const target = saved.find((candidate) => candidate.id === targetId);
+    if (!dragged?.dueAt || !target?.dueAt) return;
+    if (dragged.dueAt === target.dueAt && dragged.dueAllDay === target.dueAllDay) return;
+
+    updateList.mutate({
+      id: dragged.id,
+      patch: { dueAt: target.dueAt, dueAllDay: target.dueAllDay ?? true },
+    });
+    updateList.mutate({
+      id: target.id,
+      patch: { dueAt: dragged.dueAt, dueAllDay: dragged.dueAllDay ?? true },
+    });
+  };
+  const movableIds = new Set(
+    day
+      ? entries
+          .filter(
+            ({ list }) =>
+              list.dueAt !== null && isSameDay(new Date(list.dueAt), day) && entries.length > 1,
+          )
+          .map(({ list }) => list.id)
+      : [],
+  );
+
   const editedTask =
     openedTask === null
       ? null
@@ -172,6 +205,8 @@ function ListPaneBody({ content }: { content: Exclude<PaneContent, { kind: "sugg
             saved={saved.find((candidate) => candidate.id === list.id) ?? list}
             day={forDay}
             folders={folders}
+            movableIds={movableIds}
+            onSwap={swapDue}
             onOpenTask={setOpenedTask}
             onEdit={(target) => setListTarget({ mode: "edit", list: target })}
             onDelete={setDeletingList}
@@ -195,6 +230,8 @@ function PaneList({
   saved,
   day,
   folders,
+  movableIds,
+  onSwap,
   onOpenTask,
   onEdit,
   onDelete,
@@ -203,25 +240,44 @@ function PaneList({
   saved: TaskListWithTasks;
   day: Date | null;
   folders: FolderChoice[];
+  /** Les listes de ce jour qui se déplacent, et sur lesquelles on peut en poser une autre. */
+  movableIds: ReadonlySet<string>;
+  onSwap: (draggedId: string, targetId: string) => void;
   onOpenTask: (task: Task) => void;
   onEdit: (list: TaskList) => void;
   onDelete: (list: TaskList) => void;
 }) {
   const dueOn = day ? dueOnForDay(saved, day) : null;
   const subset = isTaskSubset(saved, shown);
+  const movable = movableIds.has(saved.id);
+  const web = Platform.OS === "web";
+
+  // La carte est à la fois ce qu'on saisit (par sa poignée) et ce sur quoi on
+  // en pose une autre : les deux restent réservés aux listes du même jour.
+  const { cardRef, gripRef } = useListDragHandle(saved.id, web && movable);
+  const zoneRef = useMomentDropZone(
+    web && movable,
+    (drag) => drag.kind === "list" && drag.listId !== saved.id && movableIds.has(drag.listId),
+    (drag) => onSwap(drag.listId, saved.id),
+  );
 
   return (
-    <ListCard
-      list={saved}
-      folders={folders}
-      desktop
-      query=""
-      onOpenTask={onOpenTask}
-      onEdit={() => onEdit(saved)}
-      onDelete={() => onDelete(saved)}
-      {...(subset ? { visibleTaskIds: shown.tasks.map((task) => task.id) } : {})}
-      {...(dueOn ? { dueOnForNew: dueOn } : {})}
-    />
+    <View ref={zoneRef}>
+      <View ref={cardRef}>
+        <ListCard
+          list={saved}
+          folders={folders}
+          desktop
+          query=""
+          onOpenTask={onOpenTask}
+          onEdit={() => onEdit(saved)}
+          onDelete={() => onDelete(saved)}
+          {...(subset ? { visibleTaskIds: shown.tasks.map((task) => task.id) } : {})}
+          {...(dueOn ? { dueOnForNew: dueOn } : {})}
+          {...(web && movable ? { gripRef } : {})}
+        />
+      </View>
+    </View>
   );
 }
 
