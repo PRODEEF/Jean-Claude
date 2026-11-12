@@ -13,7 +13,7 @@
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.1",
+    "@hono/node-server": "^2.1.6",
     "@jc/domain": "*",
     "@supabase/supabase-js": "^2.47.0",
     "@vercel/functions": "^3.9.9",
