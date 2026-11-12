@@ -23,9 +23,9 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 Rien pour l'instant : `dev` et la production portent la même chose, **V0.00.48**.
 
-### Mis en production le 12 novembre (V0.00.14 à V0.00.48)
+### Mis en production le 12 novembre (jusqu'à V0.00.42 en ligne ; V0.00.43 à V0.00.48 pas encore visibles)
 
-Tout ce qui suit est en ligne. Dernière mise en production : V0.00.48, PR #260, CI verte. Aucune migration à jouer côté base pour que l'application marche ; le SQL de `20261112200000_task_list_reminders_sent.sql` reste à coller par Yann (sans effet tant qu'aucune liste n'a de rappel).
+Les entrées jusqu'à V0.00.42 sont en ligne. **Les entrées V0.00.43 à V0.00.48 sont dans `main` (PR #260, CI verte) mais le site web affiché reste en V0.00.42** : Vercel a refusé de le reconstruire (limite de 100 constructions par jour, bloquée 24 h à partir de 21 h). À faire le 13 novembre en soirée : Vercel › projet `jean-claude-web` › Déploiements › le dernier « Production » › Redeploy, puis vérifier V0.00.48 en haut à droite. Seul changement d'écran dans ce lot : le déplacement instantané (V0.00.44), le reste est de l'API et de la base. Le SQL de `20261112200000_task_list_reminders_sent.sql` reste à coller par Yann (sans effet tant qu'aucune liste n'a de rappel).
 
 - **Mois : le glisser ne revient plus à sa place** (V0.00.42). Le glisser pouvait être coupé par la sélection de texte du navigateur : la liste revenait en place sans rien dire. Corrigé. Une liste présente un jour par ses seules tâches datées se déplace maintenant en changeant la date de ces tâches ; elle n'a pas d'heure à échanger, et le dit au lieu de ne rien faire. *Où : calendrier, vue Mois, ordinateur.*
 - **Mois : déplacer une liste comme dans Google Agenda** (V0.00.41). À la souris, la liste suit le curseur, la case visée s'encadre, et elle se dépose là où tu relâches. Poser une liste sur une autre du même jour échange leurs heures (comme dans le volet). *Où : calendrier, vue Mois, ordinateur.* — Au téléphone : appui long, voir section Mobile. Vue Année : pas encore.
