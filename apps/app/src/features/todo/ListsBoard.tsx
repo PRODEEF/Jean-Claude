@@ -31,6 +31,11 @@ export type ListsBoardProps = {
   lists: TaskListWithTasks[];
   /** Liste ouverte depuis la barre latérale : mise en avant à l'arrivée. */
   highlightedId?: string;
+  /**
+   * Liste sur laquelle l'écran s'ouvre (celle du moment) : amenée à l'écran
+   * sans bordure, contrairement à la liste visée depuis la barre latérale.
+   */
+  landingId?: string;
   /** Défilement de l'écran — pour amener la liste mise en avant à l'écran. */
   scrollRef?: RefObject<ScrollView | null>;
   /** Recherche en cours, transmise aux lignes pour les mettre en avant. */
@@ -52,6 +57,7 @@ export type ListsBoardProps = {
 export function ListsBoard({
   lists,
   highlightedId,
+  landingId,
   scrollRef,
   query,
   fold,
@@ -82,6 +88,7 @@ export function ListsBoard({
           list={list}
           folders={folders}
           highlighted={list.id === highlightedId}
+          landing={list.id === landingId}
           desktop={desktop}
           {...(scrollRef ? { scrollRef } : {})}
           query={query}
@@ -102,6 +109,7 @@ function ListCard({
   list,
   folders,
   highlighted,
+  landing,
   desktop,
   scrollRef,
   query,
@@ -113,6 +121,7 @@ function ListCard({
   list: TaskListWithTasks;
   folders: FolderChoice[];
   highlighted: boolean;
+  landing: boolean;
   desktop: boolean;
   scrollRef?: RefObject<ScrollView | null>;
   query: string;
@@ -140,8 +149,11 @@ function ListCard({
   // Amène la carte visée depuis la barre latérale à l'écran : la mettre en
   // avant ne suffit pas quand « Mes listes » en compte assez pour déborder
   // l'écran, la carte reste alors hors champ malgré sa bordure.
+  // La liste du moment est amenée à l'écran de la même façon, une seule fois
+  // (`landing` ne change plus après l'arrivée).
+  const scrollTarget = highlighted || landing;
   useEffect(() => {
-    if (!highlighted || !scrollRef) return;
+    if (!scrollTarget || !scrollRef) return;
 
     const frame = requestAnimationFrame(() => {
       const scrollNode = scrollRef.current?.getNativeScrollRef();
@@ -159,7 +171,7 @@ function ListCard({
     });
 
     return () => cancelAnimationFrame(frame);
-  }, [highlighted, scrollRef]);
+  }, [scrollTarget, scrollRef]);
 
   const shopping = list.kind === "shopping";
   const due = dueLabel(list);
