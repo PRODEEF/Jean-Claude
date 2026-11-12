@@ -35,27 +35,46 @@ export function occurrencesInRange(event: CalendarEvent, range: CalendarRange): 
   const start = new Date(event.startsAt);
   const durationMs = event.endsAt ? new Date(event.endsAt).getTime() - start.getTime() : 0;
 
+  // Une occurrence commencée avant la fenêtre qui s'y prolonge reste visible.
+  const dates = seriesDates(event.id, event.rrule, start, {
+    from: new Date(new Date(range.from).getTime() - durationMs).toISOString(),
+    to: range.to,
+  });
+  // Règle illisible : le rendez-vous reste visible, tel quel.
+  if (dates === null) return [event];
+
+  return dates.map((date) => ({
+    ...event,
+    startsAt: date.toISOString(),
+    endsAt: event.endsAt ? new Date(date.getTime() + durationMs).toISOString() : null,
+  }));
+}
+
+/**
+ * Débuts des occurrences d'une série dans la fenêtre, ou `null` quand la règle
+ * est illisible. Partagé avec les listes qui se répètent : une seule lecture de
+ * la règle, donc un seul endroit où elle peut diverger.
+ */
+export function seriesDates(
+  id: string,
+  rrule: string,
+  start: Date,
+  range: CalendarRange,
+): Date[] | null {
   let rule: RRuleInstance;
   try {
-    rule = new RRule({ ...RRule.parseString(event.rrule), dtstart: start });
+    rule = new RRule({ ...RRule.parseString(rrule), dtstart: start });
   } catch (error) {
     // Une règle illisible ne doit pas faire disparaître le rendez-vous.
     logger.warn(
       "calendar",
-      `Règle de récurrence illisible pour ${event.id} : ${error instanceof Error ? error.message : "inconnue"}`,
+      `Règle de récurrence illisible pour ${id} : ${error instanceof Error ? error.message : "inconnue"}`,
     );
-    return [event];
+    return null;
   }
 
-  // Une occurrence commencée avant la fenêtre qui s'y prolonge reste visible.
-  const from = new Date(new Date(range.from).getTime() - durationMs);
   return rule
-    .between(from, new Date(range.to), true)
+    .between(new Date(range.from), new Date(range.to), true)
     .filter((date) => date.getTime() < new Date(range.to).getTime())
-    .slice(0, MAX_OCCURRENCES)
-    .map((date) => ({
-      ...event,
-      startsAt: date.toISOString(),
-      endsAt: event.endsAt ? new Date(date.getTime() + durationMs).toISOString() : null,
-    }));
+    .slice(0, MAX_OCCURRENCES);
 }

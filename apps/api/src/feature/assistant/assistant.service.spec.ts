@@ -324,6 +324,8 @@ function makeTaskRepository(): ITaskRepository {
       if (list) list.tasks = list.tasks.filter((task) => task.id !== taskId);
       return Promise.resolve();
     }),
+    findOccurrences: jest.fn().mockResolvedValue([]),
+    upsertOccurrence: jest.fn().mockResolvedValue(undefined),
     replaceTasks: jest.fn(),
   };
 }

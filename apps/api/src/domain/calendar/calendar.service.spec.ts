@@ -73,6 +73,8 @@ function makeTaskRepository(overrides: Partial<ITaskRepository> = {}): ITaskRepo
     createTask: jest.fn(),
     updateTask: jest.fn(),
     deleteTask: jest.fn(),
+    findOccurrences: jest.fn().mockResolvedValue([]),
+    upsertOccurrence: jest.fn().mockResolvedValue(undefined),
     replaceTasks: jest.fn(),
     ...overrides,
   };

@@ -377,6 +377,8 @@ function makeTaskRepository(lists: TaskListWithTasks[] = []): ITaskRepository {
     createTask: jest.fn(),
     updateTask: jest.fn(),
     deleteTask: jest.fn(),
+    findOccurrences: jest.fn().mockResolvedValue([]),
+    upsertOccurrence: jest.fn().mockResolvedValue(undefined),
     replaceTasks: jest.fn(),
   };
 }
