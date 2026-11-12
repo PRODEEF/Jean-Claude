@@ -3,6 +3,7 @@ import { ScrollView, TextInput, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { ChevronsDownUp, ChevronsUpDown, Plus, Search, X } from "lucide-react-native";
 import type { Task, TaskList } from "@jc/domain";
+import { currentListId, listsInTimeOrder } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
@@ -54,10 +55,21 @@ export function TodoScreen() {
   const lists = useMemo(() => data ?? [], [data]);
   const folders = useFolderChoices();
 
+  // Dans l'ordre du temps : une liste du 1er décembre ne passe plus devant
+  // celle du 10 novembre. Les listes sans date vont à la fin.
   const visibleLists = useMemo(
-    () => filterListsByQuery(filterListsByFolder(lists, folderId), query),
+    () => listsInTimeOrder(filterListsByQuery(filterListsByFolder(lists, folderId), query)),
     [lists, folderId, query],
   );
+
+  // L'écran s'ouvre sur la liste du moment, une seule fois : le recalculer à
+  // chaque chargement ferait sauter l'écran dès qu'on coche une tâche. Une
+  // liste visée depuis la barre latérale a la priorité.
+  const [landingId, setLandingId] = useState<string | null>(null);
+  useEffect(() => {
+    if (openedList || landingId !== null || isPending) return;
+    setLandingId(currentListId(visibleLists, new Date()));
+  }, [openedList, landingId, isPending, visibleLists]);
 
   const used = useMemo(() => usedFolderIds(lists), [lists]);
   const filterFolders = useMemo(
@@ -175,7 +187,9 @@ export function TodoScreen() {
       ) : (
         <ListsBoard
           lists={visibleLists}
-          {...(openedList ? { highlightedId: openedList, scrollRef: scroll } : {})}
+          {...(openedList ? { highlightedId: openedList } : {})}
+          {...(landingId ? { landingId } : {})}
+          scrollRef={scroll}
           query={query}
           {...(fold ? { fold } : {})}
           onEditList={(list: TaskList) => setListTarget({ mode: "edit", list })}
