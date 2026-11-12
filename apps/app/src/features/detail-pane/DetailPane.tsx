@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { ScrollView, View } from "react-native";
 import { X } from "lucide-react-native";
-import type { Task, TaskListWithTasks } from "@jc/domain";
+import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import { datedLists, dueOnForDay, listsOfDay } from "@jc/domain";
 import { formatFullDay } from "@/shared/lib/dates";
 import { useDetailPane, type PaneContent } from "@/shared/providers/detail-pane";
+import { useFolderChoices, type FolderChoice } from "@/shared/hooks/use-folder-choices";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { TaskDialog } from "@/features/todo/TaskDialog";
-import { TaskListEditor } from "@/features/todo/TaskListEditor";
-import { isTaskSubset, timeLabel } from "@/features/calendar/DueListsBoard";
+import { ListCard } from "@/features/todo/ListCard";
+import { TaskListDeleteDialog } from "@/features/todo/TaskListDeleteDialog";
+import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
+import { isTaskSubset } from "@/features/calendar/DueListsBoard";
 
 /** Largeur du volet : assez pour une liste lisible, sans écraser le milieu. */
 export const DETAIL_PANE_WIDTH = 420;
@@ -60,6 +63,9 @@ function PaneTitle({ content }: { content: PaneContent }) {
 function PaneBody({ content }: { content: PaneContent }) {
   const { data: lists } = useTaskLists();
   const [openedTask, setOpenedTask] = useState<Task | null>(null);
+  const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
+  const [deletingList, setDeletingList] = useState<TaskList | null>(null);
+  const folders = useFolderChoices();
 
   // La liste telle qu'enregistrée : une entrée du jour peut n'en être que la
   // projection sur les tâches de ce jour, qu'on ne doit pas renvoyer seules.
@@ -85,51 +91,57 @@ function PaneBody({ content }: { content: PaneContent }) {
             shown={list}
             saved={saved.find((candidate) => candidate.id === list.id) ?? list}
             day={forDay}
+            folders={folders}
             onOpenTask={setOpenedTask}
+            onEdit={(target) => setListTarget({ mode: "edit", list: target })}
+            onDelete={setDeletingList}
           />
         ))
       )}
       <TaskDialog task={editedTask} onClose={() => setOpenedTask(null)} />
+      <TaskListDialog target={listTarget} onClose={() => setListTarget(null)} />
+      <TaskListDeleteDialog list={deletingList} onClose={() => setDeletingList(null)} />
     </>
   );
 }
 
 /**
- * Une liste dans le volet : son titre et son éditeur, le même que « Mes listes ».
- * Pour un jour donné, seules les tâches de ce jour sont montrées, et une ligne
- * nouvelle rejoint ce jour.
+ * Une liste dans le volet : la carte de « Mes listes », en-tête, repli et
+ * éditeur compris. Pour un jour donné, seules les tâches de ce jour sont
+ * montrées, et une ligne nouvelle rejoint ce jour.
  */
 function PaneList({
   shown,
   saved,
   day,
+  folders,
   onOpenTask,
+  onEdit,
+  onDelete,
 }: {
   shown: TaskListWithTasks;
   saved: TaskListWithTasks;
   day: Date | null;
+  folders: FolderChoice[];
   onOpenTask: (task: Task) => void;
+  onEdit: (list: TaskList) => void;
+  onDelete: (list: TaskList) => void;
 }) {
-  const time = timeLabel(shown);
   const dueOn = day ? dueOnForDay(saved, day) : null;
   const subset = isTaskSubset(saved, shown);
 
   return (
-    <View className="border-border gap-0.5 rounded-lg border p-1.5">
-      <View className="h-7 flex-row items-center gap-2 px-1">
-        {time ? <Text className="text-sm font-semibold">{time}</Text> : null}
-        <Text className="min-w-0 flex-1 text-sm font-medium" numberOfLines={1}>
-          {shown.title}
-        </Text>
-      </View>
-      <TaskListEditor
-        list={saved}
-        query=""
-        onOpenTask={onOpenTask}
-        {...(subset ? { visibleTaskIds: shown.tasks.map((task) => task.id) } : {})}
-        {...(dueOn ? { dueOnForNew: dueOn } : {})}
-      />
-    </View>
+    <ListCard
+      list={saved}
+      folders={folders}
+      desktop
+      query=""
+      onOpenTask={onOpenTask}
+      onEdit={() => onEdit(saved)}
+      onDelete={() => onDelete(saved)}
+      {...(subset ? { visibleTaskIds: shown.tasks.map((task) => task.id) } : {})}
+      {...(dueOn ? { dueOnForNew: dueOn } : {})}
+    />
   );
 }
 
