@@ -33,6 +33,11 @@ function makeList(overrides: Partial<TaskListWithTasks> = {}): TaskListWithTasks
     kind: "todo",
     dueAt: null,
     dueAllDay: null,
+    endsAt: null,
+    rrule: null,
+    reminderMinutesBefore: null,
+    doneAt: null,
+    notes: null,
     eventId: null,
     conversationId: null,
     folderId: null,
@@ -319,6 +324,141 @@ describe("TaskService", () => {
       );
 
       expect(repo.createList).toHaveBeenCalled();
+    });
+  });
+
+  describe("liste qui tient lieu de rendez-vous", () => {
+    it("crée une liste avec sa fin, sa répétition, son rappel et ses notes", async () => {
+      const repo = makeRepository();
+      const service = makeService(repo);
+
+      await service.createList(
+        USER,
+        {
+          title: "Danse",
+          kind: "todo",
+          dueAt: "2099-01-01T17:00:00.000Z",
+          endsAt: "2099-01-01T18:00:00.000Z",
+          rrule: "FREQ=WEEKLY;BYDAY=TH",
+          reminderMinutesBefore: 30,
+          notes: "Salle 3",
+        },
+        TOKEN,
+      );
+
+      expect(repo.createList).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          endsAt: "2099-01-01T18:00:00.000Z",
+          rrule: "FREQ=WEEKLY;BYDAY=TH",
+          reminderMinutesBefore: 30,
+          notes: "Salle 3",
+        }),
+        TOKEN,
+      );
+    });
+
+    it("refuse une fin qui ne suit pas le début", async () => {
+      const service = makeService();
+
+      await expect(
+        service.createList(
+          USER,
+          {
+            title: "Danse",
+            kind: "todo",
+            dueAt: "2099-01-01T18:00:00.000Z",
+            endsAt: "2099-01-01T17:00:00.000Z",
+          },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it("refuse une fin sans début", async () => {
+      const service = makeService();
+
+      await expect(
+        service.createList(
+          USER,
+          { title: "Danse", kind: "todo", endsAt: "2099-01-01T18:00:00.000Z" },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it("garde la durée quand on déplace le début", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({
+            dueAt: "2099-01-01T14:30:00.000Z",
+            dueAllDay: false,
+            endsAt: "2099-01-01T15:30:00.000Z",
+          }),
+        ),
+      });
+      const service = makeService(repo);
+
+      await service.updateList(USER, LIST, { dueAt: "2099-01-02T14:30:00.000Z" }, TOKEN);
+
+      expect(repo.updateList).toHaveBeenCalledWith(
+        LIST,
+        expect.objectContaining({ endsAt: "2099-01-02T15:30:00.000Z" }),
+        TOKEN,
+      );
+    });
+
+    it("efface la fin et la répétition avec l'échéance", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({
+            dueAt: "2099-01-01T14:30:00.000Z",
+            dueAllDay: false,
+            endsAt: "2099-01-01T15:30:00.000Z",
+            rrule: "FREQ=DAILY",
+          }),
+        ),
+      });
+      const service = makeService(repo);
+
+      await service.updateList(USER, LIST, { dueAt: null }, TOKEN);
+
+      expect(repo.updateList).toHaveBeenCalledWith(
+        LIST,
+        expect.objectContaining({ endsAt: null, rrule: null }),
+        TOKEN,
+      );
+    });
+
+    it("refuse de reculer la fin avant le début existant", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({ dueAt: "2099-01-01T14:30:00.000Z", dueAllDay: false }),
+        ),
+      });
+      const service = makeService(repo);
+
+      await expect(
+        service.updateList(USER, LIST, { endsAt: "2099-01-01T13:00:00.000Z" }, TOKEN),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it("laisse la fin intacte quand on ne touche pas au début", async () => {
+      const repo = makeRepository({
+        findById: jest.fn().mockResolvedValue(
+          makeList({
+            dueAt: "2099-01-01T14:30:00.000Z",
+            dueAllDay: false,
+            endsAt: "2099-01-01T15:30:00.000Z",
+          }),
+        ),
+      });
+      const service = makeService(repo);
+
+      await service.updateList(USER, LIST, { title: "Danse" }, TOKEN);
+
+      const patch = (repo.updateList as jest.Mock).mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(patch).not.toHaveProperty("endsAt");
     });
   });
 

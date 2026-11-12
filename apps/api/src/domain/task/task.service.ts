@@ -77,6 +77,7 @@ export class TaskService {
     accessToken: string,
   ): Promise<TaskList> {
     await this.assertDueNotPast(userId, input.dueAt, accessToken);
+    assertOrderedRange(input.dueAt ?? null, input.endsAt ?? null);
     const due = await this.resolveDue(userId, input, accessToken);
     return this.lists.createList(userId, { ...input, ...due }, accessToken);
   }
@@ -130,7 +131,16 @@ export class TaskService {
     await this.assertDueNotPast(userId, patch.dueAt, accessToken, existing.dueAt);
 
     const due = await this.resolveDue(userId, patch, accessToken);
-    const updated = await this.lists.updateList(id, { ...patch, ...due }, accessToken);
+    const span = spanAfterChange(existing, patch);
+    assertOrderedRange(
+      patch.dueAt !== undefined ? patch.dueAt : existing.dueAt,
+      patch.endsAt !== undefined
+        ? patch.endsAt
+        : span.endsAt !== undefined
+          ? span.endsAt
+          : existing.endsAt,
+    );
+    const updated = await this.lists.updateList(id, { ...patch, ...due, ...span }, accessToken);
 
     if (existing.eventId !== null) {
       await this.projectSlot(existing.eventId, updated, accessToken);
@@ -369,4 +379,36 @@ export class TaskService {
 
     throw httpError(400, "Une échéance ne peut pas être dans le passé.");
   }
+}
+
+/**
+ * Une fin n'a de sens qu'après un début. Doublon volontaire de la contrainte
+ * `task_lists_range_valid` : la base rendrait une erreur Postgres opaque, un 400
+ * lisible vaut mieux pour le formulaire.
+ */
+function assertOrderedRange(dueAt: string | null, endsAt: string | null): void {
+  if (endsAt === null) return;
+  if (dueAt === null) throw httpError(400, "Une fin suppose un début.");
+  if (new Date(endsAt).getTime() <= new Date(dueAt).getTime()) {
+    throw httpError(400, "La fin doit suivre le début.");
+  }
+}
+
+/**
+ * Ce que devient la fin (et la répétition) quand le début change.
+ *
+ * Déplacer un rendez-vous garde sa durée : « jeudi 14h-15h » reculé à vendredi
+ * reste d'une heure. Sans début, il n'y a plus ni fin ni série à porter. Un
+ * `{}` laisse les colonnes intactes.
+ */
+function spanAfterChange(
+  existing: TaskList,
+  patch: UpdateTaskList,
+): { endsAt?: string | null; rrule?: string | null } {
+  if (patch.dueAt === undefined) return {};
+  if (patch.dueAt === null) return { endsAt: null, rrule: null };
+  if (patch.endsAt !== undefined || existing.endsAt === null || existing.dueAt === null) return {};
+
+  const duration = new Date(existing.endsAt).getTime() - new Date(existing.dueAt).getTime();
+  return { endsAt: new Date(new Date(patch.dueAt).getTime() + duration).toISOString() };
 }

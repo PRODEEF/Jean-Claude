@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { rruleSchema } from "../calendar/calendar.schema";
 import { calendarDateSchema } from "../shared/search.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 
@@ -44,6 +45,19 @@ export const taskListSchema = z.object({
    * et la base le vérifie (`task_lists_due_all_day_pairing`).
    */
   dueAllDay: z.boolean().nullable(),
+  /**
+   * Fin du créneau, quand la liste tient lieu de rendez-vous : `dueAt` en est le
+   * début. `null` pour une échéance sans durée (fusion rendez-vous / todo).
+   */
+  endsAt: isoDateTimeSchema.nullable(),
+  /** Répétition au format RRULE, comme `calendar_events` ; `null` pour une liste ponctuelle. */
+  rrule: rruleSchema.nullable(),
+  /** Rappel avant chaque occurrence, en minutes (A.11) ; `null` sans rappel. */
+  reminderMinutesBefore: z.number().int().min(0).max(10_080).nullable(),
+  /** « Fait » propre à la liste : une liste sans tâche n'a rien dont le déduire. */
+  doneAt: isoDateTimeSchema.nullable(),
+  /** Texte libre, repris des rendez-vous. */
+  notes: z.string().max(4_000).nullable(),
   /** Créneau posé dans l'agenda pour cette liste, le cas échéant (A.3, A.8). */
   eventId: uuidSchema.nullable(),
   /** Conversation d'origine, quand la liste vient d'une conversion (A.2). */
@@ -155,6 +169,10 @@ export const createTaskListSchema = z.object({
   folderId: uuidSchema.nullable().optional(),
   dueAt: isoDateTimeSchema.nullable().optional(),
   dueAllDay: z.boolean().optional(),
+  endsAt: isoDateTimeSchema.nullable().optional(),
+  rrule: rruleSchema.nullable().optional(),
+  reminderMinutesBefore: z.number().int().min(0).max(10_080).nullable().optional(),
+  notes: z.string().max(4_000).nullable().optional(),
 });
 
 export type CreateTaskList = z.infer<typeof createTaskListSchema>;
