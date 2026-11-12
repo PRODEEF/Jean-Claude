@@ -1,4 +1,9 @@
-import { dueReminders, type ReminderEvent } from "./reminder-schedule.js";
+import {
+  dueListReminders,
+  dueReminders,
+  type RemindableList,
+  type ReminderEvent,
+} from "./reminder-schedule.js";
 
 const WINDOW = 15 * 60_000;
 
@@ -94,5 +99,141 @@ describe("dueReminders", () => {
     });
 
     expect(dueReminders([long], new Date("2026-11-12T18:00:00.000Z"), WINDOW)).toEqual([]);
+  });
+});
+
+function makeRemindable(
+  listOverrides: Partial<RemindableList["list"]> = {},
+  overrides: RemindableList["overrides"] = [],
+): RemindableList {
+  return {
+    list: {
+      userId: "user-1",
+      id: "list-1",
+      title: "Kiné",
+      kind: "todo",
+      dueAt: "2026-11-12T18:00:00.000Z",
+      dueAllDay: false,
+      endsAt: "2026-11-12T19:00:00.000Z",
+      rrule: null,
+      reminderMinutesBefore: 30,
+      doneAt: null,
+      notes: null,
+      eventId: null,
+      conversationId: null,
+      folderId: null,
+      createdByAssistant: false,
+      createdAt: "2026-11-01T08:00:00.000Z",
+      updatedAt: "2026-11-01T08:00:00.000Z",
+      ...listOverrides,
+    },
+    overrides,
+  };
+}
+
+describe("dueListReminders", () => {
+  const AT_17H35 = new Date("2026-11-12T17:35:00.000Z");
+
+  it("rend le rappel d'une liste dont l'heure de rappel vient de passer", () => {
+    const due = dueListReminders([makeRemindable()], AT_17H35, WINDOW);
+
+    expect(due.map((item) => item.occurrenceAt)).toEqual(["2026-11-12T18:00:00.000Z"]);
+  });
+
+  it("ne rend rien avant l'heure du rappel", () => {
+    const due = dueListReminders([makeRemindable()], new Date("2026-11-12T17:20:00.000Z"), WINDOW);
+
+    expect(due).toEqual([]);
+  });
+
+  it("ne rend rien pour une liste sans rappel", () => {
+    const due = dueListReminders(
+      [makeRemindable({ reminderMinutesBefore: null })],
+      AT_17H35,
+      WINDOW,
+    );
+
+    expect(due).toEqual([]);
+  });
+
+  it("traite 0 minute comme un rappel au début, pas comme une absence", () => {
+    const due = dueListReminders(
+      [makeRemindable({ reminderMinutesBefore: 0 })],
+      new Date("2026-11-12T18:05:00.000Z"),
+      WINDOW,
+    );
+
+    expect(due).toHaveLength(1);
+  });
+
+  it("ne rappelle pas une liste déjà faite", () => {
+    const due = dueListReminders(
+      [makeRemindable({ doneAt: "2026-11-12T17:00:00.000Z" })],
+      AT_17H35,
+      WINDOW,
+    );
+
+    expect(due).toEqual([]);
+  });
+
+  describe("série", () => {
+    const WEEKLY = {
+      rrule: "FREQ=WEEKLY;BYDAY=TH",
+      dueAt: "2026-01-01T18:00:00.000Z",
+      endsAt: "2026-01-01T19:00:00.000Z",
+    };
+    const THURSDAY_17H35 = new Date("2026-11-12T17:35:00.000Z");
+
+    it("rappelle la date du jour d'une série commencée bien avant", () => {
+      const due = dueListReminders([makeRemindable(WEEKLY)], THURSDAY_17H35, WINDOW);
+
+      expect(due.map((item) => item.occurrenceAt)).toEqual(["2026-11-12T18:00:00.000Z"]);
+    });
+
+    it("ne rappelle pas une date supprimée", () => {
+      const cancelled = {
+        occurrenceAt: "2026-11-12T18:00:00.000Z",
+        doneAt: null,
+        movedTo: null,
+        cancelled: true,
+      };
+
+      const due = dueListReminders([makeRemindable(WEEKLY, [cancelled])], THURSDAY_17H35, WINDOW);
+
+      expect(due).toEqual([]);
+    });
+
+    it("ne rappelle pas une date déjà cochée", () => {
+      const done = {
+        occurrenceAt: "2026-11-12T18:00:00.000Z",
+        doneAt: "2026-11-12T17:00:00.000Z",
+        movedTo: null,
+        cancelled: false,
+      };
+
+      const due = dueListReminders([makeRemindable(WEEKLY, [done])], THURSDAY_17H35, WINDOW);
+
+      expect(due).toEqual([]);
+    });
+
+    it("suit une date déplacée : plus de rappel à l'ancienne heure, un rappel à la nouvelle", () => {
+      const moved = {
+        occurrenceAt: "2026-11-12T18:00:00.000Z",
+        doneAt: null,
+        movedTo: "2026-11-12T20:00:00.000Z",
+        cancelled: false,
+      };
+
+      const before = dueListReminders([makeRemindable(WEEKLY, [moved])], THURSDAY_17H35, WINDOW);
+      const after = dueListReminders(
+        [makeRemindable(WEEKLY, [moved])],
+        new Date("2026-11-12T19:35:00.000Z"),
+        WINDOW,
+      );
+
+      expect(before).toEqual([]);
+      // La clé reste la date d'origine : c'est elle qui évite le doublon.
+      expect(after.map((item) => item.occurrenceAt)).toEqual(["2026-11-12T18:00:00.000Z"]);
+    });
   });
 });
