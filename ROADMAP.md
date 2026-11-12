@@ -21,7 +21,9 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
-Rien pour l'instant : `dev` et la production portent la même chose, **V0.00.48**.
+- **Vercel : moins de constructions inutiles** (sans changement de version). Le 12 novembre au soir, Vercel a refusé de construire le site web : limite gratuite de 100 déploiements par jour atteinte, pendant 24 h. Chaque projet (site web, API) ne se reconstruit désormais que si ses propres fichiers, les paquets partagés (`packages/`) ou les dépendances (`package-lock.json`) ont changé : une PR de documentation, ou qui ne touche que l'API, ne relance plus l'autre projet. En cas de doute (historique indisponible) Vercel construit quand même. *Où : réglages Vercel, `apps/app/vercel.json` et `apps/api/vercel.json`.* — À vérifier au premier merge : une construction ignorée doit apparaître comme « ignorée » et non comme un échec.
+
+`dev` et la production portaient la même chose avant cette ligne, **V0.00.48**.
 
 ### Mis en production le 12 novembre (V0.00.14 à V0.00.48)
 
