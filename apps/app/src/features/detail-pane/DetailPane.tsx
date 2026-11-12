@@ -124,10 +124,11 @@ function ResizeHandle({
 }
 
 function PaneTitle({ content }: { content: PaneContent }) {
-  const { data: lists } = useTaskLists();
   if (content.kind === "day") return <>{formatFullDay(content.day)}</>;
   if (content.kind === "suggestion") return <>Proposition de Jean-Claude</>;
-  return <>{lists?.find((list) => list.id === content.listId)?.title ?? "Liste"}</>;
+  // Le titre de la liste est déjà celui de la carte : le volet dit où l'on est,
+  // et ce qu'il ouvre, c'est bien « Mes listes » (Yann, 12 novembre).
+  return <>Mes listes</>;
 }
 
 function PaneBody({ content }: { content: PaneContent }) {
