@@ -15,6 +15,7 @@ import {
   type CreateTask,
   type CreateTaskList,
   type EditMessage,
+  type ListOccurrence,
   type Feedback,
   type FeedbackAnalysis,
   type FeedbackStatus,
@@ -31,6 +32,7 @@ import {
   type SearchFilters,
   type SearchResult,
   type SendMessage,
+  type SetOccurrence,
   type Task,
   type TaskList,
   type TesterFeedback,
@@ -375,6 +377,17 @@ export class JeanClaudeClient {
   readonly tasks = {
     lists: (params: { cursor?: string; limit?: number } = {}) =>
       this.http.request<Paginated<TaskListWithTasks>>("/tasks", { query: params }),
+
+    /**
+     * Occurrences des listes datées sur une fenêtre, séries dépliées et
+     * exceptions appliquées. Une seule requête pour toute la vue, comme `calendar.list`.
+     */
+    occurrences: (range: CalendarRange) =>
+      this.http.request<ListOccurrence[]>("/tasks/occurrences", { query: range }),
+
+    /** Cocher, déplacer ou supprimer UNE date d'une série, sans toucher à la série. */
+    setOccurrence: (listId: string, input: SetOccurrence) =>
+      this.http.request<void>(`/tasks/${listId}/occurrences`, { method: "PUT", body: input }),
 
     createList: (input: CreateTaskList) =>
       this.http.request<TaskList>("/tasks", { method: "POST", body: input }),

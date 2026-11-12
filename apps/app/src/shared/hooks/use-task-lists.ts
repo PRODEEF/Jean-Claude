@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type {
   CreateTask,
+  CalendarRange,
   CreateTaskList,
   ReplaceTasks,
   TaskListWithTasks,
@@ -33,6 +34,20 @@ export function useTaskLists({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["taskLists"],
     queryFn: () => fetchAllLists(),
+    enabled,
+  });
+}
+
+/**
+ * Occurrences des listes datées sur une fenêtre (séries dépliées).
+ *
+ * Même fenêtre que le calendrier, et une clé sous `taskLists` : tout geste qui
+ * rafraîchit les listes rafraîchit aussi leurs occurrences.
+ */
+export function useListOccurrences(range: CalendarRange, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: ["taskLists", "occurrences", range.from, range.to],
+    queryFn: () => api.tasks.occurrences(range),
     enabled,
   });
 }
