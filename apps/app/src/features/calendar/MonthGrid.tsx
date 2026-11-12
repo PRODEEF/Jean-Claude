@@ -1,10 +1,12 @@
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import type { ReactNode } from "react";
 import { ListChecks, Users } from "lucide-react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
 import { eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
-import { formatTime, isSameDay, WEEKDAY_LABELS } from "@/shared/lib/dates";
+import { formatTime, isSameDay, startOfDay, WEEKDAY_LABELS } from "@/shared/lib/dates";
+import { useListDragHandle, useMomentDropZone } from "./lib/list-drag";
 
 export type MonthGridProps = {
   /** Les 42 jours de la grille, lundi en tête. */
@@ -22,6 +24,8 @@ export type MonthGridProps = {
    * la ligne de la liste reste alors un simple repère.
    */
   onOpenList?: (list: TaskListWithTasks) => void;
+  /** Une liste lâchée sur un jour (web) : elle garde son heure, seul le jour change. */
+  onMoveList: (listId: string, day: Date) => void;
   /** En deçà du point de rupture : pastilles au lieu des titres. */
   compact: boolean;
 };
@@ -47,6 +51,7 @@ export function MonthGrid({
   onSelectDay,
   onOpenEvent,
   onOpenList,
+  onMoveList,
   compact,
 }: MonthGridProps) {
   const today = new Date();
@@ -88,8 +93,13 @@ export function MonthGrid({
                 const { shown, hidden } = fitEntries(entries, compact);
 
                 return (
-                  <View
+                  <DayCell
                     key={day.toISOString()}
+                    // Un jour révolu ne reçoit pas de liste, comme dans la grille
+                    // horaire : dater dans le passé est un geste rare, qui passe
+                    // par « Changer l'échéance ».
+                    droppable={startOfDay(day).getTime() >= startOfDay(today).getTime()}
+                    onDropList={(listId) => onMoveList(listId, day)}
                     className={`border-border min-w-0 flex-1 gap-1 border-b border-r p-1 ${
                       selected ? "bg-accent-soft" : ""
                     }`}
@@ -139,7 +149,7 @@ export function MonthGrid({
                         </View>
                       ) : null}
                     </View>
-                  </View>
+                  </DayCell>
                 );
               })}
             </View>
@@ -245,14 +255,9 @@ function EntryLine({
   // Cliquable seulement quand il y a un volet où montrer la liste.
   if (onOpenList) {
     return (
-      <Pressable
-        onPress={() => onOpenList(list)}
-        accessibilityRole="button"
-        accessibilityLabel={`Voir la liste ${list.title}`}
-        className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
-      >
+      <DraggableListLine list={list} onOpen={() => onOpenList(list)}>
         {content}
-      </Pressable>
+      </DraggableListLine>
     );
   }
 
@@ -263,6 +268,60 @@ function EntryLine({
     >
       {content}
     </View>
+  );
+}
+
+/**
+ * Cellule d'un jour : cible de dépôt d'une liste (web).
+ *
+ * Composant à part parce que la cible est un hook, qu'on ne peut pas appeler
+ * dans la boucle des jours. Seule une liste entière s'y pose : une ligne de
+ * tâche glissée depuis une carte n'a pas de sens ici.
+ */
+function DayCell({
+  droppable,
+  onDropList,
+  className,
+  children,
+}: {
+  droppable: boolean;
+  onDropList: (listId: string) => void;
+  className: string;
+  children: ReactNode;
+}) {
+  const zoneRef = useMomentDropZone(
+    droppable,
+    (drag) => drag.kind === "list",
+    (drag) => onDropList(drag.listId),
+  );
+  return (
+    <View ref={zoneRef} className={className}>
+      {children}
+    </View>
+  );
+}
+
+/** Ligne de liste que l'on saisit pour la déplacer (web) ; l'appui simple l'ouvre. */
+function DraggableListLine({
+  list,
+  onOpen,
+  children,
+}: {
+  list: TaskListWithTasks;
+  onOpen: () => void;
+  children: ReactNode;
+}) {
+  const { cardRef } = useListDragHandle(list.id, Platform.OS === "web");
+  return (
+    <Pressable
+      ref={cardRef}
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={`Voir la liste ${list.title}`}
+      className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
+    >
+      {children}
+    </Pressable>
   );
 }
 

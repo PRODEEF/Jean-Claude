@@ -7,6 +7,7 @@ import {
   datedLists,
   dueForMoment,
   dueForSlot,
+  momentOf,
   listsOfDay,
   listsWithoutVisibleEvent,
   todoDays,
@@ -223,6 +224,21 @@ export function CalendarScreen() {
     );
   };
 
+  // Liste lâchée sur un jour de la vue mois : elle garde son heure (ou son
+  // absence d'heure), seul le jour change, comme dans un agenda.
+  const moveListToDay = (listId: string, day: Date) => {
+    const saved = allLists?.find((candidate) => candidate.id === listId);
+    if (!saved) return;
+    const patch = dueForMoment(day, momentOf(saved), saved);
+    if (patch.dueAt === saved.dueAt && patch.dueAllDay === saved.dueAllDay) return;
+
+    setMoveFailure(null);
+    updateList.mutate(
+      { id: listId, patch },
+      { onError: () => setMoveFailure("Le déplacement a échoué. Réessayez dans un instant.") },
+    );
+  };
+
   // Une entrée du calendrier peut n'être que la projection des tâches d'un
   // jour (`datedLists`) : c'est la vraie liste qu'on modifie, sans quoi le
   // formulaire lui prêterait pour échéance le jour de ces tâches.
@@ -363,6 +379,7 @@ export function CalendarScreen() {
               {...(pane.available
                 ? { onOpenList: (list) => pane.open({ kind: "list", listId: list.id }) }
                 : {})}
+              onMoveList={moveListToDay}
               compact={compact}
             />
           ) : null}
