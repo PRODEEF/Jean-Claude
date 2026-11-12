@@ -2,7 +2,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native"
 import { useRef, type ReactNode } from "react";
 import { ListChecks, Users } from "lucide-react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
-import { eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
+import { calendarDayOf, eventsOfDay, listsOfDay, openTaskCount } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { formatTime, isSameDay, startOfDay, WEEKDAY_LABELS } from "@/shared/lib/dates";
@@ -24,10 +24,14 @@ export type MonthGridProps = {
    * la ligne de la liste reste alors un simple repère.
    */
   onOpenList?: (list: TaskListWithTasks) => void;
-  /** Une liste lâchée sur un jour (web) : elle garde son heure, seul le jour change. */
-  onMoveList: (listId: string, day: Date) => void;
-  /** Une liste lâchée sur une autre du même jour : elles échangent leurs heures. */
-  onSwapLists: (draggedId: string, targetId: string) => void;
+  /**
+   * Une liste lâchée sur un jour (web) : elle garde son heure, seul le jour
+   * change. `fromDay` est le jour (`AAAA-MM-JJ`) d'où on l'a prise : une liste
+   * qui figure là par ses seules tâches datées ne se déplace pas comme les autres.
+   */
+  onMoveList: (listId: string, day: Date, fromDay: string) => void;
+  /** Une liste lâchée sur une autre du même jour (`day`) : elles échangent leurs heures. */
+  onSwapLists: (draggedId: string, targetId: string, day: string) => void;
   /** En deçà du point de rupture : pastilles au lieu des titres. */
   compact: boolean;
 };
@@ -102,7 +106,10 @@ export function MonthGrid({
                     // horaire : dater dans le passé est un geste rare, qui passe
                     // par « Changer l'échéance ».
                     droppable={startOfDay(day).getTime() >= startOfDay(today).getTime()}
-                    onDropList={(listId) => onMoveList(listId, day)}
+                    onDropList={(dragKey) => {
+                      const [listId = "", fromDay = ""] = dragKey.split("@");
+                      onMoveList(listId, day, fromDay);
+                    }}
                     className={`border-border min-w-0 flex-1 gap-1 border-b border-r p-1 ${
                       selected ? "bg-accent-soft" : ""
                     }`}
@@ -143,11 +150,7 @@ export function MonthGrid({
                           onOpenEvent={onOpenEvent}
                           // Poser une liste sur une autre du même jour échange
                           // leurs heures ; d'un autre jour, le dépôt tombe sur la case.
-                          canSwapWith={(draggedId) =>
-                            entry.kind === "list" &&
-                            draggedId !== entry.list.id &&
-                            listsOfDay(lists, day).some((candidate) => candidate.id === draggedId)
-                          }
+                          dayKey={calendarDayOf(day)}
                           onSwap={onSwapLists}
                           {...(onOpenList ? { onOpenList } : {})}
                         />
@@ -221,14 +224,14 @@ function EntryLine({
   entry,
   onOpenEvent,
   onOpenList,
-  canSwapWith,
+  dayKey,
   onSwap,
 }: {
   entry: CellEntry;
   onOpenEvent: (event: CalendarEntry) => void;
   onOpenList?: (list: TaskListWithTasks) => void;
-  canSwapWith: (draggedId: string) => boolean;
-  onSwap: (draggedId: string, targetId: string) => void;
+  dayKey: string;
+  onSwap: (draggedId: string, targetId: string, day: string) => void;
 }) {
   if (entry.kind === "event") {
     const { event } = entry;
@@ -273,8 +276,14 @@ function EntryLine({
       <DraggableListLine
         list={list}
         onOpen={() => onOpenList(list)}
-        canSwapWith={canSwapWith}
-        onSwap={(draggedId) => onSwap(draggedId, list.id)}
+        dragKey={`${list.id}@${dayKey}`}
+        // Seule une liste prise le même jour s'échange ; d'un autre jour, le
+        // dépôt tombe sur la case.
+        canSwapWith={(dragKey) => {
+          const [draggedId = "", fromDay = ""] = dragKey.split("@");
+          return draggedId !== list.id && fromDay === dayKey;
+        }}
+        onSwap={(dragKey) => onSwap(dragKey.split("@")[0] ?? "", list.id, dayKey)}
       >
         {content}
       </DraggableListLine>
@@ -321,18 +330,20 @@ function DayCell({
 /** Ligne de liste que l'on saisit pour la déplacer (web) ; l'appui simple l'ouvre. */
 function DraggableListLine({
   list,
+  dragKey,
   onOpen,
   canSwapWith,
   onSwap,
   children,
 }: {
   list: TaskListWithTasks;
+  dragKey: string;
   onOpen: () => void;
   canSwapWith: (draggedId: string) => boolean;
   onSwap: (draggedId: string) => void;
   children: ReactNode;
 }) {
-  const { cardRef } = usePointerListDrag(list.id, Platform.OS === "web");
+  const { cardRef } = usePointerListDrag(dragKey, Platform.OS === "web");
   usePointerDropTarget(cardRef, Platform.OS === "web", canSwapWith, onSwap);
   return (
     <Pressable

@@ -19,18 +19,18 @@ import { Platform, type View } from "react-native";
 const DRAG_THRESHOLD_PX = 5;
 
 type DropTarget = {
-  accepts: (listId: string) => boolean;
-  onDrop: (listId: string) => void;
+  accepts: (key: string) => boolean;
+  onDrop: (key: string) => void;
 };
 
 /** Les cibles de dépôt, par élément : retrouvées en remontant depuis le curseur. */
 const targets = new Map<HTMLElement, DropTarget>();
 
-function targetUnder(x: number, y: number, listId: string): HTMLElement | null {
+function targetUnder(x: number, y: number, key: string): HTMLElement | null {
   let node = document.elementFromPoint(x, y) as HTMLElement | null;
   while (node) {
     const target = targets.get(node);
-    if (target?.accepts(listId)) return node;
+    if (target?.accepts(key)) return node;
     node = node.parentElement;
   }
   return null;
@@ -43,8 +43,8 @@ function targetUnder(x: number, y: number, listId: string): HTMLElement | null {
 export function usePointerDropTarget(
   ref: RefObject<View | null>,
   enabled: boolean,
-  accepts: (listId: string) => boolean,
-  onDrop: (listId: string) => void,
+  accepts: (key: string) => boolean,
+  onDrop: (key: string) => void,
 ): void {
   const latest = useRef({ accepts, onDrop });
   latest.current = { accepts, onDrop };
@@ -55,8 +55,8 @@ export function usePointerDropTarget(
     if (!element) return;
 
     targets.set(element, {
-      accepts: (listId) => latest.current.accepts(listId),
-      onDrop: (listId) => latest.current.onDrop(listId),
+      accepts: (key) => latest.current.accepts(key),
+      onDrop: (key) => latest.current.onDrop(key),
     });
     return () => {
       targets.delete(element);
@@ -69,8 +69,9 @@ export function usePointerDropTarget(
  * qui suit le curseur est toujours la carte, légèrement penchée comme un post-it
  * qu'on soulève.
  */
+/** `key` est opaque : l'appelant y met ce qu'il veut retrouver au dépôt (liste et jour d'origine). */
 export function usePointerListDrag(
-  listId: string,
+  key: string,
   enabled: boolean,
 ): { cardRef: RefObject<View | null>; gripRef: RefObject<View | null> } {
   const cardRef = useRef<View | null>(null);
@@ -85,6 +86,14 @@ export function usePointerListDrag(
 
     const onPointerDown = (down: PointerEvent) => {
       if (down.button !== 0 || down.pointerType === "touch") return;
+
+      // Dès l'appui et non au premier mouvement : une sélection de texte déjà
+      // amorcée est « glissée » par le navigateur, qui prend alors la main et
+      // coupe nos événements — la liste revenait à sa place (Yann, 12 novembre).
+      document.body.style.userSelect = "none";
+      window.getSelection()?.removeAllRanges();
+      const keepFromNativeDrag = (event: Event) => event.preventDefault();
+      document.addEventListener("dragstart", keepFromNativeDrag);
 
       let ghost: HTMLElement | null = null;
       let highlighted: HTMLElement | null = null;
@@ -126,7 +135,6 @@ export function usePointerListDrag(
         // remplacerait le nœud et annulerait le dépôt.
         card.style.opacity = "0.4";
         document.body.style.cursor = "grabbing";
-        document.body.style.userSelect = "none";
       };
 
       const move = (event: PointerEvent) => {
@@ -142,7 +150,7 @@ export function usePointerListDrag(
           event.clientY - offsetY
         }px) rotate(-1.5deg)`;
 
-        const over = targetUnder(event.clientX, event.clientY, listId);
+        const over = targetUnder(event.clientX, event.clientY, key);
         if (over !== highlighted) {
           clearHighlight();
           if (over) {
@@ -157,15 +165,16 @@ export function usePointerListDrag(
         document.removeEventListener("pointermove", move);
         document.removeEventListener("pointerup", up);
         document.removeEventListener("pointercancel", cancel);
+        document.removeEventListener("dragstart", keepFromNativeDrag);
+        document.body.style.userSelect = "";
         if (!ghost) return;
 
-        const over = dropped ? targetUnder(event.clientX, event.clientY, listId) : null;
+        const over = dropped ? targetUnder(event.clientX, event.clientY, key) : null;
         clearHighlight();
         ghost.remove();
         ghost = null;
         card.style.opacity = "";
         document.body.style.cursor = "";
-        document.body.style.userSelect = "";
 
         // Un vrai glisser ne doit pas finir en clic : relâcher sur la ligne
         // qu'on a saisie l'ouvrirait.
@@ -176,7 +185,7 @@ export function usePointerListDrag(
         window.addEventListener("click", swallowClick, { capture: true, once: true });
         setTimeout(() => window.removeEventListener("click", swallowClick, true), 0);
 
-        if (over) targets.get(over)?.onDrop(listId);
+        if (over) targets.get(over)?.onDrop(key);
       };
       const up = (event: PointerEvent) => finish(event, true);
       const cancel = (event: PointerEvent) => finish(event, false);
@@ -192,7 +201,7 @@ export function usePointerListDrag(
       grip.removeEventListener("pointerdown", onPointerDown);
       grip.style.cursor = "";
     };
-  }, [enabled, listId]);
+  }, [enabled, key]);
 
   return { cardRef, gripRef };
 }
