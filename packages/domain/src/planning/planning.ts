@@ -318,6 +318,28 @@ export function isListDone(list: TaskListWithTasks): boolean {
   return list.tasks.length > 0 && openTaskCount(list) === 0;
 }
 
+/** Ce que « Mes listes » peut ne montrer que : le passé, ou ce qui n'a pas de date. */
+export type ListPeriod = "past" | "undated";
+
+/**
+ * Les listes d'une période.
+ *
+ * « Passé » : échéance antérieure à aujourd'hui — une liste d'aujourd'hui n'est
+ * pas passée, elle est en cours. « Sans date » : aucune échéance.
+ */
+export function listsInPeriod(
+  lists: TaskListWithTasks[],
+  period: ListPeriod,
+  now: Date,
+): TaskListWithTasks[] {
+  const today = startOfDay(now).getTime();
+  return lists.filter((list) =>
+    period === "undated"
+      ? list.dueAt === null
+      : list.dueAt !== null && new Date(list.dueAt).getTime() < today,
+  );
+}
+
 /**
  * Les listes dans l'ordre du temps : les échues par date croissante, puis
  * celles sans date à la fin.
