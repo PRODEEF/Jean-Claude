@@ -15,7 +15,7 @@
 
 Les dernières modifications, en langage courant, la plus récente en haut. **« À tester »** veut dire : fait et vérifié par les contrôles automatiques, mais jamais regardé à l'écran.
 
-### Sur `dev` (pas encore en production)
+### Mis en production le 13 novembre (V0.00.52, vue en ligne par Yann)
 
 - **Mes listes : boutons « Passé » et « Sans date »** (V0.00.52). En haut de « Mes listes », deux boutons en plus des dossiers. « Passé » ne montre que les listes dont l'échéance est antérieure à aujourd'hui (une liste d'aujourd'hui n'est pas passée) ; « Sans date » ne montre que celles sans échéance. Un second appui relâche le bouton. Ils se cumulent avec le dossier (« le passé de Santé ») et avec la recherche. Sans eux, tout reste à portée en faisant défiler, comme avant. *Où : Mes listes.* — Vu dans un navigateur simulé ; à tester. Reste : charger le passé par tranches pour ne pas ralentir.
 - **Calendrier › Todo : les listes ont la même carte que « Mes listes »** (V0.00.51). Dans la vue Todo, une liste n'avait qu'une ligne d'en-tête (poignée, icône, heure, titre, menu). Elle reprend maintenant la carte de « Mes listes », la même que dans le volet de droite : case pour tout cocher, repli, titre, type, dossier, échéance (jour et heure) et menu. La poignée de déplacement reste, ainsi que le glisser vers un autre moment. *Où : calendrier, vue Todo.* — Vu dans un navigateur simulé ; à tester sur le site.
@@ -25,11 +25,15 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 - **Poignées de déplacement derrière la ligne** (V0.00.49). Les six points ⠿ qui servent à changer l'ordre d'une tâche (et d'une liste dans le volet) passent de gauche à droite de la ligne : devant, il ne reste que la case à cocher (et le repli pour une liste). Vaut dans « Mes listes », le volet de droite et les listes d'espace. Aucun changement sur téléphone (pas de poignée). *Où : « Mes listes », volet, espaces.* — Vu dans un navigateur simulé ; à tester sur le site réel quand Vercel pourra le construire.
 
-`dev` porte V0.00.52 ; la production affichée est V0.00.42 (voir plus bas).
+Le site de production affiche V0.00.52. Tout ce qui précède, de V0.00.43 à V0.00.52, est en ligne depuis la PR #270.
 
-### Mis en production le 12 novembre (jusqu'à V0.00.42 en ligne ; V0.00.43 à V0.00.48 pas encore visibles)
+### Sur `dev` (pas encore en production)
 
-Les entrées jusqu'à V0.00.42 sont en ligne. **Les entrées V0.00.43 à V0.00.48 sont dans `main` (PR #260, CI verte) mais le site web affiché reste en V0.00.42** : dans Vercel (`jean-claude-web`, filtre « Production »), la dernière mise en production est celle de la PR #253 (V0.00.42) ; il n'existe **aucune ligne** pour la PR #260, ni « Ready » ni « Error » : Vercel n'a pas construit le site. Cause la plus probable : la limite de 100 constructions par jour (levée le 13 novembre vers 21 h), non confirmée. Aucun dégât : V0.00.42 tourne. **Reprise : à la prochaine mise en production (sur « on déploie » de Yann), après le 13 novembre 21 h.** Elle reconstruira tout, V0.00.43 à V0.00.48 compris, puisque la PR « moins de constructions » (#262) touche les deux projets. Seul changement d'écran dans ce lot : le déplacement instantané (V0.00.44), le reste est de l'API et de la base. Le SQL de `20261112200000_task_list_reminders_sent.sql` a été collé par Yann (4c complète).
+Rien pour l'instant : `dev` et la production portent la même version (V0.00.52).
+
+### Mis en production le 12 novembre (V0.00.42 en ligne le soir ; V0.00.43 à V0.00.48 visibles le 13 novembre, avec la V0.00.52)
+
+V0.00.43 à V0.00.48 étaient dans `main` dès le 12 novembre (PR #260), mais Vercel n'avait pas construit le site web (limite gratuite de 100 déploiements par jour). La mise en production du 13 novembre (PR #270) les a rendus visibles. Le SQL de `20261112200000_task_list_reminders_sent.sql` a été collé par Yann (4c complète).
 
 - **Mois : le glisser ne revient plus à sa place** (V0.00.42). Le glisser pouvait être coupé par la sélection de texte du navigateur : la liste revenait en place sans rien dire. Corrigé. Une liste présente un jour par ses seules tâches datées se déplace maintenant en changeant la date de ces tâches ; elle n'a pas d'heure à échanger, et le dit au lieu de ne rien faire. *Où : calendrier, vue Mois, ordinateur.*
 - **Mois : déplacer une liste comme dans Google Agenda** (V0.00.41). À la souris, la liste suit le curseur, la case visée s'encadre, et elle se dépose là où tu relâches. Poser une liste sur une autre du même jour échange leurs heures (comme dans le volet). *Où : calendrier, vue Mois, ordinateur.* — Au téléphone : appui long, voir section Mobile. Vue Année : pas encore.
