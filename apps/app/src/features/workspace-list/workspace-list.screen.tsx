@@ -323,8 +323,6 @@ function AddTaskRow({
 
   return (
     <View style={{ minHeight: TASK_ROW_HEIGHT }} className="flex-row items-center gap-2">
-      {/* Même largeur que la poignée des lignes : la case reste alignée. */}
-      <TaskRowGrip draggable={false} gripRef={null} label="" />
       <TaskRowBlankCheckbox />
       <TextInput
         value={value}
@@ -420,7 +418,6 @@ function TaskRow({
     >
       {marked ? <View className="absolute inset-x-0 top-0 h-0.5 bg-primary" /> : null}
       {markedAfter ? <View className="absolute inset-x-0 bottom-0 h-0.5 bg-primary" /> : null}
-      <TaskRowGrip draggable={draggable} gripRef={gripRef} label={`Déplacer ${task.title}`} />
       <TaskRowCheckbox done={task.done} label={task.title} onPress={onToggle} />
 
       <TaskTitle task={task} onRename={onRename} />
@@ -474,6 +471,9 @@ function TaskRow({
           <Icon as={X} size={14} className="text-muted-foreground" />
         </Button>
       </View>
+
+      {/* Derrière la ligne : devant, il ne reste que la case à cocher. */}
+      <TaskRowGrip draggable={draggable} gripRef={gripRef} label={`Déplacer ${task.title}`} />
     </View>
   );
 }

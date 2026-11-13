@@ -1,5 +1,11 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
-  "rewrites": [{ "source": "/chat/:id", "destination": "/chat/[id]" }]
+  "rewrites": [
+    {
+      "source": "/chat/:id",
+      "destination": "/chat/[id]"
+    }
+  ],
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ../../packages ../../package.json ../../package-lock.json"
 }

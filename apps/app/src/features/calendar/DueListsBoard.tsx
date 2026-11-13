@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Platform, Pressable, View } from "react-native";
-import { GripVertical, ListChecks, MoreHorizontal, Plus, ShoppingBasket } from "lucide-react-native";
+import { Plus } from "lucide-react-native";
 import type { CalendarEntry, MomentKey, Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import {
   calendarDayOf,
@@ -15,15 +15,13 @@ import {
 import { formatFullDay, formatTime, isSameDay } from "@/shared/lib/dates";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useDayPartBounds } from "@/shared/hooks/use-profile";
+import { useFolderChoices, type FolderChoice } from "@/shared/hooks/use-folder-choices";
 import { useTaskActions, useTaskLists } from "@/shared/hooks/use-task-lists";
 import { TaskDialog } from "@/features/todo/TaskDialog";
-import { ListDueDialog } from "@/features/todo/ListDueDialog";
 import { TaskListDeleteDialog } from "@/features/todo/TaskListDeleteDialog";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
-import { TaskListEditor } from "@/features/todo/TaskListEditor";
-import { TaskRow } from "@/features/todo/TaskRow";
+import { ListCard } from "@/features/todo/ListCard";
 import { Button } from "@/shared/ui/button";
-import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useListDragHandle, useMomentDropZone, type DayDrag } from "./lib/list-drag";
@@ -63,6 +61,7 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
   // la projection d'une liste sur le jour de certaines de ses tâches, avec une
   // échéance remplacée par ce jour.
   const { data: savedLists } = useTaskLists();
+  const folders = useFolderChoices();
   const { updateList, updateTask } = useTaskActions();
   const [moveFailure, setMoveFailure] = useState<string | null>(null);
 
@@ -215,6 +214,7 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
                       movable={saved !== undefined && saved.dueAt === list.dueAt}
                       {...(dueOn ? { dueOn } : {})}
                       desktop={desktop}
+                      folders={folders}
                       onOpenTask={setOpenedTask}
                       onEditList={(target) => setListTarget({ mode: "edit", list: target })}
                       onDeleteList={setDeletingList}
@@ -301,11 +301,12 @@ function MomentSection({
 }
 
 /**
- * Une liste échue ce jour-là, avec ce qu'elle contient.
+ * Une liste échue ce jour-là : la carte de « Mes listes », la même.
  *
- * Le contenu est l'éditeur de Mes listes, pas un résumé : on y écrit, on y
- * coche et on y change l'ordre sans quitter le jour. `saved` est la liste
- * enregistrée — `list` peut n'en être que les tâches de ce jour, et les
+ * En-tête (case, repli, titre, type, dossier, échéance, menu) et éditeur
+ * viennent de `ListCard`, comme dans le volet de droite : le calendrier ne
+ * garde que ce qui lui est propre, la poignée de déplacement. `saved` est la
+ * liste enregistrée — `list` peut n'en être que les tâches de ce jour, et les
  * envoyer seules effacerait le reste.
  */
 function DueList({
@@ -314,6 +315,7 @@ function DueList({
   movable,
   dueOn,
   desktop,
+  folders,
   onOpenTask,
   onEditList,
   onDeleteList,
@@ -325,107 +327,35 @@ function DueList({
   /** Jour des lignes nouvelles — absent quand c'est déjà l'échéance de la liste. */
   dueOn?: string;
   desktop: boolean;
+  folders: FolderChoice[];
   onOpenTask: (task: Task) => void;
   onEditList: (list: TaskList) => void;
   onDeleteList: (list: TaskList) => void;
 }) {
-  const shopping = list.kind === "shopping";
-  const time = timeLabel(list);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [changingDue, setChangingDue] = useState(false);
   // Le glisser-déposer n'existe que sur le web : sans lui, la poignée serait
   // un décor qui ne fait rien.
   const draggable = movable && Platform.OS === "web";
   const { cardRef, gripRef } = useListDragHandle(list.id, draggable);
-  const source = saved ?? list;
-  const subset = saved !== undefined && isTaskSubset(saved, list);
 
-  const items: ContextMenuItem[] = [
-    // Le geste des téléphones, où le glisser-déposer n'existe pas : un menu sur
-    // la liste, puis la date. Même fenêtre que depuis Mes listes.
-    ...(movable
-      ? [
-          {
-            label: "Changer l'échéance",
-            onPress: () => {
-              setMenu(null);
-              setChangingDue(true);
-            },
-          },
-        ]
-      : []),
-    {
-      label: "Modifier la liste",
-      onPress: () => {
-        setMenu(null);
-        onEditList(source);
-      },
-    },
-    {
-      label: "Supprimer la liste",
-      destructive: true,
-      onPress: () => {
-        setMenu(null);
-        onDeleteList(source);
-      },
-    },
-  ];
+  // Les listes arrivent de la même requête que `saved` : sans elle, rien à
+  // montrer qu'on puisse éditer sans risque d'effacer des tâches.
+  if (!saved) return null;
+  const subset = isTaskSubset(saved, list);
 
   return (
-    <View
-      ref={cardRef}
-      className={`border-border gap-0.5 rounded-lg border border-dashed ${desktop ? "p-1.5" : "p-2"}`}
-    >
-      <View className="flex-row items-center gap-1">
-        {draggable ? (
-          <View
-            ref={gripRef}
-            accessibilityLabel={`Déplacer ${list.title}`}
-            className="size-6 items-center justify-center"
-          >
-            <Icon as={GripVertical} size={14} className="text-muted-foreground" />
-          </View>
-        ) : null}
-        {/* L'heure précède le titre, comme dans un agenda papier : c'est elle
-            qui situe la liste dans le moment, avant ce qu'elle contient. */}
-        <Icon
-          as={shopping ? ShoppingBasket : ListChecks}
-          size={14}
-          className="text-muted-foreground"
-        />
-        {time ? <Text className="text-sm font-semibold">{time}</Text> : null}
-        <Text className="min-w-0 flex-1 text-sm font-medium" numberOfLines={1}>
-          {list.title}
-        </Text>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          hitSlop={8}
-          onPress={(event) => setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
-          accessibilityLabel={`Actions pour ${list.title}`}
-          className="size-8"
-        >
-          <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
-        </Button>
-      </View>
-
-      {saved ? (
-        <TaskListEditor
-          list={saved}
-          query=""
-          onOpenTask={onOpenTask}
-          {...(subset ? { visibleTaskIds: list.tasks.map((task) => task.id) } : {})}
-          {...(dueOn ? { dueOnForNew: dueOn } : {})}
-        />
-      ) : (
-        list.tasks.map((task) => <TaskRow key={task.id} task={task} />)
-      )}
-
-      {menu ? (
-        <ContextMenu x={menu.x} y={menu.y} items={items} onClose={() => setMenu(null)} />
-      ) : null}
-      {changingDue ? <ListDueDialog list={source} onClose={() => setChangingDue(false)} /> : null}
+    <View ref={cardRef}>
+      <ListCard
+        list={saved}
+        folders={folders}
+        desktop={desktop}
+        query=""
+        onOpenTask={onOpenTask}
+        onEdit={() => onEditList(saved)}
+        onDelete={() => onDeleteList(saved)}
+        {...(subset ? { visibleTaskIds: list.tasks.map((task) => task.id) } : {})}
+        {...(dueOn ? { dueOnForNew: dueOn } : {})}
+        {...(draggable ? { gripRef } : {})}
+      />
     </View>
   );
 }
@@ -435,16 +365,4 @@ export function isTaskSubset(saved: TaskListWithTasks, shown: TaskListWithTasks)
   if (saved.tasks.length !== shown.tasks.length) return true;
   const ids = new Set(shown.tasks.map((task) => task.id));
   return saved.tasks.some((task) => !ids.has(task.id));
-}
-
-/**
- * Heure de l'échéance, quand elle en vise une.
- *
- * Une échéance « dans la journée » n'en affiche pas — c'est déjà ce que dit
- * l'intitulé du moment, et l'écrire « 0h » ferait croire à une échéance
- * nocturne.
- */
-export function timeLabel(list: TaskListWithTasks): string | undefined {
-  if (list.dueAt === null || list.dueAllDay !== false) return undefined;
-  return formatTime(list.dueAt);
 }

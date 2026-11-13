@@ -1,4 +1,5 @@
-import { ScrollView } from "react-native";
+import { ScrollView, View } from "react-native";
+import type { ListPeriod } from "@jc/domain";
 import { Button } from "@/shared/ui/button";
 import { Text } from "@/shared/ui/text";
 import type { FolderChoice } from "@/shared/hooks/use-folder-choices";
@@ -11,7 +12,15 @@ export type FolderFilterBarProps = {
   /** `undefined` = tous les dossiers, `null` = celles rangées nulle part. */
   value: string | null | undefined;
   onChange: (value: string | null | undefined) => void;
+  /** Période retenue : `undefined` = toutes les dates. */
+  period: ListPeriod | undefined;
+  onPeriodChange: (period: ListPeriod | undefined) => void;
 };
+
+const PERIODS: { value: ListPeriod; label: string }[] = [
+  { value: "past", label: "Passé" },
+  { value: "undated", label: "Sans date" },
+];
 
 /**
  * Filtre par dossier de l'onglet Mes listes.
@@ -24,20 +33,48 @@ export type FolderFilterBarProps = {
  * Rien à filtrer, rien à afficher : la barre disparaît tant que les listes
  * tiennent toutes au même endroit.
  */
-export function FolderFilterBar({ folders, hasUnfiled, value, onChange }: FolderFilterBarProps) {
-  if (folders.length === 0) return null;
-
+export function FolderFilterBar({
+  folders,
+  hasUnfiled,
+  value,
+  onChange,
+  period,
+  onPeriodChange,
+}: FolderFilterBarProps) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-1">
-      <Button
-        size="sm"
-        variant={value === undefined ? "secondary" : "outline"}
-        onPress={() => onChange(undefined)}
-        accessibilityRole="button"
-        accessibilityState={{ selected: value === undefined }}
-      >
-        <Text>Tous</Text>
-      </Button>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerClassName="items-center gap-1"
+    >
+      {/* Passé et Sans date se cumulent avec le dossier : « le passé de Santé ».
+          Un second appui relâche la période. */}
+      {PERIODS.map((item) => (
+        <Button
+          key={item.value}
+          size="sm"
+          variant={period === item.value ? "secondary" : "outline"}
+          onPress={() => onPeriodChange(period === item.value ? undefined : item.value)}
+          accessibilityRole="button"
+          accessibilityState={{ selected: period === item.value }}
+        >
+          <Text>{item.label}</Text>
+        </Button>
+      ))}
+
+      {folders.length > 0 ? <View className="bg-border mx-1 h-5 w-px" /> : null}
+
+      {folders.length > 0 ? (
+        <Button
+          size="sm"
+          variant={value === undefined ? "secondary" : "outline"}
+          onPress={() => onChange(undefined)}
+          accessibilityRole="button"
+          accessibilityState={{ selected: value === undefined }}
+        >
+          <Text>Tous</Text>
+        </Button>
+      ) : null}
 
       {folders.map((folder) => (
         <Button
@@ -53,7 +90,7 @@ export function FolderFilterBar({ folders, hasUnfiled, value, onChange }: Folder
       ))}
 
       {/* En dernier : ce qui n'est rangé nulle part n'est pas un dossier. */}
-      {hasUnfiled ? (
+      {hasUnfiled && folders.length > 0 ? (
         <Button
           size="sm"
           variant={value === null ? "secondary" : "outline"}
