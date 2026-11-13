@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, TextInput, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { ChevronsDownUp, ChevronsUpDown, Plus, Search, X } from "lucide-react-native";
-import type { Task, TaskList } from "@jc/domain";
-import { currentListId, listsInTimeOrder } from "@jc/domain";
+import type { ListPeriod, Task, TaskList } from "@jc/domain";
+import { currentListId, listsInPeriod, listsInTimeOrder } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
@@ -35,6 +35,8 @@ export function TodoScreen() {
   const [openedTask, setOpenedTask] = useState<Task | null>(null);
   /** Dossier retenu : `undefined` = tous, `null` = les listes sans dossier. */
   const [folderId, setFolderId] = useState<string | null | undefined>(undefined);
+  /** Période retenue : `undefined` = toutes les dates. */
+  const [period, setPeriod] = useState<ListPeriod | undefined>(undefined);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const search = useRef<TextInput>(null);
@@ -47,6 +49,7 @@ export function TodoScreen() {
   useEffect(() => {
     if (openedList) {
       setFolderId(undefined);
+      setPeriod(undefined);
       setQuery("");
     }
   }, [openedList]);
@@ -57,10 +60,11 @@ export function TodoScreen() {
 
   // Dans l'ordre du temps : une liste du 1er décembre ne passe plus devant
   // celle du 10 novembre. Les listes sans date vont à la fin.
-  const visibleLists = useMemo(
-    () => listsInTimeOrder(filterListsByQuery(filterListsByFolder(lists, folderId), query)),
-    [lists, folderId, query],
-  );
+  const visibleLists = useMemo(() => {
+    const ofFolder = filterListsByFolder(lists, folderId);
+    const ofPeriod = period ? listsInPeriod(ofFolder, period, new Date()) : ofFolder;
+    return listsInTimeOrder(filterListsByQuery(ofPeriod, query));
+  }, [lists, folderId, period, query]);
 
   // L'écran s'ouvre sur la liste du moment, une seule fois : le recalculer à
   // chaque chargement ferait sauter l'écran dès qu'on coche une tâche. Une
@@ -152,6 +156,8 @@ export function TodoScreen() {
             hasUnfiled={used.has(null)}
             value={folderId}
             onChange={setFolderId}
+            period={period}
+            onPeriodChange={setPeriod}
           />
         </View>
         {foldButton}
@@ -182,7 +188,11 @@ export function TodoScreen() {
         <Text className="text-muted-foreground text-sm">
           {query.trim().length > 0
             ? "Aucune liste ne correspond."
-            : "Aucune liste dans ce dossier."}
+            : period === "past"
+              ? "Aucune liste passée."
+              : period === "undated"
+                ? "Aucune liste sans date."
+                : "Aucune liste dans ce dossier."}
         </Text>
       ) : (
         <ListsBoard

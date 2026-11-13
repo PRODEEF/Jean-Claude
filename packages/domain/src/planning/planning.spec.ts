@@ -16,6 +16,7 @@ import {
   momentOf,
   momentsOfDay,
   dayTaskState,
+  listsInPeriod,
   listsInTimeOrder,
   currentListId,
   isListDone,
@@ -642,6 +643,27 @@ describe("dayTaskState", () => {
       open: 1,
       allDone: false,
     });
+  });
+});
+
+describe("listsInPeriod", () => {
+  const now = new Date(2026, 10, 13, 15);
+  const hier = makeList({ id: "hier", dueAt: localIso(2026, 11, 12, 18) });
+  const ceMatin = makeList({ id: "ce-matin", dueAt: localIso(2026, 11, 13, 8) });
+  const demain = makeList({ id: "demain", dueAt: localIso(2026, 11, 14, 8) });
+  const sansDate = makeList({ id: "sans-date" });
+  const toutes = [hier, ceMatin, demain, sansDate];
+
+  it("garde ce qui est antérieur à aujourd'hui, pas ce qui est d'aujourd'hui", () => {
+    expect(listsInPeriod(toutes, "past", now).map((list) => list.id)).toEqual(["hier"]);
+  });
+
+  it("garde les listes sans échéance", () => {
+    expect(listsInPeriod(toutes, "undated", now).map((list) => list.id)).toEqual(["sans-date"]);
+  });
+
+  it("rend une liste vide quand rien ne correspond", () => {
+    expect(listsInPeriod([demain], "past", now)).toEqual([]);
   });
 });
 

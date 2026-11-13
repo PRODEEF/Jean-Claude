@@ -17,6 +17,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 ### Sur `dev` (pas encore en production)
 
+- **Mes listes : boutons « Passé » et « Sans date »** (V0.00.52). En haut de « Mes listes », deux boutons en plus des dossiers. « Passé » ne montre que les listes dont l'échéance est antérieure à aujourd'hui (une liste d'aujourd'hui n'est pas passée) ; « Sans date » ne montre que celles sans échéance. Un second appui relâche le bouton. Ils se cumulent avec le dossier (« le passé de Santé ») et avec la recherche. Sans eux, tout reste à portée en faisant défiler, comme avant. *Où : Mes listes.* — Vu dans un navigateur simulé ; à tester. Reste : charger le passé par tranches pour ne pas ralentir.
 - **Calendrier › Todo : les listes ont la même carte que « Mes listes »** (V0.00.51). Dans la vue Todo, une liste n'avait qu'une ligne d'en-tête (poignée, icône, heure, titre, menu). Elle reprend maintenant la carte de « Mes listes », la même que dans le volet de droite : case pour tout cocher, repli, titre, type, dossier, échéance (jour et heure) et menu. La poignée de déplacement reste, ainsi que le glisser vers un autre moment. *Où : calendrier, vue Todo.* — Vu dans un navigateur simulé ; à tester sur le site.
 - **Mes listes : cocher une liste d'un geste** (V0.00.50). Une case apparaît devant le titre de chaque liste, dans « Mes listes » et le volet de droite : un appui coche (ou décoche) toutes ses tâches ; cocher toutes les tâches à la main la coche aussi. La liste n'a pas d'état à elle, elle se lit dans ses tâches : aucune nouvelle colonne, donc pas de SQL. Une liste vide n'a pas de case active. Le Mois montrait déjà une liste cochée barrée. *Où : Mes listes, volet de droite.* — À tester. Pas encore dans les espaces collaboratifs.
 - **Deux documents : `ROADMAP.md` et `TODOLIST.md`** (sans changement de version). Toutes les tâches (groupes Dossiers, Calendrier, Conversations, Lenteurs, Notifications, BUG, Accès aux données, Connexion, Infra, Comptes, Support, Mobile, À tester, Plus tard) quittent la ROADMAP pour `TODOLIST.md`, qui devient la source de vérité de la todo. La ROADMAP garde la vision, « Quoi de neuf », les règles et les six gros chantiers. *Où : fichiers à la racine du dépôt.* — Rien à tester dans l'application.
@@ -24,7 +25,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 - **Poignées de déplacement derrière la ligne** (V0.00.49). Les six points ⠿ qui servent à changer l'ordre d'une tâche (et d'une liste dans le volet) passent de gauche à droite de la ligne : devant, il ne reste que la case à cocher (et le repli pour une liste). Vaut dans « Mes listes », le volet de droite et les listes d'espace. Aucun changement sur téléphone (pas de poignée). *Où : « Mes listes », volet, espaces.* — Vu dans un navigateur simulé ; à tester sur le site réel quand Vercel pourra le construire.
 
-`dev` porte V0.00.51 ; la production affichée est V0.00.42 (voir plus bas).
+`dev` porte V0.00.52 ; la production affichée est V0.00.42 (voir plus bas).
 
 ### Mis en production le 12 novembre (jusqu'à V0.00.42 en ligne ; V0.00.43 à V0.00.48 pas encore visibles)
 
