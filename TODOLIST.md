@@ -118,31 +118,23 @@
 
 *Section ouverte à la demande de Yann, 12 novembre : un seul endroit pour tout ce qui concerne le téléphone, avec les essais à faire, les décisions prises dans la discussion et les questions encore ouvertes. Presque rien n'a été joué sur iOS et Android à ce jour : les essais ci-dessous sont à faire sur un vrai appareil, ce que le code seul ne peut pas vérifier.*
 
-**Décisions déjà prises, valables pour le mobile**
-
-- **Pas de volet de droite sur téléphone** (taille d'écran « compact », moins de 768 pt) : l'écran garde son geste d'avant. La proposition de Jean-Claude reste donc dans le fil, avec ses boutons. Prévu à terme : le volet devient une page en plein écran avec un retour (tâche « Interface en 3 parties », étape 4).
-- **Boutons de déplacement des tâches (option A, 12 novembre) :** à gauche seulement la case à cocher ; à droite, indenter, désindenter, poignée et corbeille. **Sur téléphone, ces boutons restent visibles en permanence** (pas de survol).
-- **Répétition :** cocher, déplacer, modifier ou supprimer un todo qui se répète demande à chaque fois « seulement cette date » ou « toute la série ».
-- **Toute zone qu'on touche fait au moins 44 pt**, thème clair et thème sombre à tester.
-- **Le geste du téléphone pour changer une date aujourd'hui :** « Changer l'échéance » dans le menu « … » de la liste.
-
-**Idée de Yann à étudier : soulever un élément par un appui long** — 12 novembre. Au lieu d'un glisser-déposer à la souris, un **appui fort sur une liste ou une tâche, comme on soulève un post-it** (l'élément se soulève, avec un léger effet de travers), puis on le déplace vers un autre jour, une autre heure ou une autre place. C'est le geste de Things 3, de Todoist et des Rappels d'Apple, donc il passe la règle des 3 apps. **Faisable :** `react-native-gesture-handler` et `react-native-reanimated` sont déjà dans l'application. **À régler :** le conflit avec le défilement (l'appui long doit gagner sur le défilement), un léger retour vibrant, et le dépôt sur les petites cases du mois. À faire d'abord pour une tâche dans une liste, puis pour une liste dans le calendrier. <!--id:y-mobile-appui-long--> **Décision de Yann (12 novembre, soir) : à faire plus tard, directement sur le téléphone.**
-
-**Question ouverte : le calendrier, vue Mois, sur téléphone.** Chaque liste doit garder son titre (décision du 12 novembre), mais une case de téléphone est trop étroite pour un titre. Pistes : (A) une petite barre colorée par liste, le titre apparaissant au toucher du jour ; (B) la seule première liste avec son titre, puis « 2 autres » ; (C) la vue Mois sert de repère, et le titre se lit en touchant le jour. Je recommande (B), comme Google Agenda sur téléphone. **À trancher par Yann.** <!--id:y-mobile-mois-titres-->
-
-**Essais à faire sur téléphone** — tout ce qui a changé depuis la version 0.00.23 :
-
-- **Connexion :** le code reçu par e-mail a **6 chiffres** (V0.00.22) ; le champ propose bien le remplissage automatique du code, sur iPhone comme sur Android.
-- **Rappels :** réglages « Me rappeler par e-mail » et dans l'application (Réglages › Rappels) ; recevoir un rappel 10 minutes avant un rendez-vous ou une todo datée.
-- **Mes listes (V0.00.24) :** les listes sont dans l'ordre du temps, l'écran s'ouvre sur la liste du moment, le défilement vers le passé et le futur reste fluide.
-- **Carte de liste (V0.00.25) :** en-tête sur une ligne (flèche, titre, type, dossier, échéance, menu) sans être tronqué à 360 pt de large ; changer le dossier et l'échéance d'un appui.
-- **Sous-tâches (V0.00.27) :** le décalage de 32 pt lisible sans manger la ligne ; mettre en retrait et remonter d'un niveau au doigt.
-- **Listes d'un espace collaboratif (V0.00.33) :** flèche de repli et titre, repli et dépli au doigt, colonne « responsable » lisible sur écran étroit.
-- **Calendrier :** vues Jour, Semaine, Mois, Année et Todo ; « N tâches » touchable ou inerte (sur téléphone, le volet n'existe pas : vérifier ce qui se passe au toucher) ; fenêtre « Nouvel événement ».
-- **Proposition de Jean-Claude (V0.00.34) :** sur téléphone la carte reste dans le fil avec ses boutons ; valider et ignorer au doigt ; liste de courses, rangement en dossiers, rendez-vous.
-- **Partout :** zones à toucher assez grandes, thème sombre, rotation de l'écran, clavier qui ne cache pas la ligne qu'on écrit.
-
-**À faire de côté** (pas du code) : monter l'application sur un iPhone et un Android de test (TestFlight / version interne) pour ces essais ; les faire avec Clarisse en plus de Yann.
+- [x] `FRONT` `Mobile` **Pas de volet de droite sur téléphone** — Décision : sous 768 pt (« compact »), l'écran garde son geste d'avant ; la proposition de Jean-Claude reste dans le fil, avec ses boutons. Prévu à terme : le volet devient une page en plein écran avec un retour (« Interface en 3 parties », étape 4). <!--id:m-decision-pas-de-volet-->
+- [x] `FRONT` `Mobile` **Boutons de déplacement des tâches (option A, 12 novembre)** — Décision : à gauche seulement la case à cocher ; à droite indenter, désindenter, poignée, corbeille. Sur téléphone, ces boutons restent visibles en permanence (pas de survol). <!--id:m-decision-boutons-deplacement-->
+- [x] `FRONT` `Mobile` **Répétition : « seulement cette date » ou « toute la série »** — Décision : cocher, déplacer, modifier ou supprimer un todo qui se répète pose chaque fois la question. <!--id:m-decision-repetition-->
+- [x] `FRONT` `Mobile` **Toute zone qu'on touche fait au moins 44 pt** — Décision : valable partout ; thème clair et thème sombre à tester. <!--id:m-decision-44pt-->
+- [x] `FRONT` `Mobile` **Changer une date sur téléphone : « Changer l'échéance » dans le menu « … » de la liste** — C'est le geste d'aujourd'hui, en attendant l'appui long. <!--id:m-decision-changer-echeance-->
+- [ ] `FRONT` `Mobile` **Soulever un élément par un appui long pour le déplacer** — Idée de Yann, 12 novembre : un appui fort sur une liste ou une tâche, comme on soulève un post-it (léger effet de travers), puis on la déplace vers un autre jour, une autre heure ou une autre place. C'est le geste de Things 3, Todoist et Rappels d'Apple, donc il passe la règle des 3 apps. *Faisable :* `react-native-gesture-handler` et `react-native-reanimated` sont déjà dans l'application. *À régler :* l'appui long doit gagner sur le défilement, un léger retour vibrant, le dépôt sur les petites cases du mois. À faire d'abord pour une tâche dans une liste, puis pour une liste dans le calendrier. ⏸ Décision de Yann (12 novembre, soir) : plus tard, directement sur le téléphone. <!--id:y-mobile-appui-long-->
+- [ ] `FRONT` `Mobile` **À trancher : le calendrier, vue Mois, sur téléphone** — Chaque liste doit garder son titre (décision du 12 novembre), mais une case de téléphone est trop étroite pour un titre. Pistes : (A) une petite barre colorée par liste, le titre apparaissant au toucher du jour ; (B) la seule première liste avec son titre, puis « 2 autres » ; (C) la vue Mois sert de repère, le titre se lit en touchant le jour. Recommandation : (B), comme Google Agenda sur téléphone. À trancher par Yann. <!--id:y-mobile-mois-titres-->
+- [ ] `INFRA` `Mobile` **Monter l'application sur un iPhone et un Android de test** — TestFlight / version interne, pour faire les essais ci-dessous. À faire aussi avec Clarisse en plus de Yann. Pas du code. <!--id:m-monter-app-test-->
+- [ ] `FRONT` `Mobile` **Essai : connexion avec le code à 6 chiffres** — V0.00.22 : le champ propose le remplissage automatique du code, sur iPhone comme sur Android. <!--id:m-essai-connexion-->
+- [ ] `FRONT` `Mobile` **Essai : rappels** — Réglages « Me rappeler par e-mail » et dans l'application (Réglages › Rappels) ; recevoir un rappel 10 minutes avant un rendez-vous ou une todo datée. <!--id:m-essai-rappels-->
+- [ ] `FRONT` `Mobile` **Essai : Mes listes dans l'ordre du temps** — V0.00.24 : l'écran s'ouvre sur la liste du moment ; le défilement vers le passé et le futur reste fluide. <!--id:m-essai-mes-listes-->
+- [ ] `FRONT` `Mobile` **Essai : carte de liste** — V0.00.25 : en-tête sur une ligne (flèche, case, titre, type, dossier, échéance, menu) sans être tronqué à 360 pt de large ; changer dossier et échéance d'un appui. <!--id:m-essai-carte-liste-->
+- [ ] `FRONT` `Mobile` **Essai : sous-tâches** — V0.00.27 : le décalage de 32 pt est lisible sans manger la ligne ; mettre en retrait et remonter d'un niveau au doigt. <!--id:m-essai-sous-taches-->
+- [ ] `FRONT` `Mobile` **Essai : listes d'un espace collaboratif** — V0.00.33 : flèche de repli et titre, repli et dépli au doigt, colonne « responsable » lisible sur écran étroit. <!--id:m-essai-espaces-->
+- [ ] `FRONT` `Mobile` **Essai : calendrier** — Vues Jour, Semaine, Mois, Année et Todo ; « N tâches » touchable ou inerte (le volet n'existe pas sur téléphone : vérifier ce qui se passe au toucher) ; fenêtre « Nouvel événement ». <!--id:m-essai-calendrier-->
+- [ ] `FRONT` `Mobile` **Essai : proposition de Jean-Claude** — V0.00.34 : la carte reste dans le fil avec ses boutons ; valider et ignorer au doigt ; liste de courses, rangement en dossiers, rendez-vous. <!--id:m-essai-propositions-->
+- [ ] `FRONT` `Mobile` **Essai : partout** — Zones à toucher assez grandes, thème sombre, rotation de l'écran, clavier qui ne cache pas la ligne qu'on écrit. <!--id:m-essai-partout-->
 
 ### À tester
 
