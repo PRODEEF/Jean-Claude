@@ -111,9 +111,9 @@ export const TASK_INDENT = 32;
 export const TASK_ROW_HEIGHT = 32;
 
 /**
- * Retrait des lignes sous l'en-tête d'une carte : la case de chaque ligne se pose
- * à l'aplomb de la case du titre, le repli restant à gauche d'elles. Largeur du
- * repli (32, décalé de 4 vers la gauche) + espace (4), puisque les deux cases font la même largeur.
+ * Retrait des lignes sous l'en-tête d'une carte : elles forment un sous-paragraphe,
+ * leur case commençant à l'aplomb du titre (et non de la case du titre). Repli
+ * (32, décalé de 4 vers la gauche) + espace (4) + case du titre (16) + espace (4).
  */
-export const TASK_AXIS_OFFSET = 36;
+export const TASK_AXIS_OFFSET = 56;
 export const TASK_CHECKBOX_SIZE = 16;

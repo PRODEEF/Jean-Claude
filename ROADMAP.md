@@ -29,6 +29,7 @@ Le site de production affiche V0.00.52. Tout ce qui précède, de V0.00.43 à V0
 
 ### Sur `dev` (pas encore en production)
 
+- **Carte de liste : les tâches en sous-paragraphe, l'heure avant la date** (V0.00.60). Demande de Yann, 16 novembre (capture annotée). Le bloc des tâches se décale vers la droite : la case de chaque ligne commence à l'aplomb du titre, comme un sous-paragraphe. La date se lit « 10h · lundi 16 novembre » au lieu de « lundi 16 novembre · 10h » ; vaut aussi pour les listes d'espace. *Où : carte de liste.*
 - **Carte de liste : cases alignées, picto du calendrier retiré** (V0.00.59). Demande de Yann, 16 novembre (schéma à l'appui). Le repli se décale un peu vers la gauche, la case du titre se rapproche, et les cases de toutes les lignes se posent à l'aplomb de celle du titre (mesuré : même axe partout). Le petit calendrier devant la date disparaît ; l'invite « Date » reste quand il n'y en a pas. Vaut pour « Mes listes », le volet de droite et les listes d'espace. *Où : carte de liste.*
 
 ### Mis en production le 16 novembre (V0.00.58, PR #283)
@@ -41,7 +42,7 @@ Le site de production affiche V0.00.52. Tout ce qui précède, de V0.00.43 à V0
 - **Calendrier : la fenêtre « Nouvel événement » ne recouvre plus le jour cliqué, et la fin se cale à début + 1 h** (V0.00.53). Au clic sur une case de la grille (web, grand écran), la fenêtre s'ouvre à côté, à droite s'il y a la place, sinon à gauche, sans fond assombri : la case reste visible, comme dans Google Agenda. Le bouton « Événement » de la barre et le téléphone gardent la fenêtre centrée. À la création d'un événement, régler l'heure de début cale la fin une heure plus tard (23h59 depuis 23h), tant qu'on n'a pas réglé la fin soi-même ; un événement existant garde sa fin. *Où : calendrier, formulaire d'événement.* — Vu dans un navigateur simulé ; à tester sur le site.
 - **Rappels : un déclencheur fiable toutes les 5 minutes** (sans changement de version). Le planificateur de GitHub ne lançait que deux passages par jour. Yann a créé la tâche « Rappels Jean Claude » sur cron-job.org (toutes les 5 minutes, méthode POST, secret dans l'en-tête) ; le premier passage réel, à 16h15, a répondu 200 OK. Le secret `CRON_SECRET` a été renouvelé au passage et l'API redéployée ; le workflow GitHub reste en secours. *Où : infrastructure, pas d'écran.* — Aucun rappel n'était dû pendant l'essai, `{"sent":0}` est le résultat attendu.
 
-Production : V0.00.58 (confirmé par Yann le 16 novembre). `dev` porte V0.00.59.
+Production : V0.00.58 (confirmé par Yann le 16 novembre). `dev` porte V0.00.60.
 
 ### Mis en production le 12 novembre (V0.00.42 en ligne le soir ; V0.00.43 à V0.00.48 visibles le 13 novembre, avec la V0.00.52)
 
