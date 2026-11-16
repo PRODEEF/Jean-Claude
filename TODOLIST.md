@@ -149,6 +149,12 @@
 - [ ] `FRONT` `Mobile` **Essai : proposition de Jean-Claude** — V0.00.34 : la carte reste dans le fil avec ses boutons ; valider et ignorer au doigt ; liste de courses, rangement en dossiers, rendez-vous. <!--id:m-essai-propositions-->
 - [ ] `FRONT` `Mobile` **Essai : partout** — Zones à toucher assez grandes, thème sombre, rotation de l'écran, clavier qui ne cache pas la ligne qu'on écrit. <!--id:m-essai-partout-->
 
+### Design & Graphisme
+
+> Tout ce qui touche à l'apparence de Jean Claude : refonte du site, identité visuelle, cohérence des écrans.
+
+- [ ] `FRONT` `Design` **Redessiner le site** — Demande de Yann, 16 novembre. **Première étape : redemander à Nicolas sa méthode.** Ce que Yann en retient, dans l'ordre : (1) ouvrir un nouveau canal Claude dédié au design ; (2) lui donner les captures d'écran actuelles du site ; (3) passer par shadcn ; (4) la suite, que Yann ne se rappelle plus : à retrouver auprès de Nicolas. *Contexte technique :* le site s'appuie déjà sur des composants issus de react-native-reusables, le portage de shadcn/ui pour React Native (règle 200 : shadcn/ui lui-même ne tourne pas sur iOS et Android). La refonte part donc d'une base déjà proche de cette méthode. À décider une fois la méthode connue : la portée (tous les écrans ou un parcours pilote), et le test visuel par Yann (§4.3). <!--id:y-design-refonte-site-->
+
 ### À tester
 
 - [ ] `FRONT` `TODO` **Glisser-déposer des tâches : vérifier que l'ordre est conservé après rechargement** — Y compris sous les bandeaux du jour. <!--id:test-glisse-depose-ordre-->
