@@ -183,6 +183,9 @@ export const createTaskListsPayloadSchema = z.object({
         title: labelSchema,
         kind: taskListKindSchema,
         dueAt: isoDateTimeSchema.nullable().catch(null).default(null),
+        // Absent : le serveur range la liste selon la conversation. Un dossier
+        // choisi dans la carte avant validation l'emporte ; `null` y dit « aucun ».
+        folderId: uuidSchema.nullable().optional(),
         items: z
           .array(
             z.object({
@@ -248,7 +251,10 @@ export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
  */
 export const addTaskListItemsPayloadSchema = z.object({
   listId: uuidSchema,
-  items: z.array(z.object({ title: labelSchema })).min(1).max(30),
+  items: z
+    .array(z.object({ title: labelSchema }))
+    .min(1)
+    .max(30),
 });
 
 export type AddTaskListItemsPayload = z.infer<typeof addTaskListItemsPayloadSchema>;
@@ -373,7 +379,10 @@ export const updateTaskListItemsPayloadSchema = z
       )
       .max(30)
       .default([]),
-    added: z.array(z.object({ title: labelSchema })).max(30).default([]),
+    added: z
+      .array(z.object({ title: labelSchema }))
+      .max(30)
+      .default([]),
   })
   .refine(
     (payload) => payload.items.length + payload.added.length > 0,

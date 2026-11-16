@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { Check, ListChecks, ShoppingBasket, X } from "lucide-react-native";
+import { Check, ChevronDown, ChevronRight, X } from "lucide-react-native";
 import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
@@ -28,10 +28,18 @@ import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
-import { TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
+import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
+import { TASK_AXIS_OFFSET } from "@/shared/lib/tasks";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { Button } from "@/shared/ui/button";
+import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
-import { TaskListCardFrame, TaskRowBlankCheckbox } from "@/shared/ui/task-list-card";
+import { DueDialog } from "@/features/todo/ListDueDialog";
+import {
+  TaskListCardFrame,
+  TaskListCardHeader,
+  TaskRowBlankCheckbox,
+} from "@/shared/ui/task-list-card";
 import { SpinningCog, useElapsedSeconds } from "./ThinkingIndicator";
 
 /** Ce qu'accepter transmet en plus de l'action, selon la nature de la proposition. */
@@ -118,6 +126,49 @@ export function SuggestionCard({
     onAccept(excluded.length > 0 ? { folderSelection: selection } : undefined);
   };
 
+  const actions = (
+    <View style={styles.actions}>
+      <Pressable
+        onPress={accept}
+        disabled={isPending || emptied}
+        accessibilityRole="button"
+        accessibilityLabel={preview.acceptLabel}
+        aria-busy={accepting}
+        style={[
+          styles.action,
+          {
+            backgroundColor: palette.accent,
+            // Pleinement opaque pendant l'acceptation : c'est lui qui porte
+            // la roue, grisé on ne la verrait plus tourner.
+            opacity: (isPending && !accepting) || emptied ? 0.4 : 1,
+          },
+        ]}
+      >
+        {accepting ? (
+          <AcceptingLabel color={palette.accentText} />
+        ) : (
+          <Text style={[styles.actionLabel, { color: palette.accentText }]}>
+            {preview.acceptLabel}
+          </Text>
+        )}
+      </Pressable>
+
+      <Pressable
+        onPress={onDismiss}
+        disabled={isPending}
+        accessibilityRole="button"
+        accessibilityLabel="Ignorer la proposition"
+        style={[
+          styles.action,
+          styles.secondary,
+          { borderColor: palette.border, opacity: isPending ? 0.4 : 1 },
+        ]}
+      >
+        <Text style={[styles.actionLabel, { color: palette.textMuted }]}>Ignorer</Text>
+      </Pressable>
+    </View>
+  );
+
   return (
     <View
       style={[
@@ -127,12 +178,18 @@ export function SuggestionCard({
     >
       <Text style={[styles.message, { color: palette.text }]}>{suggestion.message}</Text>
 
+      {/* Les gestes d'abord pour une liste : elle peut être longue, et Valider ne
+          doit pas se trouver au bas d'un défilement. */}
+      {editableTaskLists ? actions : null}
+
       {editableTaskLists ? (
         <EditableTaskLists
           lists={editable.lists}
           disabled={isPending}
           onRenameList={editable.renameList}
           onRemoveList={editable.removeList}
+          onChangeDue={editable.setDue}
+          onChangeFolder={editable.setFolder}
           onRenameItem={editable.renameItem}
           onRemoveItem={editable.removeItem}
         />
@@ -176,46 +233,7 @@ export function SuggestionCard({
         </View>
       ) : null}
 
-      <View style={styles.actions}>
-        <Pressable
-          onPress={accept}
-          disabled={isPending || emptied}
-          accessibilityRole="button"
-          accessibilityLabel={preview.acceptLabel}
-          aria-busy={accepting}
-          style={[
-            styles.action,
-            {
-              backgroundColor: palette.accent,
-              // Pleinement opaque pendant l'acceptation : c'est lui qui porte
-              // la roue, grisé on ne la verrait plus tourner.
-              opacity: (isPending && !accepting) || emptied ? 0.4 : 1,
-            },
-          ]}
-        >
-          {accepting ? (
-            <AcceptingLabel color={palette.accentText} />
-          ) : (
-            <Text style={[styles.actionLabel, { color: palette.accentText }]}>
-              {preview.acceptLabel}
-            </Text>
-          )}
-        </Pressable>
-
-        <Pressable
-          onPress={onDismiss}
-          disabled={isPending}
-          accessibilityRole="button"
-          accessibilityLabel="Ignorer la proposition"
-          style={[
-            styles.action,
-            styles.secondary,
-            { borderColor: palette.border, opacity: isPending ? 0.4 : 1 },
-          ]}
-        >
-          <Text style={[styles.actionLabel, { color: palette.textMuted }]}>Ignorer</Text>
-        </Pressable>
-      </View>
+      {editableTaskLists ? null : actions}
     </View>
   );
 }
@@ -297,6 +315,8 @@ type EditableList = {
   title: string;
   kind: TaskListKind;
   dueAt: string | null;
+  /** `undefined` : pas touché, le serveur range selon la conversation ; `null` : aucun dossier. */
+  folderId?: string | null;
   items: EditableItem[];
 };
 
@@ -333,6 +353,12 @@ function useEditableTaskLists(suggestion: Suggestion) {
     renameList: (key: string, title: string) =>
       setLists((current) => current.map((list) => (list.key === key ? { ...list, title } : list))),
     removeList: (key: string) => setLists((current) => current.filter((list) => list.key !== key)),
+    setDue: (key: string, dueAt: string | null) =>
+      setLists((current) => current.map((list) => (list.key === key ? { ...list, dueAt } : list))),
+    setFolder: (key: string, folderId: string | null) =>
+      setLists((current) =>
+        current.map((list) => (list.key === key ? { ...list, folderId } : list)),
+      ),
     renameItem: (listKey: string, itemKey: string, title: string) =>
       setLists((current) =>
         current.map((list) =>
@@ -374,6 +400,7 @@ function editablePayload(lists: EditableList[]): CreateTaskListsPayload {
         title: list.title.trim(),
         kind: list.kind,
         dueAt: list.dueAt,
+        ...(list.folderId === undefined ? {} : { folderId: list.folderId }),
         items: list.items
           .map((item) => ({ title: item.title.trim(), dueOn: item.dueOn }))
           .filter((item) => item.title.length > 0),
@@ -385,16 +412,19 @@ function editablePayload(lists: EditableList[]): CreateTaskListsPayload {
 /**
  * Listes proposées, éditables avant validation (§13.4.1, #17).
  *
- * Un champ de texte par titre plutôt que l'éditeur complet des todolistes
- * réelles (`TaskListEditor`) : ici il n'y a qu'à corriger ce que le modèle a
- * extrait, pas à composer une liste — pas d'indentation, pas de nouvelle
- * ligne au clavier.
+ * Même carte que « Mes listes » : on valide ce qu'on retrouvera ensuite. L'en-tête
+ * est celui de la vraie carte, et l'échéance comme le dossier se changent d'un
+ * appui, comme là-bas. Un champ de texte par titre plutôt que l'éditeur complet
+ * (`TaskListEditor`) : il n'y a qu'à corriger ce que le modèle a extrait, pas à
+ * composer une liste — pas d'indentation, pas de nouvelle ligne au clavier.
  */
 function EditableTaskLists({
   lists,
   disabled,
   onRenameList,
   onRemoveList,
+  onChangeDue,
+  onChangeFolder,
   onRenameItem,
   onRemoveItem,
 }: {
@@ -402,23 +432,87 @@ function EditableTaskLists({
   disabled: boolean;
   onRenameList: (key: string, title: string) => void;
   onRemoveList: (key: string) => void;
+  onChangeDue: (key: string, dueAt: string | null) => void;
+  onChangeFolder: (key: string, folderId: string | null) => void;
   onRenameItem: (listKey: string, itemKey: string, title: string) => void;
   onRemoveItem: (listKey: string, itemKey: string) => void;
 }) {
   const { palette } = useTheme();
+  const folders = useFolderChoices();
+  const [folderMenu, setFolderMenu] = useState<{ key: string; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ key: string; x: number; y: number } | null>(null);
+  const [editingDue, setEditingDue] = useState<string | null>(null);
+  const [folded, setFolded] = useState<readonly string[]>([]);
+  const editedList = lists.find((list) => list.key === editingDue);
+  const folderMenuList = lists.find((list) => list.key === folderMenu?.key);
+  const menuList = lists.find((list) => list.key === menu?.key);
 
-  // Même carte que « Mes listes » : on valide ce qu'on retrouvera ensuite, pas un
-  // aperçu d'un autre genre. Les cases restent vides et inertes, rien n'existe
-  // encore à cocher.
+  const folderItems: ContextMenuItem[] = folderMenuList
+    ? [
+        {
+          label: "Aucun dossier",
+          onPress: () => {
+            onChangeFolder(folderMenuList.key, null);
+            setFolderMenu(null);
+          },
+        },
+        ...folders.map((folder) => ({
+          label: folder.name,
+          onPress: () => {
+            onChangeFolder(folderMenuList.key, folder.id);
+            setFolderMenu(null);
+          },
+        })),
+      ]
+    : [];
+
   return (
     <View style={styles.editableLists}>
-      {lists.map((list) => {
-        const due = proposedDueLabel(list.dueAt);
-
-        return (
-          <TaskListCardFrame key={list.key} desktop>
-            <View style={styles.proposedHeaderFrame}>
-              <View style={styles.proposedHeader}>
+      {lists.map((list) => (
+        <TaskListCardFrame key={list.key} desktop>
+          <TaskListCardHeader
+            title={list.title}
+            shopping={list.kind === "shopping"}
+            folderName={folders.find((folder) => folder.id === list.folderId)?.name}
+            due={proposedDueLabel(list.dueAt) ?? undefined}
+            onFolderPress={(event) =>
+              !disabled &&
+              setFolderMenu({
+                key: list.key,
+                x: event.nativeEvent.pageX,
+                y: event.nativeEvent.pageY,
+              })
+            }
+            onDuePress={() => !disabled && setEditingDue(list.key)}
+            onMenuPress={(event) =>
+              !disabled &&
+              setMenu({ key: list.key, x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+            }
+            menuLabel={`Actions pour ${list.title || "la liste"}`}
+            leading={
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  hitSlop={8}
+                  accessibilityLabel={
+                    folded.includes(list.key) ? `Déplier ${list.title}` : `Replier ${list.title}`
+                  }
+                  className="-ml-1 size-8"
+                  onPress={() =>
+                    setFolded((current) =>
+                      current.includes(list.key)
+                        ? current.filter((key) => key !== list.key)
+                        : [...current, list.key],
+                    )
+                  }
+                >
+                  <Icon
+                    as={folded.includes(list.key) ? ChevronRight : ChevronDown}
+                    size={16}
+                    className="text-muted-foreground"
+                  />
+                </Button>
                 <TaskRowBlankCheckbox />
                 <TextInput
                   value={list.title}
@@ -427,33 +521,13 @@ function EditableTaskLists({
                   accessibilityLabel={`Titre de la liste ${list.title}`}
                   style={[styles.input, styles.proposedTitle, { color: palette.text }]}
                 />
-                <Icon
-                  as={list.kind === "shopping" ? ShoppingBasket : ListChecks}
-                  size={16}
-                  className="text-muted-foreground"
-                />
-                <Text style={[styles.hint, { color: palette.textMuted }]}>
-                  {list.kind === "shopping" ? "Liste d'achats" : "Liste de tâches"}
-                </Text>
-                <View style={styles.proposedSpring} />
-                {due ? (
-                  <Text style={[styles.hint, { color: palette.textMuted }]}>{due}</Text>
-                ) : null}
-              </View>
-              <View style={styles.proposedRemove}>
-                <RemoveButton
-                  label={`Supprimer la liste ${list.title || "sans titre"}`}
-                  disabled={disabled}
-                  onPress={() => onRemoveList(list.key)}
-                />
-              </View>
-            </View>
+              </>
+            }
+          />
 
-            {list.items.map((item) => (
-              <View
-                key={item.key}
-                style={[styles.editableRow, { paddingLeft: PROPOSED_ITEM_INDENT }]}
-              >
+          <View style={styles.proposedItems}>
+            {(folded.includes(list.key) ? [] : list.items).map((item) => (
+              <View key={item.key} style={[styles.editableRow, { paddingLeft: TASK_AXIS_OFFSET }]}>
                 <TaskRowBlankCheckbox />
                 <TextInput
                   value={item.title}
@@ -474,18 +548,58 @@ function EditableTaskLists({
                 />
               </View>
             ))}
-          </TaskListCardFrame>
-        );
-      })}
+          </View>
+        </TaskListCardFrame>
+      ))}
+
+      {menu && menuList ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={[
+            {
+              label: "Retirer la liste",
+              destructive: true,
+              onPress: () => {
+                onRemoveList(menuList.key);
+                setMenu(null);
+              },
+            },
+          ]}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
+      {folderMenu && folderMenuList ? (
+        <ContextMenu
+          x={folderMenu.x}
+          y={folderMenu.y}
+          items={folderItems}
+          onClose={() => setFolderMenu(null)}
+        />
+      ) : null}
+      {editedList ? (
+        <DueDialog
+          title={editedList.title}
+          dueAt={editedList.dueAt}
+          dueAllDay={editedList.dueAt === null ? null : isMidnight(editedList.dueAt)}
+          pending={false}
+          failure={null}
+          onSubmit={(due) => {
+            onChangeDue(editedList.key, due.dueAt);
+            setEditingDue(null);
+          }}
+          onClose={() => setEditingDue(null)}
+        />
+      ) : null}
     </View>
   );
 }
 
-/**
- * Retrait des lignes : leur case commence sous le titre, qui suit ici la case du
- * titre (sans repli devant, contrairement à la carte de « Mes listes »).
- */
-const PROPOSED_ITEM_INDENT = TASK_ROW_HEIGHT / 2 + spacing.xs;
+/** Une échéance à minuit vaut « dans la journée » : l'heure n'a pas été choisie. */
+function isMidnight(iso: string): boolean {
+  const date = new Date(iso);
+  return date.getHours() === 0 && date.getMinutes() === 0;
+}
 
 /**
  * Échéance d'une liste proposée, comme sur la carte de « Mes listes » :
@@ -496,7 +610,7 @@ function proposedDueLabel(iso: string | null): string | null {
   if (iso === null) return null;
   const date = new Date(iso);
   const day = formatFullDay(date);
-  return date.getHours() === 0 && date.getMinutes() === 0 ? day : `${formatTime(iso)} · ${day}`;
+  return isMidnight(iso) ? day : `${formatTime(iso)} · ${day}`;
 }
 
 function RemoveButton({
@@ -986,18 +1100,8 @@ const styles = StyleSheet.create({
   hint: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.regular },
   editableLists: { gap: spacing.sm },
   editableRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  proposedHeaderFrame: { position: "relative" },
-  proposedRemove: { position: "absolute", right: 0, top: 0 },
-  proposedHeader: {
-    paddingRight: MIN_TOUCH_TARGET / 2 + spacing.xs,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    columnGap: spacing.xs,
-    rowGap: 2,
-  },
+  proposedItems: { paddingTop: spacing.xs },
   proposedTitle: { fontWeight: fontWeight.semibold, flex: 0, flexShrink: 1, minWidth: 80 },
-  proposedSpring: { flexGrow: 1, flexBasis: 8 },
   input: {
     flex: 1,
     fontFamily: FONT_FAMILY,
