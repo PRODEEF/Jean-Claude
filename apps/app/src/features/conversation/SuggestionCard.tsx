@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronRight, X } from "lucide-react-native";
 import {
@@ -25,11 +25,12 @@ import {
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { useFeedbackContext } from "@/features/feedback/hooks/use-feedback";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
+import { cn } from "@/shared/lib/utils";
 import { api } from "@/shared/lib/api";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
-import { TASK_AXIS_OFFSET } from "@/shared/lib/tasks";
+import { TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
@@ -37,8 +38,10 @@ import { Icon } from "@/shared/ui/icon";
 import { DueDialog } from "@/features/todo/ListDueDialog";
 import {
   TaskListCardFrame,
+  TaskListCardBody,
   TaskListCardHeader,
   TaskRowBlankCheckbox,
+  taskRowStyle,
 } from "@/shared/ui/task-list-card";
 import { SpinningCog, useElapsedSeconds } from "./ThinkingIndicator";
 
@@ -527,26 +530,36 @@ function EditableTaskLists({
                   onChangeText={(text) => onRenameList(list.key, text)}
                   editable={!disabled}
                   accessibilityLabel={`Titre de la liste ${list.title}`}
-                  style={[
-                    styles.input,
-                    styles.proposedTitle,
-                    { color: palette.text, width: titleWidth(list.title) },
-                  ]}
+                  style={{
+                    fontFamily: FONT_FAMILY,
+                    color: palette.text,
+                    width: titleWidth(list.title),
+                    minHeight: TASK_ROW_HEIGHT,
+                  }}
+                  className={cn("text-sm font-semibold", Platform.select({ web: "outline-none" }))}
                 />
               </>
             }
           />
 
-          <View style={styles.proposedItems}>
+          {/* Même zone, mêmes lignes que la vraie carte : hauteur, écart et
+              retrait viennent des mêmes mesures, la croix tenant la place de la
+              poignée de déplacement. */}
+          <TaskListCardBody desktop>
             {(folded.includes(list.key) ? [] : list.items).map((item) => (
-              <View key={item.key} style={[styles.editableRow, { paddingLeft: TASK_AXIS_OFFSET }]}>
+              <View
+                key={item.key}
+                style={taskRowStyle(0)}
+                className="relative flex-row items-center gap-2 rounded-md"
+              >
                 <TaskRowBlankCheckbox />
                 <TextInput
                   value={item.title}
                   onChangeText={(text) => onRenameItem(list.key, item.key, text)}
                   editable={!disabled}
                   accessibilityLabel={`Élément ${item.title} de la liste ${list.title}`}
-                  style={[styles.input, { color: palette.text }]}
+                  style={{ fontFamily: FONT_FAMILY, color: palette.text }}
+                  className={cn("flex-1 text-sm", Platform.select({ web: "outline-none" }))}
                 />
                 {item.dueOn === null ? null : (
                   <Text style={[styles.hint, { color: palette.textMuted }]}>
@@ -560,7 +573,7 @@ function EditableTaskLists({
                 />
               </View>
             ))}
-          </View>
+          </TaskListCardBody>
         </TaskListCardFrame>
       ))}
 
@@ -645,6 +658,8 @@ function RemoveButton({
 }) {
   const { palette } = useTheme();
 
+  // Gabarit de la poignée de la vraie carte : la croix ne change ni la hauteur de
+  // la ligne ni l'alignement du bord droit.
   return (
     <Pressable
       onPress={onPress}
@@ -1121,18 +1136,9 @@ const styles = StyleSheet.create({
   nested: { paddingLeft: spacing.md, fontWeight: fontWeight.regular },
   hint: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.regular },
   editableLists: { gap: spacing.sm },
-  editableRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  proposedItems: { paddingTop: spacing.xs },
-  proposedTitle: { fontWeight: fontWeight.semibold, flex: 0, flexShrink: 1, minWidth: 80 },
-  input: {
-    flex: 1,
-    fontFamily: FONT_FAMILY,
-    fontSize: fontSize.sm,
-    minHeight: MIN_TOUCH_TARGET,
-  },
   removeButton: {
-    width: MIN_TOUCH_TARGET / 2,
-    height: MIN_TOUCH_TARGET / 2,
+    minWidth: TASK_ROW_HEIGHT / 2,
+    minHeight: TASK_ROW_HEIGHT,
     alignItems: "center",
     justifyContent: "center",
   },
