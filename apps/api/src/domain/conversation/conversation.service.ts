@@ -2821,6 +2821,7 @@ const COMMAND_NOTES: Record<
  */
 function describeTaskListRules(decided: Suggestion[]): string[] {
   const rules = [
+    ...CARD_IS_THE_CONFIRMATION,
     "",
     "Si l'utilisateur demande explicitement de transformer l'échange en",
     "todoliste, ne le décris pas en texte : appelle `suggest_task_list` tout",
@@ -2877,7 +2878,25 @@ function describeTaskListRules(decided: Suggestion[]): string[] {
   return rules;
 }
 
+/**
+ * La carte est la demande de confirmation : un rendez-vous ou une liste ne se
+ * confirme pas en texte, et rien n'est « noté » sans carte (§12.1). Retour de
+ * Yann, 16 novembre : l'assistant avait demandé « je te pose le rendez-vous ? » en
+ * texte, reçu « ok », puis répondu « rendez-vous noté » sans rien proposer.
+ */
+const CARD_IS_THE_CONFIRMATION = [
+  "",
+  "Une proposition se fait par l'outil, jamais par une phrase. Dès que tu as le jour",
+  "et l'heure — dits par l'utilisateur ou choisis en réponse à ta question —, appelle",
+  "l'outil tout de suite : la carte est la demande de confirmation, ne redemande pas",
+  "en texte « je te pose le rendez-vous ? ». Un « ok » ou « 10h » en réponse à une",
+  "question de ta part est une réponse : appelle l'outil maintenant. N'écris jamais",
+  "« c'est noté », « rendez-vous noté » ou « c'est posé » sans avoir appelé l'outil",
+  "dans ce même tour : sans carte, rien n'est noté.",
+];
+
 const RECURRING_EVENT_RULES = [
+  ...CARD_IS_THE_CONFIRMATION,
   "",
   "Quand l'utilisateur mentionne un rendez-vous ou une activité qui se",
   "répète — « kiné tous les mardis à 18h », « réunion chaque lundi »,",
@@ -2897,6 +2916,7 @@ const RECURRING_EVENT_RULES = [
 ];
 
 const EVENTS_RULES = [
+  ...CARD_IS_THE_CONFIRMATION,
   "",
   "Quand l'utilisateur mentionne un ou plusieurs rendez-vous ponctuels — sans",
   "règle de répétition — à noter dans l'agenda, appelle `suggest_events` avec",
@@ -3225,7 +3245,18 @@ function buildExtractionPrompt(context: AssistantContext, now: Date): string {
  * approximativement vaut mieux qu'une conversation perdue.
  */
 function describeNow(timezone: string, now: Date): string[] {
-  return ["", `Nous sommes ${formatInstant(now, timezone)} (fuseau ${timezone}).`];
+  // Les jours qui viennent, écrits : le modèle se trompait d'un jour en calculant
+  // « jeudi » de tête (le 20 au lieu du 19). Recopier vaut mieux que calculer.
+  const upcoming = Array.from({ length: 7 }, (_, index) =>
+    formatInstant(new Date(now.getTime() + (index + 1) * 86_400_000), timezone, "date"),
+  );
+
+  return [
+    "",
+    `Nous sommes ${formatInstant(now, timezone)} (fuseau ${timezone}).`,
+    `Les jours qui viennent : ${upcoming.join(" ; ")}. Pour « jeudi » ou « samedi prochain »,`,
+    "recopie la date de cette liste, ne la calcule jamais.",
+  ];
 }
 
 /** Ce que l'assistant sait de l'identité de l'utilisateur, s'il sait quelque chose. */

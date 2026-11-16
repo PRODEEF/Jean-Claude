@@ -1087,6 +1087,28 @@ describe("ConversationService", () => {
       expect(lastRequest(llm).system ?? "").toContain("Menuisier à son compte.");
     });
 
+    it("écrit les jours qui viennent pour que le modèle recopie « jeudi » au lieu de le calculer", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      // Mercredi 2 septembre : jeudi est le 3, pas le 4 — l'écart que le modèle
+      // faisait de tête.
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("jeudi 3 septembre 2026");
+      expect(system).toContain("recopie la date de cette liste");
+    });
+
+    it("ne laisse pas dire « noté » sans carte, ni confirmer en texte ce que la carte demande", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("sans carte, rien n'est noté");
+      expect(system).toContain("la carte est la demande de confirmation");
+    });
+
     it("date le tour de dialogue dans le fuseau du profil", async () => {
       const llm = makeLlm();
 
