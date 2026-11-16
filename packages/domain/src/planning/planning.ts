@@ -341,6 +341,25 @@ export function listsInPeriod(
 }
 
 /**
+ * Écarte les listes passées les plus anciennes, pour n'en garder que `keep`.
+ *
+ * Reçoit des listes déjà dans l'ordre du temps : le passé est donc au début, et
+ * ce sont les plus anciennes, en tête, qui sont écartées. Celles d'aujourd'hui,
+ * du futur et sans date restent toutes. `hidden` dit combien sont écartées, pour
+ * proposer d'en afficher davantage plutôt que de les faire disparaître.
+ */
+export function limitPastLists(
+  sorted: TaskListWithTasks[],
+  now: Date,
+  keep: number,
+): { lists: TaskListWithTasks[]; hidden: number } {
+  const past = listsInPeriod(sorted, "past", now);
+  const dropped = new Set(past.slice(0, Math.max(0, past.length - keep)));
+  if (dropped.size === 0) return { lists: sorted, hidden: 0 };
+  return { lists: sorted.filter((list) => !dropped.has(list)), hidden: dropped.size };
+}
+
+/**
  * Les listes dans l'ordre du temps : les échues par date croissante, puis
  * celles sans date à la fin.
  *
@@ -433,6 +452,12 @@ const MINUTES_PER_DAY = 24 * 60;
 
 /** Durée prêtée à un créneau sans heure de fin, pour lui donner une hauteur. */
 const IMPLICIT_DURATION_MINUTES = 60;
+
+/**
+ * Place verticale d'une pastille de liste dans la grille horaire, en minutes :
+ * de quoi lire une ligne (20 px sur une heure de 48 px).
+ */
+export const LIST_CHIP_MINUTES = 25;
 
 /** Générique : une entrée du calendrier garde ce qu'elle porte en plus (`space`). */
 export type PositionedEvent<T extends CalendarEvent = CalendarEvent> = {
@@ -556,27 +581,29 @@ export function layoutDayLists(
   bounds: DayPartBounds = DEFAULT_DAY_PART_BOUNDS,
 ): { timed: PositionedList[]; untimed: TaskListWithTasks[] } {
   const untimed: TaskListWithTasks[] = [];
+  const starts: { list: TaskListWithTasks; startMinute: number }[] = [];
 
-  const boxes = lists.flatMap((list) => {
+  for (const list of lists) {
     if (list.dueAt === null || momentOf(list, bounds) === "anytime") {
       untimed.push(list);
-      return [];
+      continue;
     }
+    starts.push({ list, startMinute: minuteInDay(new Date(list.dueAt).getTime(), day) });
+  }
 
-    const startMinute = minuteInDay(new Date(list.dueAt).getTime(), day);
-    return [
-      {
-        ref: list,
-        startMinute,
-        endMinute: clamp(startMinute + IMPLICIT_DURATION_MINUTES, 0, MINUTES_PER_DAY),
-      },
-    ];
+  // Les listes à la même heure s'empilent, l'une sous l'autre, au lieu de se
+  // partager la largeur : côte à côte, chaque titre était réduit à quelques
+  // lettres (Yann, 16 novembre). Une pastille descend juste sous la précédente
+  // quand elle la chevaucherait ; l'heure lue sur la pastille reste la vraie.
+  starts.sort((a, b) => a.startMinute - b.startMinute);
+  let nextFree = 0;
+  const timed = starts.map(({ list, startMinute }) => {
+    const top = clamp(Math.max(startMinute, nextFree), 0, MINUTES_PER_DAY - LIST_CHIP_MINUTES);
+    nextFree = top + LIST_CHIP_MINUTES;
+    return { list, startMinute: top, endMinute: top + LIST_CHIP_MINUTES, lane: 0, laneCount: 1 };
   });
 
-  return {
-    timed: layoutBoxes(boxes).map(({ ref, ...box }) => ({ ...box, list: ref })),
-    untimed,
-  };
+  return { timed, untimed };
 }
 
 function clamp(value: number, min: number, max: number): number {

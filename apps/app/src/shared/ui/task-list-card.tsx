@@ -54,10 +54,16 @@ export function TaskListCardFrame({
 }
 
 /**
- * En-tête : le type, le dossier, puis l'échéance et le menu.
+ * En-tête : le titre, puis le type, le dossier et l'échéance, et le menu.
  *
  * `leading` précède le type — le repli et le titre dans « Mes listes » ; un
  * espace n'en met pas, son titre est déjà celui de la page.
+ *
+ * Tout est sur une seule ligne qui passe à la ligne : le titre d'abord, puis
+ * chaque élément se range à la suite tant qu'il y a la place, et descend seul
+ * quand elle manque (volet de droite réduit, téléphone). Sur une ligne
+ * unique, c'était le titre qui s'écrasait, alors que c'est lui qu'on lit.
+ * Le menu reste posé en haut à droite, hors du flux, pour ne jamais descendre.
  */
 export function TaskListCardHeader({
   title,
@@ -81,9 +87,8 @@ export function TaskListCardHeader({
   onMenuPress: (event: GestureResponderEvent) => void;
   menuLabel: string;
 }) {
-  return (
+  const type = (
     <View className="flex-row items-center gap-2">
-      {leading}
       <Icon
         as={shopping ? ShoppingBasket : ListChecks}
         size={16}
@@ -92,48 +97,68 @@ export function TaskListCardHeader({
       <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
         {shopping ? "Liste d'achats" : "Liste de tâches"}
       </Text>
+    </View>
+  );
 
-      <Pressable
-        onPress={onFolderPress}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={`Dossier de ${title} : ${folderName ?? "aucun"}`}
-        className="min-w-0 shrink flex-row items-center gap-1 rounded-md px-1.5 py-1"
-      >
-        <Icon as={Folder} size={14} className="text-muted-foreground" />
-        <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
-          {folderName ?? "Dossier"}
-        </Text>
-      </Pressable>
+  const folder = (
+    <Pressable
+      onPress={onFolderPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`Dossier de ${title} : ${folderName ?? "aucun"}`}
+      className="min-w-0 shrink flex-row items-center gap-1 rounded-md px-1.5 py-1"
+    >
+      <Icon as={Folder} size={14} className="text-muted-foreground" />
+      <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
+        {folderName ?? "Dossier"}
+      </Text>
+    </Pressable>
+  );
 
-      <View className="min-w-0 flex-1" />
+  // L'échéance porte sur la liste entière : elle se lit en tête, et se change
+  // d'un appui. Sans date, l'invite reste visible : c'est elle qui la rend
+  // atteignable.
+  const dueButton = (
+    <Pressable
+      onPress={onDuePress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`Échéance de ${title} : ${due ?? "aucune"}`}
+      className="shrink-0 flex-row items-center gap-1 rounded-md px-1.5 py-1"
+    >
+      <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
+      <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+        {due ?? "Date"}
+      </Text>
+    </Pressable>
+  );
 
-      {/* L'échéance porte sur la liste entière : elle se lit en tête, et se
-          change d'un appui. Sans date, l'invite reste visible : c'est elle qui
-          la rend atteignable. */}
-      <Pressable
-        onPress={onDuePress}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={`Échéance de ${title} : ${due ?? "aucune"}`}
-        className="shrink-0 flex-row items-center gap-1 rounded-md px-1.5 py-1"
-      >
-        <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
-        <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-          {due ?? "Date"}
-        </Text>
-      </Pressable>
+  const menu = (
+    <Button
+      variant="ghost"
+      size="icon"
+      hitSlop={8}
+      onPress={onMenuPress}
+      accessibilityLabel={menuLabel}
+      className="size-8"
+    >
+      <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
+    </Button>
+  );
 
-      <Button
-        variant="ghost"
-        size="icon"
-        hitSlop={8}
-        onPress={onMenuPress}
-        accessibilityLabel={menuLabel}
-        className="size-8"
-      >
-        <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
-      </Button>
+  return (
+    <View className="relative">
+      {/* Réserve à droite la place du menu, qui est posé par-dessus. */}
+      <View className="flex-row flex-wrap items-center gap-x-2 gap-y-0.5 pr-10">
+        <View className="min-w-0 max-w-full shrink flex-row items-center gap-2">{leading}</View>
+        {type}
+        {folder}
+        {/* Pousse l'échéance à droite quand tout tient sur la ligne ; elle
+            descend à gauche quand elle n'y tient plus. */}
+        <View style={{ flexGrow: 1, flexBasis: 8 }} />
+        {dueButton}
+      </View>
+      <View className="absolute right-0 top-0">{menu}</View>
     </View>
   );
 }

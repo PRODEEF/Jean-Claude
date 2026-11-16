@@ -6,10 +6,12 @@ import { Button } from "@/shared/ui/button";
 import { DateTimeField } from "@/shared/ui/date-time-field";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "@/shared/ui/modal";
+import type { Point } from "@/shared/lib/popover-placement";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 import { useCalendarActions } from "./hooks/use-calendar-events";
 import {
+  defaultEndFor,
   emptyForm,
   formFromEvent,
   parseForm,
@@ -19,7 +21,7 @@ import {
 
 export type EventDialogTarget =
   /** `groupId` : depuis une conversation d'espace, pour le calendrier de tous ses membres. */
-  | { mode: "create"; day: Date; minute: number; groupId?: string }
+  | { mode: "create"; day: Date; minute: number; groupId?: string; anchor?: Point }
   | { mode: "edit"; event: CalendarEntry };
 
 export type EventFormDialogProps = {
@@ -65,6 +67,10 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
   const [values, setValues] = useState(() => initialValues(target));
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // À la création, la fin suit le début (+ 1 h) tant que l'utilisateur ne l'a
+  // pas réglée lui-même. Un événement existant garde sa fin : la déplacer
+  // d'office changerait sa durée sans que personne l'ait demandé.
+  const [endTouched, setEndTouched] = useState(target.mode === "edit");
 
   const editing = target.mode === "edit";
   const shared = target.mode === "edit" ? target.event.space !== null : Boolean(target.groupId);
@@ -72,6 +78,17 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
 
   const patch = <K extends keyof EventFormValues>(key: K, value: EventFormValues[K]) =>
     setValues((current) => ({ ...current, [key]: value }));
+
+  const changeStart = (text: string) =>
+    setValues((current) => {
+      const end = endTouched ? null : defaultEndFor(text);
+      return { ...current, startTime: text, ...(end ? { endTime: end } : {}) };
+    });
+
+  const changeEnd = (text: string) => {
+    setEndTouched(true);
+    patch("endTime", text);
+  };
 
   const submit = () => {
     const parsed = parseForm(values);
@@ -102,6 +119,7 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
         ? { description: "Visible et modifiable par tous les membres de la conversation." }
         : {})}
       error={error}
+      anchor={target.mode === "create" ? target.anchor : undefined}
       // Bascule du libellé plutôt que suppression au premier appui : le bouton
       // voisine désormais avec « Enregistrer », et un événement supprimé par
       // mégarde ne se rattrape pas. Même geste que sur une todoliste.
@@ -169,7 +187,7 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
               <DateTimeField
                 mode="time"
                 value={values.startTime}
-                onChange={(text) => patch("startTime", text)}
+                onChange={changeStart}
                 accessibilityLabel="Heure de début"
               />
             </Field>
@@ -179,7 +197,7 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
               <DateTimeField
                 mode="time"
                 value={values.endTime}
-                onChange={(text) => patch("endTime", text)}
+                onChange={changeEnd}
                 placeholder="Aucune"
                 clearable
                 accessibilityLabel="Heure de fin"

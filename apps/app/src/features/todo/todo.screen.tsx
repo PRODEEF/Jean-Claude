@@ -3,7 +3,7 @@ import { ScrollView, TextInput, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { ChevronsDownUp, ChevronsUpDown, Plus, Search, X } from "lucide-react-native";
 import type { ListPeriod, Task, TaskList } from "@jc/domain";
-import { currentListId, listsInPeriod, listsInTimeOrder } from "@jc/domain";
+import { currentListId, limitPastLists, listsInPeriod, listsInTimeOrder } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { useFolderChoices } from "@/shared/hooks/use-folder-choices";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
@@ -18,6 +18,15 @@ import { ListsBoard, type FoldCommand } from "./ListsBoard";
 import { TaskDialog } from "./TaskDialog";
 import { TaskListDeleteDialog } from "./TaskListDeleteDialog";
 import { TaskListDialog, type TaskListTarget } from "./TaskListDialog";
+
+/**
+ * Listes passées montrées d'emblée, et ajoutées à chaque demande.
+ *
+ * Chaque liste est une carte complète avec son éditeur : en afficher des
+ * centaines d'un coup ralentit l'écran, alors qu'on ne remonte que rarement
+ * loin dans le passé.
+ */
+const PAST_SLICE = 10;
 
 /**
  * Onglet Mes listes — vue centralisée, tous dossiers confondus (A.2).
@@ -37,6 +46,8 @@ export function TodoScreen() {
   const [folderId, setFolderId] = useState<string | null | undefined>(undefined);
   /** Période retenue : `undefined` = toutes les dates. */
   const [period, setPeriod] = useState<ListPeriod | undefined>(undefined);
+  /** Combien de listes passées sont montrées : la tranche grandit à chaque demande. */
+  const [pastKept, setPastKept] = useState(PAST_SLICE);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const search = useRef<TextInput>(null);
@@ -60,11 +71,18 @@ export function TodoScreen() {
 
   // Dans l'ordre du temps : une liste du 1er décembre ne passe plus devant
   // celle du 10 novembre. Les listes sans date vont à la fin.
-  const visibleLists = useMemo(() => {
+  const { visibleLists, hiddenPast } = useMemo(() => {
     const ofFolder = filterListsByFolder(lists, folderId);
     const ofPeriod = period ? listsInPeriod(ofFolder, period, new Date()) : ofFolder;
-    return listsInTimeOrder(filterListsByQuery(ofPeriod, query));
-  }, [lists, folderId, period, query]);
+    const sorted = listsInTimeOrder(filterListsByQuery(ofPeriod, query));
+
+    // Une recherche, ou une liste visée depuis la barre latérale, doit pouvoir
+    // atteindre une liste ancienne : rien n'est alors écarté.
+    if (query.trim().length > 0 || openedList) return { visibleLists: sorted, hiddenPast: 0 };
+
+    const { lists: kept, hidden } = limitPastLists(sorted, new Date(), pastKept);
+    return { visibleLists: kept, hiddenPast: hidden };
+  }, [lists, folderId, period, query, openedList, pastKept]);
 
   // L'écran s'ouvre sur la liste du moment, une seule fois : le recalculer à
   // chaque chargement ferait sauter l'écran dès qu'on coche une tâche. Une
@@ -180,6 +198,19 @@ export function TodoScreen() {
         <Text className="text-destructive text-sm">
           Les todolistes n'ont pas pu être chargées. Réessayez dans un instant.
         </Text>
+      ) : null}
+
+      {hiddenPast > 0 ? (
+        // En haut : le passé est au-dessus de la liste du moment, dans l'ordre du temps.
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={() => setPastKept((current) => current + PAST_SLICE)}
+          accessibilityRole="button"
+          accessibilityLabel={`Afficher ${Math.min(PAST_SLICE, hiddenPast)} listes plus anciennes`}
+        >
+          <Text>{`Afficher des listes plus anciennes (${hiddenPast})`}</Text>
+        </Button>
       ) : null}
 
       {visibleLists.length === 0 && lists.length > 0 ? (

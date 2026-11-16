@@ -8,6 +8,7 @@ import {
   eventsOfDay,
   layoutDayEvents,
   layoutDayLists,
+  LIST_CHIP_MINUTES,
   listsOfDay,
   listsWithoutVisibleEvent,
   dayOfTask,
@@ -20,6 +21,7 @@ import {
   listsInTimeOrder,
   currentListId,
   isListDone,
+  limitPastLists,
   openTaskCount,
   todoDays,
 } from "./planning";
@@ -571,7 +573,7 @@ describe("placement un jour de changement d'heure", () => {
       new Date(2026, 9, 25),
     );
 
-    expect(timed[0]).toMatchObject({ startMinute: 840, endMinute: 900 });
+    expect(timed[0]).toMatchObject({ startMinute: 840, endMinute: 840 + LIST_CHIP_MINUTES });
   });
 });
 
@@ -583,7 +585,37 @@ describe("layoutDayLists", () => {
     );
 
     expect(untimed).toEqual([]);
-    expect(timed[0]).toMatchObject({ startMinute: 600, endMinute: 660 });
+    expect(timed[0]).toMatchObject({ startMinute: 600, endMinute: 600 + LIST_CHIP_MINUTES });
+  });
+
+  it("empile l'une sous l'autre des listes à la même heure, sans partager la largeur", () => {
+    const { timed } = layoutDayLists(
+      [
+        makeList({ id: "a", dueAt: localIso(2026, 9, 12, 19), dueAllDay: false }),
+        makeList({ id: "b", dueAt: localIso(2026, 9, 12, 19), dueAllDay: false }),
+        makeList({ id: "c", dueAt: localIso(2026, 9, 12, 19), dueAllDay: false }),
+      ],
+      DAY,
+    );
+
+    expect(timed.map((box) => box.startMinute)).toEqual([
+      1140,
+      1140 + LIST_CHIP_MINUTES,
+      1140 + 2 * LIST_CHIP_MINUTES,
+    ]);
+    expect(timed.every((box) => box.lane === 0 && box.laneCount === 1)).toBe(true);
+  });
+
+  it("ne décale pas une liste qui ne chevauche pas la précédente", () => {
+    const { timed } = layoutDayLists(
+      [
+        makeList({ id: "a", dueAt: localIso(2026, 9, 12, 10), dueAllDay: false }),
+        makeList({ id: "b", dueAt: localIso(2026, 9, 12, 15), dueAllDay: false }),
+      ],
+      DAY,
+    );
+
+    expect(timed.map((box) => box.startMinute)).toEqual([600, 900]);
   });
 
   it("laisse au bandeau la liste qui vise la journée", () => {
@@ -664,6 +696,45 @@ describe("listsInPeriod", () => {
 
   it("rend une liste vide quand rien ne correspond", () => {
     expect(listsInPeriod([demain], "past", now)).toEqual([]);
+  });
+});
+
+describe("limitPastLists", () => {
+  const now = new Date(2026, 10, 13, 15);
+  const passee = (n: number) =>
+    makeList({ id: `passee-${n}`, dueAt: localIso(2026, 10, n, 9), createdAt: localIso(2026, 9, n) });
+  const aujourdhui = makeList({ id: "aujourdhui", dueAt: localIso(2026, 11, 13, 18) });
+  const futur = makeList({ id: "futur", dueAt: localIso(2026, 11, 20, 9) });
+  const sansDate = makeList({ id: "sans-date" });
+  const tri = (lists: ReturnType<typeof makeList>[]) => listsInTimeOrder(lists);
+
+  it("écarte les plus anciennes du passé et garde les plus récentes", () => {
+    const toutes = tri([passee(1), passee(2), passee(3), aujourdhui, futur, sansDate]);
+    const { lists, hidden } = limitPastLists(toutes, now, 2);
+
+    expect(hidden).toBe(1);
+    expect(lists.map((list) => list.id)).toEqual([
+      "passee-2",
+      "passee-3",
+      "aujourdhui",
+      "futur",
+      "sans-date",
+    ]);
+  });
+
+  it("ne touche jamais à aujourd'hui, au futur ni aux listes sans date", () => {
+    const toutes = tri([passee(1), aujourdhui, futur, sansDate]);
+    const { lists } = limitPastLists(toutes, now, 0);
+
+    expect(lists.map((list) => list.id)).toEqual(["aujourdhui", "futur", "sans-date"]);
+  });
+
+  it("ne cache rien quand le passé tient dans la tranche", () => {
+    const toutes = tri([passee(1), passee(2), futur]);
+    const { lists, hidden } = limitPastLists(toutes, now, 5);
+
+    expect(hidden).toBe(0);
+    expect(lists).toHaveLength(3);
   });
 });
 

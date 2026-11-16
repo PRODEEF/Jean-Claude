@@ -1,6 +1,6 @@
 import { Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useRef, type ReactNode } from "react";
-import { ListChecks, Users } from "lucide-react-native";
+import { CalendarDays, ListChecks, Users } from "lucide-react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
 import { calendarDayOf, eventsOfDay, isListDone, listsOfDay, openTaskCount } from "@jc/domain";
 import { Icon } from "@/shared/ui/icon";
@@ -240,9 +240,9 @@ function EntryLine({
         onPress={() => onOpenEvent(event)}
         accessibilityRole="button"
         accessibilityLabel={eventLabel(event)}
-        className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
+        className={`${eventTone(event)} flex-row items-center gap-0.5 rounded px-1 py-0.5`}
       >
-        {event.space ? <SharedMark /> : null}
+        <EventMark event={event} />
         <Text
           numberOfLines={1}
           className="text-accent-soft-foreground flex-1 text-[11px] leading-4"
@@ -292,7 +292,7 @@ function EntryLine({
 
   return (
     <View
-      className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
+      className="bg-list-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
       style={{ pointerEvents: "none" }}
     >
       {content}
@@ -351,19 +351,30 @@ function DraggableListLine({
       onPress={onOpen}
       accessibilityRole="button"
       accessibilityLabel={`Voir la liste ${list.title}`}
-      className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
+      className="bg-list-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
     >
       {children}
     </Pressable>
   );
 }
 
+/** Fond d'un rendez-vous : l'accent, ou l'ambre d'un événement d'espace. */
+export function eventTone(event: CalendarEntry): string {
+  return event.space ? "bg-shared-soft" : "bg-accent-soft";
+}
+
 /**
- * Marque d'un événement d'espace : il est au calendrier de tous les membres
- * d'une conversation, pas seulement au sien.
+ * Picto d'un rendez-vous : un calendrier ; deux silhouettes quand l'événement
+ * est au calendrier de tous les membres d'une conversation, pas seulement au sien.
  */
-export function SharedMark() {
-  return <Icon as={Users} size={10} className="text-accent-soft-foreground" />;
+export function EventMark({ event }: { event: CalendarEntry }) {
+  return (
+    <Icon
+      as={event.space ? Users : CalendarDays}
+      size={10}
+      className="text-accent-soft-foreground"
+    />
+  );
 }
 
 /** Libellé lu par un lecteur d'écran : l'espace, quand l'événement est partagé. */

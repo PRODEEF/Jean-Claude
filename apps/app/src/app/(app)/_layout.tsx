@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { Slot } from "expo-router";
 import { PanelLeft } from "lucide-react-native";
@@ -11,7 +11,7 @@ import { useGroupMessageFeed } from "@/features/group/hooks/use-group-realtime";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useSyncDeviceTimezone } from "@/shared/hooks/use-profile";
 import { DetailPane } from "@/features/detail-pane/DetailPane";
-import { DetailPaneProvider } from "@/shared/providers/detail-pane";
+import { DetailPaneProvider, useDetailPane } from "@/shared/providers/detail-pane";
 import { SidebarChromeProvider } from "@/shared/providers/sidebar-chrome";
 
 /**
@@ -74,7 +74,7 @@ export default function AppLayout() {
           {/* Le volet de droite n'existe que sur grand écran : sur téléphone, il
              deviendra une page à part, et en attendant l'écran garde son geste. */}
           <DetailPaneProvider available={expanded}>
-            <View className="min-h-0 flex-1">
+            <CenterColumn>
               <Slot />
               {/* Même coin que dans la barre ouverte (`p-3`). Le titre du
                 bandeau commence à droite de ce bouton, pas en dessous. */}
@@ -91,7 +91,7 @@ export default function AppLayout() {
                   </Button>
                 </View>
               ) : null}
-            </View>
+            </CenterColumn>
             <DetailPane />
           </DetailPaneProvider>
         </SidebarChromeProvider>
@@ -128,6 +128,19 @@ export default function AppLayout() {
           />
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Colonne du milieu. Elle s'efface quand le volet de droite est agrandi, mais
+ * reste montée : l'écran dessous garde son état (défilement, saisie en cours).
+ */
+function CenterColumn({ children }: { children: ReactNode }) {
+  const { expanded } = useDetailPane();
+  return (
+    <View className="min-h-0 flex-1" style={expanded ? { display: "none" } : undefined}>
+      {children}
     </View>
   );
 }
