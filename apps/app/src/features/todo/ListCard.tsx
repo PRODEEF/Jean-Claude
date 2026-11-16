@@ -188,7 +188,7 @@ export function ListCard({
                   size="icon"
                   hitSlop={8}
                   accessibilityLabel={open ? `Replier ${list.title}` : `Déplier ${list.title}`}
-                  className="size-8"
+                  className="-ml-1 size-8"
                 >
                   <Icon
                     as={open ? ChevronDown : ChevronRight}
