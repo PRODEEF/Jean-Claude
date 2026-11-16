@@ -113,7 +113,16 @@ export function CalendarScreen() {
   // Rendus tels que le serveur les donne : le créneau d'une todoliste y est
   // désormais la projection de celle-ci (`slotForList`), et n'a plus à être
   // recomposé à l'affichage à partir de la liste qu'il représente.
-  const events = useMemo(() => data ?? [], [data]);
+  // Un rendez-vous converti en liste ne s'affiche qu'une fois : par sa liste. Tant
+  // qu'il reste en base (la suppression est l'étape 6), l'original est masqué ici,
+  // ce qui évite les doublons quel que soit l'ordre entre la conversion et le
+  // déploiement.
+  const events = useMemo(() => {
+    const converted = new Set(
+      (storedLists ?? []).flatMap((list) => (list.sourceEventId ? [list.sourceEventId] : [])),
+    );
+    return (data ?? []).filter((event) => !converted.has(event.id));
+  }, [data, storedLists]);
 
   // Les todolistes échues se lisent dans le calendrier au même titre que les
   // rendez-vous : une journée chargée de todos est une journée chargée, et
