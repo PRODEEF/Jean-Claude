@@ -1,5 +1,12 @@
 import { Fragment, type ReactNode } from "react";
-import { Platform, Pressable, ScrollView, View, type GestureResponderEvent } from "react-native";
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  View,
+  useWindowDimensions,
+  type GestureResponderEvent,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DialogPrimitive from "@rn-primitives/dialog";
 import { X } from "lucide-react-native";
@@ -9,6 +16,7 @@ import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { cn } from "@/shared/lib/utils";
+import { placeBeside, type Point } from "@/shared/lib/popover-placement";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { NativeOnlyAnimatedView } from "@/shared/ui/native-only-animated-view";
@@ -79,6 +87,12 @@ export type ModalProps = {
    * la modification, à la manière de Google Calendar (§4.2).
    */
   headerActions?: ModalHeaderAction[];
+  /**
+   * Point de l'écran sur lequel on vient d'appuyer (web, grand écran) : la
+   * fenêtre s'ouvre à côté de lui, sans fond assombri, pour que la case
+   * cliquée reste visible. Sans place d'un côté ni de l'autre, elle reste centrée.
+   */
+  anchor?: Point | undefined;
 };
 
 /**
@@ -106,8 +120,13 @@ export function Modal({
   actions,
   destructiveAction,
   headerActions,
+  anchor,
 }: ModalProps) {
   const compact = useBreakpoint() === "compact";
+  const viewport = useWindowDimensions();
+  // Sur le web seulement : une feuille de téléphone n'a pas de « côté ».
+  const beside =
+    Platform.OS === "web" && !compact && anchor ? placeBeside(anchor, viewport) : null;
   const insets = useSafeAreaInsets();
   const { cssVariables } = useTheme();
 
@@ -128,8 +147,9 @@ export function Modal({
         <FullWindowOverlay>
           <DialogPrimitive.Overlay
             className={cn(
-              "absolute bottom-0 left-0 right-0 top-0 flex bg-black/60",
-              compact ? "justify-end" : "items-center justify-center p-4",
+              "absolute bottom-0 left-0 right-0 top-0 flex",
+              beside ? "bg-transparent" : "bg-black/60",
+              compact ? "justify-end" : beside ? "" : "items-center justify-center p-4",
               Platform.select({ web: "fixed cursor-default [&>*]:cursor-auto" }),
             )}
             onPress={Platform.select({ web: onOverlayPress })}
@@ -145,7 +165,11 @@ export function Modal({
                   `ThemeProvider` les pose — `bg-background` y retombait sur le
                   blanc par défaut, même en thème sombre. */}
               <DialogPrimitive.Content
-                style={cssVariables}
+                style={
+                  beside
+                    ? { ...cssVariables, position: "absolute", left: beside.left, top: beside.top }
+                    : cssVariables
+                }
                 className={cn(
                   "bg-background border-border w-full flex-col overflow-hidden border shadow-lg shadow-black/20",
                   compact
