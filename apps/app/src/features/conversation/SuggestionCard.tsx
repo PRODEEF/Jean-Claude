@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { Check, X } from "lucide-react-native";
+import { Check, ListChecks, ShoppingBasket, X } from "lucide-react-native";
 import {
   addTaskListItemsPayloadSchema,
   assignFoldersPayloadSchema,
@@ -28,7 +28,10 @@ import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { api } from "@/shared/lib/api";
 import { useTaskLists } from "@/shared/hooks/use-task-lists";
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
+import { TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
 import { useTheme } from "@/shared/providers/theme-provider";
+import { Icon } from "@/shared/ui/icon";
+import { TaskListCardFrame, TaskRowBlankCheckbox } from "@/shared/ui/task-list-card";
 import { SpinningCog, useElapsedSeconds } from "./ThinkingIndicator";
 
 /** Ce qu'accepter transmet en plus de l'action, selon la nature de la proposition. */
@@ -404,50 +407,96 @@ function EditableTaskLists({
 }) {
   const { palette } = useTheme();
 
+  // Même carte que « Mes listes » : on valide ce qu'on retrouvera ensuite, pas un
+  // aperçu d'un autre genre. Les cases restent vides et inertes, rien n'existe
+  // encore à cocher.
   return (
     <View style={styles.editableLists}>
-      {lists.map((list) => (
-        <View key={list.key} style={styles.editableList}>
-          <View style={styles.editableRow}>
-            <TextInput
-              value={list.title}
-              onChangeText={(text) => onRenameList(list.key, text)}
-              editable={!disabled}
-              accessibilityLabel={`Titre de la liste ${list.title}`}
-              style={[styles.input, styles.listTitleInput, { color: palette.text }]}
-            />
-            <RemoveButton
-              label={`Supprimer la liste ${list.title || "sans titre"}`}
-              disabled={disabled}
-              onPress={() => onRemoveList(list.key)}
-            />
-          </View>
+      {lists.map((list) => {
+        const due = proposedDueLabel(list.dueAt);
 
-          {list.items.map((item) => (
-            <View key={item.key} style={[styles.editableRow, styles.editableNested]}>
-              <TextInput
-                value={item.title}
-                onChangeText={(text) => onRenameItem(list.key, item.key, text)}
-                editable={!disabled}
-                accessibilityLabel={`Élément ${item.title} de la liste ${list.title}`}
-                style={[styles.input, { color: palette.text }]}
-              />
-              {item.dueOn === null ? null : (
+        return (
+          <TaskListCardFrame key={list.key} desktop>
+            <View style={styles.proposedHeaderFrame}>
+              <View style={styles.proposedHeader}>
+                <TaskRowBlankCheckbox />
+                <TextInput
+                  value={list.title}
+                  onChangeText={(text) => onRenameList(list.key, text)}
+                  editable={!disabled}
+                  accessibilityLabel={`Titre de la liste ${list.title}`}
+                  style={[styles.input, styles.proposedTitle, { color: palette.text }]}
+                />
+                <Icon
+                  as={list.kind === "shopping" ? ShoppingBasket : ListChecks}
+                  size={16}
+                  className="text-muted-foreground"
+                />
                 <Text style={[styles.hint, { color: palette.textMuted }]}>
-                  {dueOnLabel(item.dueOn)}
+                  {list.kind === "shopping" ? "Liste d'achats" : "Liste de tâches"}
                 </Text>
-              )}
-              <RemoveButton
-                label={`Supprimer ${item.title || "cette ligne"}`}
-                disabled={disabled}
-                onPress={() => onRemoveItem(list.key, item.key)}
-              />
+                <View style={styles.proposedSpring} />
+                {due ? (
+                  <Text style={[styles.hint, { color: palette.textMuted }]}>{due}</Text>
+                ) : null}
+              </View>
+              <View style={styles.proposedRemove}>
+                <RemoveButton
+                  label={`Supprimer la liste ${list.title || "sans titre"}`}
+                  disabled={disabled}
+                  onPress={() => onRemoveList(list.key)}
+                />
+              </View>
             </View>
-          ))}
-        </View>
-      ))}
+
+            {list.items.map((item) => (
+              <View
+                key={item.key}
+                style={[styles.editableRow, { paddingLeft: PROPOSED_ITEM_INDENT }]}
+              >
+                <TaskRowBlankCheckbox />
+                <TextInput
+                  value={item.title}
+                  onChangeText={(text) => onRenameItem(list.key, item.key, text)}
+                  editable={!disabled}
+                  accessibilityLabel={`Élément ${item.title} de la liste ${list.title}`}
+                  style={[styles.input, { color: palette.text }]}
+                />
+                {item.dueOn === null ? null : (
+                  <Text style={[styles.hint, { color: palette.textMuted }]}>
+                    {dueOnLabel(item.dueOn)}
+                  </Text>
+                )}
+                <RemoveButton
+                  label={`Supprimer ${item.title || "cette ligne"}`}
+                  disabled={disabled}
+                  onPress={() => onRemoveItem(list.key, item.key)}
+                />
+              </View>
+            ))}
+          </TaskListCardFrame>
+        );
+      })}
     </View>
   );
+}
+
+/**
+ * Retrait des lignes : leur case commence sous le titre, qui suit ici la case du
+ * titre (sans repli devant, contrairement à la carte de « Mes listes »).
+ */
+const PROPOSED_ITEM_INDENT = TASK_ROW_HEIGHT / 2 + spacing.xs;
+
+/**
+ * Échéance d'une liste proposée, comme sur la carte de « Mes listes » :
+ * l'heure d'abord — « 10h · mardi 17 novembre ». L'heure est omise à minuit,
+ * que le modèle pose faute de mieux quand on ne lui a donné qu'un jour.
+ */
+function proposedDueLabel(iso: string | null): string | null {
+  if (iso === null) return null;
+  const date = new Date(iso);
+  const day = formatFullDay(date);
+  return date.getHours() === 0 && date.getMinutes() === 0 ? day : `${formatTime(iso)} · ${day}`;
 }
 
 function RemoveButton({
@@ -639,7 +688,7 @@ function useSuggestionPreview(suggestion: Suggestion): {
     const proposed = createTaskListsPayloadSchema.safeParse(suggestion.payload);
 
     return {
-      acceptLabel: "Créer les listes",
+      acceptLabel: "Valider",
       lines: proposed.success
         ? proposed.data.lists.flatMap((list) => [
             {
@@ -823,8 +872,7 @@ function useSuggestionPreview(suggestion: Suggestion): {
  * main, la phrase de l'assistant le porte déjà.
  */
 function updateItemLabel(item: { title?: string; done?: boolean }): string {
-  const state =
-    item.done === true ? "faite" : item.done === false ? "à faire" : null;
+  const state = item.done === true ? "faite" : item.done === false ? "à faire" : null;
   if (item.title !== undefined && state !== null) return `${item.title} (${state})`;
   if (item.title !== undefined) return item.title;
   if (state === "faite") return "Marquer comme faite";
@@ -937,16 +985,25 @@ const styles = StyleSheet.create({
   nested: { paddingLeft: spacing.md, fontWeight: fontWeight.regular },
   hint: { fontFamily: FONT_FAMILY, fontSize: fontSize.xs, fontWeight: fontWeight.regular },
   editableLists: { gap: spacing.sm },
-  editableList: { gap: spacing.xs },
   editableRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  editableNested: { paddingLeft: spacing.md },
+  proposedHeaderFrame: { position: "relative" },
+  proposedRemove: { position: "absolute", right: 0, top: 0 },
+  proposedHeader: {
+    paddingRight: MIN_TOUCH_TARGET / 2 + spacing.xs,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    columnGap: spacing.xs,
+    rowGap: 2,
+  },
+  proposedTitle: { fontWeight: fontWeight.semibold, flex: 0, flexShrink: 1, minWidth: 80 },
+  proposedSpring: { flexGrow: 1, flexBasis: 8 },
   input: {
     flex: 1,
     fontFamily: FONT_FAMILY,
     fontSize: fontSize.sm,
     minHeight: MIN_TOUCH_TARGET,
   },
-  listTitleInput: { fontWeight: fontWeight.semibold },
   removeButton: {
     width: MIN_TOUCH_TARGET / 2,
     height: MIN_TOUCH_TARGET / 2,
