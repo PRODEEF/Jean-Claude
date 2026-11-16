@@ -4,6 +4,7 @@ import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Text } from "@/shared/ui/text";
+import { useDetailPane } from "@/shared/providers/detail-pane";
 import { useSuggestions } from "./hooks/use-suggestions";
 import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
 
@@ -23,6 +24,7 @@ export function SuggestionPaneBody({
   suggestionId: string;
 }) {
   const { pending, resolved, resolve } = useSuggestions(conversationId);
+  const pane = useDetailPane();
   const suggestion = [...pending, ...resolved].find((item) => item.id === suggestionId);
 
   if (!suggestion) {
@@ -43,7 +45,21 @@ export function SuggestionPaneBody({
             ? resolve.variables.action
             : null
         }
-        onAccept={(input) => resolve.mutate({ id: suggestion.id, action: "accept", ...input })}
+        onAccept={(input) =>
+          resolve.mutate(
+            { id: suggestion.id, action: "accept", ...input },
+            {
+              // Valider une liste ouvre « Mes listes » sur celle qui vient d'être
+              // créée : on voit tout de suite ce qu'on retrouvera ensuite.
+              onSuccess: (result) => {
+                const created = result.taskLists[0];
+                if (suggestion.kind === "create_task_list" && created) {
+                  pane.open({ kind: "list", listId: created.id });
+                }
+              },
+            },
+          )
+        }
         onDismiss={() => resolve.mutate({ id: suggestion.id, action: "dismiss" })}
       />
     </View>

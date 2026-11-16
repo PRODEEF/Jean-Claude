@@ -52,7 +52,12 @@ export function useSuggestions(conversationId: string) {
 
 function split(all: Suggestion[]): { pending: Suggestion[]; resolved: Suggestion[] } {
   return {
-    pending: all.filter((suggestion) => suggestion.status === "pending"),
+    // « Bloquer les créneaux » n'existe plus : une liste datée est déjà au
+    // calendrier. Celles encore en attente ne s'affichent plus, plutôt que de
+    // laisser un geste qui double ce que la liste fait déjà.
+    pending: all.filter(
+      (suggestion) => suggestion.status === "pending" && suggestion.kind !== "schedule_task",
+    ),
     resolved: all.filter((suggestion) => suggestion.status !== "pending"),
   };
 }
