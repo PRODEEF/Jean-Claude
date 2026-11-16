@@ -1,4 +1,4 @@
-import type { CalendarEvent, Task, TaskListWithTasks } from "../index";
+import type { CalendarEvent, ListOccurrence, Task, TaskListWithTasks } from "../index";
 import {
   byDueDate,
   calendarDayOf,
@@ -16,6 +16,7 @@ import {
   dueForSlot,
   momentOf,
   momentsOfDay,
+  projectOccurrences,
   dayTaskState,
   listsInPeriod,
   listsInTimeOrder,
@@ -82,7 +83,8 @@ const DAY = new Date(2026, 8, 12);
 describe("momentOf", () => {
   it("range l'heure selon les bornes réglées par l'utilisateur", () => {
     const bounds = { afternoonFrom: 14, eveningFrom: 21 };
-    const at = (hour: number) => momentOf({ dueAt: localIso(2026, 9, 12, hour), dueAllDay: false }, bounds);
+    const at = (hour: number) =>
+      momentOf({ dueAt: localIso(2026, 9, 12, hour), dueAllDay: false }, bounds);
 
     expect(at(13)).toBe("morning");
     expect(at(20)).toBe("afternoon");
@@ -313,11 +315,7 @@ describe("listsWithoutVisibleEvent", () => {
 describe("openTaskCount", () => {
   it("ne compte que ce qui reste à faire", () => {
     const list = makeList({
-      tasks: [
-        { ...task("a"), done: true },
-        task("b"),
-        task("c"),
-      ],
+      tasks: [{ ...task("a"), done: true }, task("b"), task("c")],
     });
 
     expect(openTaskCount(list)).toBe(2);
@@ -373,6 +371,79 @@ describe("dueOnForDay", () => {
 
   it("date la tâche d'une liste sans échéance, visible par ses seules tâches", () => {
     expect(dueOnForDay(makeList(), new Date(2026, 8, 14))).toBe("2026-09-14");
+  });
+});
+
+describe("projectOccurrences", () => {
+  function occurrence(overrides: Partial<ListOccurrence> = {}): ListOccurrence {
+    return {
+      listId: "list-1",
+      occurrenceAt: localIso(2026, 9, 7, 18),
+      startsAt: localIso(2026, 9, 7, 18),
+      endsAt: localIso(2026, 9, 7, 19),
+      allDay: false,
+      doneAt: null,
+      ...overrides,
+    };
+  }
+
+  it("fait apparaître une liste qui se répète à chacune de ses dates", () => {
+    const kine = makeList({ rrule: "FREQ=WEEKLY;BYDAY=MO", dueAt: localIso(2026, 9, 7, 18) });
+
+    const projected = projectOccurrences(
+      [kine],
+      [
+        occurrence(),
+        occurrence({
+          occurrenceAt: localIso(2026, 9, 14, 18),
+          startsAt: localIso(2026, 9, 14, 18),
+          endsAt: localIso(2026, 9, 14, 19),
+        }),
+      ],
+    );
+
+    expect(projected.map((list) => list.dueAt)).toEqual([
+      localIso(2026, 9, 7, 18),
+      localIso(2026, 9, 14, 18),
+    ]);
+    expect(projected.every((list) => list.id === "list-1")).toBe(true);
+  });
+
+  it("reprend la date déplacée et l'état coché de l'occurrence, pas ceux de la série", () => {
+    const kine = makeList({ rrule: "FREQ=WEEKLY;BYDAY=MO", dueAt: localIso(2026, 9, 7, 18) });
+
+    const [moved] = projectOccurrences(
+      [kine],
+      [
+        occurrence({
+          startsAt: localIso(2026, 9, 8, 9),
+          endsAt: localIso(2026, 9, 8, 10),
+          doneAt: localIso(2026, 9, 8, 12),
+        }),
+      ],
+    );
+
+    expect(moved?.dueAt).toBe(localIso(2026, 9, 8, 9));
+    expect(moved?.endsAt).toBe(localIso(2026, 9, 8, 10));
+    expect(moved?.doneAt).toBe(localIso(2026, 9, 8, 12));
+  });
+
+  it("laisse une liste ponctuelle telle quelle", () => {
+    const once = makeList({ rrule: null, dueAt: localIso(2026, 9, 7, 18) });
+
+    expect(projectOccurrences([once], [occurrence()])).toEqual([once]);
+  });
+
+  it("ne montre pas une série sans date dans la fenêtre, une fois les dates chargées", () => {
+    const kine = makeList({ rrule: "FREQ=WEEKLY;BYDAY=MO", dueAt: localIso(2026, 9, 7, 18) });
+
+    expect(projectOccurrences([kine], [])).toEqual([]);
+  });
+
+  it("garde la liste de base tant que les dates ne sont pas chargées", () => {
+    const kine = makeList({ rrule: "FREQ=WEEKLY;BYDAY=MO", dueAt: localIso(2026, 9, 7, 18) });
+
+    expect(projectOccurrences([kine], undefined)).toEqual([kine]);
   });
 });
 
@@ -489,8 +560,16 @@ describe("layoutDayEvents", () => {
   it("partage la largeur entre deux rendez-vous qui se chevauchent", () => {
     const boxes = layoutDayEvents(
       [
-        makeEvent({ id: "a", startsAt: localIso(2026, 9, 12, 10), endsAt: localIso(2026, 9, 12, 11) }),
-        makeEvent({ id: "b", startsAt: localIso(2026, 9, 12, 10, 30), endsAt: localIso(2026, 9, 12, 12) }),
+        makeEvent({
+          id: "a",
+          startsAt: localIso(2026, 9, 12, 10),
+          endsAt: localIso(2026, 9, 12, 11),
+        }),
+        makeEvent({
+          id: "b",
+          startsAt: localIso(2026, 9, 12, 10, 30),
+          endsAt: localIso(2026, 9, 12, 12),
+        }),
       ],
       DAY,
     );
@@ -502,9 +581,21 @@ describe("layoutDayEvents", () => {
   it("ne rétrécit pas toute la journée pour un chevauchement du matin", () => {
     const boxes = layoutDayEvents(
       [
-        makeEvent({ id: "a", startsAt: localIso(2026, 9, 12, 9), endsAt: localIso(2026, 9, 12, 10) }),
-        makeEvent({ id: "b", startsAt: localIso(2026, 9, 12, 9, 30), endsAt: localIso(2026, 9, 12, 10) }),
-        makeEvent({ id: "c", startsAt: localIso(2026, 9, 12, 16), endsAt: localIso(2026, 9, 12, 17) }),
+        makeEvent({
+          id: "a",
+          startsAt: localIso(2026, 9, 12, 9),
+          endsAt: localIso(2026, 9, 12, 10),
+        }),
+        makeEvent({
+          id: "b",
+          startsAt: localIso(2026, 9, 12, 9, 30),
+          endsAt: localIso(2026, 9, 12, 10),
+        }),
+        makeEvent({
+          id: "c",
+          startsAt: localIso(2026, 9, 12, 16),
+          endsAt: localIso(2026, 9, 12, 17),
+        }),
       ],
       DAY,
     );
@@ -702,7 +793,11 @@ describe("listsInPeriod", () => {
 describe("limitPastLists", () => {
   const now = new Date(2026, 10, 13, 15);
   const passee = (n: number) =>
-    makeList({ id: `passee-${n}`, dueAt: localIso(2026, 10, n, 9), createdAt: localIso(2026, 9, n) });
+    makeList({
+      id: `passee-${n}`,
+      dueAt: localIso(2026, 10, n, 9),
+      createdAt: localIso(2026, 9, n),
+    });
   const aujourdhui = makeList({ id: "aujourdhui", dueAt: localIso(2026, 11, 13, 18) });
   const futur = makeList({ id: "futur", dueAt: localIso(2026, 11, 20, 9) });
   const sansDate = makeList({ id: "sans-date" });

@@ -6,6 +6,7 @@ import type { CalendarEntry, CalendarRange, TaskList, TaskListWithTasks } from "
 import {
   calendarDayOf,
   datedLists,
+  projectOccurrences,
   dueForMoment,
   dueForSlot,
   momentOf,
@@ -32,7 +33,7 @@ import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDia
 import { MonthGrid } from "./MonthGrid";
 import { TimeGrid, type ListDropTarget } from "./TimeGrid";
 import { YearGrid } from "./YearGrid";
-import { useCalendarEvents } from "./hooks/use-calendar-events";
+import { useCalendarEvents, useListOccurrences } from "./hooks/use-calendar-events";
 import {
   addDays,
   addMonths,
@@ -99,7 +100,14 @@ export function CalendarScreen() {
   const days = useMemo(() => visibleDays(view, anchor), [view, anchor]);
   const range = useMemo(() => rangeOf(days), [days]);
   const { data, isPending, isError } = useCalendarEvents(range);
-  const { data: allLists } = useTaskLists();
+  const { data: storedLists } = useTaskLists();
+  const { data: occurrences } = useListOccurrences(range);
+  // Une liste qui se répète se lit à chacune de ses dates : tout ce qui suit lit
+  // ces copies, pas la liste de base (fusion rendez-vous / todo, étape 5).
+  const allLists = useMemo(
+    () => (storedLists ? projectOccurrences(storedLists, occurrences) : storedLists),
+    [storedLists, occurrences],
+  );
   const { updateList, updateTask } = useTaskActions();
   const [moveFailure, setMoveFailure] = useState<string | null>(null);
   // Rendus tels que le serveur les donne : le créneau d'une todoliste y est
