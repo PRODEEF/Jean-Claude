@@ -8,6 +8,7 @@ import {
   eventsOfDay,
   layoutDayEvents,
   layoutDayLists,
+  LIST_CHIP_MINUTES,
   listsOfDay,
   listsWithoutVisibleEvent,
   dayOfTask,
@@ -572,7 +573,7 @@ describe("placement un jour de changement d'heure", () => {
       new Date(2026, 9, 25),
     );
 
-    expect(timed[0]).toMatchObject({ startMinute: 840, endMinute: 900 });
+    expect(timed[0]).toMatchObject({ startMinute: 840, endMinute: 840 + LIST_CHIP_MINUTES });
   });
 });
 
@@ -584,7 +585,37 @@ describe("layoutDayLists", () => {
     );
 
     expect(untimed).toEqual([]);
-    expect(timed[0]).toMatchObject({ startMinute: 600, endMinute: 660 });
+    expect(timed[0]).toMatchObject({ startMinute: 600, endMinute: 600 + LIST_CHIP_MINUTES });
+  });
+
+  it("empile l'une sous l'autre des listes à la même heure, sans partager la largeur", () => {
+    const { timed } = layoutDayLists(
+      [
+        makeList({ id: "a", dueAt: localIso(2026, 9, 12, 19), dueAllDay: false }),
+        makeList({ id: "b", dueAt: localIso(2026, 9, 12, 19), dueAllDay: false }),
+        makeList({ id: "c", dueAt: localIso(2026, 9, 12, 19), dueAllDay: false }),
+      ],
+      DAY,
+    );
+
+    expect(timed.map((box) => box.startMinute)).toEqual([
+      1140,
+      1140 + LIST_CHIP_MINUTES,
+      1140 + 2 * LIST_CHIP_MINUTES,
+    ]);
+    expect(timed.every((box) => box.lane === 0 && box.laneCount === 1)).toBe(true);
+  });
+
+  it("ne décale pas une liste qui ne chevauche pas la précédente", () => {
+    const { timed } = layoutDayLists(
+      [
+        makeList({ id: "a", dueAt: localIso(2026, 9, 12, 10), dueAllDay: false }),
+        makeList({ id: "b", dueAt: localIso(2026, 9, 12, 15), dueAllDay: false }),
+      ],
+      DAY,
+    );
+
+    expect(timed.map((box) => box.startMinute)).toEqual([600, 900]);
   });
 
   it("laisse au bandeau la liste qui vise la journée", () => {
