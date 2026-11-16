@@ -201,6 +201,7 @@
 - [x] `INFRA` `Vercel` **Moins de constructions inutiles** — chaque projet ne se reconstruit que si ses fichiers changent (limite de 100 par jour). <!--id:l-vercel-moins-builds-->
 - [x] `INFRA` `Documents` **ROADMAP.md + TODOLIST.md, page TODO cliquable avec progression par groupe** — la todo a sa propre source de vérité. <!--id:l-deux-documents-->
 - [x] `INFRA` `Documents` **Section Mobile, audit noté, réflexion « tout ce qui se date est une todo »** — V0.00.28, V0.00.29, V0.00.30, V0.00.35. <!--id:l-notes-roadmap-->
+- [x] `FRONT` `Volet de droite` **En-tête de la carte lisible quand le volet est étroit, bouton agrandir, copier le lien** — Demande de Yann, 16 novembre (captures : titre écrasé en volet réduit). Fait (V0.00.55) : sous 600 px, le titre garde la première ligne avec le menu, et type, dossier et date passent dessous, à la ligne si besoin (vaut aussi pour « Mes listes » et les espaces sur écran étroit) ; une flèche en diagonale agrandit le volet sur toute la place du milieu, puis le réduit ; un bouton copie le lien de la liste (web, volet d'une liste seulement : un jour du calendrier n'a pas d'adresse). À tester. <!--id:l-volet-entete-agrandir-lien-->
 
 ### Plus tard
 
