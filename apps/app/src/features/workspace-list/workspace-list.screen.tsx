@@ -20,7 +20,7 @@ import {
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { cn } from "@/shared/lib/utils";
-import { TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
+import { TASK_AXIS_OFFSET, TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
 import { useTheme } from "@/shared/providers/theme-provider";
 import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
@@ -212,7 +212,7 @@ function ListBody({
                     size="icon"
                     hitSlop={8}
                     accessibilityLabel={open ? `Replier ${list.title}` : `Déplier ${list.title}`}
-                    className="size-8"
+                    className="-ml-1 size-8"
                   >
                     <Icon
                       as={open ? ChevronDown : ChevronRight}
@@ -322,7 +322,10 @@ function AddTaskRow({
   const { palette } = useTheme();
 
   return (
-    <View style={{ minHeight: TASK_ROW_HEIGHT }} className="flex-row items-center gap-2">
+    <View
+      style={{ minHeight: TASK_ROW_HEIGHT, paddingLeft: TASK_AXIS_OFFSET }}
+      className="flex-row items-center gap-2"
+    >
       <TaskRowBlankCheckbox />
       <TextInput
         value={value}

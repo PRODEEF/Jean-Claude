@@ -188,7 +188,7 @@ export function ListCard({
                   size="icon"
                   hitSlop={8}
                   accessibilityLabel={open ? `Replier ${list.title}` : `Déplier ${list.title}`}
-                  className="size-8"
+                  className="-ml-1 size-8"
                 >
                   <Icon
                     as={open ? ChevronDown : ChevronRight}
@@ -259,7 +259,7 @@ export function ListCard({
 }
 
 /**
- * Ex. « jeudi 4 septembre · 14h30 », ou rien quand la liste n'a pas d'échéance.
+ * Ex. « 14h30 · jeudi 4 septembre », ou rien quand la liste n'a pas d'échéance.
  *
  * L'heure ne s'affiche que si l'échéance en vise une : `dueAllDay` le dit,
  * plutôt que de le relire dans l'horloge de l'appareil.
@@ -271,6 +271,6 @@ export function dueLabel(list: Pick<TaskList, "dueAt" | "dueAllDay">): string | 
 
   const due = new Date(list.dueAt);
   return list.dueAllDay === false
-    ? `${formatFullDay(due)} · ${formatTime(list.dueAt)}`
+    ? `${formatTime(list.dueAt)} · ${formatFullDay(due)}`
     : formatFullDay(due);
 }

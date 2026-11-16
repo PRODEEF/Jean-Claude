@@ -60,6 +60,12 @@ export const taskListSchema = z.object({
   notes: z.string().max(4_000).nullable(),
   /** Créneau posé dans l'agenda pour cette liste, le cas échéant (A.3, A.8). */
   eventId: uuidSchema.nullable(),
+  /**
+   * Rendez-vous dont cette liste est la conversion (fusion rendez-vous / todo).
+   * Le calendrier s'en sert pour ne montrer qu'une fois un rendez-vous encore en
+   * base : par sa liste, pas par l'original.
+   */
+  sourceEventId: uuidSchema.nullable().optional(),
   /** Conversation d'origine, quand la liste vient d'une conversion (A.2). */
   conversationId: uuidSchema.nullable(),
   /** Dossier thématique de rattachement — la liste y reste visible (A.2). */

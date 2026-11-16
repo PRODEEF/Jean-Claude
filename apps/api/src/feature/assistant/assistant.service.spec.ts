@@ -829,14 +829,12 @@ describe("AssistantService", () => {
 
     it("ne range que dans les dossiers restés cochés", async () => {
       const suggestions = makeSuggestionRepository({
-        findById: jest
-          .fn()
-          .mockResolvedValue(
-            makeFilingSuggestion({
-              existingFolderIds: [SANTE],
-              newFolders: [{ name: "Assurances" }],
-            }),
-          ),
+        findById: jest.fn().mockResolvedValue(
+          makeFilingSuggestion({
+            existingFolderIds: [SANTE],
+            newFolders: [{ name: "Assurances" }],
+          }),
+        ),
       });
       const folders = makeFolderRepository([makeFolder({ id: SANTE, name: "Santé" })]);
       const conversations = makeConversationRepository();
@@ -1154,7 +1152,7 @@ describe("AssistantService", () => {
       expect(createdLists(tasks).map((list) => list.folderId)).toEqual([null, null]);
     });
 
-    it("enchaîne sur une proposition de créneaux pour les listes datées", async () => {
+    it("n'enchaîne sur aucune proposition de créneaux, même pour une liste datée", async () => {
       const resolved = await makeService(makeSuggestionStore(makeJardinSuggestion())).resolve(
         USER,
         "sug-1",
@@ -1162,13 +1160,34 @@ describe("AssistantService", () => {
         TOKEN,
       );
 
-      // Deuxième temps du §12.1 : une proposition, pas un créneau posé d'office.
-      expect(resolved.next).toMatchObject({
-        kind: "schedule_task",
-        status: "pending",
-        message: "Cette liste porte une échéance. Je te bloque le créneau dans ton agenda ?",
-      });
+      // L'assistant a déjà demandé le jour et l'heure : une liste datée est au
+      // calendrier, une seconde carte « Bloquer les créneaux » ferait double emploi.
+      expect(resolved.next).toBeNull();
       expect(resolved.events).toEqual([]);
+    });
+
+    it("range la liste dans le dossier choisi dans la carte, avant le rangement déduit", async () => {
+      const chosen = "00000000-0000-4000-8000-0000000000f1";
+      const choisie = makeSuggestion({
+        kind: "create_task_list",
+        message: "Je te l'organise ?",
+        payload: {
+          lists: [
+            { title: "Sport", kind: "todo", folderId: chosen, items: [{ title: "Pompes" }] },
+            { title: "Courses", kind: "shopping", folderId: null, items: [{ title: "Pain" }] },
+          ],
+        },
+      });
+      const tasks = makeTaskRepository();
+
+      await makeService(
+        makeSuggestionStore(choisie),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(createdLists(tasks).map((list) => list.folderId)).toEqual([chosen, null]);
     });
 
     it("n'enchaîne sur rien quand aucune liste ne porte d'échéance", async () => {
@@ -1596,12 +1615,17 @@ describe("AssistantService", () => {
   });
 
   describe("acceptation des créneaux (A.3)", () => {
-    /** Joue les deux temps : les listes d'abord, leurs créneaux ensuite. */
+    /**
+     * Joue les deux temps : les listes d'abord, puis la carte de créneaux. Celle-ci
+     * n'est plus proposée à la suite des listes ; elle reste acceptable quand elle
+     * attend déjà dans la file, d'où sa création directe ici.
+     */
     async function acceptBothCards(suggestion: Suggestion = makeJardinSuggestion()) {
       const tasks = makeTaskRepository();
       const events = makeCalendarRepository();
+      const store = makeSuggestionStore(suggestion);
       const service = makeService(
-        makeSuggestionStore(suggestion),
+        store,
         makeFolderRepository(),
         makeConversationRepository(),
         tasks,
@@ -1609,9 +1633,21 @@ describe("AssistantService", () => {
       );
 
       const first = await service.resolve(USER, "sug-1", { action: "accept" }, TOKEN);
-      if (!first.next) throw new Error("La proposition de créneaux devrait exister");
+      const dated = first.taskLists.flatMap((list) =>
+        list.dueAt === null ? [] : [{ listId: list.id, title: list.title, dueAt: list.dueAt }],
+      );
+      const schedule = await store.create(
+        USER,
+        {
+          conversationId: suggestion.conversationId ?? "conv-1",
+          kind: "schedule_task",
+          message: "Je te bloque le créneau ?",
+          payload: { lists: dated },
+        },
+        TOKEN,
+      );
 
-      const second = await service.resolve(USER, first.next.id, { action: "accept" }, TOKEN);
+      const second = await service.resolve(USER, schedule.id, { action: "accept" }, TOKEN);
       return { second, tasks, events };
     }
 
@@ -1695,34 +1731,33 @@ describe("AssistantService", () => {
     }
 
     it("pose l'événement avec la règle et un rappel de 30 min par défaut", async () => {
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
 
       const resolved = await makeService(
         makeSuggestionStore(makeKineSuggestion()),
         makeFolderRepository(),
         makeConversationRepository(),
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      expect(resolved.events).toHaveLength(1);
-      expect(events.create).toHaveBeenCalledWith(
-        USER,
-        {
-          folderId: null,
+      expect(resolved.taskLists).toHaveLength(1);
+      expect(createdLists(tasks)).toEqual([
+        expect.objectContaining({
           title: "Kiné",
-          startsAt: KINE,
+          kind: "todo",
+          folderId: null,
+          dueAt: KINE,
+          dueAllDay: false,
           endsAt: "2026-09-08T17:00:00.000Z",
-          allDay: false,
           rrule: "FREQ=WEEKLY;BYDAY=TU",
           reminderMinutesBefore: 30,
-        },
-        TOKEN,
-      );
+          createdByAssistant: true,
+        }),
+      ]);
     });
 
     it("conserve le rappel fourni par le modèle", async () => {
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
 
       await makeService(
         makeSuggestionStore(
@@ -1737,29 +1772,23 @@ describe("AssistantService", () => {
         ),
         makeFolderRepository(),
         makeConversationRepository(),
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      expect(events.create).toHaveBeenCalledWith(
-        USER,
-        expect.objectContaining({ reminderMinutesBefore: 60 }),
-        TOKEN,
-      );
+      expect(createdLists(tasks)[0]).toMatchObject({ reminderMinutesBefore: 60 });
     });
 
     it("ne crée rien quand la proposition est ignorée", async () => {
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
 
       await makeService(
         makeSuggestionStore(makeKineSuggestion()),
         makeFolderRepository(),
         makeConversationRepository(),
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
 
-      expect(events.create).not.toHaveBeenCalled();
+      expect(tasks.createList).not.toHaveBeenCalled();
     });
 
     it("refuse une charge utile illisible", async () => {
@@ -1791,47 +1820,38 @@ describe("AssistantService", () => {
     }
 
     it("pose un événement par entrée, à heure fixe ou journée entière selon `startsAt`", async () => {
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
 
       const resolved = await makeService(
         makeSuggestionStore(makeEventsSuggestion()),
         makeFolderRepository(),
         makeConversationRepository(),
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      expect(resolved.events).toHaveLength(2);
-      expect(events.create).toHaveBeenNthCalledWith(
-        1,
-        USER,
-        {
-          folderId: null,
-          title: "Dentiste",
-          startsAt: DESHERBAGE,
-          endsAt: "2026-09-12T10:00:00.000Z",
-          allDay: false,
-        },
-        TOKEN,
-      );
-      expect(events.create).toHaveBeenNthCalledWith(
-        2,
-        USER,
-        {
-          folderId: null,
-          title: "Anniversaire",
-          startsAt: MINUIT_PARIS,
-          endsAt: null,
-          allDay: true,
-        },
-        TOKEN,
-      );
+      expect(resolved.taskLists).toHaveLength(2);
+      expect(createdLists(tasks)[0]).toMatchObject({
+        title: "Dentiste",
+        kind: "todo",
+        folderId: null,
+        dueAt: DESHERBAGE,
+        dueAllDay: false,
+        endsAt: "2026-09-12T10:00:00.000Z",
+      });
+      expect(createdLists(tasks)[1]).toMatchObject({
+        title: "Anniversaire",
+        kind: "todo",
+        folderId: null,
+        dueAt: MINUIT_PARIS,
+        dueAllDay: true,
+        endsAt: null,
+      });
     });
 
     it("range les rendez-vous dans le sous-dossier PRENDRE RDV du projet, quand il existe (A.4)", async () => {
       const jardin = uuid(401);
       const rdv = uuid(402);
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
       const folders = makeFolderRepository([
         makeFolder({ id: jardin, name: "Jardin" }),
         makeFolder({ id: rdv, name: "PRENDRE RDV", parentId: jardin, purpose: "appointment" }),
@@ -1844,27 +1864,16 @@ describe("AssistantService", () => {
         makeSuggestionStore(makeEventsSuggestion()),
         folders,
         conversations,
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      expect(events.create).toHaveBeenNthCalledWith(
-        1,
-        USER,
-        expect.objectContaining({ folderId: rdv }),
-        TOKEN,
-      );
-      expect(events.create).toHaveBeenNthCalledWith(
-        2,
-        USER,
-        expect.objectContaining({ folderId: rdv }),
-        TOKEN,
-      );
+      expect(createdLists(tasks)[0]).toMatchObject({ folderId: rdv });
+      expect(createdLists(tasks)[1]).toMatchObject({ folderId: rdv });
     });
 
     it("retombe sur le dossier de la conversation quand le projet n'a pas de sous-dossier PRENDRE RDV", async () => {
       const jardin = uuid(403);
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
       const folders = makeFolderRepository([makeFolder({ id: jardin, name: "Jardin" })]);
       const conversations = makeConversationRepository({
         findById: jest.fn().mockResolvedValue(makeConversation([jardin])),
@@ -1874,37 +1883,33 @@ describe("AssistantService", () => {
         makeSuggestionStore(makeEventsSuggestion()),
         folders,
         conversations,
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      expect(events.create).toHaveBeenNthCalledWith(
-        1,
-        USER,
-        expect.objectContaining({ folderId: jardin }),
-        TOKEN,
-      );
+      expect(createdLists(tasks)[0]).toMatchObject({ folderId: jardin });
     });
 
     it("ne crée rien quand la proposition est ignorée", async () => {
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
 
       await makeService(
         makeSuggestionStore(makeEventsSuggestion()),
         makeFolderRepository(),
         makeConversationRepository(),
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
 
-      expect(events.create).not.toHaveBeenCalled();
+      expect(tasks.createList).not.toHaveBeenCalled();
     });
 
     it("refuse une charge utile illisible", async () => {
       await expect(
-        makeService(
-          makeSuggestionStore(makeEventsSuggestion({ payload: { events: [] } })),
-        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+        makeService(makeSuggestionStore(makeEventsSuggestion({ payload: { events: [] } }))).resolve(
+          USER,
+          "sug-1",
+          { action: "accept" },
+          TOKEN,
+        ),
       ).rejects.toMatchObject({ status: 422 });
     });
   });

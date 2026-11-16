@@ -36,9 +36,8 @@ import type { TaskService } from "../../domain/task/task.service.js";
 import type { IUserRepository } from "../../domain/user/user.repository.interface.js";
 
 /** Fuseau retenu quand le profil est illisible — celui du schéma partagé. */
-const DEFAULT_TIMEZONE: UserPreferences["timezone"] = userPreferencesSchema.shape.timezone.parse(
-  undefined,
-);
+const DEFAULT_TIMEZONE: UserPreferences["timezone"] =
+  userPreferencesSchema.shape.timezone.parse(undefined);
 
 /** Rappel par défaut d'une série récurrente, en minutes (A.11). */
 const DEFAULT_RECURRING_REMINDER_MINUTES = 30;
@@ -176,12 +175,12 @@ export class AssistantService {
       return nothingApplied();
     }
     if (suggestion.kind === "create_recurring_event") {
-      const events = await this.createRecurringEvent(userId, suggestion, accessToken);
-      return { ...nothingApplied(), events };
+      const taskLists = await this.createRecurringEvent(userId, suggestion, accessToken);
+      return { ...nothingApplied(), taskLists };
     }
     if (suggestion.kind === "create_events") {
-      const events = await this.createEvents(userId, suggestion, accessToken);
-      return { ...nothingApplied(), events };
+      const taskLists = await this.createEvents(userId, suggestion, accessToken);
+      return { ...nothingApplied(), taskLists };
     }
 
     throw httpError(422, "Cette proposition n'est plus exploitable.");
@@ -227,7 +226,6 @@ export class AssistantService {
     const tree = conversation.folderIds.length > 0 ? await this.folders.getTree(accessToken) : [];
 
     const taskLists: TaskList[] = [];
-    const dated: ScheduleListsPayload["lists"] = [];
 
     for (const proposed of payload.data.lists) {
       const subjectFolderId = folderNamedIn(proposed.title, tree, conversation.folderIds);
@@ -242,7 +240,12 @@ export class AssistantService {
         {
           title: proposed.title,
           kind: proposed.kind,
-          folderId: typedFolderId ?? subjectFolderId ?? fallbackFolderId,
+          // Le dossier choisi dans la carte avant de valider passe avant le rangement
+          // déduit de la conversation.
+          folderId:
+            proposed.folderId !== undefined
+              ? proposed.folderId
+              : (typedFolderId ?? subjectFolderId ?? fallbackFolderId),
           dueAt: proposed.dueAt,
           conversationId,
           createdByAssistant: true,
@@ -250,10 +253,6 @@ export class AssistantService {
         accessToken,
       );
       taskLists.push(list);
-
-      if (list.dueAt !== null) {
-        dated.push({ listId: list.id, title: list.title, dueAt: list.dueAt });
-      }
 
       for (const item of proposed.items) {
         await this.tasks.addTask(
@@ -265,8 +264,10 @@ export class AssistantService {
       }
     }
 
-    const next = await this.proposeSchedule(userId, conversationId, dated, accessToken);
-    return { taskLists, next };
+    // Une liste datée est déjà au calendrier : l'assistant a demandé le jour et
+    // l'heure avant de proposer, une seconde carte « Bloquer les créneaux » ferait
+    // double emploi (Yann, 16 novembre).
+    return { taskLists, next: null };
   }
 
   /**
@@ -387,7 +388,11 @@ export class AssistantService {
    * antérieure à l'ouverture du canal aux idées ne porte pas de catégorie :
    * elle reste un bug.
    */
-  private async reportBug(userId: string, suggestion: Suggestion, accessToken: string): Promise<void> {
+  private async reportBug(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<void> {
     const payload = createFeedbackSchema.safeParse({ category: "bug", ...suggestion.payload });
 
     if (!payload.success) {
@@ -396,28 +401,6 @@ export class AssistantService {
     }
 
     await this.feedback.submitGeneral(userId, payload.data, accessToken);
-  }
-
-  /**
-   * Deuxième temps du §12.1 : « puis proposer d'y associer des dates ».
-   *
-   * Une proposition et non une création : les créneaux n'apparaissent dans
-   * l'agenda que si l'utilisateur accepte cette seconde carte.
-   */
-  private proposeSchedule(
-    userId: string,
-    conversationId: string,
-    lists: ScheduleListsPayload["lists"],
-    accessToken: string,
-  ): Promise<Suggestion | null> {
-    if (lists.length === 0) return Promise.resolve(null);
-
-    return this.suggestions.propose(
-      userId,
-      conversationId,
-      { kind: "schedule_task", message: scheduleMessage(lists.length), payload: { lists } },
-      accessToken,
-    );
   }
 
   /**
@@ -516,7 +499,7 @@ export class AssistantService {
     userId: string,
     suggestion: Suggestion,
     accessToken: string,
-  ): Promise<CalendarEvent[]> {
+  ): Promise<TaskList[]> {
     const payload = createRecurringEventPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
@@ -529,21 +512,27 @@ export class AssistantService {
     const timed = hasWallTime(payload.data.startsAt, timezone);
     const folderId = await this.folderForEvents(suggestion, accessToken);
 
-    const event = await this.calendar.create(
+    // Un rendez-vous est un todo daté, sans tâche : il garde sa fin, sa règle de
+    // répétition et son rappel (fusion rendez-vous / todo, étape 5).
+    const list = await this.tasks.createList(
       userId,
       {
-        folderId,
         title: payload.data.title,
-        startsAt: payload.data.startsAt,
+        kind: "todo",
+        folderId,
+        dueAt: payload.data.startsAt,
+        dueAllDay: !timed,
         endsAt: timed ? oneHourAfter(payload.data.startsAt) : null,
-        allDay: !timed,
         rrule: payload.data.rrule,
-        reminderMinutesBefore: payload.data.reminderMinutesBefore ?? DEFAULT_RECURRING_REMINDER_MINUTES,
+        reminderMinutesBefore:
+          payload.data.reminderMinutesBefore ?? DEFAULT_RECURRING_REMINDER_MINUTES,
+        ...(suggestion.conversationId ? { conversationId: suggestion.conversationId } : {}),
+        createdByAssistant: true,
       },
       accessToken,
     );
 
-    return [event];
+    return [list];
   }
 
   /**
@@ -562,7 +551,7 @@ export class AssistantService {
     userId: string,
     suggestion: Suggestion,
     accessToken: string,
-  ): Promise<CalendarEvent[]> {
+  ): Promise<TaskList[]> {
     const payload = createEventsPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
@@ -574,26 +563,29 @@ export class AssistantService {
     const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
 
     const folderId = await this.folderForEvents(suggestion, accessToken);
-    const events: CalendarEvent[] = [];
+    const lists: TaskList[] = [];
 
     for (const proposed of payload.data.events) {
       const timed = hasWallTime(proposed.startsAt, timezone);
-      events.push(
-        await this.calendar.create(
+      lists.push(
+        await this.tasks.createList(
           userId,
           {
-            folderId,
             title: proposed.title,
-            startsAt: proposed.startsAt,
+            kind: "todo",
+            folderId,
+            dueAt: proposed.startsAt,
+            dueAllDay: !timed,
             endsAt: timed ? oneHourAfter(proposed.startsAt) : null,
-            allDay: !timed,
+            ...(suggestion.conversationId ? { conversationId: suggestion.conversationId } : {}),
+            createdByAssistant: true,
           },
           accessToken,
         ),
       );
     }
 
-    return events;
+    return lists;
   }
 
   /**
@@ -642,7 +634,11 @@ export class AssistantService {
           ? proposed.parentId
           : null;
       if (proposed.parentId && parentId === null) {
-        logger.warn(SCOPE, "Dossier parent introuvable à l'acceptation, posé à la racine", suggestion.id);
+        logger.warn(
+          SCOPE,
+          "Dossier parent introuvable à l'acceptation, posé à la racine",
+          suggestion.id,
+        );
       }
 
       const folder = await this.folders.create(
@@ -731,20 +727,6 @@ export class AssistantService {
 
     return created;
   }
-}
-
-/**
- * Phrase de la proposition enchaînée, écrite par le serveur.
- *
- * Rédigée ici plutôt que demandée au modèle : à ce stade il n'y a plus rien à
- * interpréter — les tâches datées sont connues. Un second appel au moteur
- * n'ajouterait qu'une latence et le risque qu'il réponde autre chose qu'une
- * question. Elle en reste une, jamais un constat (§12.1).
- */
-function scheduleMessage(count: number): string {
-  return count === 1
-    ? "Cette liste porte une échéance. Je te bloque le créneau dans ton agenda ?"
-    : count + " de ces listes portent une échéance. Je te bloque les créneaux dans ton agenda ?";
 }
 
 /**
@@ -876,11 +858,7 @@ function findTypedFolder(
  * attirer une liste « Départ en vacances ». Casse et accents ne comptent pas,
  * « Devoirs » et « devoirs » désignent le même sujet.
  */
-function folderNamedIn(
-  title: string,
-  tree: FolderTreeNode[],
-  folderIds: string[],
-): string | null {
+function folderNamedIn(title: string, tree: FolderTreeNode[], folderIds: string[]): string | null {
   const titleWords = ` ${words(title).join(" ")} `;
   const known = flatten(tree);
 

@@ -22,6 +22,18 @@ export function useCalendarEvents(range: CalendarRange) {
   });
 }
 
+/**
+ * Dates des listes datées de la fenêtre, séries dépliées (fusion rendez-vous /
+ * todo). Sous la clé `taskLists` : tout ce qui change une liste — cocher, déplacer
+ * une date, supprimer — invalide déjà cette clé, donc les dates se relisent seules.
+ */
+export function useListOccurrences(range: CalendarRange) {
+  return useQuery({
+    queryKey: ["taskLists", "occurrences", range.from, range.to],
+    queryFn: () => api.tasks.occurrences(range),
+  });
+}
+
 export function useCalendarActions() {
   const queryClient = useQueryClient();
 

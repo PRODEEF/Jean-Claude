@@ -442,17 +442,21 @@ export function ConversationThread({
                     créés que si l'utilisateur touche « Créer » (§12.1). */}
                 {pending.map((suggestion) =>
                   pane.available ? (
-                    <SuggestionPointer
-                      key={suggestion.id}
-                      suggestion={suggestion}
-                      onOpen={() =>
-                        pane.open({
-                          kind: "suggestion",
-                          conversationId,
-                          suggestionId: suggestion.id,
-                        })
-                      }
-                    />
+                    // Déjà ouverte à droite : le renvoi ne ferait que redire la même chose.
+                    pane.content?.kind === "suggestion" &&
+                    pane.content.suggestionId === suggestion.id ? null : (
+                      <SuggestionPointer
+                        key={suggestion.id}
+                        suggestion={suggestion}
+                        onOpen={() =>
+                          pane.open({
+                            kind: "suggestion",
+                            conversationId,
+                            suggestionId: suggestion.id,
+                          })
+                        }
+                      />
+                    )
                   ) : (
                     <SuggestionCard
                       key={suggestion.id}
