@@ -27,7 +27,7 @@ Les dernières modifications, en langage courant, la plus récente en haut. **«
 
 Le site de production affiche V0.00.52. Tout ce qui précède, de V0.00.43 à V0.00.52, est en ligne depuis la PR #270.
 
-### Sur `dev` (pas encore en production)
+### Mis en production le 16 novembre (V0.00.58, PR #283)
 
 - **Calendrier : un picto et une couleur par type** (V0.00.58). Premier pas du style décidé par Yann le 16 novembre. Un rendez-vous garde le bleu et prend un petit calendrier devant son titre ; une liste prend un vert doux avec son picto de liste ; un événement d'espace prend un ambre doux avec ses deux silhouettes. Vaut pour Mois, Semaine et Jour. Les couleurs viennent de `@jc/design` (claires et sombres), la couleur d'assistant ne les change pas. Le reste de l'étape 5 (écrans lisant les todos, « Nouvel événement » créant un todo, conversion) n'est pas lancé. *Où : Calendrier.*
 - **Semaine et Jour : les listes à la même heure s'empilent** (V0.00.57). Deux listes à 19h étaient côte à côte, chacune réduite à quelques lettres. Elles se posent maintenant l'une sous l'autre, en pastilles au graphisme de la vue Mois : icône, heure et titre sur une ligne, barrée quand tout est coché. Une pastille descend sous la précédente quand elle la chevaucherait ; l'heure écrite reste la vraie. Elles s'empilent sans limite (pas de « +N »). Le bandeau « listes » en tête, pour les listes sans heure, garde son aspect gris. *Où : calendrier, vues Semaine et Jour.* — Vu dans un navigateur simulé avec quatre listes entre 19h et 20h ; à tester.
@@ -37,7 +37,7 @@ Le site de production affiche V0.00.52. Tout ce qui précède, de V0.00.43 à V0
 - **Calendrier : la fenêtre « Nouvel événement » ne recouvre plus le jour cliqué, et la fin se cale à début + 1 h** (V0.00.53). Au clic sur une case de la grille (web, grand écran), la fenêtre s'ouvre à côté, à droite s'il y a la place, sinon à gauche, sans fond assombri : la case reste visible, comme dans Google Agenda. Le bouton « Événement » de la barre et le téléphone gardent la fenêtre centrée. À la création d'un événement, régler l'heure de début cale la fin une heure plus tard (23h59 depuis 23h), tant qu'on n'a pas réglé la fin soi-même ; un événement existant garde sa fin. *Où : calendrier, formulaire d'événement.* — Vu dans un navigateur simulé ; à tester sur le site.
 - **Rappels : un déclencheur fiable toutes les 5 minutes** (sans changement de version). Le planificateur de GitHub ne lançait que deux passages par jour. Yann a créé la tâche « Rappels Jean Claude » sur cron-job.org (toutes les 5 minutes, méthode POST, secret dans l'en-tête) ; le premier passage réel, à 16h15, a répondu 200 OK. Le secret `CRON_SECRET` a été renouvelé au passage et l'API redéployée ; le workflow GitHub reste en secours. *Où : infrastructure, pas d'écran.* — Aucun rappel n'était dû pendant l'essai, `{"sent":0}` est le résultat attendu.
 
-`dev` porte V0.00.58 ; la production affiche V0.00.52.
+Le site de production doit afficher V0.00.58 (à confirmer par Yann). `dev` et production portent la même version ; rien n'est en attente de mise en production.
 
 ### Mis en production le 12 novembre (V0.00.42 en ligne le soir ; V0.00.43 à V0.00.48 visibles le 13 novembre, avec la V0.00.52)
 
