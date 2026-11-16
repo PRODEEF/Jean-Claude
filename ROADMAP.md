@@ -29,7 +29,8 @@ Le site de production affiche V0.00.52. Tout ce qui précède, de V0.00.43 à V0
 
 ### Sur `dev` (pas encore en production)
 
-Rien pour l'instant : `dev` et la production portent la même version (V0.00.52).
+- **Rappels : un déclencheur fiable toutes les 5 minutes** (sans changement de version). Le planificateur de GitHub ne lançait que deux passages par jour. Yann a créé la tâche « Rappels Jean Claude » sur cron-job.org (toutes les 5 minutes, méthode POST, secret dans l'en-tête) ; le premier passage réel, à 16h15, a répondu 200 OK. Le secret `CRON_SECRET` a été renouvelé au passage et l'API redéployée ; le workflow GitHub reste en secours. *Où : infrastructure, pas d'écran.* — Aucun rappel n'était dû pendant l'essai, `{"sent":0}` est le résultat attendu.
+`dev` et la production portent la même version (V0.00.52) : rien d'autre n'attend la mise en production.
 
 ### Mis en production le 12 novembre (V0.00.42 en ligne le soir ; V0.00.43 à V0.00.48 visibles le 13 novembre, avec la V0.00.52)
 
