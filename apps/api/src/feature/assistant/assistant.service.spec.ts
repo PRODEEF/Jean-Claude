@@ -1731,34 +1731,33 @@ describe("AssistantService", () => {
     }
 
     it("pose l'événement avec la règle et un rappel de 30 min par défaut", async () => {
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
 
       const resolved = await makeService(
         makeSuggestionStore(makeKineSuggestion()),
         makeFolderRepository(),
         makeConversationRepository(),
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      expect(resolved.events).toHaveLength(1);
-      expect(events.create).toHaveBeenCalledWith(
-        USER,
-        {
-          folderId: null,
+      expect(resolved.taskLists).toHaveLength(1);
+      expect(createdLists(tasks)).toEqual([
+        expect.objectContaining({
           title: "Kiné",
-          startsAt: KINE,
+          kind: "todo",
+          folderId: null,
+          dueAt: KINE,
+          dueAllDay: false,
           endsAt: "2026-09-08T17:00:00.000Z",
-          allDay: false,
           rrule: "FREQ=WEEKLY;BYDAY=TU",
           reminderMinutesBefore: 30,
-        },
-        TOKEN,
-      );
+          createdByAssistant: true,
+        }),
+      ]);
     });
 
     it("conserve le rappel fourni par le modèle", async () => {
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
 
       await makeService(
         makeSuggestionStore(
@@ -1773,29 +1772,23 @@ describe("AssistantService", () => {
         ),
         makeFolderRepository(),
         makeConversationRepository(),
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      expect(events.create).toHaveBeenCalledWith(
-        USER,
-        expect.objectContaining({ reminderMinutesBefore: 60 }),
-        TOKEN,
-      );
+      expect(createdLists(tasks)[0]).toMatchObject({ reminderMinutesBefore: 60 });
     });
 
     it("ne crée rien quand la proposition est ignorée", async () => {
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
 
       await makeService(
         makeSuggestionStore(makeKineSuggestion()),
         makeFolderRepository(),
         makeConversationRepository(),
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
 
-      expect(events.create).not.toHaveBeenCalled();
+      expect(tasks.createList).not.toHaveBeenCalled();
     });
 
     it("refuse une charge utile illisible", async () => {
@@ -1827,47 +1820,38 @@ describe("AssistantService", () => {
     }
 
     it("pose un événement par entrée, à heure fixe ou journée entière selon `startsAt`", async () => {
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
 
       const resolved = await makeService(
         makeSuggestionStore(makeEventsSuggestion()),
         makeFolderRepository(),
         makeConversationRepository(),
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      expect(resolved.events).toHaveLength(2);
-      expect(events.create).toHaveBeenNthCalledWith(
-        1,
-        USER,
-        {
-          folderId: null,
-          title: "Dentiste",
-          startsAt: DESHERBAGE,
-          endsAt: "2026-09-12T10:00:00.000Z",
-          allDay: false,
-        },
-        TOKEN,
-      );
-      expect(events.create).toHaveBeenNthCalledWith(
-        2,
-        USER,
-        {
-          folderId: null,
-          title: "Anniversaire",
-          startsAt: MINUIT_PARIS,
-          endsAt: null,
-          allDay: true,
-        },
-        TOKEN,
-      );
+      expect(resolved.taskLists).toHaveLength(2);
+      expect(createdLists(tasks)[0]).toMatchObject({
+        title: "Dentiste",
+        kind: "todo",
+        folderId: null,
+        dueAt: DESHERBAGE,
+        dueAllDay: false,
+        endsAt: "2026-09-12T10:00:00.000Z",
+      });
+      expect(createdLists(tasks)[1]).toMatchObject({
+        title: "Anniversaire",
+        kind: "todo",
+        folderId: null,
+        dueAt: MINUIT_PARIS,
+        dueAllDay: true,
+        endsAt: null,
+      });
     });
 
     it("range les rendez-vous dans le sous-dossier PRENDRE RDV du projet, quand il existe (A.4)", async () => {
       const jardin = uuid(401);
       const rdv = uuid(402);
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
       const folders = makeFolderRepository([
         makeFolder({ id: jardin, name: "Jardin" }),
         makeFolder({ id: rdv, name: "PRENDRE RDV", parentId: jardin, purpose: "appointment" }),
@@ -1880,27 +1864,16 @@ describe("AssistantService", () => {
         makeSuggestionStore(makeEventsSuggestion()),
         folders,
         conversations,
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      expect(events.create).toHaveBeenNthCalledWith(
-        1,
-        USER,
-        expect.objectContaining({ folderId: rdv }),
-        TOKEN,
-      );
-      expect(events.create).toHaveBeenNthCalledWith(
-        2,
-        USER,
-        expect.objectContaining({ folderId: rdv }),
-        TOKEN,
-      );
+      expect(createdLists(tasks)[0]).toMatchObject({ folderId: rdv });
+      expect(createdLists(tasks)[1]).toMatchObject({ folderId: rdv });
     });
 
     it("retombe sur le dossier de la conversation quand le projet n'a pas de sous-dossier PRENDRE RDV", async () => {
       const jardin = uuid(403);
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
       const folders = makeFolderRepository([makeFolder({ id: jardin, name: "Jardin" })]);
       const conversations = makeConversationRepository({
         findById: jest.fn().mockResolvedValue(makeConversation([jardin])),
@@ -1910,30 +1883,23 @@ describe("AssistantService", () => {
         makeSuggestionStore(makeEventsSuggestion()),
         folders,
         conversations,
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
 
-      expect(events.create).toHaveBeenNthCalledWith(
-        1,
-        USER,
-        expect.objectContaining({ folderId: jardin }),
-        TOKEN,
-      );
+      expect(createdLists(tasks)[0]).toMatchObject({ folderId: jardin });
     });
 
     it("ne crée rien quand la proposition est ignorée", async () => {
-      const events = makeCalendarRepository();
+      const tasks = makeTaskRepository();
 
       await makeService(
         makeSuggestionStore(makeEventsSuggestion()),
         makeFolderRepository(),
         makeConversationRepository(),
-        makeTaskRepository(),
-        events,
+        tasks,
       ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
 
-      expect(events.create).not.toHaveBeenCalled();
+      expect(tasks.createList).not.toHaveBeenCalled();
     });
 
     it("refuse une charge utile illisible", async () => {
