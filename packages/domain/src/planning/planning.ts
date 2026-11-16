@@ -341,6 +341,25 @@ export function listsInPeriod(
 }
 
 /**
+ * Écarte les listes passées les plus anciennes, pour n'en garder que `keep`.
+ *
+ * Reçoit des listes déjà dans l'ordre du temps : le passé est donc au début, et
+ * ce sont les plus anciennes, en tête, qui sont écartées. Celles d'aujourd'hui,
+ * du futur et sans date restent toutes. `hidden` dit combien sont écartées, pour
+ * proposer d'en afficher davantage plutôt que de les faire disparaître.
+ */
+export function limitPastLists(
+  sorted: TaskListWithTasks[],
+  now: Date,
+  keep: number,
+): { lists: TaskListWithTasks[]; hidden: number } {
+  const past = listsInPeriod(sorted, "past", now);
+  const dropped = new Set(past.slice(0, Math.max(0, past.length - keep)));
+  if (dropped.size === 0) return { lists: sorted, hidden: 0 };
+  return { lists: sorted.filter((list) => !dropped.has(list)), hidden: dropped.size };
+}
+
+/**
  * Les listes dans l'ordre du temps : les échues par date croissante, puis
  * celles sans date à la fin.
  *

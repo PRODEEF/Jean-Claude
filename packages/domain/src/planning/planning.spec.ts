@@ -20,6 +20,7 @@ import {
   listsInTimeOrder,
   currentListId,
   isListDone,
+  limitPastLists,
   openTaskCount,
   todoDays,
 } from "./planning";
@@ -664,6 +665,45 @@ describe("listsInPeriod", () => {
 
   it("rend une liste vide quand rien ne correspond", () => {
     expect(listsInPeriod([demain], "past", now)).toEqual([]);
+  });
+});
+
+describe("limitPastLists", () => {
+  const now = new Date(2026, 10, 13, 15);
+  const passee = (n: number) =>
+    makeList({ id: `passee-${n}`, dueAt: localIso(2026, 10, n, 9), createdAt: localIso(2026, 9, n) });
+  const aujourdhui = makeList({ id: "aujourdhui", dueAt: localIso(2026, 11, 13, 18) });
+  const futur = makeList({ id: "futur", dueAt: localIso(2026, 11, 20, 9) });
+  const sansDate = makeList({ id: "sans-date" });
+  const tri = (lists: ReturnType<typeof makeList>[]) => listsInTimeOrder(lists);
+
+  it("écarte les plus anciennes du passé et garde les plus récentes", () => {
+    const toutes = tri([passee(1), passee(2), passee(3), aujourdhui, futur, sansDate]);
+    const { lists, hidden } = limitPastLists(toutes, now, 2);
+
+    expect(hidden).toBe(1);
+    expect(lists.map((list) => list.id)).toEqual([
+      "passee-2",
+      "passee-3",
+      "aujourdhui",
+      "futur",
+      "sans-date",
+    ]);
+  });
+
+  it("ne touche jamais à aujourd'hui, au futur ni aux listes sans date", () => {
+    const toutes = tri([passee(1), aujourdhui, futur, sansDate]);
+    const { lists } = limitPastLists(toutes, now, 0);
+
+    expect(lists.map((list) => list.id)).toEqual(["aujourdhui", "futur", "sans-date"]);
+  });
+
+  it("ne cache rien quand le passé tient dans la tranche", () => {
+    const toutes = tri([passee(1), passee(2), futur]);
+    const { lists, hidden } = limitPastLists(toutes, now, 5);
+
+    expect(hidden).toBe(0);
+    expect(lists).toHaveLength(3);
   });
 });
 
