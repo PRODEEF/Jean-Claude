@@ -1,7 +1,6 @@
 import type { ReactNode, Ref } from "react";
 import { Platform, Pressable, View, type GestureResponderEvent } from "react-native";
 import {
-  CalendarClock,
   Check,
   Folder,
   GripVertical,
@@ -10,7 +9,12 @@ import {
   ShoppingBasket,
 } from "lucide-react-native";
 import { cn } from "@/shared/lib/utils";
-import { TASK_CHECKBOX_SIZE, TASK_INDENT, TASK_ROW_HEIGHT } from "@/shared/lib/tasks";
+import {
+  TASK_AXIS_OFFSET,
+  TASK_CHECKBOX_SIZE,
+  TASK_INDENT,
+  TASK_ROW_HEIGHT,
+} from "@/shared/lib/tasks";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
@@ -126,7 +130,6 @@ export function TaskListCardHeader({
       accessibilityLabel={`Échéance de ${title} : ${due ?? "aucune"}`}
       className="shrink-0 flex-row items-center gap-1 rounded-md px-1.5 py-1"
     >
-      <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
       <Text className="text-muted-foreground text-xs" numberOfLines={1}>
         {due ?? "Date"}
       </Text>
@@ -150,7 +153,7 @@ export function TaskListCardHeader({
     <View className="relative">
       {/* Réserve à droite la place du menu, qui est posé par-dessus. */}
       <View className="flex-row flex-wrap items-center gap-x-2 gap-y-0.5 pr-10">
-        <View className="min-w-0 max-w-full shrink flex-row items-center gap-2">{leading}</View>
+        <View className="min-w-0 max-w-full shrink flex-row items-center gap-1">{leading}</View>
         {type}
         {folder}
         {/* Pousse l'échéance à droite quand tout tient sur la ligne ; elle
@@ -170,7 +173,7 @@ export function TaskListCardBody({ children, desktop }: { children: ReactNode; d
 
 /** Mesures d'une ligne : sa hauteur, et son retrait quand c'est une sous-tâche. */
 export function taskRowStyle(depth: 0 | 1) {
-  return { paddingLeft: depth * TASK_INDENT, minHeight: TASK_ROW_HEIGHT };
+  return { paddingLeft: TASK_AXIS_OFFSET + depth * TASK_INDENT, minHeight: TASK_ROW_HEIGHT };
 }
 
 /**

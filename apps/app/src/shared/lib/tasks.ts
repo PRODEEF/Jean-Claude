@@ -109,4 +109,11 @@ export const TASK_INDENT = 32;
  * praticable ; la liste se lit avec des lignes plus rapprochées.
  */
 export const TASK_ROW_HEIGHT = 32;
+
+/**
+ * Retrait des lignes sous l'en-tête d'une carte : la case de chaque ligne se pose
+ * à l'aplomb de la case du titre, le repli restant à gauche d'elles. Largeur du
+ * repli (32, décalé de 4 vers la gauche) + espace (4), puisque les deux cases font la même largeur.
+ */
+export const TASK_AXIS_OFFSET = 36;
 export const TASK_CHECKBOX_SIZE = 16;
