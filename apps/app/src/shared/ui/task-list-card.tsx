@@ -1,5 +1,11 @@
-import type { ReactNode, Ref } from "react";
-import { Platform, Pressable, View, type GestureResponderEvent } from "react-native";
+import { useState, type ReactNode, type Ref } from "react";
+import {
+  Platform,
+  Pressable,
+  View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+} from "react-native";
 import {
   CalendarClock,
   Check,
@@ -54,10 +60,22 @@ export function TaskListCardFrame({
 }
 
 /**
+ * Largeur de l'en-tête en deçà de laquelle il passe sur deux lignes. À cette
+ * largeur, type, dossier, date et menu ne tiennent plus à côté du titre : sur
+ * une seule ligne c'est le titre qui s'écrasait, alors que c'est lui qu'on lit.
+ */
+const HEADER_STACK_BELOW = 600;
+
+/**
  * En-tête : le type, le dossier, puis l'échéance et le menu.
  *
  * `leading` précède le type — le repli et le titre dans « Mes listes » ; un
  * espace n'en met pas, son titre est déjà celui de la page.
+ *
+ * Large, tout tient sur une ligne. Étroit (volet de droite réduit, téléphone),
+ * le titre garde la première ligne avec le menu, et type, dossier et date
+ * passent dessous, à la ligne si besoin : on voit le plus possible, sans rien
+ * tronquer en premier lieu.
  */
 export function TaskListCardHeader({
   title,
@@ -81,9 +99,12 @@ export function TaskListCardHeader({
   onMenuPress: (event: GestureResponderEvent) => void;
   menuLabel: string;
 }) {
-  return (
+  const [stacked, setStacked] = useState(false);
+  const onLayout = (event: LayoutChangeEvent) =>
+    setStacked(event.nativeEvent.layout.width < HEADER_STACK_BELOW);
+
+  const type = (
     <View className="flex-row items-center gap-2">
-      {leading}
       <Icon
         as={shopping ? ShoppingBasket : ListChecks}
         size={16}
@@ -92,48 +113,80 @@ export function TaskListCardHeader({
       <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
         {shopping ? "Liste d'achats" : "Liste de tâches"}
       </Text>
+    </View>
+  );
 
-      <Pressable
-        onPress={onFolderPress}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={`Dossier de ${title} : ${folderName ?? "aucun"}`}
-        className="min-w-0 shrink flex-row items-center gap-1 rounded-md px-1.5 py-1"
-      >
-        <Icon as={Folder} size={14} className="text-muted-foreground" />
-        <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
-          {folderName ?? "Dossier"}
-        </Text>
-      </Pressable>
+  const folder = (
+    <Pressable
+      onPress={onFolderPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`Dossier de ${title} : ${folderName ?? "aucun"}`}
+      className="min-w-0 shrink flex-row items-center gap-1 rounded-md px-1.5 py-1"
+    >
+      <Icon as={Folder} size={14} className="text-muted-foreground" />
+      <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
+        {folderName ?? "Dossier"}
+      </Text>
+    </Pressable>
+  );
 
+  // L'échéance porte sur la liste entière : elle se lit en tête, et se change
+  // d'un appui. Sans date, l'invite reste visible : c'est elle qui la rend
+  // atteignable.
+  const dueButton = (
+    <Pressable
+      onPress={onDuePress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`Échéance de ${title} : ${due ?? "aucune"}`}
+      className="shrink-0 flex-row items-center gap-1 rounded-md px-1.5 py-1"
+    >
+      <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
+      <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+        {due ?? "Date"}
+      </Text>
+    </Pressable>
+  );
+
+  const menu = (
+    <Button
+      variant="ghost"
+      size="icon"
+      hitSlop={8}
+      onPress={onMenuPress}
+      accessibilityLabel={menuLabel}
+      className="size-8"
+    >
+      <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
+    </Button>
+  );
+
+  if (stacked) {
+    return (
+      <View onLayout={onLayout} className="gap-1">
+        <View className="flex-row items-center gap-2">
+          {leading}
+          <View className="min-w-0 flex-1" />
+          {menu}
+        </View>
+        <View className="flex-row flex-wrap items-center gap-x-3 gap-y-0.5 pl-2">
+          {type}
+          {folder}
+          {dueButton}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View onLayout={onLayout} className="flex-row items-center gap-2">
+      {leading}
+      {type}
+      {folder}
       <View className="min-w-0 flex-1" />
-
-      {/* L'échéance porte sur la liste entière : elle se lit en tête, et se
-          change d'un appui. Sans date, l'invite reste visible : c'est elle qui
-          la rend atteignable. */}
-      <Pressable
-        onPress={onDuePress}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={`Échéance de ${title} : ${due ?? "aucune"}`}
-        className="shrink-0 flex-row items-center gap-1 rounded-md px-1.5 py-1"
-      >
-        <Icon as={CalendarClock} size={14} className="text-muted-foreground" />
-        <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-          {due ?? "Date"}
-        </Text>
-      </Pressable>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        hitSlop={8}
-        onPress={onMenuPress}
-        accessibilityLabel={menuLabel}
-        className="size-8"
-      >
-        <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
-      </Button>
+      {dueButton}
+      {menu}
     </View>
   );
 }
