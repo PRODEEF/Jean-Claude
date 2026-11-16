@@ -9,6 +9,7 @@ import { Modal } from "@/shared/ui/modal";
 import type { Point } from "@/shared/lib/popover-placement";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
+import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { useCalendarActions } from "./hooks/use-calendar-events";
 import {
   defaultEndFor,
@@ -64,6 +65,7 @@ function initialValues(target: EventDialogTarget): EventFormValues {
 
 function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: () => void }) {
   const { create, update, remove } = useCalendarActions();
+  const { createList } = useTaskActions();
   const [values, setValues] = useState(() => initialValues(target));
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -74,7 +76,8 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
 
   const editing = target.mode === "edit";
   const shared = target.mode === "edit" ? target.event.space !== null : Boolean(target.groupId);
-  const pending = create.isPending || update.isPending || remove.isPending;
+  const pending =
+    create.isPending || update.isPending || remove.isPending || createList.isPending;
 
   const patch = <K extends keyof EventFormValues>(key: K, value: EventFormValues[K]) =>
     setValues((current) => ({ ...current, [key]: value }));
@@ -101,9 +104,24 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
     const options = { onSuccess: onClose, onError: (cause: Error) => setError(toMessage(cause)) };
     if (target.mode === "edit") {
       update.mutate({ event: target.event, patch: parsed.value }, options);
+    } else if (target.groupId) {
+      // L'événement d'un espace reste un rendez-vous classique : il appartient à
+      // la conversation, pas à la liste personnelle de quelqu'un.
+      create.mutate({ ...parsed.value, groupId: target.groupId }, options);
     } else {
-      create.mutate(
-        { ...parsed.value, ...(target.groupId ? { groupId: target.groupId } : {}) },
+      // Un rendez-vous n'est plus un objet à part : c'est un todo daté, sans
+      // tâche, qui garde son heure de fin, son rappel et ses notes (fusion
+      // rendez-vous / todo, étape 5).
+      createList.mutate(
+        {
+          title: parsed.value.title,
+          kind: "todo",
+          dueAt: parsed.value.startsAt,
+          dueAllDay: parsed.value.allDay,
+          endsAt: parsed.value.endsAt ?? null,
+          reminderMinutesBefore: parsed.value.reminderMinutesBefore ?? null,
+          notes: parsed.value.notes ?? null,
+        },
         options,
       );
     }
