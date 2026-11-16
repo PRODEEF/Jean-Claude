@@ -1,7 +1,16 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, View, type GestureResponderEvent } from "react-native";
 import type { CalendarEntry, TaskListWithTasks } from "@jc/domain";
-import { eventsOfDay, layoutDayEvents, layoutDayLists, listsOfDay, startOfDay } from "@jc/domain";
+import {
+  eventsOfDay,
+  isListDone,
+  layoutDayEvents,
+  layoutDayLists,
+  listsOfDay,
+  startOfDay,
+} from "@jc/domain";
+import { ListChecks } from "lucide-react-native";
+import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { eventLabel, SharedMark } from "./MonthGrid";
 import { useListDragHandle, useMomentDropZone } from "./lib/list-drag";
@@ -231,25 +240,36 @@ export function TimeGrid({
             {/* Todolistes échues à heure précise : même placement que les
                 événements. L'appui ouvre le détail cochable, comme Google
                 Calendar ouvre la fiche d'un rendez-vous (§4.2). */}
+            {/* Même pastille que la vue Mois : icône, heure et titre, barrée quand
+                tout est coché. Les listes à la même heure sont empilées par
+                `layoutDayLists`, pas côte à côte. */}
             {column.timedLists.map((box) => (
               <DraggablePressable
                 key={box.list.id}
                 listId={box.list.id}
                 onPress={() => onOpenList(box.list)}
                 accessibilityLabel={`Ouvrir la liste ${box.list.title}`}
-                className="bg-muted absolute overflow-hidden rounded px-1 py-0.5"
+                className="bg-accent-soft absolute flex-row items-center gap-0.5 overflow-hidden rounded px-1 py-0.5"
                 style={{
                   top: (box.startMinute / 60) * HOUR_HEIGHT,
+                  // 2 px de moins que la place réservée : un filet entre deux
+                  // pastilles empilées, comme l'écart de la vue Mois.
                   height: Math.max(
-                    ((box.endMinute - box.startMinute) / 60) * HOUR_HEIGHT,
+                    ((box.endMinute - box.startMinute) / 60) * HOUR_HEIGHT - 2,
                     MIN_EVENT_HEIGHT,
                   ),
                   left: `${(box.lane / box.laneCount) * 100}%`,
                   width: `${100 / box.laneCount}%`,
                 }}
               >
-                <Text numberOfLines={1} className="text-muted-foreground text-[11px] leading-4">
-                  {box.list.title}
+                <Icon as={ListChecks} size={10} className="text-accent-soft-foreground" />
+                <Text
+                  numberOfLines={1}
+                  className={`text-accent-soft-foreground flex-1 text-[11px] leading-4 ${
+                    isListDone(box.list) ? "line-through opacity-60" : ""
+                  }`}
+                >
+                  {box.list.dueAt ? `${formatTime(box.list.dueAt)} ${box.list.title}` : box.list.title}
                 </Text>
               </DraggablePressable>
             ))}

@@ -453,6 +453,12 @@ const MINUTES_PER_DAY = 24 * 60;
 /** Durée prêtée à un créneau sans heure de fin, pour lui donner une hauteur. */
 const IMPLICIT_DURATION_MINUTES = 60;
 
+/**
+ * Place verticale d'une pastille de liste dans la grille horaire, en minutes :
+ * de quoi lire une ligne (20 px sur une heure de 48 px).
+ */
+export const LIST_CHIP_MINUTES = 25;
+
 /** Générique : une entrée du calendrier garde ce qu'elle porte en plus (`space`). */
 export type PositionedEvent<T extends CalendarEvent = CalendarEvent> = {
   event: T;
@@ -575,27 +581,29 @@ export function layoutDayLists(
   bounds: DayPartBounds = DEFAULT_DAY_PART_BOUNDS,
 ): { timed: PositionedList[]; untimed: TaskListWithTasks[] } {
   const untimed: TaskListWithTasks[] = [];
+  const starts: { list: TaskListWithTasks; startMinute: number }[] = [];
 
-  const boxes = lists.flatMap((list) => {
+  for (const list of lists) {
     if (list.dueAt === null || momentOf(list, bounds) === "anytime") {
       untimed.push(list);
-      return [];
+      continue;
     }
+    starts.push({ list, startMinute: minuteInDay(new Date(list.dueAt).getTime(), day) });
+  }
 
-    const startMinute = minuteInDay(new Date(list.dueAt).getTime(), day);
-    return [
-      {
-        ref: list,
-        startMinute,
-        endMinute: clamp(startMinute + IMPLICIT_DURATION_MINUTES, 0, MINUTES_PER_DAY),
-      },
-    ];
+  // Les listes à la même heure s'empilent, l'une sous l'autre, au lieu de se
+  // partager la largeur : côte à côte, chaque titre était réduit à quelques
+  // lettres (Yann, 16 novembre). Une pastille descend juste sous la précédente
+  // quand elle la chevaucherait ; l'heure lue sur la pastille reste la vraie.
+  starts.sort((a, b) => a.startMinute - b.startMinute);
+  let nextFree = 0;
+  const timed = starts.map(({ list, startMinute }) => {
+    const top = clamp(Math.max(startMinute, nextFree), 0, MINUTES_PER_DAY - LIST_CHIP_MINUTES);
+    nextFree = top + LIST_CHIP_MINUTES;
+    return { list, startMinute: top, endMinute: top + LIST_CHIP_MINUTES, lane: 0, laneCount: 1 };
   });
 
-  return {
-    timed: layoutBoxes(boxes).map(({ ref, ...box }) => ({ ...box, list: ref })),
-    untimed,
-  };
+  return { timed, untimed };
 }
 
 function clamp(value: number, min: number, max: number): number {
