@@ -212,4 +212,4 @@ Classés pour l'objectif de la vision : remplacer les todolistes Notion. Ordre r
 
 ## Todo
 
-La liste des tâches (groupes Dossiers & Collaboration, Calendrier, Conversations, Lenteurs, Notifications, BUG, Accès aux données, Connexion, Infra, Comptes, Support, Mobile, À tester, Plus tard) est dans [`TODOLIST.md`](TODOLIST.md). Les six gros chantiers ci-dessus restent ici : ils portent le plan.
+La liste des tâches, rangées par groupe, est dans [`TODOLIST.md`](TODOLIST.md), qui est aussi la page « TODO Jean Claude » du chat. Les six gros chantiers ci-dessus restent ici : ils portent le plan.
