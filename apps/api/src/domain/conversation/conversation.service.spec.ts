@@ -4665,6 +4665,27 @@ describe("ConversationService", () => {
       expect(lastRequest(llm).system ?? "").toContain("échéance 2026-09-05T00:00:00.000Z");
     });
 
+    it("demande l'heure, en en proposant une, quand le jour est donné sans moment", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      // Sans cette consigne le modèle choisit seul « 10h » et affiche la carte
+      // avant que l'utilisateur ait eu son mot à dire.
+      const system = lastRequest(llm).system ?? "";
+      expect(system).toContain("Pouvez-vous me donner l'heure ? 10h, cela vous va ?");
+      expect(system).toContain("Aucune carte n'apparaît");
+      expect(system).toContain("la liste reste sans date");
+    });
+
+    it("traite les lignes vides et les « X2 » d'un texte collé comme du bruit", async () => {
+      const llm = makeLlm();
+
+      await drain(makeService(makeRepository(), llm));
+
+      expect(lastRequest(llm).system ?? "").toContain("c'est du bruit");
+    });
+
     it("ne propose pas de reprogrammer quand le fil n'a encore aucune liste", async () => {
       const llm = makeLlm();
 
