@@ -76,6 +76,13 @@ export type Palette = {
    */
   accentSoft: string;
   accentSoftText: string;
+  /**
+   * Teintes atténuées par type d'élément du calendrier : le rendez-vous reste
+   * dans l'accent, la liste et l'événement d'espace ont la leur, pour qu'on les
+   * reconnaisse d'un coup d'œil. Fixes : la couleur d'assistant ne les change pas.
+   */
+  listSoft: string;
+  sharedSoft: string;
   danger: string;
   success: string;
 };
@@ -92,6 +99,8 @@ export const lightPalette: Palette = {
   accentText: "#FFFFFF",
   accentSoft: "#E3E4FC",
   accentSoftText: "#18181B",
+  listSoft: "#DDF3E4",
+  sharedSoft: "#FCEBD0",
   danger: "#DC2626",
   success: "#16A34A",
 };
@@ -108,6 +117,8 @@ export const darkPalette: Palette = {
   accentText: "#0B0B0F",
   accentSoft: "#242745",
   accentSoftText: "#FAFAFA",
+  listSoft: "#1B3A2A",
+  sharedSoft: "#47381A",
   danger: "#F87171",
   success: "#4ADE80",
 };

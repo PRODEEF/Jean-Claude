@@ -12,7 +12,7 @@ import {
 import { ListChecks } from "lucide-react-native";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
-import { eventLabel, SharedMark } from "./MonthGrid";
+import { EventMark, eventLabel, eventTone } from "./MonthGrid";
 import { useListDragHandle, useMomentDropZone } from "./lib/list-drag";
 import { useDayPartBounds } from "@/shared/hooks/use-profile";
 import { formatDayLabel, formatTime, isSameDay } from "@/shared/lib/dates";
@@ -139,9 +139,9 @@ export function TimeGrid({
                   onPress={() => onOpenEvent(event)}
                   accessibilityRole="button"
                   accessibilityLabel={eventLabel(event)}
-                  className="bg-accent-soft flex-row items-center gap-0.5 rounded px-1 py-0.5"
+                  className={`${eventTone(event)} flex-row items-center gap-0.5 rounded px-1 py-0.5`}
                 >
-                  {event.space ? <SharedMark /> : null}
+                  <EventMark event={event} />
                   <Text
                     numberOfLines={1}
                     className="text-accent-soft-foreground flex-1 text-[11px] leading-4"
@@ -249,7 +249,7 @@ export function TimeGrid({
                 listId={box.list.id}
                 onPress={() => onOpenList(box.list)}
                 accessibilityLabel={`Ouvrir la liste ${box.list.title}`}
-                className="bg-accent-soft absolute flex-row items-center gap-0.5 overflow-hidden rounded px-1 py-0.5"
+                className="bg-list-soft absolute flex-row items-center gap-0.5 overflow-hidden rounded px-1 py-0.5"
                 style={{
                   top: (box.startMinute / 60) * HOUR_HEIGHT,
                   // 2 px de moins que la place réservée : un filet entre deux
@@ -280,7 +280,7 @@ export function TimeGrid({
                 onPress={() => onOpenEvent(box.event)}
                 accessibilityRole="button"
                 accessibilityLabel={eventLabel(box.event)}
-                className="bg-accent-soft border-primary absolute overflow-hidden rounded border-l-2 px-1 py-0.5"
+                className={`${eventTone(box.event)} border-primary absolute overflow-hidden rounded border-l-2 px-1 py-0.5`}
                 style={{
                   top: (box.startMinute / 60) * HOUR_HEIGHT,
                   height: Math.max(
@@ -292,7 +292,7 @@ export function TimeGrid({
                 }}
               >
                 <View className="flex-row items-center gap-0.5">
-                  {box.event.space ? <SharedMark /> : null}
+                  <EventMark event={box.event} />
                   <Text
                     numberOfLines={1}
                     className="text-accent-soft-foreground flex-1 text-[11px] leading-4"

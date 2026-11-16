@@ -94,6 +94,8 @@ export function ThemeProvider({
         // atténuée des larges aplats — bulle de l'utilisateur, bannière.
         "--accent-soft": palette.accentSoft,
         "--accent-soft-foreground": palette.accentSoftText,
+        "--list-soft": palette.listSoft,
+        "--shared-soft": palette.sharedSoft,
         "--secondary": palette.surface,
         "--secondary-foreground": palette.text,
         "--muted": palette.surface,
