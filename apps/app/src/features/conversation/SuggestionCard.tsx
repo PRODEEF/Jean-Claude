@@ -72,6 +72,11 @@ export type SuggestionCardProps = {
    * neutralisés tant qu'il n'a pas abouti.
    */
   pendingAction: ResolveSuggestion["action"] | null;
+  /**
+   * Sans cadre ni plafond de largeur : dans le volet de droite, la carte est la
+   * page elle-même, un cadre de plus l'enfermerait dans une boîte dans la boîte.
+   */
+  flat?: boolean;
 };
 
 /**
@@ -86,6 +91,7 @@ export function SuggestionCard({
   onAccept,
   onDismiss,
   pendingAction,
+  flat = false,
 }: SuggestionCardProps) {
   const { palette } = useTheme();
   const isPending = pendingAction !== null;
@@ -173,7 +179,9 @@ export function SuggestionCard({
     <View
       style={[
         styles.card,
-        { backgroundColor: palette.surfaceElevated, borderColor: palette.border },
+        flat
+          ? styles.cardFlat
+          : { backgroundColor: palette.surfaceElevated, borderColor: palette.border },
       ]}
     >
       <Text style={[styles.message, { color: palette.text }]}>{suggestion.message}</Text>
@@ -519,7 +527,11 @@ function EditableTaskLists({
                   onChangeText={(text) => onRenameList(list.key, text)}
                   editable={!disabled}
                   accessibilityLabel={`Titre de la liste ${list.title}`}
-                  style={[styles.input, styles.proposedTitle, { color: palette.text }]}
+                  style={[
+                    styles.input,
+                    styles.proposedTitle,
+                    { color: palette.text, width: titleWidth(list.title) },
+                  ]}
                 />
               </>
             }
@@ -593,6 +605,15 @@ function EditableTaskLists({
       ) : null}
     </View>
   );
+}
+
+/**
+ * Largeur d'un titre de liste : celle de son texte, pour que le type et le dossier
+ * viennent à sa suite comme sur la vraie carte, au lieu de passer à la ligne
+ * derrière un champ plus large que ce qu'il contient.
+ */
+function titleWidth(title: string): number {
+  return Math.max(title.length, 4) * 9 + 8;
 }
 
 /** Une échéance à minuit vaut « dans la journée » : l'heure n'a pas été choisie. */
@@ -1077,6 +1098,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.lg,
   },
+  cardFlat: { alignSelf: "stretch", maxWidth: "100%", padding: 0, borderWidth: 0 },
   message: { fontFamily: FONT_FAMILY, fontSize: fontSize.md, lineHeight: 22 },
   tree: { gap: spacing.xs, paddingLeft: spacing.md, borderLeftWidth: 2 },
   // Pas de filet vertical ici : les cases alignent déjà les lignes entre elles.

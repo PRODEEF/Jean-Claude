@@ -36,6 +36,7 @@ export function SuggestionPaneBody({
   return (
     <View>
       <SuggestionCard
+        flat
         suggestion={suggestion}
         pendingAction={
           resolve.isPending && resolve.variables?.id === suggestion.id
