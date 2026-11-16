@@ -25,6 +25,7 @@ import { Text } from "@/shared/ui/text";
 import { CalendarToolbar, type CalendarView } from "./CalendarToolbar";
 import { DueListsBoard } from "./DueListsBoard";
 import { EventDetailDialog } from "./EventDetailDialog";
+import { recentPointer } from "@/shared/lib/last-pointer";
 import { EventFormDialog, type EventDialogTarget } from "./EventFormDialog";
 import { TaskListDetailDialog } from "./TaskListDetailDialog";
 import { TaskListDialog, type TaskListTarget } from "@/features/todo/TaskListDialog";
@@ -201,8 +202,12 @@ export function CalendarScreen() {
     setEventDetail(null);
     setDialogTarget({ mode: "edit", event });
   };
-  const createAt = (day: Date, minute = DEFAULT_CREATE_MINUTE) =>
-    setDialogTarget({ mode: "create", day, minute });
+  // Depuis une case de la grille, la fenêtre s'ouvre à côté du clic et ne le
+  // recouvre pas ; le bouton « Événement » de la barre n'a pas de case à éviter.
+  const createAt = (day: Date, minute = DEFAULT_CREATE_MINUTE) => {
+    const anchor = recentPointer();
+    setDialogTarget({ mode: "create", day, minute, ...(anchor ? { anchor } : {}) });
+  };
   // Un jour cliqué en vue mois propose directement d'y poser un événement : la
   // sélection continue par ailleurs d'alimenter l'agenda du jour, en dessous.
   const selectDay = (day: Date) => {
@@ -321,7 +326,9 @@ export function CalendarScreen() {
           </Button>
           <Button
             size="sm"
-            onPress={() => createAt(selectedDay, DEFAULT_CREATE_MINUTE)}
+            onPress={() =>
+              setDialogTarget({ mode: "create", day: selectedDay, minute: DEFAULT_CREATE_MINUTE })
+            }
             accessibilityRole="button"
             accessibilityLabel="Nouvel événement"
           >

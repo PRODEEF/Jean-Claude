@@ -48,6 +48,20 @@ export function emptyForm(day: Date): EventFormValues {
   };
 }
 
+/**
+ * Heure de fin proposée quand on règle le début : une heure plus tard.
+ *
+ * Le formulaire ne porte qu'une date : depuis 23h, une heure de plus passerait
+ * au lendemain, la fin s'arrête donc à 23h59. Un début à moitié tapé n'est pas
+ * une heure : `null`, la fin reste où elle est.
+ */
+export function defaultEndFor(startTime: string): string | null {
+  const start = parseTimeInput(startTime);
+  if (!start) return null;
+  if (start.hours >= 23) return "23:59";
+  return `${String(start.hours + 1).padStart(2, "0")}:${String(start.minutes).padStart(2, "0")}`;
+}
+
 export function formFromEvent(event: CalendarEvent): EventFormValues {
   const start = new Date(event.startsAt);
   return {
