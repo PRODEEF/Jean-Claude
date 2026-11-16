@@ -1,11 +1,5 @@
-import { useState, type ReactNode, type Ref } from "react";
-import {
-  Platform,
-  Pressable,
-  View,
-  type GestureResponderEvent,
-  type LayoutChangeEvent,
-} from "react-native";
+import type { ReactNode, Ref } from "react";
+import { Platform, Pressable, View, type GestureResponderEvent } from "react-native";
 import {
   CalendarClock,
   Check,
@@ -60,22 +54,16 @@ export function TaskListCardFrame({
 }
 
 /**
- * Largeur de l'en-tête en deçà de laquelle il passe sur deux lignes. À cette
- * largeur, type, dossier, date et menu ne tiennent plus à côté du titre : sur
- * une seule ligne c'est le titre qui s'écrasait, alors que c'est lui qu'on lit.
- */
-const HEADER_STACK_BELOW = 600;
-
-/**
- * En-tête : le type, le dossier, puis l'échéance et le menu.
+ * En-tête : le titre, puis le type, le dossier et l'échéance, et le menu.
  *
  * `leading` précède le type — le repli et le titre dans « Mes listes » ; un
  * espace n'en met pas, son titre est déjà celui de la page.
  *
- * Large, tout tient sur une ligne. Étroit (volet de droite réduit, téléphone),
- * le titre garde la première ligne avec le menu, et type, dossier et date
- * passent dessous, à la ligne si besoin : on voit le plus possible, sans rien
- * tronquer en premier lieu.
+ * Tout est sur une seule ligne qui passe à la ligne : le titre d'abord, puis
+ * chaque élément se range à la suite tant qu'il y a la place, et descend seul
+ * quand elle manque (volet de droite réduit, téléphone). Sur une ligne
+ * unique, c'était le titre qui s'écrasait, alors que c'est lui qu'on lit.
+ * Le menu reste posé en haut à droite, hors du flux, pour ne jamais descendre.
  */
 export function TaskListCardHeader({
   title,
@@ -99,10 +87,6 @@ export function TaskListCardHeader({
   onMenuPress: (event: GestureResponderEvent) => void;
   menuLabel: string;
 }) {
-  const [stacked, setStacked] = useState(false);
-  const onLayout = (event: LayoutChangeEvent) =>
-    setStacked(event.nativeEvent.layout.width < HEADER_STACK_BELOW);
-
   const type = (
     <View className="flex-row items-center gap-2">
       <Icon
@@ -162,31 +146,19 @@ export function TaskListCardHeader({
     </Button>
   );
 
-  if (stacked) {
-    return (
-      <View onLayout={onLayout} className="gap-1">
-        <View className="flex-row items-center gap-2">
-          {leading}
-          <View className="min-w-0 flex-1" />
-          {menu}
-        </View>
-        <View className="flex-row flex-wrap items-center gap-x-3 gap-y-0.5 pl-2">
-          {type}
-          {folder}
-          {dueButton}
-        </View>
-      </View>
-    );
-  }
-
   return (
-    <View onLayout={onLayout} className="flex-row items-center gap-2">
-      {leading}
-      {type}
-      {folder}
-      <View className="min-w-0 flex-1" />
-      {dueButton}
-      {menu}
+    <View className="relative">
+      {/* Réserve à droite la place du menu, qui est posé par-dessus. */}
+      <View className="flex-row flex-wrap items-center gap-x-2 gap-y-0.5 pr-10">
+        <View className="min-w-0 max-w-full shrink flex-row items-center gap-2">{leading}</View>
+        {type}
+        {folder}
+        {/* Pousse l'échéance à droite quand tout tient sur la ligne ; elle
+            descend à gauche quand elle n'y tient plus. */}
+        <View style={{ flexGrow: 1, flexBasis: 8 }} />
+        {dueButton}
+      </View>
+      <View className="absolute right-0 top-0">{menu}</View>
     </View>
   );
 }
