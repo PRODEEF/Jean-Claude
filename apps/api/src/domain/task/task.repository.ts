@@ -22,6 +22,7 @@ type TaskListRow = {
   done_at: string | null;
   notes: string | null;
   event_id: string | null;
+  source_event_id: string | null;
   conversation_id: string | null;
   folder_id: string | null;
   created_by_assistant: boolean;
@@ -64,6 +65,7 @@ function toList(row: TaskListRow): TaskList {
     doneAt: row.done_at,
     notes: row.notes,
     eventId: row.event_id,
+    sourceEventId: row.source_event_id,
     conversationId: row.conversation_id,
     folderId: row.folder_id,
     createdByAssistant: row.created_by_assistant,
@@ -101,7 +103,7 @@ function toListWithTasks(row: TaskListRow & { tasks: TaskRow[] }): TaskListWithT
 }
 
 const LIST_COLUMNS =
-  "id, title, kind, due_at, due_all_day, ends_at, rrule, reminder_minutes_before, done_at, notes, event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
+  "id, title, kind, due_at, due_all_day, ends_at, rrule, reminder_minutes_before, done_at, notes, event_id, source_event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
 const TASK_COLUMNS =
   "id, list_id, title, notes, done, completed_at, parent_id, due_on, position, created_at, updated_at";
 const LIST_WITH_TASKS_COLUMNS = `${LIST_COLUMNS}, tasks(${TASK_COLUMNS})`;

@@ -175,12 +175,12 @@ export class AssistantService {
       return nothingApplied();
     }
     if (suggestion.kind === "create_recurring_event") {
-      const events = await this.createRecurringEvent(userId, suggestion, accessToken);
-      return { ...nothingApplied(), events };
+      const taskLists = await this.createRecurringEvent(userId, suggestion, accessToken);
+      return { ...nothingApplied(), taskLists };
     }
     if (suggestion.kind === "create_events") {
-      const events = await this.createEvents(userId, suggestion, accessToken);
-      return { ...nothingApplied(), events };
+      const taskLists = await this.createEvents(userId, suggestion, accessToken);
+      return { ...nothingApplied(), taskLists };
     }
 
     throw httpError(422, "Cette proposition n'est plus exploitable.");
@@ -499,7 +499,7 @@ export class AssistantService {
     userId: string,
     suggestion: Suggestion,
     accessToken: string,
-  ): Promise<CalendarEvent[]> {
+  ): Promise<TaskList[]> {
     const payload = createRecurringEventPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
@@ -512,22 +512,27 @@ export class AssistantService {
     const timed = hasWallTime(payload.data.startsAt, timezone);
     const folderId = await this.folderForEvents(suggestion, accessToken);
 
-    const event = await this.calendar.create(
+    // Un rendez-vous est un todo daté, sans tâche : il garde sa fin, sa règle de
+    // répétition et son rappel (fusion rendez-vous / todo, étape 5).
+    const list = await this.tasks.createList(
       userId,
       {
-        folderId,
         title: payload.data.title,
-        startsAt: payload.data.startsAt,
+        kind: "todo",
+        folderId,
+        dueAt: payload.data.startsAt,
+        dueAllDay: !timed,
         endsAt: timed ? oneHourAfter(payload.data.startsAt) : null,
-        allDay: !timed,
         rrule: payload.data.rrule,
         reminderMinutesBefore:
           payload.data.reminderMinutesBefore ?? DEFAULT_RECURRING_REMINDER_MINUTES,
+        ...(suggestion.conversationId ? { conversationId: suggestion.conversationId } : {}),
+        createdByAssistant: true,
       },
       accessToken,
     );
 
-    return [event];
+    return [list];
   }
 
   /**
@@ -546,7 +551,7 @@ export class AssistantService {
     userId: string,
     suggestion: Suggestion,
     accessToken: string,
-  ): Promise<CalendarEvent[]> {
+  ): Promise<TaskList[]> {
     const payload = createEventsPayloadSchema.safeParse(suggestion.payload);
 
     if (!payload.success) {
@@ -558,26 +563,29 @@ export class AssistantService {
     const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
 
     const folderId = await this.folderForEvents(suggestion, accessToken);
-    const events: CalendarEvent[] = [];
+    const lists: TaskList[] = [];
 
     for (const proposed of payload.data.events) {
       const timed = hasWallTime(proposed.startsAt, timezone);
-      events.push(
-        await this.calendar.create(
+      lists.push(
+        await this.tasks.createList(
           userId,
           {
-            folderId,
             title: proposed.title,
-            startsAt: proposed.startsAt,
+            kind: "todo",
+            folderId,
+            dueAt: proposed.startsAt,
+            dueAllDay: !timed,
             endsAt: timed ? oneHourAfter(proposed.startsAt) : null,
-            allDay: !timed,
+            ...(suggestion.conversationId ? { conversationId: suggestion.conversationId } : {}),
+            createdByAssistant: true,
           },
           accessToken,
         ),
       );
     }
 
-    return events;
+    return lists;
   }
 
   /**

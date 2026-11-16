@@ -14,6 +14,7 @@ import {
   type CreateFolder,
   type CreateTask,
   type CreateTaskList,
+  type ListOccurrence,
   type EditMessage,
   type Feedback,
   type FeedbackAnalysis,
@@ -375,6 +376,10 @@ export class JeanClaudeClient {
   readonly tasks = {
     lists: (params: { cursor?: string; limit?: number } = {}) =>
       this.http.request<Paginated<TaskListWithTasks>>("/tasks", { query: params }),
+
+    /** Les dates des listes datées dans la fenêtre : une par occurrence, séries dépliées. */
+    occurrences: (range: CalendarRange) =>
+      this.http.request<ListOccurrence[]>("/tasks/occurrences", { query: range }),
 
     createList: (input: CreateTaskList) =>
       this.http.request<TaskList>("/tasks", { method: "POST", body: input }),

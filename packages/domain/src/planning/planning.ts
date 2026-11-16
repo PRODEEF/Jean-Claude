@@ -5,7 +5,7 @@ import {
   dayPartOfHour,
   type DayPartBounds,
 } from "../task/day-part";
-import type { Task, TaskList, TaskListWithTasks } from "../task/task.schema";
+import type { ListOccurrence, Task, TaskList, TaskListWithTasks } from "../task/task.schema";
 
 /**
  * Ce qui place les todolistes et les rendez-vous dans le temps.
@@ -219,6 +219,44 @@ export function todoDays(monthDays: Date[], today: Date): Date[] {
 }
 
 // ── Ce que porte une journée ───────────────────────────────────────────────
+
+/**
+ * Une liste qui se répète apparaît à chacune de ses dates (fusion rendez-vous /
+ * todo, étape 5).
+ *
+ * Chaque date devient une copie de la liste, avec le début, la fin, le « fait »
+ * et la journée entière de cette date-là : c'est ce que les grilles du calendrier
+ * lisent déjà. Une date déplacée ou cochée y arrive donc telle que le serveur la
+ * donne ; une date supprimée n'y figure pas. Une liste ponctuelle reste telle quelle.
+ *
+ * Sans occurrences (`undefined`, le temps du chargement), la liste de base est
+ * gardée : elle disparaîtrait sinon du calendrier à chaque changement de fenêtre.
+ * Une fois chargées, une liste qui se répète sans aucune date dans la fenêtre n'y
+ * figure plus.
+ */
+export function projectOccurrences(
+  lists: TaskListWithTasks[],
+  occurrences: ListOccurrence[] | undefined,
+): TaskListWithTasks[] {
+  if (occurrences === undefined) return lists;
+
+  const byList = new Map<string, ListOccurrence[]>();
+  for (const occurrence of occurrences) {
+    byList.set(occurrence.listId, [...(byList.get(occurrence.listId) ?? []), occurrence]);
+  }
+
+  return lists.flatMap((list) => {
+    if (list.rrule === null) return [list];
+
+    return (byList.get(list.id) ?? []).map((occurrence) => ({
+      ...list,
+      dueAt: occurrence.startsAt,
+      dueAllDay: occurrence.allDay,
+      endsAt: occurrence.endsAt,
+      doneAt: occurrence.doneAt,
+    }));
+  });
+}
 
 /**
  * Ce que le calendrier place, tous dossiers confondus : chaque liste datée à
