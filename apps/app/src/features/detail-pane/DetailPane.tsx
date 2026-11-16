@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PanResponder, Platform, ScrollView, View, useWindowDimensions } from "react-native";
-import { X } from "lucide-react-native";
+import { Check, Link2, Maximize2, Minimize2, X } from "lucide-react-native";
 import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import { datedLists, dueOnForDay, listsOfDay } from "@jc/domain";
 import { formatFullDay, isSameDay } from "@/shared/lib/dates";
@@ -30,7 +30,7 @@ const CENTER_MIN_WIDTH = 480;
  * Volet de droite. Rien à l'écran tant qu'aucun contenu n'est choisi.
  */
 export function DetailPane() {
-  const { content, close, width, setWidth } = useDetailPane();
+  const { content, close, width, setWidth, expanded, setExpanded } = useDetailPane();
   const { width: windowWidth } = useWindowDimensions();
   if (!content) return null;
 
@@ -45,10 +45,14 @@ export function DetailPane() {
   return (
     <View
       className="border-border bg-background border-l"
-      style={{ width: paneWidth }}
+      // Agrandi, le volet prend toute la place laissée par la barre latérale :
+      // la largeur choisie à la main est gardée pour quand il se réduit.
+      style={expanded ? { flex: 1 } : { width: paneWidth }}
       accessibilityLabel="Détail"
     >
-      <ResizeHandle width={paneWidth} maxWidth={maxWidth} onResize={setWidth} />
+      {expanded ? null : (
+        <ResizeHandle width={paneWidth} maxWidth={maxWidth} onResize={setWidth} />
+      )}
       {/* Même hauteur que le bandeau du milieu (`ScreenHeader`) : les deux
           lignes de séparation doivent tomber à la même hauteur. */}
       <View
@@ -58,21 +62,89 @@ export function DetailPane() {
         <Text className="min-w-0 flex-1 text-sm font-semibold" numberOfLines={1}>
           <PaneTitle content={content} />
         </Text>
-        <Button
-          variant="ghost"
-          size="icon"
-          hitSlop={8}
-          onPress={close}
-          accessibilityLabel="Fermer le détail"
-          className="size-8"
-        >
-          <Icon as={X} size={16} className="text-muted-foreground" />
-        </Button>
+        <View className="flex-row items-center">
+          {/* Un lien n'a de sens que pour une liste, et sur le web où l'adresse
+              existe : un jour du calendrier n'a pas d'adresse propre. */}
+          {content.kind === "list" && Platform.OS === "web" ? (
+            <ShareLinkButton listId={content.listId} />
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon"
+            hitSlop={8}
+            onPress={() => setExpanded(!expanded)}
+            accessibilityLabel={expanded ? "Réduire le détail" : "Agrandir le détail"}
+            className="size-8"
+          >
+            <Icon
+              as={expanded ? Minimize2 : Maximize2}
+              size={16}
+              className="text-muted-foreground"
+            />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            hitSlop={8}
+            onPress={close}
+            accessibilityLabel="Fermer le détail"
+            className="size-8"
+          >
+            <Icon as={X} size={16} className="text-muted-foreground" />
+          </Button>
+        </View>
       </View>
-      <ScrollView contentContainerStyle={{ padding: 12, gap: 8 }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: 12,
+          gap: 8,
+          // Agrandi, la carte ne s'étire pas sur tout l'écran : elle reste lisible.
+          ...(expanded ? { maxWidth: 880, width: "100%", alignSelf: "center" as const } : {}),
+        }}
+      >
         <PaneBody content={content} />
       </ScrollView>
     </View>
+  );
+}
+
+/**
+ * Copie l'adresse de la liste. Elle ouvre « Mes listes » sur cette liste : seul
+ * son propriétaire, ou les membres de son espace, peut la lire.
+ */
+function ShareLinkButton({ listId }: { listId: string }) {
+  const [copied, setCopied] = useState(false);
+
+  // Le « copié » s'efface seul : il confirme le geste, il ne doit pas rester.
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2_000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  const copy = async () => {
+    const link = `${window.location.origin}/todo?list=${listId}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+    } catch (error) {
+      // Presse-papiers refusé (page non sécurisée, permission) : on le signale
+      // plutôt que de l'avaler.
+      console.warn("Copie du lien refusée", error);
+    }
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      hitSlop={8}
+      onPress={copy}
+      accessibilityLabel={copied ? "Lien copié" : "Copier le lien de la liste"}
+      className="size-8"
+    >
+      <Icon as={copied ? Check : Link2} size={16} className="text-muted-foreground" />
+    </Button>
   );
 }
 
