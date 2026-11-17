@@ -162,6 +162,29 @@ const KNOWN_TOOL_NAMES = [
  */
 const CHANNEL_REMINDER_TOOLS = [SUGGEST_TASK_LIST, SUGGEST_EVENTS, SUGGEST_RECURRING_EVENT];
 
+/**
+ * Message rendu à la place d'une promesse que ni le modèle ni la relance n'ont
+ * tenue : mieux vaut dire qu'il n'y a pas de carte que laisser croire à un
+ * rendez-vous noté (§12.1).
+ */
+const BROKEN_PROMISE =
+  "Je n'ai pas réussi à préparer la proposition. Redis-moi le rendez-vous ou la liste (jour et heure) et je la prépare.";
+
+/**
+ * Le texte annonce-t-il une carte ou une chose déjà notée ?
+ *
+ * Retour de Yann, 17 novembre : le modèle écrivait « la proposition apparaît
+ * ci-dessous » puis « rendez-vous noté » sans avoir appelé l'outil — ni carte,
+ * ni événement. Seules les formulations d'une chose faite ou affichée comptent :
+ * « je note dès que tu me donnes l'heure » est une promesse légitime, et un
+ * « c'est noté » seul se dit aussi d'un titre ou d'une préférence.
+ */
+function claimsProposal(text: string): boolean {
+  return /proposition\s+(?:appara|ci-dessous|pos[ée]e)|carte\s+ci-(?:dessous|dessus)|(?:rendez-vous|liste)\s+(?:not|pos|cr[ée])[ée]|je viens de (?:noter|poser|créer)/i.test(
+    text,
+  );
+}
+
 const APPLIED_DIRECTLY = new Set([
   NAME_CONVERSATION.name,
   OPEN_NEW_CONVERSATION.name,
@@ -862,6 +885,18 @@ export class ConversationService {
           }
         }
       }
+
+      // Une carte annoncée sans appel d'outil n'existe pas : une relance en
+      // exige l'appel, sinon la phrase fausse est remplacée (§12.1).
+      const proposing = todo.tools.filter((tool) => CHANNEL_REMINDER_TOOLS.includes(tool));
+      const calledProposal = toolCalls.some((call) =>
+        proposing.some((tool) => tool.name === call.name),
+      );
+      if (proposing.length > 0 && !calledProposal && claimsProposal(text)) {
+        const recovered = await this.demandProposal(request, proposing);
+        if (recovered.length > 0) toolCalls.push(...recovered);
+        else text = BROKEN_PROMISE;
+      }
     } finally {
       // `finally` et non la sortie nominale : si le client se déconnecte en
       // pleine génération, le texte déjà produit est déjà facturé. Le perdre
@@ -1038,6 +1073,48 @@ export class ConversationService {
     );
 
     yield { type: "done", message: assistantMessage };
+  }
+
+  /**
+   * Relance qui exige l'appel d'outil que le modèle a annoncé sans le faire.
+   *
+   * Seuls les appels d'outils sont gardés : le texte de la relance est jeté,
+   * la réponse du tour ayant déjà été écrite. Un échec rend une liste vide —
+   * l'appelant remplace alors la promesse par un message honnête.
+   */
+  private async demandProposal(
+    request: LlmCompletionRequest,
+    tools: LlmTool[],
+  ): Promise<LlmToolCall[]> {
+    logger.warn(SCOPE, "Carte annoncée sans appel d'outil : relance pour l'obtenir.");
+
+    const calls: LlmToolCall[] = [];
+    try {
+      const stream = this.llm.stream({
+        ...request,
+        system: [
+          request.system ?? "",
+          "",
+          "Tu viens d'annoncer une proposition sans appeler l'outil : aucune carte n'existe.",
+          "Appelle maintenant l'outil qui convient, avec ce qui a été convenu dans l'échange.",
+          "N'écris rien d'autre.",
+        ].join("\n"),
+        tools,
+      });
+
+      for await (const chunk of stream) {
+        if (chunk.type === "tool_call") calls.push(chunk.toolCall);
+      }
+    } catch (error) {
+      logger.error(
+        SCOPE,
+        "Relance de la proposition impossible :",
+        error instanceof Error ? error.message : error,
+      );
+      return [];
+    }
+
+    return calls;
   }
 
   /**

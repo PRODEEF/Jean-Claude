@@ -16,7 +16,8 @@ export type MonthGridProps = {
   events: CalendarEntry[];
   /** Todolistes échues, toutes listes confondues : ce qui charge la journée (A.2). */
   lists: TaskListWithTasks[];
-  selectedDay: Date;
+  /** Le jour cliqué, ou `null` tant que l'utilisateur n'en a choisi aucun. */
+  selectedDay: Date | null;
   onSelectDay: (day: Date) => void;
   onOpenEvent: (event: CalendarEntry) => void;
   /**
@@ -37,7 +38,9 @@ export type MonthGridProps = {
 };
 
 /** Ce qu'une cellule tient sous son numéro de jour : au-delà, elle déborde. */
-const MAX_LINES_PER_CELL = 3;
+const MAX_LINES_PER_CELL = 4;
+/** Lignes montrées quand « N autres » prend la cinquième place. */
+const LINES_BEFORE_MORE = 3;
 
 /**
  * Grille mensuelle.
@@ -87,7 +90,7 @@ export function MonthGrid({
               {week.map((day) => {
                 const outside = day.getMonth() !== anchor.getMonth();
                 const isToday = isSameDay(day, today);
-                const selected = isSameDay(day, selectedDay);
+                const selected = selectedDay !== null && isSameDay(day, selectedDay);
                 // Chaque liste garde son titre : une liste est une chose à part entière,
                 // pas un compte de tâches fusionné avec celles du même jour (Yann,
                 // 12 novembre). Rendez-vous et listes partagent donc le même budget
@@ -111,7 +114,7 @@ export function MonthGrid({
                       onMoveList(listId, day, fromDay);
                     }}
                     className={`border-border min-w-0 flex-1 gap-1 border-b border-r p-1 ${
-                      selected ? "bg-accent-soft" : ""
+                      selected ? "bg-muted" : ""
                     }`}
                   >
                     {/* La cellule n'est pas elle-même pressable : elle porte les
@@ -204,18 +207,21 @@ function cellEntries(events: CalendarEntry[], lists: TaskListWithTasks[]): CellE
 /**
  * Ce qu'une cellule montre, et ce qu'elle en tait.
  *
- * Le « N autres » occupe une ligne au même titre que les autres : le compter
- * dans le même budget est ce qui empêche une journée chargée de déborder de sa
- * cellule. Sur téléphone, la cellule est trop étroite pour plus d'un titre : on
- * montre le premier, puis « N autres » (décision de Yann, 12 novembre).
+ * Jusqu'à 4 éléments, tous sont visibles ; à partir de 5, on en montre 3 et une
+ * ligne « N autres » prend la place des suivants (décision de Yann, 17 novembre).
+ * Sur téléphone, la cellule est trop étroite pour plus d'un titre : on montre le
+ * premier, puis « N autres » (décision de Yann, 12 novembre).
  */
 function fitEntries(
   entries: CellEntry[],
   compact: boolean,
 ): { shown: CellEntry[]; hidden: number } {
-  const room = compact ? 1 : MAX_LINES_PER_CELL;
+  if (compact) {
+    const shown = entries.length <= 1 ? entries : entries.slice(0, 1);
+    return { shown, hidden: entries.length - shown.length };
+  }
   const shown =
-    entries.length <= room ? entries : entries.slice(0, Math.max(room - 1, compact ? 1 : 0));
+    entries.length <= MAX_LINES_PER_CELL ? entries : entries.slice(0, LINES_BEFORE_MORE);
   return { shown, hidden: entries.length - shown.length };
 }
 
