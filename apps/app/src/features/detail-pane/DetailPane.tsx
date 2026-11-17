@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { PanResponder, Platform, ScrollView, View, useWindowDimensions } from "react-native";
 import { Check, Link2, Maximize2, Minimize2, X } from "lucide-react-native";
 import type { Task, TaskList, TaskListWithTasks } from "@jc/domain";
@@ -218,18 +218,74 @@ function PaneBody({
       <SuggestionPaneBody
         conversationId={content.conversationId}
         suggestionId={content.suggestionId}
+        // Une todoliste proposée se lit dans « Mes listes », à sa date : on voit
+        // où elle tombera avant de valider (Yann, 17 novembre).
+        placeInLists={(card, dueAt) => (
+          <ListPaneBody
+            content={{ kind: "all" }}
+            scrollRef={scrollRef}
+            proposal={{ card, dueAt }}
+          />
+        )}
       />
     );
   }
   return <ListPaneBody content={content} scrollRef={scrollRef} />;
 }
 
+/** Ce que le corps du volet sait montrer : une liste visée, un jour, ou toutes les listes. */
+type ListsContent = Exclude<PaneContent, { kind: "suggestion" }> | { kind: "all" };
+
+/** Une carte proposée par l'assistant, pas encore créée : elle s'insère à sa date. */
+type Proposal = { card: ReactNode; dueAt: string | null };
+
+/** Rang de la proposition parmi les listes déjà dans l'ordre du temps. */
+function proposalIndex(lists: TaskListWithTasks[], dueAt: string | null): number {
+  if (dueAt === null) return lists.length;
+  const at = new Date(dueAt).getTime();
+  const after = lists.findIndex(
+    (list) => list.dueAt === null || new Date(list.dueAt).getTime() > at,
+  );
+  return after === -1 ? lists.length : after;
+}
+
+/**
+ * La carte proposée, amenée à l'écran une fois placée — sans animation, comme
+ * une liste visée.
+ */
+function ProposalSlot({
+  scrollRef,
+  children,
+}: {
+  scrollRef: RefObject<ScrollView | null>;
+  children: ReactNode;
+}) {
+  const placed = useRef(false);
+
+  return (
+    <View
+      onLayout={(event) => {
+        if (placed.current) return;
+        placed.current = true;
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, event.nativeEvent.layout.y - 16),
+          animated: false,
+        });
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
 function ListPaneBody({
   content,
   scrollRef,
+  proposal,
 }: {
-  content: Exclude<PaneContent, { kind: "suggestion" }>;
+  content: ListsContent;
   scrollRef: RefObject<ScrollView | null>;
+  proposal?: Proposal;
 }) {
   const { data: lists } = useTaskLists();
   const [pastKept, setPastKept] = useState(PANE_PAST_SLICE);
@@ -244,6 +300,18 @@ function ListPaneBody({
   const day = content.kind === "day" ? content.day : null;
   const { entries, hiddenPast } = entriesOf(content, saved, pastKept);
   const targetId = content.kind === "list" ? content.listId : null;
+  // La proposition de l'assistant s'insère à sa date parmi les listes enregistrées.
+  const proposalAt = proposal
+    ? proposalIndex(
+        entries.map(({ list }) => list),
+        proposal.dueAt,
+      )
+    : -1;
+  const proposalSlot = proposal ? (
+    <ProposalSlot key="proposal" scrollRef={scrollRef}>
+      {proposal.card}
+    </ProposalSlot>
+  ) : null;
 
   const { updateList } = useTaskActions();
 
@@ -283,7 +351,7 @@ function ListPaneBody({
 
   return (
     <>
-      {entries.length === 0 ? (
+      {entries.length === 0 && !proposal ? (
         <Text className="text-muted-foreground text-sm">
           {day ? "Aucune tâche ce jour-là." : "Cette liste n'existe plus."}
         </Text>
@@ -301,7 +369,8 @@ function ListPaneBody({
               <Text>{`Afficher des listes plus anciennes (${hiddenPast})`}</Text>
             </Button>
           ) : null}
-          {entries.map(({ list, day: forDay }) => (
+          {entries.flatMap(({ list, day: forDay }, index) => [
+            index === proposalAt ? proposalSlot : null,
             <PaneList
               key={`${list.id}-${forDay?.toDateString() ?? "all"}`}
               shown={list}
@@ -315,8 +384,9 @@ function ListPaneBody({
               onDelete={setDeletingList}
               highlighted={list.id === targetId}
               scrollRef={scrollRef}
-            />
-          ))}
+            />,
+          ])}
+          {proposalAt === entries.length ? proposalSlot : null}
         </>
       )}
       <TaskDialog task={editedTask} onClose={() => setOpenedTask(null)} />
@@ -402,16 +472,19 @@ function PaneList({
  * allégé que s'il ne la cache pas.
  */
 function entriesOf(
-  content: Exclude<PaneContent, { kind: "suggestion" }>,
+  content: ListsContent,
   saved: TaskListWithTasks[],
   pastKept: number,
 ): { entries: { list: TaskListWithTasks; day: Date | null }[]; hiddenPast: number } {
-  if (content.kind === "list") {
-    if (!saved.some((list) => list.id === content.listId)) return { entries: [], hiddenPast: 0 };
+  if (content.kind === "list" || content.kind === "all") {
+    const targetId = content.kind === "list" ? content.listId : null;
+    if (targetId !== null && !saved.some((list) => list.id === targetId)) {
+      return { entries: [], hiddenPast: 0 };
+    }
 
     const sorted = listsInTimeOrder(saved);
     const limited = limitPastLists(sorted, new Date(), pastKept);
-    const reachable = limited.lists.some((list) => list.id === content.listId);
+    const reachable = targetId === null || limited.lists.some((list) => list.id === targetId);
     const shown = reachable ? limited : { lists: sorted, hidden: 0 };
     return {
       entries: shown.lists.map((list) => ({ list, day: null })),
