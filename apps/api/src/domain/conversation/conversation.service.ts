@@ -180,7 +180,29 @@ const BROKEN_PROMISE =
  * « c'est noté » seul se dit aussi d'un titre ou d'une préférence.
  */
 function claimsProposal(text: string): boolean {
-  return /proposition\s+(?:appara|ci-dessous|pos[ée]e)|carte\s+ci-(?:dessous|dessus)|(?:rendez-vous|liste)\s+(?:not|pos|cr[ée])[ée]|je viens de (?:noter|poser|créer)/i.test(
+  return (
+    /proposition\s+(?:appara|ci-dessous|pos[ée]e)|carte\s+ci-(?:dessous|dessus)|(?:rendez-vous|liste)\s+(?:not|pos|cr[ée])[ée]|je viens de (?:noter|poser|créer)/i.test(
+      text,
+    ) || asksToConfirmInText(text)
+  );
+}
+
+/**
+ * Le texte demande-t-il en clair de confirmer un rendez-vous ou une liste ?
+ *
+ * Retour de Yann, 17 novembre (V0.00.73) : « Je te propose de noter ce
+ * rendez-vous… Est-ce que cela te convient ? », puis « yes », puis encore « Je
+ * te pose ce rendez-vous… Cela te convient ? », sans jamais de carte. La carte
+ * est la demande de confirmation : une question de ce genre veut dire que le
+ * modèle a décrit au lieu d'appeler l'outil. Une question sur l'heure
+ * (« 10h te convient ? ») n'en est pas une : le jour et l'heure ne sont pas
+ * encore arrêtés.
+ */
+function asksToConfirmInText(text: string): boolean {
+  if (/heure/i.test(text)) return false;
+  if (!/rendez-vous|rdv|liste|todo/i.test(text)) return false;
+
+  return /(?:te|vous) convien[st]\s*\?|c'est correct\s*\?|est-ce correct\s*\?|je te (?:propose de (?:noter|poser|créer)|pose (?:ce|cette)) /i.test(
     text,
   );
 }

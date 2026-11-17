@@ -2704,7 +2704,9 @@ describe("ConversationService", () => {
     });
 
     it("garde une annonce écrite en clair, qui porte une question", async () => {
-      const text = "Voici l'idée.\n\nJe vais te proposer deux listes. Ça te convient ?";
+      // « options » et non « listes » : une question de confirmation sur une liste ou un
+      // rendez-vous relance le modèle pour obtenir la carte (cf. « carte annoncée »).
+      const text = "Voici l'idée.\n\nJe vais te proposer deux pistes. Ça te convient ?";
       const repo = makeRepository();
       const llm = makeLlm([text]);
 
@@ -4518,6 +4520,48 @@ describe("ConversationService", () => {
         TOKEN,
       );
       jest.restoreAllMocks();
+    });
+
+    it("relance quand le modèle décrit le rendez-vous et demande de confirmer en texte", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      // Texte relevé en production le 17 novembre (V0.00.73).
+      const llm = makeLlmTurns([
+        {
+          chunks: [
+            "Je te propose de noter ce rendez-vous chez le dentiste pour vendredi 20 novembre à 18h. Est-ce que cela te convient ?",
+          ],
+        },
+        { toolCalls: [EVENT_CALL] },
+      ]);
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "rdv chez le dentiste vendredi à 18h",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(callCount(llm)).toBe(2);
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ kind: "create_events" }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("ne relance pas quand « te convient » ne porte que sur l'heure", async () => {
+      const llm = makeLlmTurns([
+        {
+          chunks: [
+            "Pour ton rendez-vous chez le dentiste, 10h te convient ? Sinon donne-moi l'heure.",
+          ],
+        },
+      ]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      expect(callCount(llm)).toBe(1);
     });
 
     it("ne relance pas quand le modèle demande seulement l'heure", async () => {

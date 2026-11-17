@@ -27,6 +27,17 @@ const PANE_MAX_WIDTH = 720;
 const CENTER_MIN_WIDTH = 480;
 /** Listes passées montrées d'emblée dans le volet, comme dans « Mes listes » au milieu. */
 const PANE_PAST_SLICE = 10;
+/**
+ * Temps pendant lequel la carte visée se replace quand la mise en page bouge.
+ *
+ * Les listes au-dessus finissent de se dessiner après l'ouverture (tâches,
+ * dossiers) et repoussent la carte hors de l'écran. Chrome compense seul ; Safari
+ * non (retour de Yann, 17 novembre : « Sport » à 14h, le volet s'ouvre sur lundi).
+ * Passé ce délai, on ne touche plus au défilement : l'utilisateur a la main.
+ */
+const ANCHOR_WINDOW_MS = 2_500;
+/** Air laissé au-dessus de la carte amenée à l'écran. */
+const ANCHOR_MARGIN = 16;
 
 /**
  * Volet de droite. Rien à l'écran tant qu'aucun contenu n'est choisi.
@@ -36,6 +47,22 @@ export function DetailPane() {
   const { width: windowWidth } = useWindowDimensions();
   // Le défilement du volet : la liste visée s'y amène elle-même, comme dans « Mes listes ».
   const scroll = useRef<ScrollView>(null);
+  // La carte visée (ou proposée) : le volet la replace tant que la mise en page bouge.
+  const anchor = useRef<View>(null);
+  const openedAt = useRef(0);
+  useEffect(() => {
+    openedAt.current = Date.now();
+  }, [content]);
+  const reanchor = () => {
+    if (Date.now() - openedAt.current > ANCHOR_WINDOW_MS) return;
+    // Mesurée depuis le contenu du volet, pas depuis la fenêtre visible : sinon le
+    // défilement déjà fait fausse la position et la carte repart vers le haut.
+    const contentNode = scroll.current?.getInnerViewNode();
+    if (!contentNode || !anchor.current) return;
+    anchor.current.measureLayout(contentNode, (_x, y) => {
+      scroll.current?.scrollTo({ y: Math.max(0, y - ANCHOR_MARGIN), animated: false });
+    });
+  };
   if (!content) return null;
 
   // Le volet ne mange jamais le milieu : sur une fenêtre étroite, le plafond
@@ -98,6 +125,9 @@ export function DetailPane() {
       </View>
       <ScrollView
         ref={scroll}
+        // Seule la taille du contenu est signalée sur le web, pas la position
+        // d'une carte : c'est elle qui dit que quelque chose a grandi au-dessus.
+        onContentSizeChange={reanchor}
         contentContainerStyle={{
           padding: 12,
           gap: 8,
@@ -105,7 +135,7 @@ export function DetailPane() {
           ...(expanded ? { maxWidth: 880, width: "100%", alignSelf: "center" as const } : {}),
         }}
       >
-        <PaneBody content={content} scrollRef={scroll} />
+        <PaneBody content={content} scrollRef={scroll} anchorRef={anchor} />
       </ScrollView>
     </View>
   );
@@ -209,9 +239,11 @@ function PaneTitle({ content }: { content: PaneContent }) {
 function PaneBody({
   content,
   scrollRef,
+  anchorRef,
 }: {
   content: PaneContent;
   scrollRef: RefObject<ScrollView | null>;
+  anchorRef: RefObject<View | null>;
 }) {
   if (content.kind === "suggestion") {
     return (
@@ -224,13 +256,14 @@ function PaneBody({
           <ListPaneBody
             content={{ kind: "all" }}
             scrollRef={scrollRef}
+            anchorRef={anchorRef}
             proposal={{ card, dueAt }}
           />
         )}
       />
     );
   }
-  return <ListPaneBody content={content} scrollRef={scrollRef} />;
+  return <ListPaneBody content={content} scrollRef={scrollRef} anchorRef={anchorRef} />;
 }
 
 /** Ce que le corps du volet sait montrer : une liste visée, un jour, ou toutes les listes. */
@@ -254,37 +287,24 @@ function proposalIndex(lists: TaskListWithTasks[], dueAt: string | null): number
  * une liste visée.
  */
 function ProposalSlot({
-  scrollRef,
+  anchorRef,
   children,
 }: {
-  scrollRef: RefObject<ScrollView | null>;
+  anchorRef: RefObject<View | null>;
   children: ReactNode;
 }) {
-  const placed = useRef(false);
-
-  return (
-    <View
-      onLayout={(event) => {
-        if (placed.current) return;
-        placed.current = true;
-        scrollRef.current?.scrollTo({
-          y: Math.max(0, event.nativeEvent.layout.y - 16),
-          animated: false,
-        });
-      }}
-    >
-      {children}
-    </View>
-  );
+  return <View ref={anchorRef}>{children}</View>;
 }
 
 function ListPaneBody({
   content,
   scrollRef,
+  anchorRef,
   proposal,
 }: {
   content: ListsContent;
   scrollRef: RefObject<ScrollView | null>;
+  anchorRef: RefObject<View | null>;
   proposal?: Proposal;
 }) {
   const { data: lists } = useTaskLists();
@@ -308,7 +328,7 @@ function ListPaneBody({
       )
     : -1;
   const proposalSlot = proposal ? (
-    <ProposalSlot key="proposal" scrollRef={scrollRef}>
+    <ProposalSlot key="proposal" anchorRef={anchorRef}>
       {proposal.card}
     </ProposalSlot>
   ) : null;
@@ -384,6 +404,7 @@ function ListPaneBody({
               onDelete={setDeletingList}
               highlighted={list.id === targetId}
               scrollRef={scrollRef}
+              anchorRef={anchorRef}
             />,
           ])}
           {proposalAt === entries.length ? proposalSlot : null}
@@ -413,6 +434,7 @@ function PaneList({
   onDelete,
   highlighted,
   scrollRef,
+  anchorRef,
 }: {
   shown: TaskListWithTasks;
   saved: TaskListWithTasks;
@@ -427,6 +449,8 @@ function PaneList({
   /** La liste visée par le clic : mise en avant, et amenée à l'écran. */
   highlighted: boolean;
   scrollRef: RefObject<ScrollView | null>;
+  /** La carte visée s'y inscrit : le volet la replace quand la mise en page bouge. */
+  anchorRef: RefObject<View | null>;
 }) {
   const dueOn = day ? dueOnForDay(saved, day) : null;
   const subset = isTaskSubset(saved, shown);
@@ -443,22 +467,24 @@ function PaneList({
   );
 
   return (
-    <View ref={zoneRef}>
-      <View ref={cardRef}>
-        <ListCard
-          list={saved}
-          folders={folders}
-          desktop
-          query=""
-          highlighted={highlighted}
-          scrollRef={scrollRef}
-          onOpenTask={onOpenTask}
-          onEdit={() => onEdit(saved)}
-          onDelete={() => onDelete(saved)}
-          {...(subset ? { visibleTaskIds: shown.tasks.map((task) => task.id) } : {})}
-          {...(dueOn ? { dueOnForNew: dueOn } : {})}
-          {...(web && movable ? { gripRef } : {})}
-        />
+    <View ref={highlighted ? anchorRef : undefined}>
+      <View ref={zoneRef}>
+        <View ref={cardRef}>
+          <ListCard
+            list={saved}
+            folders={folders}
+            desktop
+            query=""
+            highlighted={highlighted}
+            scrollRef={scrollRef}
+            onOpenTask={onOpenTask}
+            onEdit={() => onEdit(saved)}
+            onDelete={() => onDelete(saved)}
+            {...(subset ? { visibleTaskIds: shown.tasks.map((task) => task.id) } : {})}
+            {...(dueOn ? { dueOnForNew: dueOn } : {})}
+            {...(web && movable ? { gripRef } : {})}
+          />
+        </View>
       </View>
     </View>
   );
