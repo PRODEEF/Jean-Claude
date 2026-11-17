@@ -37,7 +37,9 @@ export type MonthGridProps = {
 };
 
 /** Ce qu'une cellule tient sous son numéro de jour : au-delà, elle déborde. */
-const MAX_LINES_PER_CELL = 3;
+const MAX_LINES_PER_CELL = 4;
+/** Lignes montrées quand « N autres » prend la cinquième place. */
+const LINES_BEFORE_MORE = 3;
 
 /**
  * Grille mensuelle.
@@ -204,18 +206,21 @@ function cellEntries(events: CalendarEntry[], lists: TaskListWithTasks[]): CellE
 /**
  * Ce qu'une cellule montre, et ce qu'elle en tait.
  *
- * Le « N autres » occupe une ligne au même titre que les autres : le compter
- * dans le même budget est ce qui empêche une journée chargée de déborder de sa
- * cellule. Sur téléphone, la cellule est trop étroite pour plus d'un titre : on
- * montre le premier, puis « N autres » (décision de Yann, 12 novembre).
+ * Jusqu'à 4 éléments, tous sont visibles ; à partir de 5, on en montre 3 et une
+ * ligne « N autres » prend la place des suivants (décision de Yann, 17 novembre).
+ * Sur téléphone, la cellule est trop étroite pour plus d'un titre : on montre le
+ * premier, puis « N autres » (décision de Yann, 12 novembre).
  */
 function fitEntries(
   entries: CellEntry[],
   compact: boolean,
 ): { shown: CellEntry[]; hidden: number } {
-  const room = compact ? 1 : MAX_LINES_PER_CELL;
+  if (compact) {
+    const shown = entries.length <= 1 ? entries : entries.slice(0, 1);
+    return { shown, hidden: entries.length - shown.length };
+  }
   const shown =
-    entries.length <= room ? entries : entries.slice(0, Math.max(room - 1, compact ? 1 : 0));
+    entries.length <= MAX_LINES_PER_CELL ? entries : entries.slice(0, LINES_BEFORE_MORE);
   return { shown, hidden: entries.length - shown.length };
 }
 
