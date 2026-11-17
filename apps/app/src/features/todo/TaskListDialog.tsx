@@ -17,6 +17,7 @@ import {
   withTime,
 } from "@/shared/lib/date-input";
 import { startOfDay } from "@/shared/lib/dates";
+import { REMINDER_CHOICES } from "@/features/calendar/lib/event-form";
 
 /**
  * Création — éventuellement depuis un dossier, qui exprime déjà le rangement —
@@ -92,6 +93,16 @@ function ListForm({
   );
   /** `HH:MM`, vide quand l'échéance ne vise pas d'heure précise. */
   const [time, setTime] = useState(() => timeOf(initialDue, initialAllDay));
+  /** `HH:MM`, vide quand la liste n'a pas d'heure de fin. */
+  const [endTime, setEndTime] = useState(() =>
+    editing && target.list.endsAt !== null && initialAllDay === false
+      ? formatTimeInput(new Date(target.list.endsAt))
+      : "",
+  );
+  const [reminder, setReminder] = useState<number | null>(
+    editing ? target.list.reminderMinutesBefore : null,
+  );
+  const [notes, setNotes] = useState(editing ? (target.list.notes ?? "") : "");
   /** Une tâche par ligne, saisie avec la liste : création seulement. */
   const [itemsText, setItemsText] = useState("");
   /** La liste déjà créée quand l'écriture de ses tâches a échoué : on ne la recrée pas. */
@@ -127,6 +138,14 @@ function ListForm({
 
     const onError = (cause: Error) => setError(toMessage(cause));
 
+    // La fin et le rappel ne se règlent qu'à la modification, sur une liste qui a
+    // une date : ce sont les réglages d'un rendez-vous, pas d'une liste d'achats.
+    const end = parseEnd(due.value, time, endTime);
+    if (!end.ok) {
+      setError(end.message);
+      return;
+    }
+
     // `dueAllDay` n'accompagne l'échéance que lorsqu'il y en a une : sans date,
     // il n'y a pas de moment, et le serveur efface les deux ensemble.
     const moment = due.allDay === null ? {} : { dueAllDay: due.allDay };
@@ -138,6 +157,9 @@ function ListForm({
         folderId,
         dueAt: due.value,
         ...moment,
+        endsAt: end.value,
+        reminderMinutesBefore: due.value === null ? null : reminder,
+        notes: notes.trim().length > 0 ? notes.trim() : null,
       };
       updateList.mutate({ id: target.list.id, patch }, { onSuccess: onClose, onError });
       return;
@@ -175,7 +197,9 @@ function ListForm({
       {
         onSuccess: done,
         onError: () =>
-          setError("La liste est créée, mais ses tâches n'ont pas pu être enregistrées. Réessayez."),
+          setError(
+            "La liste est créée, mais ses tâches n'ont pas pu être enregistrées. Réessayez.",
+          ),
       },
     );
   };
@@ -293,6 +317,54 @@ function ListForm({
         Une date sans heure place la liste dans la journée, sans créneau.
       </Text>
 
+      {/* Les réglages d'un rendez-vous, comme dans Google Agenda et le Calendrier
+          iOS (§4.2) : fin, rappel, notes. Proposés à la modification d'une liste
+          datée ; la création, elle, reste sans question (§13.4.1). */}
+      {editing && date.trim().length > 0 ? (
+        <>
+          <Field label="Heure de fin">
+            <DateTimeField
+              mode="time"
+              value={endTime}
+              onChange={setEndTime}
+              placeholder="Aucune"
+              clearable
+              accessibilityLabel="Heure de fin"
+            />
+          </Field>
+
+          <Field label="Rappel">
+            <View className="flex-row flex-wrap gap-2">
+              {REMINDER_CHOICES.map((choice) => (
+                <Button
+                  key={choice.label}
+                  size="sm"
+                  variant={reminder === choice.minutes ? "secondary" : "outline"}
+                  onPress={() => setReminder(choice.minutes)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: reminder === choice.minutes }}
+                >
+                  <Text>{choice.label}</Text>
+                </Button>
+              ))}
+            </View>
+          </Field>
+        </>
+      ) : null}
+
+      {editing ? (
+        <Field label="Notes">
+          <Input
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+            placeholder="Ajouter une description"
+            className="h-24 py-2"
+            accessibilityLabel="Notes de la liste"
+          />
+        </Field>
+      ) : null}
+
       {/* Le rangement n'est proposé qu'à la modification : au moment de créer,
           on n'a pas encore à savoir où la liste ira (§13.4.1). */}
       {editing && folders.length > 0 ? (
@@ -337,8 +409,7 @@ export function timeOf(dueAt: string | null, allDay: boolean | null): string {
  * elle, et c'est le champ d'heure laissé vide qui vaut « dans la journée ».
  */
 type DueResult =
-  | { ok: true; value: string | null; allDay: boolean | null }
-  | { ok: false; message: string };
+  { ok: true; value: string | null; allDay: boolean | null } | { ok: false; message: string };
 
 /**
  * Échéance saisie, ou son effacement.
@@ -360,8 +431,7 @@ export function parseDue(date: string, time: string, originalDueAt: string | nul
   // non — sauf à relire l'échéance déjà portée par la liste qu'on édite.
   const chosen = startOfDay(day).getTime();
   if (chosen < startOfDay(new Date()).getTime()) {
-    const original =
-      originalDueAt === null ? null : startOfDay(new Date(originalDueAt)).getTime();
+    const original = originalDueAt === null ? null : startOfDay(new Date(originalDueAt)).getTime();
     if (original !== chosen) {
       return { ok: false, message: "Une échéance ne peut pas être dans le passé." };
     }
@@ -373,6 +443,31 @@ export function parseDue(date: string, time: string, originalDueAt: string | nul
   if (!parsed) return { ok: false, message: "Heure attendue au format HH:MM." };
 
   return { ok: true, value: withTime(day, parsed), allDay: false };
+}
+
+type EndResult = { ok: true; value: string | null } | { ok: false; message: string };
+
+/**
+ * Heure de fin saisie, posée le même jour que le début.
+ *
+ * Elle exige un début avec heure et lui reste postérieure — la même règle que
+ * le serveur (`task_lists_range_valid`), pour le dire ici plutôt que par une
+ * erreur d'enregistrement.
+ */
+export function parseEnd(dueAt: string | null, startTime: string, endTime: string): EndResult {
+  if (endTime.trim().length === 0 || dueAt === null) return { ok: true, value: null };
+  if (startTime.trim().length === 0) {
+    return { ok: false, message: "Indiquez une heure de début avant une heure de fin." };
+  }
+
+  const parsed = parseTimeInput(endTime);
+  if (!parsed) return { ok: false, message: "Heure de fin attendue au format HH:MM." };
+
+  const end = withTime(startOfDay(new Date(dueAt)), parsed);
+  if (new Date(end).getTime() <= new Date(dueAt).getTime()) {
+    return { ok: false, message: "La fin doit être après le début." };
+  }
+  return { ok: true, value: end };
 }
 
 /** Une tâche par ligne : les puces saisies à la main (« - », « • ») ne font pas partie du titre. */
