@@ -81,6 +81,9 @@ export function CalendarScreen() {
   const [view, setView] = useState<CalendarView>("month");
   const [anchor, setAnchor] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
+  // Le gris d'un jour n'apparaît qu'après un clic dessus : `selectedDay` existe
+  // dès l'arrivée (il alimente l'agenda du jour), mais ce n'est pas un choix.
+  const [pickedDay, setPickedDay] = useState<Date | null>(null);
   const [dialogTarget, setDialogTarget] = useState<EventDialogTarget | null>(null);
   const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
   /** Détail d'un événement au clic, avant tout formulaire de modification (§4.2). */
@@ -180,6 +183,7 @@ export function CalendarScreen() {
   const shift = (direction: 1 | -1) => {
     const next = shiftAnchor(view, anchor, direction);
     setAnchor(next);
+    setPickedDay(null);
     if (view === "week") setSelectedDay(startOfWeek(next));
     else if (view !== "year") setSelectedDay(startOfDay(next));
   };
@@ -193,6 +197,7 @@ export function CalendarScreen() {
     const today = new Date();
     setAnchor(today);
     setSelectedDay(startOfDay(today));
+    setPickedDay(null);
   };
 
   // Minuit, et non l'heure courante : une liste datée sur un jour n'a pas
@@ -229,6 +234,7 @@ export function CalendarScreen() {
   // sélection continue par ailleurs d'alimenter l'agenda du jour, en dessous.
   const selectDay = (day: Date) => {
     setSelectedDay(day);
+    setPickedDay(day);
     createAt(day, DEFAULT_CREATE_MINUTE);
   };
   // Liste déposée sur un jour de la grille horaire : à l'heure lâchée, ou sans
@@ -445,7 +451,7 @@ export function CalendarScreen() {
               anchor={anchor}
               events={events}
               lists={dueLists}
-              selectedDay={selectedDay}
+              selectedDay={pickedDay}
               onSelectDay={selectDay}
               onOpenEvent={openEvent}
               {...(pane.available
@@ -465,6 +471,7 @@ export function CalendarScreen() {
                 onSelectMonth={(month) => {
                   setAnchor(month);
                   setSelectedDay(startOfDay(month));
+                  setPickedDay(null);
                   setView("month");
                 }}
               />

@@ -16,7 +16,8 @@ export type MonthGridProps = {
   events: CalendarEntry[];
   /** Todolistes échues, toutes listes confondues : ce qui charge la journée (A.2). */
   lists: TaskListWithTasks[];
-  selectedDay: Date;
+  /** Le jour cliqué, ou `null` tant que l'utilisateur n'en a choisi aucun. */
+  selectedDay: Date | null;
   onSelectDay: (day: Date) => void;
   onOpenEvent: (event: CalendarEntry) => void;
   /**
@@ -89,7 +90,7 @@ export function MonthGrid({
               {week.map((day) => {
                 const outside = day.getMonth() !== anchor.getMonth();
                 const isToday = isSameDay(day, today);
-                const selected = isSameDay(day, selectedDay);
+                const selected = selectedDay !== null && isSameDay(day, selectedDay);
                 // Chaque liste garde son titre : une liste est une chose à part entière,
                 // pas un compte de tâches fusionné avec celles du même jour (Yann,
                 // 12 novembre). Rendez-vous et listes partagent donc le même budget
