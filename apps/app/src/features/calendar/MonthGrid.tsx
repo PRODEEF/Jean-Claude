@@ -113,7 +113,7 @@ export function MonthGrid({
                       onMoveList(listId, day, fromDay);
                     }}
                     className={`border-border min-w-0 flex-1 gap-1 border-b border-r p-1 ${
-                      selected ? "bg-accent-soft" : ""
+                      selected ? "bg-muted" : ""
                     }`}
                   >
                     {/* La cellule n'est pas elle-même pressable : elle porte les
