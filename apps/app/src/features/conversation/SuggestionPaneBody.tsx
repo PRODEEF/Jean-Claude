@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text as NativeText, View } from "react-native";
-import type { Suggestion } from "@jc/domain";
+import { createTaskListsPayloadSchema, type Suggestion } from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -19,9 +20,15 @@ import { ResolvedSuggestionNote, SuggestionCard } from "./SuggestionCard";
 export function SuggestionPaneBody({
   conversationId,
   suggestionId,
+  placeInLists,
 }: {
   conversationId: string;
   suggestionId: string;
+  /**
+   * Place la carte d'une todoliste proposée dans « Mes listes », à sa date dans
+   * l'ordre du temps. Sans cela, la carte s'affiche seule (autres propositions).
+   */
+  placeInLists?: (card: ReactNode, dueAt: string | null) => ReactNode;
 }) {
   const { pending, resolved, resolve } = useSuggestions(conversationId);
   const pane = useDetailPane();
@@ -35,7 +42,7 @@ export function SuggestionPaneBody({
     return <ResolvedSuggestionNote suggestion={suggestion} />;
   }
 
-  return (
+  const card = (
     <View>
       <SuggestionCard
         flat
@@ -64,6 +71,17 @@ export function SuggestionPaneBody({
       />
     </View>
   );
+
+  if (suggestion.kind === "create_task_list" && placeInLists) {
+    return <>{placeInLists(card, proposedDueAt(suggestion))}</>;
+  }
+  return card;
+}
+
+/** La date de la première liste proposée : c'est elle qui place la carte dans le temps. */
+function proposedDueAt(suggestion: Suggestion): string | null {
+  const proposed = createTaskListsPayloadSchema.safeParse(suggestion.payload);
+  return proposed.success ? (proposed.data.lists[0]?.dueAt ?? null) : null;
 }
 
 /**
