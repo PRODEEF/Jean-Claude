@@ -4464,6 +4464,83 @@ describe("ConversationService", () => {
     });
   });
 
+  describe("carte annoncée sans appel d'outil (§12.1)", () => {
+    const EVENT_CALL: LlmToolCall = {
+      id: "call-1",
+      name: "suggest_events",
+      input: {
+        message: "Je te pose le dentiste jeudi 18h ?",
+        events: [{ title: "Dentiste", startsAt: "2026-11-19T18:00:00.000Z" }],
+      },
+    };
+
+    it("relance le modèle pour obtenir la carte qu'il a annoncée sans l'appeler", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const llm = makeLlmTurns([
+        { chunks: ["(La proposition apparaît ci-dessous pour confirmation.)"] },
+        { toolCalls: [EVENT_CALL] },
+      ]);
+
+      await drain(makeService(makeRepository(), llm, suggestions), {
+        content: "parfait",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(callCount(llm)).toBe(2);
+      expect(suggestions.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ kind: "create_events" }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("remplace la promesse par un message honnête quand la relance ne produit rien", async () => {
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+      const suggestions = makeSuggestionRepository();
+      const repo = makeRepository();
+      const llm = makeLlmTurns([{ chunks: ["Rendez-vous noté : dentiste jeudi 18h."] }, {}]);
+
+      await drain(makeService(repo, llm, suggestions), {
+        content: "ok c'est bon",
+        inputMode: "text",
+        attachmentIds: [],
+      });
+
+      expect(suggestions.create).not.toHaveBeenCalled();
+      expect(repo.appendMessage).toHaveBeenNthCalledWith(
+        2,
+        "conv-1",
+        USER,
+        expect.objectContaining({ content: expect.stringContaining("pas réussi") }),
+        TOKEN,
+      );
+      jest.restoreAllMocks();
+    });
+
+    it("ne relance pas quand le modèle demande seulement l'heure", async () => {
+      const llm = makeLlmTurns([
+        { chunks: ["Pouvez-vous me donner l'heure ? 10h, cela vous va ?"] },
+      ]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      expect(callCount(llm)).toBe(1);
+    });
+
+    it("ne relance pas quand la carte a bien été appelée", async () => {
+      const llm = makeLlmTurns([
+        { chunks: ["La proposition apparaît ci-dessous."], toolCalls: [EVENT_CALL] },
+      ]);
+
+      await drain(makeService(makeRepository(), llm));
+
+      expect(callCount(llm)).toBe(1);
+    });
+  });
+
   describe("création de plusieurs rendez-vous ponctuels (A.3)", () => {
     it("capture un seul appel portant plusieurs rendez-vous", async () => {
       const suggestions = makeSuggestionRepository();
