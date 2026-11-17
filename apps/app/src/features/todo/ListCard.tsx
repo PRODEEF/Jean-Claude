@@ -109,7 +109,9 @@ export function ListCard({
       card.current?.measureLayout(scrollNode, (_x, y) => {
         scrollRef.current?.scrollTo({
           y: Math.max(0, y - HIGHLIGHT_SCROLL_MARGIN),
-          animated: true,
+          // Sans animation : on arrive directement sur la carte, sans la voir
+          // glisser (Yann, 17 novembre).
+          animated: false,
         });
       });
     });
