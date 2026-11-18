@@ -3,6 +3,9 @@ import { rruleSchema } from "../calendar/calendar.schema";
 import { calendarDateSchema } from "../shared/search.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 
+/** Lieu d'un rendez-vous : texte libre, rogné, 200 caractères au plus (`task_lists_location_length`). */
+const locationSchema = z.string().trim().max(200);
+
 /**
  * Nature d'une liste (§12.1).
  *
@@ -58,6 +61,8 @@ export const taskListSchema = z.object({
   doneAt: isoDateTimeSchema.nullable(),
   /** Texte libre, repris des rendez-vous. */
   notes: z.string().max(4_000).nullable(),
+  /** Lieu du rendez-vous, en texte libre (demande de Yann, 18 novembre) ; `null` sans lieu. */
+  location: locationSchema.nullable().optional(),
   /** Créneau posé dans l'agenda pour cette liste, le cas échéant (A.3, A.8). */
   eventId: uuidSchema.nullable(),
   /**
@@ -179,6 +184,7 @@ export const createTaskListSchema = z.object({
   rrule: rruleSchema.nullable().optional(),
   reminderMinutesBefore: z.number().int().min(0).max(10_080).nullable().optional(),
   notes: z.string().max(4_000).nullable().optional(),
+  location: locationSchema.nullable().optional(),
 });
 
 export type CreateTaskList = z.infer<typeof createTaskListSchema>;

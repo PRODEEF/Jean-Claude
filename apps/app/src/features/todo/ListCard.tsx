@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState, type Ref, type RefObject } from "react";
 import { ScrollView, View } from "react-native";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
-import { isListDone, type Task, type TaskList, type TaskListWithTasks } from "@jc/domain";
+import {
+  isListDone,
+  presetOfRrule,
+  RECURRENCE_CHOICES,
+  type Task,
+  type TaskList,
+  type TaskListWithTasks,
+} from "@jc/domain";
 import { Button } from "@/shared/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
@@ -172,6 +179,8 @@ export function ListCard({
           shopping={shopping}
           folderName={folderName}
           due={due}
+          location={list.location ?? undefined}
+          repeat={repeatLabel(list)}
           // Le dossier se change ici parce que la liste s'y voit aussi (A.2) :
           // c'est la même liste, pas une copie rangée ailleurs.
           onFolderPress={(event) =>
@@ -267,6 +276,17 @@ export function ListCard({
  * L'heure ne s'affiche que si l'échéance en vise une : `dueAllDay` le dit,
  * plutôt que de le relire dans l'horloge de l'appareil.
  */
+/**
+ * Ce que la carte dit de la répétition : le choix (« Toutes les semaines »), ou
+ * « Répétition » pour une règle de Jean-Claude que les quatre choix ne disent pas.
+ */
+function repeatLabel(list: Pick<TaskList, "rrule" | "dueAt">): string | undefined {
+  const preset = presetOfRrule(list.rrule, list.dueAt ? new Date(list.dueAt) : new Date());
+  if (preset === "none") return undefined;
+  if (preset === "custom") return "Répétition";
+  return RECURRENCE_CHOICES.find((choice) => choice.preset === preset)?.label;
+}
+
 export function dueLabel(list: Pick<TaskList, "dueAt" | "dueAllDay">): string | undefined {
   // `!` plutôt que `=== null` : le site et le serveur se déploient séparément, et
   // un serveur pas encore à jour ne renvoie pas `dueAt` pour une liste d'espace.

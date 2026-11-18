@@ -5,7 +5,9 @@ import {
   Folder,
   GripVertical,
   ListChecks,
+  MapPin,
   MoreHorizontal,
+  Repeat,
   ShoppingBasket,
 } from "lucide-react-native";
 import { cn } from "@/shared/lib/utils";
@@ -79,6 +81,8 @@ export function TaskListCardHeader({
   onDuePress,
   onMenuPress,
   menuLabel,
+  location,
+  repeat,
 }: {
   /** Pour les libellés d'accessibilité. */
   title: string;
@@ -90,6 +94,10 @@ export function TaskListCardHeader({
   onDuePress: () => void;
   onMenuPress: (event: GestureResponderEvent) => void;
   menuLabel: string;
+  /** Lieu du rendez-vous, sous l'en-tête quand il y en a un. */
+  location?: string | undefined;
+  /** Libellé de la répétition (« Toutes les semaines »), quand la liste se répète. */
+  repeat?: string | undefined;
 }) {
   const type = (
     <View className="flex-row items-center gap-2">
@@ -162,6 +170,30 @@ export function TaskListCardHeader({
         {dueButton}
       </View>
       <View className="absolute right-0 top-0">{menu}</View>
+      {location || repeat ? (
+        <View className="flex-row flex-wrap items-center gap-x-3 gap-y-0.5 pr-10 pt-0.5">
+          {location ? (
+            <View className="min-w-0 shrink flex-row items-center gap-1">
+              <Icon as={MapPin} size={13} className="text-muted-foreground" />
+              <Text
+                className="text-muted-foreground shrink text-xs"
+                numberOfLines={1}
+                accessibilityLabel={`Lieu : ${location}`}
+              >
+                {location}
+              </Text>
+            </View>
+          ) : null}
+          {repeat ? (
+            <View className="flex-row items-center gap-1">
+              <Icon as={Repeat} size={13} className="text-muted-foreground" />
+              <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+                {repeat}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
