@@ -10,7 +10,8 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  */
 export type PaneContent =
   | { kind: "day"; day: Date }
-  | { kind: "list"; listId: string }
+  // `occurrenceAt` : la date de la série sur laquelle on a cliqué, quand la liste se répète.
+  | { kind: "list"; listId: string; occurrenceAt?: string }
   // Une proposition de l'assistant, à valider ou ignorer sans quitter le fil.
   | { kind: "suggestion"; conversationId: string; suggestionId: string };
 

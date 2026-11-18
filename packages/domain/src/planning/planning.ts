@@ -254,6 +254,7 @@ export function projectOccurrences(
       dueAllDay: occurrence.allDay,
       endsAt: occurrence.endsAt,
       doneAt: occurrence.doneAt,
+      occurrenceAt: occurrence.occurrenceAt,
     }));
   });
 }

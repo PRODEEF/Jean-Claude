@@ -315,7 +315,7 @@ function ListPaneBody({
   const [pastKept, setPastKept] = useState(PANE_PAST_SLICE);
   const [openedTask, setOpenedTask] = useState<Task | null>(null);
   const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
-  const [deletingList, setDeletingList] = useState<TaskList | null>(null);
+  const [deleting, setDeleting] = useState<{ list: TaskList; occurrenceAt?: string } | null>(null);
   const folders = useFolderChoices();
 
   // La liste telle qu'enregistrée : une entrée du jour peut n'en être que la
@@ -405,7 +405,18 @@ function ListPaneBody({
               onSwap={swapDue}
               onOpenTask={setOpenedTask}
               onEdit={(target) => setListTarget({ mode: "edit", list: target })}
-              onDelete={setDeletingList}
+              onDelete={(target) =>
+                // La date cliquée ne vaut que pour la liste visée : une autre carte
+                // du volet n'a pas de date à elle.
+                setDeleting({
+                  list: target,
+                  ...(content.kind === "list" &&
+                  target.id === content.listId &&
+                  content.occurrenceAt
+                    ? { occurrenceAt: content.occurrenceAt }
+                    : {}),
+                })
+              }
               highlighted={list.id === targetId}
               anchorRef={anchorRef}
             />,
@@ -415,7 +426,11 @@ function ListPaneBody({
       )}
       <TaskDialog task={editedTask} onClose={() => setOpenedTask(null)} />
       <TaskListDialog target={listTarget} onClose={() => setListTarget(null)} />
-      <TaskListDeleteDialog list={deletingList} onClose={() => setDeletingList(null)} />
+      <TaskListDeleteDialog
+        list={deleting?.list ?? null}
+        occurrenceAt={deleting?.occurrenceAt}
+        onClose={() => setDeleting(null)}
+      />
     </>
   );
 }
