@@ -100,12 +100,13 @@ export function ListCard({
     if (!scrollTarget || !scrollRef) return;
 
     const frame = requestAnimationFrame(() => {
-      const scrollNode = scrollRef.current?.getNativeScrollRef();
+      // Mesurée depuis le contenu défilant, pas depuis la fenêtre visible : sinon le
+      // défilement déjà fait fausse la position quand l'écran n'est pas en haut.
+      // La carte peut être imbriquée sous n'importe quel nombre de vues
+      // intermédiaires, `measureLayout` s'en affranchit.
+      const scrollNode = scrollRef.current?.getInnerViewNode();
       if (!scrollNode) return;
 
-      // Mesurée relativement au défilement lui-même plutôt qu'à l'écran : la
-      // carte peut être imbriquée sous n'importe quel nombre de vues
-      // intermédiaires, `measureLayout` s'en affranchit.
       card.current?.measureLayout(scrollNode, (_x, y) => {
         scrollRef.current?.scrollTo({
           y: Math.max(0, y - HIGHLIGHT_SCROLL_MARGIN),

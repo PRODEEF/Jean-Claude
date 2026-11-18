@@ -50,9 +50,6 @@ export function DetailPane() {
   // La carte visée (ou proposée) : le volet la replace tant que la mise en page bouge.
   const anchor = useRef<View>(null);
   const openedAt = useRef(0);
-  useEffect(() => {
-    openedAt.current = Date.now();
-  }, [content]);
   const reanchor = () => {
     if (Date.now() - openedAt.current > ANCHOR_WINDOW_MS) return;
     // Mesurée depuis le contenu du volet, pas depuis la fenêtre visible : sinon le
@@ -63,6 +60,18 @@ export function DetailPane() {
       scroll.current?.scrollTo({ y: Math.max(0, y - ANCHOR_MARGIN), animated: false });
     });
   };
+  // À chaque choix d'un élément, volet ouvert ou non, la carte visée se met en
+  // place une fois la mise en page faite, puis tant qu'elle bouge. C'est le volet
+  // qui s'en charge, pas la carte : elle ne sait pas où en est le défilement
+  // (retour de Yann, 18 novembre : en cliquant les rendez-vous du mardi 17 l'un
+  // après l'autre, le volet ne se calait plus).
+  useEffect(() => {
+    openedAt.current = Date.now();
+    const frame = requestAnimationFrame(reanchor);
+    return () => cancelAnimationFrame(frame);
+    // `reanchor` ne lit que des refs : le relire à chaque rendu ne changerait rien.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content]);
   if (!content) return null;
 
   // Le volet ne mange jamais le milieu : sur une fenêtre étroite, le plafond
@@ -135,7 +144,7 @@ export function DetailPane() {
           ...(expanded ? { maxWidth: 880, width: "100%", alignSelf: "center" as const } : {}),
         }}
       >
-        <PaneBody content={content} scrollRef={scroll} anchorRef={anchor} />
+        <PaneBody content={content} anchorRef={anchor} />
       </ScrollView>
     </View>
   );
@@ -238,11 +247,9 @@ function PaneTitle({ content }: { content: PaneContent }) {
 
 function PaneBody({
   content,
-  scrollRef,
   anchorRef,
 }: {
   content: PaneContent;
-  scrollRef: RefObject<ScrollView | null>;
   anchorRef: RefObject<View | null>;
 }) {
   if (content.kind === "suggestion") {
@@ -255,7 +262,6 @@ function PaneBody({
         placeInLists={(card, dueAt) => (
           <ListPaneBody
             content={{ kind: "all" }}
-            scrollRef={scrollRef}
             anchorRef={anchorRef}
             proposal={{ card, dueAt }}
           />
@@ -263,7 +269,7 @@ function PaneBody({
       />
     );
   }
-  return <ListPaneBody content={content} scrollRef={scrollRef} anchorRef={anchorRef} />;
+  return <ListPaneBody content={content} anchorRef={anchorRef} />;
 }
 
 /** Ce que le corps du volet sait montrer : une liste visée, un jour, ou toutes les listes. */
@@ -298,12 +304,10 @@ function ProposalSlot({
 
 function ListPaneBody({
   content,
-  scrollRef,
   anchorRef,
   proposal,
 }: {
   content: ListsContent;
-  scrollRef: RefObject<ScrollView | null>;
   anchorRef: RefObject<View | null>;
   proposal?: Proposal;
 }) {
@@ -403,7 +407,6 @@ function ListPaneBody({
               onEdit={(target) => setListTarget({ mode: "edit", list: target })}
               onDelete={setDeletingList}
               highlighted={list.id === targetId}
-              scrollRef={scrollRef}
               anchorRef={anchorRef}
             />,
           ])}
@@ -433,7 +436,6 @@ function PaneList({
   onEdit,
   onDelete,
   highlighted,
-  scrollRef,
   anchorRef,
 }: {
   shown: TaskListWithTasks;
@@ -448,7 +450,6 @@ function PaneList({
   onDelete: (list: TaskList) => void;
   /** La liste visée par le clic : mise en avant, et amenée à l'écran. */
   highlighted: boolean;
-  scrollRef: RefObject<ScrollView | null>;
   /** La carte visée s'y inscrit : le volet la replace quand la mise en page bouge. */
   anchorRef: RefObject<View | null>;
 }) {
@@ -476,7 +477,6 @@ function PaneList({
             desktop
             query=""
             highlighted={highlighted}
-            scrollRef={scrollRef}
             onOpenTask={onOpenTask}
             onEdit={() => onEdit(saved)}
             onDelete={() => onDelete(saved)}
