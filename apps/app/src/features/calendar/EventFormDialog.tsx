@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { View } from "react-native";
-import type { CalendarEntry } from "@jc/domain";
+import { RECURRENCE_CHOICES, rruleForPreset, type CalendarEntry } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
 import { DateTimeField } from "@/shared/ui/date-time-field";
@@ -75,9 +75,9 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
   const [endTouched, setEndTouched] = useState(target.mode === "edit");
 
   const editing = target.mode === "edit";
+  const personal = target.mode === "create" && !target.groupId;
   const shared = target.mode === "edit" ? target.event.space !== null : Boolean(target.groupId);
-  const pending =
-    create.isPending || update.isPending || remove.isPending || createList.isPending;
+  const pending = create.isPending || update.isPending || remove.isPending || createList.isPending;
 
   const patch = <K extends keyof EventFormValues>(key: K, value: EventFormValues[K]) =>
     setValues((current) => ({ ...current, [key]: value }));
@@ -121,6 +121,9 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
           endsAt: parsed.value.endsAt ?? null,
           reminderMinutesBefore: parsed.value.reminderMinutesBefore ?? null,
           notes: parsed.value.notes ?? null,
+          location: values.location.trim() || null,
+          // Le jour de la semaine, du mois ou de l'année vient du début choisi.
+          rrule: rruleForPreset(values.recurrence, new Date(parsed.value.startsAt)),
         },
         options,
       );
@@ -224,6 +227,38 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
           </View>
         </View>
       )}
+
+      {/* Lieu et répétition : les rendez-vous personnels seulement. Ceux d'un
+          espace restent des rendez-vous classiques, sans l'un ni l'autre. */}
+      {personal ? (
+        <>
+          <Field label="Répétition">
+            <View className="flex-row flex-wrap gap-2">
+              {RECURRENCE_CHOICES.map((choice) => (
+                <Button
+                  key={choice.preset}
+                  size="sm"
+                  variant={values.recurrence === choice.preset ? "secondary" : "outline"}
+                  onPress={() => patch("recurrence", choice.preset)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: values.recurrence === choice.preset }}
+                >
+                  <Text>{choice.label}</Text>
+                </Button>
+              ))}
+            </View>
+          </Field>
+
+          <Field label="Lieu">
+            <Input
+              value={values.location}
+              onChangeText={(text) => patch("location", text)}
+              placeholder="Ajouter un lieu"
+              accessibilityLabel="Lieu de l'événement"
+            />
+          </Field>
+        </>
+      ) : null}
 
       <Field label="Rappel">
         <View className="flex-row flex-wrap gap-2">

@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { View } from "react-native";
-import type { CreateTaskList, TaskList, TaskListKind, UpdateTaskList } from "@jc/domain";
+import {
+  presetOfRrule,
+  RECURRENCE_CHOICES,
+  rruleForPreset,
+  type CreateTaskList,
+  type RecurrencePreset,
+  type TaskList,
+  type TaskListKind,
+  type UpdateTaskList,
+} from "@jc/domain";
 import { ApiError } from "@jc/api-client";
 import { Button } from "@/shared/ui/button";
 import { DateTimeField } from "@/shared/ui/date-time-field";
@@ -103,6 +112,17 @@ function ListForm({
     editing ? target.list.reminderMinutesBefore : null,
   );
   const [notes, setNotes] = useState(editing ? (target.list.notes ?? "") : "");
+  const [location, setLocation] = useState(editing ? (target.list.location ?? "") : "");
+  // `custom` : une règle de Jean-Claude (« sauf en février »…) que les quatre choix ne
+  // disent pas. Elle reste telle quelle tant qu'on n'en choisit pas une autre.
+  const [recurrence, setRecurrence] = useState<RecurrencePreset>(() =>
+    editing
+      ? presetOfRrule(
+          target.list.rrule,
+          target.list.dueAt ? new Date(target.list.dueAt) : new Date(),
+        )
+      : "none",
+  );
   /** Une tâche par ligne, saisie avec la liste : création seulement. */
   const [itemsText, setItemsText] = useState("");
   /** La liste déjà créée quand l'écriture de ses tâches a échoué : on ne la recrée pas. */
@@ -160,6 +180,13 @@ function ListForm({
         endsAt: end.value,
         reminderMinutesBefore: due.value === null ? null : reminder,
         notes: notes.trim().length > 0 ? notes.trim() : null,
+        location: location.trim().length > 0 ? location.trim() : null,
+        // Une règle personnalisée n'est pas réécrite ; sans date, il n'y a plus de série.
+        ...(due.value === null
+          ? { rrule: null }
+          : recurrence === "custom"
+            ? {}
+            : { rrule: rruleForPreset(recurrence, new Date(due.value)) }),
       };
       updateList.mutate({ id: target.list.id, patch }, { onSuccess: onClose, onError });
       return;
@@ -333,6 +360,39 @@ function ListForm({
             />
           </Field>
 
+          <Field label="Répétition">
+            <View className="flex-row flex-wrap gap-2">
+              {recurrence === "custom" ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: true }}
+                >
+                  <Text>Personnalisée</Text>
+                </Button>
+              ) : null}
+              {RECURRENCE_CHOICES.map((choice) => (
+                <Button
+                  key={choice.preset}
+                  size="sm"
+                  variant={recurrence === choice.preset ? "secondary" : "outline"}
+                  onPress={() => setRecurrence(choice.preset)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: recurrence === choice.preset }}
+                >
+                  <Text>{choice.label}</Text>
+                </Button>
+              ))}
+            </View>
+            {recurrence === "custom" ? (
+              <Text className="text-muted-foreground text-xs">
+                Règle créée par Jean-Claude (par exemple « sauf en février ») : elle reste telle
+                quelle tant que vous n'en choisissez pas une autre.
+              </Text>
+            ) : null}
+          </Field>
+
           <Field label="Rappel">
             <View className="flex-row flex-wrap gap-2">
               {REMINDER_CHOICES.map((choice) => (
@@ -350,6 +410,17 @@ function ListForm({
             </View>
           </Field>
         </>
+      ) : null}
+
+      {editing ? (
+        <Field label="Lieu">
+          <Input
+            value={location}
+            onChangeText={setLocation}
+            placeholder="Ajouter un lieu"
+            accessibilityLabel="Lieu de la liste"
+          />
+        </Field>
       ) : null}
 
       {editing ? (

@@ -1,4 +1,4 @@
-import type { CalendarEvent, CreateCalendarEvent } from "@jc/domain";
+import type { CalendarEvent, CreateCalendarEvent, RecurrencePreset } from "@jc/domain";
 import {
   formatDateInput,
   formatTimeInput,
@@ -25,6 +25,10 @@ export type EventFormValues = {
   allDay: boolean;
   reminderMinutesBefore: number | null;
   notes: string;
+  /** Lieu en texte libre ; propre aux rendez-vous personnels, pas à ceux d'un espace. */
+  location: string;
+  /** Répétition choisie ; `custom` n'est pas proposé à la création. */
+  recurrence: Exclude<RecurrencePreset, "custom">;
 };
 
 /** Délais de rappel proposés — ceux du Calendrier iOS et de Google Calendar (§4.2). */
@@ -45,6 +49,8 @@ export function emptyForm(day: Date): EventFormValues {
     allDay: false,
     reminderMinutesBefore: null,
     notes: "",
+    location: "",
+    recurrence: "none",
   };
 }
 
@@ -72,6 +78,8 @@ export function formFromEvent(event: CalendarEvent): EventFormValues {
     allDay: event.allDay,
     reminderMinutesBefore: event.reminderMinutesBefore,
     notes: event.notes ?? "",
+    location: "",
+    recurrence: "none",
   };
 }
 
