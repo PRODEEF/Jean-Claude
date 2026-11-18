@@ -21,6 +21,7 @@ type TaskListRow = {
   reminder_minutes_before: number | null;
   done_at: string | null;
   notes: string | null;
+  location: string | null;
   event_id: string | null;
   source_event_id: string | null;
   conversation_id: string | null;
@@ -64,6 +65,7 @@ function toList(row: TaskListRow): TaskList {
     reminderMinutesBefore: row.reminder_minutes_before,
     doneAt: row.done_at,
     notes: row.notes,
+    location: row.location,
     eventId: row.event_id,
     sourceEventId: row.source_event_id,
     conversationId: row.conversation_id,
@@ -103,7 +105,7 @@ function toListWithTasks(row: TaskListRow & { tasks: TaskRow[] }): TaskListWithT
 }
 
 const LIST_COLUMNS =
-  "id, title, kind, due_at, due_all_day, ends_at, rrule, reminder_minutes_before, done_at, notes, event_id, source_event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
+  "id, title, kind, due_at, due_all_day, ends_at, rrule, reminder_minutes_before, done_at, notes, location, event_id, source_event_id, conversation_id, folder_id, created_by_assistant, created_at, updated_at";
 const TASK_COLUMNS =
   "id, list_id, title, notes, done, completed_at, parent_id, due_on, position, created_at, updated_at";
 const LIST_WITH_TASKS_COLUMNS = `${LIST_COLUMNS}, tasks(${TASK_COLUMNS})`;
@@ -179,6 +181,7 @@ export const taskRepository: ITaskRepository = {
         rrule: input.rrule ?? null,
         reminder_minutes_before: input.reminderMinutesBefore ?? null,
         notes: input.notes ?? null,
+        location: input.location ?? null,
         folder_id: input.folderId ?? null,
         conversation_id: input.conversationId ?? null,
         created_by_assistant: input.createdByAssistant ?? false,
@@ -205,6 +208,7 @@ export const taskRepository: ITaskRepository = {
       payload["reminder_minutes_before"] = patch.reminderMinutesBefore;
     }
     if (patch.notes !== undefined) payload["notes"] = patch.notes;
+    if (patch.location !== undefined) payload["location"] = patch.location;
     if (patch.eventId !== undefined) payload["event_id"] = patch.eventId;
 
     const { data, error } = await forUser(accessToken)

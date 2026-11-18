@@ -21,6 +21,7 @@ import { useTaskActions, useTaskLists } from "@/shared/hooks/use-task-lists";
 import { Button } from "@/shared/ui/button";
 import { GRID_MAX_WIDTH, ScreenShell, contentColumn } from "@/shared/ui/screen-shell";
 import { Icon } from "@/shared/ui/icon";
+import { Modal } from "@/shared/ui/modal";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
 import { CalendarToolbar, type CalendarView } from "./CalendarToolbar";
@@ -53,6 +54,23 @@ import {
 const DEFAULT_CREATE_MINUTE = 9 * 60;
 
 /** Fenêtre à demander à l'API pour afficher `days`, bornes locales en UTC. */
+/**
+ * Ce que le volet ouvre pour une liste cliquée : la liste, et — quand elle se
+ * répète — la date de la série sur laquelle on a cliqué, pour pouvoir agir sur
+ * cette date seulement.
+ */
+function listPaneContent(list: TaskListWithTasks): {
+  kind: "list";
+  listId: string;
+  occurrenceAt?: string;
+} {
+  return {
+    kind: "list",
+    listId: list.id,
+    ...(list.occurrenceAt ? { occurrenceAt: list.occurrenceAt } : {}),
+  };
+}
+
 function rangeOf(days: Date[]): CalendarRange {
   const first = days[0] ?? new Date();
   const last = days[days.length - 1] ?? first;
@@ -93,7 +111,7 @@ export function CalendarScreen() {
   const pane = useDetailPane();
   // Le volet de droite quand il existe, la fenêtre de détail sinon (téléphone).
   const showList = (list: TaskListWithTasks) =>
-    pane.available ? pane.open({ kind: "list", listId: list.id }) : setListDetail(list);
+    pane.available ? pane.open(listPaneContent(list)) : setListDetail(list);
   // Ce que le volet montre appartient au calendrier : il se ferme avec lui.
   const closePane = pane.close;
   useEffect(() => closePane, [closePane]);
@@ -111,8 +129,16 @@ export function CalendarScreen() {
     () => (storedLists ? projectOccurrences(storedLists, occurrences) : storedLists),
     [storedLists, occurrences],
   );
-  const { updateList, updateTask } = useTaskActions();
+  const { updateList, updateTask, setOccurrence } = useTaskActions();
   const [moveFailure, setMoveFailure] = useState<string | null>(null);
+  // Une date d'une série lâchée sur un autre jour : on demande si elle seule bouge ou
+  // toute la série (décision de Yann, 12 novembre).
+  const [seriesMove, setSeriesMove] = useState<{
+    listId: string;
+    title: string;
+    occurrenceAt: string;
+    patch: { dueAt: string; dueAllDay: boolean };
+  } | null>(null);
   // Rendus tels que le serveur les donne : le créneau d'une todoliste y est
   // désormais la projection de celle-ci (`slotForList`), et n'a plus à être
   // recomposé à l'affichage à partir de la liste qu'il représente.
@@ -269,7 +295,18 @@ export function CalendarScreen() {
     if (!saved) return;
     setMoveFailure(null);
 
-    if (!hasOwnDay(saved, fromDay)) {
+    // La date prise, parmi les copies d'une série : c'est elle qui garde son heure, et
+    // non la première date de la série, que `saved` désigne.
+    const taken =
+      saved.rrule !== null
+        ? allLists?.find(
+            (candidate) =>
+              candidate.id === listId && candidate.occurrenceAt && hasOwnDay(candidate, fromDay),
+          )
+        : undefined;
+    const from = taken ?? saved;
+
+    if (!hasOwnDay(from, fromDay)) {
       const toDay = calendarDayOf(day);
       if (toDay === fromDay) return;
       for (const task of saved.tasks.filter((candidate) => candidate.dueOn === fromDay)) {
@@ -281,8 +318,13 @@ export function CalendarScreen() {
       return;
     }
 
-    const patch = dueForMoment(day, momentOf(saved), saved);
-    if (patch.dueAt === saved.dueAt && patch.dueAllDay === saved.dueAllDay) return;
+    const patch = dueForMoment(day, momentOf(from), from);
+    if (patch.dueAt === from.dueAt && patch.dueAllDay === from.dueAllDay) return;
+
+    if (taken?.occurrenceAt) {
+      setSeriesMove({ listId, title: saved.title, occurrenceAt: taken.occurrenceAt, patch });
+      return;
+    }
     updateList.mutate({ id: listId, patch }, { onError: () => setMoveFailure(MOVE_FAILED) });
   };
 
@@ -455,7 +497,7 @@ export function CalendarScreen() {
               onSelectDay={selectDay}
               onOpenEvent={openEvent}
               {...(pane.available
-                ? { onOpenList: (list) => pane.open({ kind: "list", listId: list.id }) }
+                ? { onOpenList: (list) => pane.open(listPaneContent(list)) }
                 : {})}
               onMoveList={moveListToDay}
               onSwapLists={swapListHours}
@@ -508,6 +550,46 @@ export function CalendarScreen() {
         onCreated={(created) => router.push(`/todo?list=${created.id}` as never)}
       />
       <TaskListDetailDialog list={listDetail} onClose={() => setListDetail(null)} onEdit={editList} />
+      {seriesMove ? (
+        <Modal
+          open
+          onClose={() => setSeriesMove(null)}
+          variant="confirm"
+          title={`Déplacer « ${seriesMove.title} » ?`}
+          description="Ce rendez-vous se répète. Déplacer seulement cette date, ou toute la série ?"
+          actions={[
+            { label: "Annuler", onPress: () => setSeriesMove(null) },
+            {
+              label: "Cette date seulement",
+              onPress: () => {
+                const move = seriesMove;
+                setSeriesMove(null);
+                setMoveFailure(null);
+                setOccurrence.mutate(
+                  {
+                    id: move.listId,
+                    input: { occurrenceAt: move.occurrenceAt, movedTo: move.patch.dueAt },
+                  },
+                  { onError: () => setMoveFailure(MOVE_FAILED) },
+                );
+              },
+            },
+            {
+              label: "Toute la série",
+              variant: "default",
+              onPress: () => {
+                const move = seriesMove;
+                setSeriesMove(null);
+                setMoveFailure(null);
+                updateList.mutate(
+                  { id: move.listId, patch: move.patch },
+                  { onError: () => setMoveFailure(MOVE_FAILED) },
+                );
+              },
+            },
+          ]}
+        />
+      ) : null}
     </ScreenShell>
   );
 }

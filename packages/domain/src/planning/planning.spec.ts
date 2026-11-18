@@ -409,6 +409,25 @@ describe("projectOccurrences", () => {
     expect(projected.every((list) => list.id === "list-1")).toBe(true);
   });
 
+  it("garde sur chaque copie la clé de sa date, même déplacée", () => {
+    const kine = makeList({ rrule: "FREQ=WEEKLY;BYDAY=MO", dueAt: localIso(2026, 9, 7, 18) });
+
+    // La date du 7 a été déplacée au 8 : la clé reste celle que la série calcule.
+    const [moved] = projectOccurrences(
+      [kine],
+      [occurrence({ startsAt: localIso(2026, 9, 8, 9), endsAt: localIso(2026, 9, 8, 10) })],
+    );
+
+    expect(moved?.dueAt).toBe(localIso(2026, 9, 8, 9));
+    expect(moved?.occurrenceAt).toBe(localIso(2026, 9, 7, 18));
+  });
+
+  it("ne pose pas de clé de date sur une liste ponctuelle", () => {
+    const once = makeList({ rrule: null, dueAt: localIso(2026, 9, 7, 18) });
+
+    expect(projectOccurrences([once], [occurrence()])[0]?.occurrenceAt).toBeUndefined();
+  });
+
   it("reprend la date déplacée et l'état coché de l'occurrence, pas ceux de la série", () => {
     const kine = makeList({ rrule: "FREQ=WEEKLY;BYDAY=MO", dueAt: localIso(2026, 9, 7, 18) });
 

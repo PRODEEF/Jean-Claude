@@ -15,6 +15,7 @@ import {
   type CreateTask,
   type CreateTaskList,
   type ListOccurrence,
+  type SetOccurrence,
   type EditMessage,
   type Feedback,
   type FeedbackAnalysis,
@@ -388,6 +389,10 @@ export class JeanClaudeClient {
       this.http.request<TaskList>(`/tasks/${id}`, { method: "PATCH", body: patch }),
 
     removeList: (id: string) => this.http.request<void>(`/tasks/${id}`, { method: "DELETE" }),
+
+    /** Cocher, déplacer ou supprimer UNE date d'une série, sans toucher à la série. */
+    setOccurrence: (id: string, input: SetOccurrence) =>
+      this.http.request<void>(`/tasks/${id}/occurrences`, { method: "PUT", body: input }),
 
     addTask: (listId: string, input: CreateTask) =>
       this.http.request<Task>(`/tasks/${listId}/items`, { method: "POST", body: input }),
