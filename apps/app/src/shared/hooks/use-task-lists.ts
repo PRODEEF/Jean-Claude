@@ -3,6 +3,7 @@ import type {
   CreateTask,
   CreateTaskList,
   ReplaceTasks,
+  SetOccurrence,
   TaskListWithTasks,
   UpdateTask,
   UpdateTaskList,
@@ -125,6 +126,13 @@ export function useTaskActions() {
     onSuccess: refresh,
   });
 
+  // Une seule date d'une série : « cette date seulement », sans toucher à la série.
+  const setOccurrence = useMutation({
+    mutationFn: (variables: { id: string; input: SetOccurrence }) =>
+      api.tasks.setOccurrence(variables.id, variables.input),
+    onSuccess: refresh,
+  });
+
   const addTask = useMutation({
     mutationFn: (variables: { listId: string; input: CreateTask }) =>
       api.tasks.addTask(variables.listId, variables.input),
@@ -158,7 +166,16 @@ export function useTaskActions() {
     onSuccess: refresh,
   });
 
-  return { createList, updateList, fillList, removeList, addTask, updateTask, removeTask };
+  return {
+    createList,
+    updateList,
+    fillList,
+    removeList,
+    setOccurrence,
+    addTask,
+    updateTask,
+    removeTask,
+  };
 }
 
 /**

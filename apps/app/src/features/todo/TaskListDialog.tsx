@@ -240,7 +240,11 @@ function ListForm({
       {...(editing
         ? {
             destructiveAction: {
-              label: confirmingDelete ? "Confirmer la suppression" : "Supprimer",
+              label: confirmingDelete
+                ? "Confirmer la suppression"
+                : target.list.rrule
+                  ? "Supprimer la série"
+                  : "Supprimer",
               variant: confirmingDelete ? "destructive" : "ghost",
               disabled: pending,
               onPress: () => {

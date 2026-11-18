@@ -156,7 +156,15 @@ export const replaceTasksSchema = z.object({
 
 export type ReplaceTasks = z.infer<typeof replaceTasksSchema>;
 
-export type TaskListWithTasks = TaskList & { tasks: Task[] };
+/**
+ * Une liste et ses tâches.
+ *
+ * `occurrenceAt` n'existe que sur la copie d'une liste qui se répète (voir
+ * `projectOccurrences`) : le début, tel que la série le calcule, de la date que
+ * cette copie représente. C'est la clé d'une date — celle qu'attend le serveur
+ * pour agir sur cette date seulement.
+ */
+export type TaskListWithTasks = TaskList & { tasks: Task[]; occurrenceAt?: string };
 
 /**
  * Création d'une liste.
