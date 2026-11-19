@@ -27,18 +27,21 @@ export function useDisconnectMail() {
   });
 }
 
-export function useMailMessages(enabled: boolean) {
+export function useMailFolders() {
+  return useQuery({ queryKey: ["mail", "folders"], queryFn: () => api.mail.folders() });
+}
+
+export function useMailMessages(folder: string) {
   return useQuery({
-    queryKey: ["mail", "messages"],
-    queryFn: () => api.mail.messages(),
-    enabled,
+    queryKey: ["mail", "messages", folder],
+    queryFn: () => api.mail.messages(folder),
   });
 }
 
-export function useMailMessage(uid: number | null) {
+export function useMailMessage(folder: string, uid: number | null) {
   return useQuery({
-    queryKey: ["mail", "message", uid],
-    queryFn: () => api.mail.message(uid as number),
+    queryKey: ["mail", "message", folder, uid],
+    queryFn: () => api.mail.message(uid as number, folder),
     enabled: uid !== null,
   });
 }

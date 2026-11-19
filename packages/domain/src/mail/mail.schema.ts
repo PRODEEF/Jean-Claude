@@ -48,5 +48,22 @@ export const mailMessageSchema = mailMessageSummarySchema.extend({
 });
 export type MailMessage = z.infer<typeof mailMessageSchema>;
 
-/** Messages lus d'un coup : les plus récents de la boîte de réception. */
+/** Dossier de la boîte (Boîte de réception, Envoyés…) : `name` est déjà celui qu'on affiche. */
+export const mailFolderSchema = z.object({
+  /** Chemin chez le serveur de courrier, à renvoyer tel quel pour ouvrir le dossier. */
+  path: z.string(),
+  name: z.string(),
+  /** Niveau d'emboîtement : 0 à la racine, 1 pour un sous-dossier… */
+  depth: z.number().int().min(0),
+});
+export type MailFolder = z.infer<typeof mailFolderSchema>;
+
+export const INBOX_PATH = "INBOX";
+
+export const mailFolderQuerySchema = z.object({
+  folder: z.string().trim().min(1).max(200).default(INBOX_PATH),
+});
+export type MailFolderQuery = z.infer<typeof mailFolderQuerySchema>;
+
+/** Messages lus d'un coup : les plus récents d'un dossier. */
 export const MAIL_PAGE_SIZE = 30;

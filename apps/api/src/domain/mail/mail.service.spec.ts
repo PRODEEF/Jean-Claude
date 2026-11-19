@@ -26,7 +26,8 @@ function makeRepository(overrides: Partial<IMailRepository> = {}): IMailReposito
 function makeMailbox(overrides: Partial<IMailbox> = {}): IMailbox {
   return {
     verify: jest.fn().mockResolvedValue(undefined),
-    listInbox: jest.fn().mockResolvedValue([]),
+    listFolders: jest.fn().mockResolvedValue([]),
+    listMessages: jest.fn().mockResolvedValue([]),
     readMessage: jest.fn().mockResolvedValue(null),
     ...overrides,
   };
@@ -112,28 +113,62 @@ describe("MailService", () => {
     it("répond 404 quand aucune boîte n'est reliée", async () => {
       const service = new MailService(makeRepository(), makeMailbox(), KEY);
 
-      await expect(service.listMessages("u1", "token")).rejects.toMatchObject({ status: 404 });
+      await expect(service.listMessages("u1", "INBOX", "token")).rejects.toMatchObject({
+        status: 404,
+      });
     });
 
     it("ouvre la boîte avec le mot de passe déchiffré", async () => {
       const mailbox = makeMailbox();
       const service = new MailService(await repositoryWithAccount(), mailbox, KEY);
 
-      await service.listMessages("u1", "token");
+      await service.listMessages("u1", "INBOX", "token");
 
-      expect(mailbox.listInbox).toHaveBeenCalledWith(
+      expect(mailbox.listMessages).toHaveBeenCalledWith(
         { host: "ssl0.ovh.net", address: "yann@exemple.fr", password: "secret" },
+        "INBOX",
         expect.any(Number),
       );
     });
 
     it("rend une erreur lisible quand la boîte ne répond pas", async () => {
       const mailbox = makeMailbox({
-        listInbox: jest.fn().mockRejectedValue(new Error("ETIMEDOUT")),
+        listMessages: jest.fn().mockRejectedValue(new Error("ETIMEDOUT")),
       });
       const service = new MailService(await repositoryWithAccount(), mailbox, KEY);
 
-      await expect(service.listMessages("u1", "token")).rejects.toMatchObject({ status: 502 });
+      await expect(service.listMessages("u1", "INBOX", "token")).rejects.toMatchObject({
+        status: 502,
+      });
+    });
+  });
+
+  describe("dossiers", () => {
+    it("lit les messages du dossier demandé", async () => {
+      const mailbox = makeMailbox();
+      const service = new MailService(await repositoryWithAccount(), mailbox, KEY);
+
+      await service.listMessages("u1", "INBOX.Sent", "token");
+
+      expect(mailbox.listMessages).toHaveBeenCalledWith(
+        expect.anything(),
+        "INBOX.Sent",
+        expect.any(Number),
+      );
+    });
+
+    it("rend les dossiers de la boîte", async () => {
+      const folders = [{ path: "INBOX", name: "Boîte de réception", depth: 0 }];
+      const mailbox = makeMailbox({ listFolders: jest.fn().mockResolvedValue(folders) });
+      const service = new MailService(await repositoryWithAccount(), mailbox, KEY);
+
+      expect(await service.listFolders("u1", "token")).toEqual(folders);
+    });
+
+    it("répond 404 quand aucune boîte n'est reliée", async () => {
+      const service = new MailService(makeRepository(), makeMailbox(), KEY);
+
+      await expect(service.listFolders("u1", "token")).rejects.toMatchObject({ status: 404 });
     });
   });
 
@@ -141,7 +176,9 @@ describe("MailService", () => {
     it("répond 404 quand le message n'existe plus", async () => {
       const service = new MailService(await repositoryWithAccount(), makeMailbox(), KEY);
 
-      await expect(service.readMessage("u1", 7, "token")).rejects.toMatchObject({ status: 404 });
+      await expect(service.readMessage("u1", "INBOX", 7, "token")).rejects.toMatchObject({
+        status: 404,
+      });
     });
 
     it("rend le message lu", async () => {
@@ -157,7 +194,7 @@ describe("MailService", () => {
       const mailbox = makeMailbox({ readMessage: jest.fn().mockResolvedValue(message) });
       const service = new MailService(await repositoryWithAccount(), mailbox, KEY);
 
-      expect(await service.readMessage("u1", 7, "token")).toEqual(message);
+      expect(await service.readMessage("u1", "INBOX", 7, "token")).toEqual(message);
     });
   });
 });

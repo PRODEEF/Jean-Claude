@@ -1,4 +1,10 @@
-import type { ConnectMailAccount, MailAccount, MailMessage, MailMessageSummary } from "@jc/domain";
+import type {
+  ConnectMailAccount,
+  MailAccount,
+  MailFolder,
+  MailMessage,
+  MailMessageSummary,
+} from "@jc/domain";
 import { MAIL_PAGE_SIZE } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { logger } from "../../core/logger.js";
@@ -9,7 +15,7 @@ import type { IMailRepository } from "./mail.repository.interface.js";
 const SCOPE = "mail.service";
 
 /**
- * Boîte mail de l'utilisateur, en lecture seule (étape 1 de la messagerie).
+ * Boîte mail de l'utilisateur, en lecture seule : dossiers, liste, lecture (étape 1 de la messagerie).
  *
  * Le mot de passe n'est lu que par le serveur, le temps d'un appel : il entre
  * en clair ici, repart chiffré vers la base, et aucune réponse ne le renvoie.
@@ -75,20 +81,38 @@ export class MailService {
     await this.accounts.remove(userId, accessToken);
   }
 
-  async listMessages(userId: string, accessToken: string): Promise<MailMessageSummary[]> {
+  async listFolders(userId: string, accessToken: string): Promise<MailFolder[]> {
     const credentials = await this.credentialsOf(userId, accessToken);
     try {
-      return await this.mailbox.listInbox(credentials, MAIL_PAGE_SIZE);
+      return await this.mailbox.listFolders(credentials);
     } catch (error) {
       throw this.unreachable(error);
     }
   }
 
-  async readMessage(userId: string, uid: number, accessToken: string): Promise<MailMessage> {
+  async listMessages(
+    userId: string,
+    folder: string,
+    accessToken: string,
+  ): Promise<MailMessageSummary[]> {
+    const credentials = await this.credentialsOf(userId, accessToken);
+    try {
+      return await this.mailbox.listMessages(credentials, folder, MAIL_PAGE_SIZE);
+    } catch (error) {
+      throw this.unreachable(error);
+    }
+  }
+
+  async readMessage(
+    userId: string,
+    folder: string,
+    uid: number,
+    accessToken: string,
+  ): Promise<MailMessage> {
     const credentials = await this.credentialsOf(userId, accessToken);
     let message: MailMessage | null;
     try {
-      message = await this.mailbox.readMessage(credentials, uid);
+      message = await this.mailbox.readMessage(credentials, folder, uid);
     } catch (error) {
       throw this.unreachable(error);
     }
