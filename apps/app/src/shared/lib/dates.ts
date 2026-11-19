@@ -129,6 +129,20 @@ export function yearLabel(anchor: Date): string {
   return `${short(start)} – ${short(end)}`;
 }
 
+/**
+ * Date d'un mail dans une liste : l'heure aujourd'hui, « Hier », puis la date.
+ * Ex. « 14h30 », « Hier », « 18/11/2026 ».
+ */
+export function formatMailDate(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  if (isSameDay(date, now)) return formatTime(iso);
+  if (isSameDay(date, addDays(now, -1))) return "Hier";
+
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${date.getFullYear()}`;
+}
+
 /** Ex. « mercredi 2 septembre 2026 » — la période affichée en vue jour. */
 export function dayLabel(date: Date): string {
   return `${formatFullDay(date)} ${date.getFullYear()}`;

@@ -1,7 +1,8 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser, type AddressObject } from "mailparser";
-import type { MailMessage, MailMessageSummary } from "@jc/domain";
+import type { MailFolder, MailMessage, MailMessageSummary } from "@jc/domain";
 import { logger } from "../logger.js";
+import { presentFolders } from "./folders.js";
 
 const SCOPE = "core.mail";
 
@@ -18,10 +19,19 @@ export type MailboxCredentials = { host: string; address: string; password: stri
 export interface IMailbox {
   /** Lève si l'adresse ou le mot de passe sont refusés, ou si le serveur est injoignable. */
   verify(credentials: MailboxCredentials): Promise<void>;
+  listFolders(credentials: MailboxCredentials): Promise<MailFolder[]>;
   /** Les messages les plus récents d'abord. */
-  listInbox(credentials: MailboxCredentials, limit: number): Promise<MailMessageSummary[]>;
+  listMessages(
+    credentials: MailboxCredentials,
+    folder: string,
+    limit: number,
+  ): Promise<MailMessageSummary[]>;
   /** `null` quand le message n'existe plus. */
-  readMessage(credentials: MailboxCredentials, uid: number): Promise<MailMessage | null>;
+  readMessage(
+    credentials: MailboxCredentials,
+    folder: string,
+    uid: number,
+  ): Promise<MailMessage | null>;
 }
 
 /** Au-delà, une boîte qui ne répond pas ferait attendre l'écran sans fin. */
@@ -41,15 +51,16 @@ function connect(credentials: MailboxCredentials): ImapFlow {
 }
 
 /** Ouvre, travaille, referme — un serveur sans état ne garde pas de connexion entre deux requêtes. */
-async function withInbox<T>(
+async function withFolder<T>(
   credentials: MailboxCredentials,
+  folder: string,
   work: (client: ImapFlow) => Promise<T>,
 ): Promise<T> {
   const client = connect(credentials);
   await client.connect();
   try {
     // Lecture seule : ouvrir la boîte ne doit rien changer, ni marquer lu.
-    const lock = await client.getMailboxLock("INBOX", { readOnly: true });
+    const lock = await client.getMailboxLock(folder, { readOnly: true });
     try {
       return await work(client);
     } finally {
@@ -74,8 +85,29 @@ export const mailbox: IMailbox = {
     await client.logout();
   },
 
-  async listInbox(credentials, limit) {
-    return withInbox(credentials, async (client) => {
+  async listFolders(credentials) {
+    const client = connect(credentials);
+    await client.connect();
+    try {
+      const folders = await client.list();
+      return presentFolders(
+        folders.map((entry) => ({
+          path: entry.path,
+          name: entry.name,
+          specialUse: entry.specialUse,
+          delimiter: entry.delimiter,
+          selectable: !entry.flags.has("\\Noselect"),
+        })),
+      );
+    } finally {
+      await client.logout().catch((error: unknown) => {
+        logger.warn(SCOPE, "Fermeture de la connexion en échec.", error);
+      });
+    }
+  },
+
+  async listMessages(credentials, folder, limit) {
+    return withFolder(credentials, folder, async (client) => {
       const total = client.mailbox && client.mailbox.exists ? client.mailbox.exists : 0;
       if (total === 0) return [];
 
@@ -94,8 +126,8 @@ export const mailbox: IMailbox = {
     });
   },
 
-  async readMessage(credentials, uid) {
-    return withInbox(credentials, async (client) => {
+  async readMessage(credentials, folder, uid) {
+    return withFolder(credentials, folder, async (client) => {
       const fetched = await client.fetchOne(
         String(uid),
         { uid: true, envelope: true, flags: true, source: true },

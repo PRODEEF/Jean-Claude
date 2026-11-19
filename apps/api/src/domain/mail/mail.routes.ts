@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { connectMailAccountSchema } from "@jc/domain";
+import { connectMailAccountSchema, mailFolderQuerySchema } from "@jc/domain";
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { config } from "../../core/config.js";
 import { validate } from "../../core/http.js";
@@ -35,14 +35,26 @@ export const mailRoutes = new Hono<AuthEnv>()
     return c.body(null, 204);
   })
 
-  // Route littérale avant la route paramétrée.
-  .get("/messages", async (c) => {
+  .get("/folders", async (c) => {
     const user = c.get("user");
-    return c.json(await service.listMessages(user.id, user.accessToken));
+    return c.json(await service.listFolders(user.id, user.accessToken));
   })
 
-  .get("/messages/:uid", validate("param", uidParamSchema), async (c) => {
+  // Route littérale avant la route paramétrée.
+  .get("/messages", validate("query", mailFolderQuerySchema), async (c) => {
     const user = c.get("user");
-    const { uid } = c.req.valid("param");
-    return c.json(await service.readMessage(user.id, uid, user.accessToken));
-  });
+    const { folder } = c.req.valid("query");
+    return c.json(await service.listMessages(user.id, folder, user.accessToken));
+  })
+
+  .get(
+    "/messages/:uid",
+    validate("param", uidParamSchema),
+    validate("query", mailFolderQuerySchema),
+    async (c) => {
+      const user = c.get("user");
+      const { uid } = c.req.valid("param");
+      const { folder } = c.req.valid("query");
+      return c.json(await service.readMessage(user.id, folder, uid, user.accessToken));
+    },
+  );

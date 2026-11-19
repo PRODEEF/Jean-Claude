@@ -22,6 +22,7 @@ import {
   type FeedbackAnalysis,
   type FeedbackStatus,
   type MailAccount,
+  type MailFolder,
   type MailMessage,
   type MailMessageSummary,
   type Folder,
@@ -164,10 +165,14 @@ export class JeanClaudeClient {
 
     disconnect: () => this.http.request<void>("/mail/account", { method: "DELETE" }),
 
-    /** Les messages les plus récents de la boîte de réception. */
-    messages: () => this.http.request<MailMessageSummary[]>("/mail/messages"),
+    folders: () => this.http.request<MailFolder[]>("/mail/folders"),
 
-    message: (uid: number) => this.http.request<MailMessage>(`/mail/messages/${uid}`),
+    /** Les messages les plus récents d'un dossier (la boîte de réception par défaut). */
+    messages: (folder?: string) =>
+      this.http.request<MailMessageSummary[]>("/mail/messages", { query: { folder } }),
+
+    message: (uid: number, folder?: string) =>
+      this.http.request<MailMessage>(`/mail/messages/${uid}`, { query: { folder } }),
   };
 
   /** Espaces d'équipe — voir docs/COLLABORATION.md. */
