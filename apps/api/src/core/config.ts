@@ -59,6 +59,10 @@ export const config = {
   // Vide : la route des rappels refuse tout appel, rien ne part. Vercel l'envoie
   // de lui-même en `Authorization: Bearer` quand cette variable existe.
   cronSecret: process.env["CRON_SECRET"]?.trim() ?? "",
+  // ── Messagerie ───────────────────────────────────────────────────────────
+  // Clé de 32 octets en base 64 qui chiffre le mot de passe des boîtes mail
+  // reliées. Vide : la messagerie refuse de relier une boîte, rien n'est écrit.
+  mailEncryptionKey: process.env["MAIL_ENCRYPTION_KEY"]?.trim() ?? "",
   /** Adresse publique de l'app, pour le lien dans l'e-mail d'invitation. */
   appUrl: (process.env["APP_URL"]?.trim() ?? "").replace(/\/$/, ""),
 } as const;
