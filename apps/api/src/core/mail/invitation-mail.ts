@@ -16,10 +16,7 @@ export type InvitationMail = {
  */
 export async function sendInvitationEmail(mail: InvitationMail): Promise<void> {
   if (!config.resendApiKey || !config.resendFrom) {
-    logger.warn(
-      SCOPE,
-      "E-mail non envoyé : RESEND_API_KEY ou RESEND_FROM manquant.",
-    );
+    logger.warn(SCOPE, "E-mail non envoyé : RESEND_API_KEY ou RESEND_FROM manquant.");
     return;
   }
 

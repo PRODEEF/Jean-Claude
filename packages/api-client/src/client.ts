@@ -10,6 +10,7 @@ import {
   type Conversation,
   type CreateCalendarEvent,
   type CreateConversation,
+  type ConnectMailAccount,
   type CreateFeedback,
   type CreateFolder,
   type CreateTask,
@@ -20,6 +21,9 @@ import {
   type Feedback,
   type FeedbackAnalysis,
   type FeedbackStatus,
+  type MailAccount,
+  type MailMessage,
+  type MailMessageSummary,
   type Folder,
   type FolderTreeNode,
   type Message,
@@ -145,6 +149,25 @@ export class JeanClaudeClient {
       analyzeNew: () =>
         this.http.request<FeedbackAnalysis>("/feedback/review/analysis", { method: "POST" }),
     },
+  };
+
+  /**
+   * Boîte mail reliée, en lecture seule. Le mot de passe part au serveur à la
+   * connexion et n'en revient jamais.
+   */
+  readonly mail = {
+    /** `null` tant qu'aucune boîte n'est reliée. */
+    account: () => this.http.request<MailAccount | null>("/mail/account"),
+
+    connect: (input: ConnectMailAccount) =>
+      this.http.request<MailAccount>("/mail/account", { method: "POST", body: input }),
+
+    disconnect: () => this.http.request<void>("/mail/account", { method: "DELETE" }),
+
+    /** Les messages les plus récents de la boîte de réception. */
+    messages: () => this.http.request<MailMessageSummary[]>("/mail/messages"),
+
+    message: (uid: number) => this.http.request<MailMessage>(`/mail/messages/${uid}`),
   };
 
   /** Espaces d'équipe — voir docs/COLLABORATION.md. */
