@@ -1,4 +1,4 @@
-import { CalendarDays, ListChecks } from "lucide-react-native";
+import { CalendarDays, ListChecks, Mail } from "lucide-react-native";
 
 /**
  * Vues qui ne sont pas des conversations.
@@ -9,4 +9,5 @@ import { CalendarDays, ListChecks } from "lucide-react-native";
 export const UTILITY_LINKS = [
   { href: "/todo", label: "Mes listes", icon: ListChecks },
   { href: "/calendar", label: "Calendrier", icon: CalendarDays },
+  { href: "/mail", label: "Mails", icon: Mail },
 ] as const;

@@ -103,8 +103,8 @@ export type AppSidebarProps = {
   onCollapse?: () => void;
 };
 
-/** Calendrier puis listes : l'ordre de l'en-tête de la barre. */
-const HEADER_SHORTCUTS = ["/calendar", "/todo"].flatMap((href) =>
+/** Mails, calendrier puis listes : l'ordre de l'en-tête de la barre. */
+const HEADER_SHORTCUTS = ["/mail", "/calendar", "/todo"].flatMap((href) =>
   UTILITY_LINKS.filter((link) => link.href === href),
 );
 
