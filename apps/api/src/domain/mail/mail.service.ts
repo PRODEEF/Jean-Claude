@@ -2,20 +2,28 @@ import type {
   ConnectMailAccount,
   MailAccount,
   MailFolder,
+  MailInbox,
   MailMessage,
   MailMessageSummary,
+  SendMail,
 } from "@jc/domain";
-import { MAIL_PAGE_SIZE } from "@jc/domain";
+import { INBOX_PATH, MAIL_ATTACHMENT_MAX_BYTES, MAX_MAIL_ACCOUNTS } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { logger } from "../../core/logger.js";
-import type { IMailbox, MailboxCredentials } from "../../core/mail/mailbox.js";
+import type {
+  IMailbox,
+  MailboxAttachment,
+  MailboxDestination,
+  MailboxCredentials,
+  MailboxListOptions,
+} from "../../core/mail/mailbox.js";
 import { decryptSecret, encryptSecret } from "../../core/mail/secret-box.js";
-import type { IMailRepository } from "./mail.repository.interface.js";
+import type { IMailRepository, StoredMailAccount } from "./mail.repository.interface.js";
 
 const SCOPE = "mail.service";
 
 /**
- * Boîte mail de l'utilisateur, en lecture seule : dossiers, liste, lecture (étape 1 de la messagerie).
+ * Boîtes mail de l'utilisateur : dossiers, liste, lecture.
  *
  * Le mot de passe n'est lu que par le serveur, le temps d'un appel : il entre
  * en clair ici, repart chiffré vers la base, et aucune réponse ne le renvoie.
@@ -28,12 +36,9 @@ export class MailService {
     private readonly encryptionKey: string,
   ) {}
 
-  async getAccount(userId: string, accessToken: string): Promise<MailAccount | null> {
-    const stored = await this.accounts.find(userId, accessToken);
-    if (!stored) return null;
-
-    const { passwordEncrypted: _hidden, ...account } = stored;
-    return account;
+  async listAccounts(userId: string, accessToken: string): Promise<MailAccount[]> {
+    const stored = await this.accounts.list(userId, accessToken);
+    return stored.map(({ passwordEncrypted: _hidden, ...account }) => account);
   }
 
   async connect(
@@ -43,6 +48,14 @@ export class MailService {
   ): Promise<MailAccount> {
     if (!this.encryptionKey) {
       throw httpError(503, "La messagerie n'est pas encore activée sur le serveur.");
+    }
+
+    // Relier à nouveau une adresse déjà reliée remplace son mot de passe : elle
+    // ne compte pas pour une boîte de plus.
+    const existing = await this.accounts.list(userId, accessToken);
+    const known = existing.some((account) => account.address === input.address);
+    if (!known && existing.length >= MAX_MAIL_ACCOUNTS) {
+      throw httpError(400, `Vous pouvez relier ${MAX_MAIL_ACCOUNTS} boîtes au plus.`);
     }
 
     // Vérifié avant d'être gardé : un mot de passe faux ne doit pas être
@@ -77,12 +90,12 @@ export class MailService {
     );
   }
 
-  async disconnect(userId: string, accessToken: string): Promise<void> {
-    await this.accounts.remove(userId, accessToken);
+  async disconnect(userId: string, accountId: string, accessToken: string): Promise<void> {
+    await this.accounts.remove(userId, accountId, accessToken);
   }
 
-  async listFolders(userId: string, accessToken: string): Promise<MailFolder[]> {
-    const credentials = await this.credentialsOf(userId, accessToken);
+  async listFolders(userId: string, accountId: string, accessToken: string): Promise<MailFolder[]> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
     try {
       return await this.mailbox.listFolders(credentials);
     } catch (error) {
@@ -92,45 +105,220 @@ export class MailService {
 
   async listMessages(
     userId: string,
+    accountId: string,
     folder: string,
+    options: MailboxListOptions,
     accessToken: string,
   ): Promise<MailMessageSummary[]> {
-    const credentials = await this.credentialsOf(userId, accessToken);
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
     try {
-      return await this.mailbox.listMessages(credentials, folder, MAIL_PAGE_SIZE);
+      const messages = await this.mailbox.listMessages(credentials, folder, options);
+      return messages.map((message) => ({ ...message, accountId }));
     } catch (error) {
       throw this.unreachable(error);
     }
   }
 
+  /**
+   * Boîtes de réception de toutes les boîtes, réunies, les plus récents d'abord.
+   *
+   * Une boîte qui ne répond pas ne cache pas les autres : elle est signalée,
+   * et le reste s'affiche.
+   */
+  async listAllInbox(
+    userId: string,
+    options: MailboxListOptions,
+    accessToken: string,
+  ): Promise<MailInbox> {
+    const accounts = await this.accounts.list(userId, accessToken);
+    if (accounts.length > 0 && !this.encryptionKey) {
+      throw httpError(503, "La messagerie n'est pas encore activée sur le serveur.");
+    }
+
+    const results = await Promise.allSettled(
+      accounts.map(async (account) => {
+        const messages = await this.mailbox.listMessages(
+          this.credentialsOf(account),
+          INBOX_PATH,
+          options,
+        );
+        return messages.map((message) => ({ ...message, accountId: account.id }));
+      }),
+    );
+
+    const messages: MailMessageSummary[] = [];
+    const unreachableAccountIds: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        messages.push(...result.value);
+        return;
+      }
+      logger.warn(
+        SCOPE,
+        "Boîte injoignable dans la boîte de réception commune.",
+        result.reason instanceof Error ? result.reason.message : result.reason,
+      );
+      const account = accounts[index];
+      if (account) unreachableAccountIds.push(account.id);
+    });
+
+    // Sans date, un mail passe après tous les autres : on ne sait pas où le ranger.
+    const timeOf = (message: MailMessageSummary) =>
+      message.date ? new Date(message.date).getTime() : 0;
+    messages.sort((a, b) => timeOf(b) - timeOf(a));
+
+    return { messages: messages.slice(0, options.limit), unreachableAccountIds };
+  }
+
   async readMessage(
     userId: string,
+    accountId: string,
     folder: string,
     uid: number,
     accessToken: string,
   ): Promise<MailMessage> {
-    const credentials = await this.credentialsOf(userId, accessToken);
-    let message: MailMessage | null;
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    let message;
     try {
       message = await this.mailbox.readMessage(credentials, folder, uid);
     } catch (error) {
       throw this.unreachable(error);
     }
     if (!message) throw httpError(404, "Message introuvable.");
-    return message;
+    return { ...message, accountId };
   }
 
-  private async credentialsOf(userId: string, accessToken: string): Promise<MailboxCredentials> {
+  /** Une pièce jointe, prête à être renvoyée au client. */
+  async getAttachment(
+    userId: string,
+    accountId: string,
+    folder: string,
+    uid: number,
+    index: number,
+    accessToken: string,
+  ): Promise<MailboxAttachment> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    let attachment: MailboxAttachment | null;
+    try {
+      attachment = await this.mailbox.getAttachment(credentials, folder, uid, index);
+    } catch (error) {
+      throw this.unreachable(error);
+    }
+    if (!attachment) throw httpError(404, "Pièce jointe introuvable.");
+    // Au-delà, l'hébergement ne laisse pas passer la réponse : mieux vaut le dire.
+    if (attachment.content.length > MAIL_ATTACHMENT_MAX_BYTES) {
+      throw httpError(
+        413,
+        "Cette pièce jointe est trop volumineuse pour être ouverte ici (4 Mo au plus).",
+      );
+    }
+    return attachment;
+  }
+
+  /**
+   * Déplace un mail : à la corbeille, aux archives, ou dans un dossier au choix.
+   * Jamais d'effacement définitif ; une boîte sans corbeille ou sans archives
+   * le dit plutôt que de ranger le mail n'importe où.
+   */
+  async move(
+    userId: string,
+    accountId: string,
+    folder: string,
+    uid: number,
+    destination: MailboxDestination,
+    accessToken: string,
+  ): Promise<void> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    let outcome;
+    try {
+      outcome = await this.mailbox.move(credentials, folder, uid, destination);
+    } catch (error) {
+      throw this.unreachable(error);
+    }
+    if (outcome === "no-destination") {
+      throw httpError(
+        400,
+        destination === "trash"
+          ? "Cette boîte n'a pas de corbeille."
+          : "Cette boîte n'a pas de dossier d'archives.",
+      );
+    }
+    if (outcome === "already-there") {
+      throw httpError(400, "Ce mail est déjà dans ce dossier.");
+    }
+  }
+
+  /** Pose ou retire le drapeau d'un mail. */
+  async setFlagged(
+    userId: string,
+    accountId: string,
+    folder: string,
+    uid: number,
+    flagged: boolean,
+    accessToken: string,
+  ): Promise<void> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    try {
+      await this.mailbox.setFlagged(credentials, folder, uid, flagged);
+    } catch (error) {
+      throw this.unreachable(error);
+    }
+  }
+
+  /** Marque un mail lu ou non lu chez le fournisseur. */
+  async setSeen(
+    userId: string,
+    accountId: string,
+    folder: string,
+    uid: number,
+    seen: boolean,
+    accessToken: string,
+  ): Promise<void> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    try {
+      await this.mailbox.setSeen(credentials, folder, uid, seen);
+    } catch (error) {
+      throw this.unreachable(error);
+    }
+  }
+
+  /**
+   * Envoie un mail rédigé par l'utilisateur. Un refus du serveur sortant ne doit
+   * jamais passer pour un envoi réussi : l'écran garde alors le brouillon.
+   */
+  async send(
+    userId: string,
+    accountId: string,
+    mail: SendMail,
+    accessToken: string,
+  ): Promise<void> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    try {
+      await this.mailbox.send(credentials, mail);
+    } catch (error) {
+      logger.warn(SCOPE, "Envoi en échec.", error instanceof Error ? error.message : error);
+      throw httpError(502, "Le mail n'a pas pu être envoyé. Il n'est pas parti : réessayez.");
+    }
+  }
+
+  private async accountOf(
+    userId: string,
+    accountId: string,
+    accessToken: string,
+  ): Promise<StoredMailAccount> {
+    const stored = await this.accounts.findById(userId, accountId, accessToken);
+    if (!stored) throw httpError(404, "Boîte mail introuvable.");
+    return stored;
+  }
+
+  private credentialsOf(account: StoredMailAccount): MailboxCredentials {
     if (!this.encryptionKey) {
       throw httpError(503, "La messagerie n'est pas encore activée sur le serveur.");
     }
-    const stored = await this.accounts.find(userId, accessToken);
-    if (!stored) throw httpError(404, "Aucune boîte mail n'est reliée.");
-
     return {
-      host: stored.host,
-      address: stored.address,
-      password: decryptSecret(stored.passwordEncrypted, this.encryptionKey),
+      host: account.host,
+      address: account.address,
+      password: decryptSecret(account.passwordEncrypted, this.encryptionKey),
     };
   }
 

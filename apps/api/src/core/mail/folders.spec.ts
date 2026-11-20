@@ -1,7 +1,13 @@
-import { presentFolders, type RawFolder } from "./folders.js";
+import {
+  ARCHIVE_NAMES,
+  pickFolder,
+  presentFolders,
+  TRASH_NAMES,
+  type RawFolder,
+} from "./folders.js";
 
 function folder(path: string, overrides: Partial<RawFolder> = {}): RawFolder {
-  return { path, name: path, selectable: true, ...overrides };
+  return { path, name: path, selectable: true, unseen: 0, ...overrides };
 }
 
 describe("presentFolders", () => {
@@ -24,7 +30,7 @@ describe("presentFolders", () => {
   it("nomme un dossier d'après son rôle, pas d'après son nom d'origine", () => {
     const result = presentFolders([folder("Éléments envoyés", { specialUse: "\\Sent" })]);
 
-    expect(result).toEqual([{ path: "Éléments envoyés", name: "Envoyés", depth: 0 }]);
+    expect(result).toEqual([{ path: "Éléments envoyés", name: "Envoyés", depth: 0, unseen: 0 }]);
   });
 
   it("garde le chemin d'origine, qui sert à ouvrir le dossier", () => {
@@ -77,5 +83,50 @@ describe("presentFolders", () => {
       ["Envoyés", 0],
       ["Banque", 0],
     ]);
+  });
+
+  it("garde le nombre de mails non lus de chaque dossier", () => {
+    const result = presentFolders([
+      folder("INBOX", { unseen: 12 }),
+      folder("Banque", { unseen: 3 }),
+    ]);
+
+    expect(result.map((entry) => entry.unseen)).toEqual([12, 3]);
+  });
+});
+
+describe("pickFolder", () => {
+  it("prend le dossier que le serveur annonce comme corbeille, quel que soit son nom", () => {
+    const folders = [folder("INBOX"), folder("Éléments supprimés", { specialUse: "\\Trash" })];
+
+    expect(pickFolder(folders, "\\Trash", TRASH_NAMES)).toBe("Éléments supprimés");
+  });
+
+  it("à défaut de rôle, cherche un nom usuel sans tenir compte de la casse", () => {
+    const folders = [folder("INBOX"), folder("TRASH")];
+
+    expect(pickFolder(folders, "\\Trash", TRASH_NAMES)).toBe("TRASH");
+  });
+
+  it("préfère le rôle au nom", () => {
+    const folders = [folder("Trash"), folder("Poubelle", { specialUse: "\\Trash" })];
+
+    expect(pickFolder(folders, "\\Trash", TRASH_NAMES)).toBe("Poubelle");
+  });
+
+  it("rend null quand la boîte n'a ni corbeille ni dossier de ce nom", () => {
+    expect(pickFolder([folder("INBOX")], "\\Trash", TRASH_NAMES)).toBeNull();
+  });
+
+  it("ignore un dossier qu'on ne peut pas ouvrir", () => {
+    const folders = [folder("Archives", { selectable: false })];
+
+    expect(pickFolder(folders, "\\Archive", ARCHIVE_NAMES)).toBeNull();
+  });
+
+  it("retrouve les archives", () => {
+    const folders = [folder("INBOX"), folder("Archives")];
+
+    expect(pickFolder(folders, "\\Archive", ARCHIVE_NAMES)).toBe("Archives");
   });
 });

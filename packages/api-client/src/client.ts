@@ -23,8 +23,11 @@ import {
   type FeedbackStatus,
   type MailAccount,
   type MailFolder,
+  type MailInbox,
   type MailMessage,
   type MailMessageSummary,
+  type MoveMail,
+  type SendMailInput,
   type Folder,
   type FolderTreeNode,
   type Message,
@@ -84,6 +87,18 @@ import { ApiError, HttpClient, type ApiClientOptions, type RequestOptions } from
  * contrat casse la compilation des deux côtés au lieu de passer inaperçue
  * jusqu'à l'exécution.
  */
+/** Ce qu'on demande d'une liste de mails : combien, quoi chercher, et les non lus seulement. */
+export type MailListParams = { limit?: number; q?: string; unseen?: boolean };
+
+/** `unseen` ne part dans l'adresse que s'il est demandé : « faux » veut dire « pas de filtre ». */
+function toMailQuery(params: MailListParams) {
+  return {
+    limit: params.limit,
+    q: params.q || undefined,
+    unseen: params.unseen ? true : undefined,
+  };
+}
+
 export class JeanClaudeClient {
   private readonly http: HttpClient;
 
@@ -157,22 +172,69 @@ export class JeanClaudeClient {
    * connexion et n'en revient jamais.
    */
   readonly mail = {
-    /** `null` tant qu'aucune boîte n'est reliée. */
-    account: () => this.http.request<MailAccount | null>("/mail/account"),
+    /** Les boîtes reliées ; vide tant qu'aucune ne l'est. */
+    accounts: () => this.http.request<MailAccount[]>("/mail/accounts"),
 
     connect: (input: ConnectMailAccount) =>
-      this.http.request<MailAccount>("/mail/account", { method: "POST", body: input }),
+      this.http.request<MailAccount>("/mail/accounts", { method: "POST", body: input }),
 
-    disconnect: () => this.http.request<void>("/mail/account", { method: "DELETE" }),
+    disconnect: (accountId: string) =>
+      this.http.request<void>(`/mail/accounts/${accountId}`, { method: "DELETE" }),
 
-    folders: () => this.http.request<MailFolder[]>("/mail/folders"),
+    /** Les boîtes de réception de toutes les boîtes, réunies. */
+    inbox: (params: MailListParams = {}) =>
+      this.http.request<MailInbox>("/mail/inbox", { query: toMailQuery(params) }),
+
+    folders: (accountId: string) =>
+      this.http.request<MailFolder[]>(`/mail/accounts/${accountId}/folders`),
 
     /** Les messages les plus récents d'un dossier (la boîte de réception par défaut). */
-    messages: (folder?: string) =>
-      this.http.request<MailMessageSummary[]>("/mail/messages", { query: { folder } }),
+    messages: (accountId: string, folder?: string, params: MailListParams = {}) =>
+      this.http.request<MailMessageSummary[]>(`/mail/accounts/${accountId}/messages`, {
+        query: { folder, ...toMailQuery(params) },
+      }),
 
-    message: (uid: number, folder?: string) =>
-      this.http.request<MailMessage>(`/mail/messages/${uid}`, { query: { folder } }),
+    message: (accountId: string, uid: number, folder?: string) =>
+      this.http.request<MailMessage>(`/mail/accounts/${accountId}/messages/${uid}`, {
+        query: { folder },
+      }),
+
+    /** Le fichier d'une pièce jointe, à enregistrer côté appareil. */
+    attachment: (accountId: string, uid: number, index: number, folder?: string) =>
+      this.http.blob(`/mail/accounts/${accountId}/messages/${uid}/attachments/${index}`, {
+        query: { folder },
+      }),
+
+    /** Déplace un mail : corbeille, archives ou dossier au choix. Jamais d'effacement définitif. */
+    move: (accountId: string, uid: number, destination: MoveMail, folder?: string) =>
+      this.http.request<void>(`/mail/accounts/${accountId}/messages/${uid}/move`, {
+        method: "POST",
+        query: { folder },
+        body: destination,
+      }),
+
+    /** Pose ou retire le drapeau d'un mail. */
+    setFlagged: (accountId: string, uid: number, flagged: boolean, folder?: string) =>
+      this.http.request<void>(`/mail/accounts/${accountId}/messages/${uid}/flag`, {
+        method: "POST",
+        query: { folder },
+        body: { flagged },
+      }),
+
+    /** Marque un mail lu ou non lu chez le fournisseur. */
+    setSeen: (accountId: string, uid: number, seen: boolean, folder?: string) =>
+      this.http.request<void>(`/mail/accounts/${accountId}/messages/${uid}/seen`, {
+        method: "POST",
+        query: { folder },
+        body: { seen },
+      }),
+
+    /** Envoie un mail depuis une boîte reliée. */
+    send: (accountId: string, mail: SendMailInput) =>
+      this.http.request<void>(`/mail/accounts/${accountId}/send`, {
+        method: "POST",
+        body: mail,
+      }),
   };
 
   /** Espaces d'équipe — voir docs/COLLABORATION.md. */

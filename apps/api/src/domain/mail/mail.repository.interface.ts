@@ -4,13 +4,15 @@ import type { MailAccount } from "@jc/domain";
 export type StoredMailAccount = MailAccount & { passwordEncrypted: string };
 
 export interface IMailRepository {
-  /** `null` quand l'utilisateur n'a relié aucune boîte. */
-  find(userId: string, accessToken: string): Promise<StoredMailAccount | null>;
-  /** Remplace la boîte déjà reliée : une seule par personne. */
+  /** Les boîtes de l'utilisateur, les plus anciennement reliées d'abord. */
+  list(userId: string, accessToken: string): Promise<StoredMailAccount[]>;
+  /** `null` quand la boîte n'existe pas ou n'est pas à l'appelant. */
+  findById(userId: string, id: string, accessToken: string): Promise<StoredMailAccount | null>;
+  /** Relie une boîte ; relier à nouveau la même adresse remplace son mot de passe. */
   save(
     userId: string,
     input: { address: string; host: string; passwordEncrypted: string },
     accessToken: string,
   ): Promise<MailAccount>;
-  remove(userId: string, accessToken: string): Promise<void>;
+  remove(userId: string, id: string, accessToken: string): Promise<void>;
 }

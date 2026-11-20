@@ -64,6 +64,22 @@ export class HttpClient {
   }
 
   /**
+   * Variante de `request` qui rend un fichier plutôt que du JSON : une pièce
+   * jointe de mail. Une erreur du serveur reste lue comme ailleurs, avec son
+   * message destiné à l'utilisateur.
+   */
+  async blob(path: string, init: RequestOptions = {}): Promise<Blob> {
+    const response = await this.send(path, "*/*", init);
+
+    if (!response.ok) {
+      const payload: unknown = await response.json().catch(() => null);
+      throw toApiError(response.status, payload);
+    }
+
+    return response.blob();
+  }
+
+  /**
    * Variante de `request` pour un envoi `multipart/form-data`.
    *
    * Distincte de `request` plutôt qu'un simple passage de `FormData` en

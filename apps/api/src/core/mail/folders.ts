@@ -9,6 +9,8 @@ export type RawFolder = {
   specialUse?: string | undefined;
   /** Séparateur de niveaux dans `path` (`/` ou `.`), absent d'un serveur à plat. */
   delimiter?: string | undefined;
+  /** Mails non lus, 0 quand le serveur ne le dit pas. */
+  unseen: number;
   /** Faux pour un simple conteneur de sous-dossiers, qu'on ne peut pas ouvrir. */
   selectable: boolean;
 };
@@ -72,5 +74,39 @@ export function presentFolders(raw: readonly RawFolder[]): MailFolder[] {
     path: folder.path,
     name: KNOWN[rank]?.label ?? folder.name,
     depth: depthOf(folder, rank !== -1),
+    unseen: folder.unseen,
   }));
 }
+
+/**
+ * Retrouve la corbeille ou les archives d'une boîte.
+ *
+ * Le rôle annoncé par le serveur prime, comme pour l'affichage ; à défaut on
+ * cherche un nom usuel (« Trash », « Corbeille »…), sans tenir compte de la
+ * casse. `null` quand la boîte n'a rien de tel : l'appelant le dit plutôt que
+ * de deviner un dossier au hasard.
+ */
+export function pickFolder(
+  raw: readonly RawFolder[],
+  use: string,
+  names: readonly string[],
+): string | null {
+  const selectable = raw.filter((folder) => folder.selectable);
+  const byRole = selectable.find((folder) => folder.specialUse === use);
+  if (byRole) return byRole.path;
+
+  const wanted = names.map((name) => name.toLowerCase());
+  const byName = selectable.find((folder) => wanted.includes(folder.name.toLowerCase()));
+  return byName ? byName.path : null;
+}
+
+/** Noms usuels de la corbeille et des archives, quand le serveur n'annonce pas de rôle. */
+export const TRASH_NAMES = ["Trash", "Corbeille", "Deleted Messages", "Deleted Items"] as const;
+export const ARCHIVE_NAMES = ["Archive", "Archives"] as const;
+export const SENT_NAMES = [
+  "Sent",
+  "Éléments envoyés",
+  "Messages envoyés",
+  "Sent Items",
+  "Sent Messages",
+] as const;

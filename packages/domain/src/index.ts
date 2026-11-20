@@ -26,6 +26,7 @@ export * from "./planning/recurrence";
 export * from "./assistant/assistant.schema";
 export * from "./user/preferences.schema";
 export * from "./feedback/feedback.schema";
+export * from "./mail/compose";
 export * from "./mail/mail";
 export * from "./mail/mail.schema";
 export * from "./command/command.schema";

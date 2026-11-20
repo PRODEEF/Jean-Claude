@@ -1,77 +1,136 @@
-import { useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
-import { ChevronLeft, Folder, FolderOpen, Inbox, RefreshCw } from "lucide-react-native";
-import type { MailFolder, MailMessage, MailMessageSummary } from "@jc/domain";
-import { DEFAULT_MAIL_HOST, INBOX_PATH } from "@jc/domain";
+import { useEffect, useState } from "react";
+import { Pressable, ScrollView, View, type GestureResponderEvent } from "react-native";
+import {
+  Archive,
+  ChevronLeft,
+  Download,
+  Flag,
+  Folder,
+  Forward,
+  FolderInput,
+  Paperclip,
+  Reply,
+  ReplyAll,
+  RefreshCw,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react-native";
+import type {
+  MailAccount,
+  MailAttachment,
+  MailFolder,
+  MailMessage,
+  MailMessageSummary,
+  MoveMail,
+} from "@jc/domain";
+import {
+  draftFor,
+  EMPTY_DRAFT,
+  groupByDay,
+  INBOX_PATH,
+  MAIL_MAX_LIMIT,
+  MAIL_PAGE_SIZE,
+  MAIL_PROVIDERS,
+  type ComposeKind,
+  type MailDraft,
+  type MailProviderId,
+} from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { formatFullDay, formatMailDate } from "@/shared/lib/dates";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
+import { ContextMenu } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
+import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { Text } from "@/shared/ui/text";
+import { api } from "@/shared/lib/api";
 import { MailAvatar } from "./MailAvatar";
+import { MailBody } from "./MailBody";
+import { MailCompose } from "./MailCompose";
+import { CAN_DOWNLOAD, downloadFile } from "./download-file";
+import { MailFolderTree, type MailView } from "./MailFolderTree";
 import {
+  useAllMailFolders,
   useConnectMail,
-  useDisconnectMail,
-  useMailAccount,
+  useMailAccounts,
   useMailFolders,
+  useMailInbox,
   useMailMessage,
   useMailMessages,
+  useMoveMail,
+  useSetMailFlag,
+  useSetMailSeen,
+  type MailListParams,
 } from "./use-mail";
 
 /**
- * Mails — lire sa boîte, sans rien envoyer.
+ * Mails — lire ses boîtes.
  *
- * Disposition d'une messagerie classique (Outlook, Apple Mail, Gmail) : les
- * dossiers à gauche, la liste des mails au milieu, la lecture à droite. Sur
- * téléphone, une seule colonne à la fois, avec un retour.
+ * Disposition d'une messagerie classique (Outlook, Apple Mail, Gmail) : l'arbre
+ * des boîtes et de leurs dossiers à gauche, la liste des mails au milieu, la
+ * lecture à droite. Sur téléphone, une seule colonne à la fois, avec un retour.
  *
- * Une seule boîte par personne pour l'instant (OVH d'abord, demande de Yann du
- * 19 novembre). Le mot de passe part au serveur à la connexion et n'est plus
- * jamais relu ici (invariant 5).
+ * Plusieurs boîtes (OVH, Infomaniak…), demande de Yann du 20 novembre. Le mot de
+ * passe part au serveur à la connexion et n'est plus jamais relu ici
+ * (invariant 5).
  */
 export function MailScreen() {
-  const account = useMailAccount();
-  const connected = account.data != null;
+  const accounts = useMailAccounts();
+  const connected = (accounts.data?.length ?? 0) > 0;
 
   return (
     <ScreenShell
       title="Mails"
       maxWidth={READING_MAX_WIDTH}
-      // La boîte porte ses propres défilements, un par colonne.
+      // Une fois reliée, la boîte porte ses propres défilements, un par colonne.
       scrolls={!connected}
     >
-      {account.isPending ? (
+      {accounts.isPending ? (
         <Text className="text-muted-foreground text-xs">Chargement…</Text>
-      ) : account.isError ? (
+      ) : accounts.isError ? (
         <Text className="text-destructive text-sm">
-          La boîte mail n'a pas pu être chargée. Réessayez dans un instant.
+          Les boîtes mail n'ont pas pu être chargées. Réessayez dans un instant.
         </Text>
-      ) : account.data == null ? (
+      ) : accounts.data.length === 0 ? (
         <ConnectForm />
       ) : (
-        <Mailbox address={account.data.address} />
+        <Mailbox accounts={accounts.data} />
       )}
     </ScreenShell>
   );
 }
 
-function ConnectForm() {
+function ConnectForm({ onDone }: { onDone?: () => void }) {
   const connect = useConnectMail();
+  const [provider, setProvider] = useState<MailProviderId>(MAIL_PROVIDERS[0].id);
   const [address, setAddress] = useState("");
   const [password, setPassword] = useState("");
-  const [host, setHost] = useState(DEFAULT_MAIL_HOST);
+  const [host, setHost] = useState<string>(MAIL_PROVIDERS[0].host);
 
   const canSubmit = address.trim().length > 0 && password.length > 0 && !connect.isPending;
+  const providerName = MAIL_PROVIDERS.find((entry) => entry.id === provider)?.label ?? "";
 
   return (
     <View className="gap-3">
-      <Text className="text-sm">
-        Reliez votre boîte OVH pour lire vos mails ici. Vous ne pouvez pas encore en envoyer.
-      </Text>
+      <Text className="text-sm">Reliez une boîte mail pour lire et écrire vos mails ici.</Text>
+
+      <View className="gap-1">
+        <Text className="text-muted-foreground text-xs">Fournisseur</Text>
+        <SegmentedControl
+          options={MAIL_PROVIDERS.map((entry) => ({ value: entry.id, label: entry.label }))}
+          value={provider}
+          onChange={(next) => {
+            setProvider(next);
+            // Le serveur suit le fournisseur choisi : l'utilisateur n'a pas à le connaître.
+            const entry = MAIL_PROVIDERS.find((candidate) => candidate.id === next);
+            if (entry) setHost(entry.host);
+          }}
+        />
+      </View>
 
       <View className="gap-1">
         <Text className="text-muted-foreground text-xs">Adresse e-mail</Text>
@@ -103,13 +162,13 @@ function ConnectForm() {
       </View>
 
       <View className="gap-1">
-        <Text className="text-muted-foreground text-xs">Serveur OVH</Text>
+        <Text className="text-muted-foreground text-xs">{`Serveur ${providerName}`}</Text>
         <Input
           value={host}
           onChangeText={setHost}
           autoCapitalize="none"
           autoCorrect={false}
-          accessibilityLabel="Serveur OVH"
+          accessibilityLabel={`Serveur ${providerName}`}
         />
       </View>
 
@@ -121,168 +180,294 @@ function ConnectForm() {
         </Text>
       ) : null}
 
-      <Button
-        disabled={!canSubmit}
-        onPress={() => connect.mutate({ address, password, host })}
-        accessibilityRole="button"
-        accessibilityLabel="Relier ma boîte"
-      >
-        <Text>{connect.isPending ? "Connexion…" : "Relier ma boîte"}</Text>
-      </Button>
+      <View className="flex-row gap-2">
+        <Button
+          className="flex-1"
+          disabled={!canSubmit}
+          onPress={() =>
+            connect.mutate({ address, password, host }, { onSuccess: () => onDone?.() })
+          }
+          accessibilityRole="button"
+          accessibilityLabel="Relier ma boîte"
+        >
+          <Text>{connect.isPending ? "Connexion…" : "Relier ma boîte"}</Text>
+        </Button>
+        {onDone ? (
+          <Button
+            variant="outline"
+            onPress={onDone}
+            accessibilityRole="button"
+            accessibilityLabel="Annuler"
+          >
+            <Text>Annuler</Text>
+          </Button>
+        ) : null}
+      </View>
     </View>
   );
 }
 
 /** Ce qu'une seule colonne montre sur téléphone. */
-type Stage = "folders" | "list" | "message";
+type Stage = "folders" | "list" | "message" | "compose";
 
-function Mailbox({ address }: { address: string }) {
+function viewKey(view: MailView): string {
+  return view.kind === "all" ? "all" : `${view.accountId}:${view.folder}`;
+}
+
+function Mailbox({ accounts }: { accounts: MailAccount[] }) {
   const expanded = useBreakpoint() === "expanded";
-  const [folder, setFolder] = useState(INBOX_PATH);
-  // Le mail ouvert est lié à son dossier : un numéro n'a de sens que dans le
-  // dossier où il a été lu, et un autre dossier en ouvrirait un autre mail.
-  const [opened, setOpened] = useState<{ folder: string; uid: number } | null>(null);
-  const uid = opened?.folder === folder ? opened.uid : null;
+  const [chosen, setChosen] = useState<MailView | null>(null);
+  const [adding, setAdding] = useState(false);
+  // Rédaction en cours ; la clé change à chaque ouverture pour repartir d'un formulaire neuf.
+  const [composing, setComposing] = useState<{
+    key: number;
+    accountId: string;
+    draft: MailDraft;
+  } | null>(null);
   const [stage, setStage] = useState<Stage>("list");
+  const [opened, setOpened] = useState<{
+    viewKey: string;
+    accountId: string;
+    folder: string;
+    uid: number;
+  } | null>(null);
 
-  const folders = useMailFolders();
-  const messages = useMailMessages(folder);
-  const message = useMailMessage(folder, uid);
-  const folderName = folders.data?.find((entry) => entry.path === folder)?.name ?? "Mails";
+  // La vue choisie peut viser une boîte qu'on vient de retirer : on revient alors
+  // à la vue par défaut — toutes les boîtes s'il y en a plusieurs, sinon la seule.
+  const first = accounts[0];
+  const defaultView: MailView =
+    accounts.length > 1 || !first
+      ? { kind: "all" }
+      : { kind: "folder", accountId: first.id, folder: INBOX_PATH };
+  const chosenIsValid =
+    chosen !== null &&
+    (chosen.kind === "all"
+      ? accounts.length > 1
+      : accounts.some((account) => account.id === chosen.accountId));
+  const view = chosen && chosenIsValid ? chosen : defaultView;
 
-  const foldersPane = (
-    <FolderPane
-      address={address}
-      folders={folders.data ?? []}
-      loading={folders.isPending}
-      error={folders.isError}
-      current={folder}
-      onSelect={(path) => {
-        setFolder(path);
+  const key = viewKey(view);
+
+  // Recherche, filtre « non lus » et nombre de mails demandés. Chacun repart de
+  // zéro quand on change de vue : « plus de mails » dans un dossier n'a pas de
+  // sens dans un autre.
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [unseenOnly, setUnseenOnly] = useState(false);
+  const [more, setMore] = useState<{ scope: string; limit: number } | null>(null);
+  // Une recherche ne part qu'une fois la frappe posée : un appel par lettre
+  // ferait travailler la boîte pour rien.
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(search.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+  const scope = `${key}|${query}|${unseenOnly}`;
+  const limit = more?.scope === scope ? more.limit : MAIL_PAGE_SIZE;
+  const params: MailListParams = { limit, q: query, unseen: unseenOnly };
+  // Le mail ouvert est lié à sa vue : un numéro n'a de sens que dans le dossier
+  // où il a été lu, et une autre vue en ouvrirait un autre mail.
+  const current = opened?.viewKey === key ? opened : null;
+
+  const all = useMailInbox(view.kind === "all", params);
+  const single = useMailMessages(
+    view.kind === "folder" ? view.accountId : "",
+    view.kind === "folder" ? view.folder : INBOX_PATH,
+    view.kind === "folder",
+    params,
+  );
+  const list = view.kind === "all" ? all : single;
+  const messages = (view.kind === "all" ? all.data?.messages : single.data) ?? [];
+  const unreachable = view.kind === "all" ? (all.data?.unreachableAccountIds ?? []) : [];
+
+  const message = useMailMessage(
+    current?.accountId ?? null,
+    current?.folder ?? INBOX_PATH,
+    current?.uid ?? null,
+  );
+
+  const folderQueries = useAllMailFolders(accounts);
+  const allUnseen = folderQueries.reduce(
+    (total, query) =>
+      total + (query.data?.find((folder) => folder.path === INBOX_PATH)?.unseen ?? 0),
+    0,
+  );
+
+  const activeFolders = useMailFolders(view.kind === "folder" ? view.accountId : (first?.id ?? ""));
+  const title =
+    view.kind === "all"
+      ? "Tous les comptes"
+      : (activeFolders.data?.find((folder) => folder.path === view.folder)?.name ?? "Mails");
+
+  const addressOf = (accountId: string) =>
+    accounts.find((account) => account.id === accountId)?.address ?? "";
+
+  const startCompose = (draft: MailDraft, accountId: string) => {
+    setComposing({ key: Date.now(), accountId, draft });
+    setStage("compose");
+  };
+  const closeCompose = () => {
+    setComposing(null);
+    if (!expanded) setStage("list");
+  };
+
+  const foldersPane = adding ? (
+    <ScrollView className="flex-1" contentContainerClassName="p-3">
+      <ConnectForm
+        onDone={() => {
+          setAdding(false);
+          setStage("folders");
+        }}
+      />
+    </ScrollView>
+  ) : (
+    <MailFolderTree
+      accounts={accounts}
+      view={view}
+      allUnseen={allUnseen}
+      onSelect={(next) => {
+        setChosen(next);
         setStage("list");
       }}
+      onAdd={() => setAdding(true)}
+      onCompose={() =>
+        startCompose(EMPTY_DRAFT, view.kind === "folder" ? view.accountId : (first?.id ?? ""))
+      }
     />
   );
 
   const listPane = (
     <ListPane
-      title={folderName}
-      messages={messages.data ?? []}
-      loading={messages.isPending}
-      error={messages.isError ? messages.error : null}
-      selected={uid}
-      onRefresh={() => void messages.refetch()}
+      title={title}
+      messages={messages}
+      loading={list.isPending}
+      error={list.isError ? list.error : null}
+      unreachable={unreachable.map(addressOf)}
+      selected={current ? { accountId: current.accountId, uid: current.uid } : null}
+      search={search}
+      onSearch={setSearch}
+      unseenOnly={unseenOnly}
+      onUnseenOnly={setUnseenOnly}
+      filtering={query !== "" || unseenOnly}
+      hasMore={messages.length >= limit}
+      onMore={() => setMore({ scope, limit: Math.min(limit + MAIL_PAGE_SIZE, MAIL_MAX_LIMIT) })}
+      showAccount={view.kind === "all"}
+      addressOf={addressOf}
+      onRefresh={() => void list.refetch()}
       onSelect={(next) => {
-        setOpened({ folder, uid: next });
+        setOpened({
+          viewKey: key,
+          accountId: next.accountId,
+          folder: view.kind === "folder" ? view.folder : INBOX_PATH,
+          uid: next.uid,
+        });
         setStage("message");
       }}
       onShowFolders={expanded ? undefined : () => setStage("folders")}
     />
   );
 
+  const setSeen = useSetMailSeen();
+  const move = useMoveMail();
+  const setFlag = useSetMailFlag();
+  const openedFolders = useMailFolders(current?.accountId ?? "", current !== null);
+  const openedFolderName =
+    openedFolders.data?.find((entry) => entry.path === current?.folder)?.name ?? "";
   const readPane = (
     <ReadPane
       message={message.data}
-      loading={uid !== null && message.isPending}
+      folders={(openedFolders.data ?? []).filter((entry) => entry.path !== current?.folder)}
+      inTrash={openedFolderName === "Corbeille"}
+      inArchive={openedFolderName === "Archives"}
+      actionError={move.isError ? move.error.message : null}
+      onMove={
+        current
+          ? (destination) =>
+              move.mutate(
+                {
+                  accountId: current.accountId,
+                  folder: current.folder,
+                  uid: current.uid,
+                  destination,
+                },
+                {
+                  // Le mail a quitté le dossier : on referme sa lecture.
+                  onSuccess: () => {
+                    setOpened(null);
+                    if (!expanded) setStage("list");
+                  },
+                },
+              )
+          : undefined
+      }
+      onToggleFlag={
+        current && message.data
+          ? () =>
+              setFlag.mutate({
+                accountId: current.accountId,
+                folder: current.folder,
+                uid: current.uid,
+                flagged: !message.data?.flagged,
+              })
+          : undefined
+      }
+      folder={current?.folder ?? INBOX_PATH}
+      onMarkUnread={
+        current
+          ? () => {
+              setSeen.mutate({
+                accountId: current.accountId,
+                folder: current.folder,
+                uid: current.uid,
+                seen: false,
+              });
+              if (!expanded) setStage("list");
+            }
+          : undefined
+      }
+      onCompose={(kind) => {
+        if (!current || !message.data) return;
+        startCompose(draftFor(kind, message.data, addressOf(current.accountId)), current.accountId);
+      }}
+      loading={current !== null && message.isPending}
       error={message.isError ? message.error : null}
       onBack={expanded ? undefined : () => setStage("list")}
     />
   );
 
+  const composePane = composing ? (
+    <MailCompose
+      key={composing.key}
+      accounts={accounts}
+      accountId={composing.accountId}
+      draft={composing.draft}
+      onClose={closeCompose}
+    />
+  ) : null;
+
   if (!expanded) {
     return (
       <View className="flex-1">
-        {stage === "folders" ? foldersPane : stage === "message" ? readPane : listPane}
+        {adding || stage === "folders"
+          ? foldersPane
+          : stage === "compose" && composePane
+            ? composePane
+            : stage === "message"
+              ? readPane
+              : listPane}
       </View>
     );
   }
 
   return (
     <View className="flex-1 flex-row">
-      <View style={{ width: 240 }} className="border-border border-r">
+      <View style={{ width: 260 }} className="border-border border-r">
         {foldersPane}
       </View>
       <View style={{ width: 380 }} className="border-border border-r">
         {listPane}
       </View>
-      <View className="min-w-0 flex-1">{readPane}</View>
+      <View className="min-w-0 flex-1">{composePane ?? readPane}</View>
     </View>
-  );
-}
-
-function FolderPane({
-  address,
-  folders,
-  loading,
-  error,
-  current,
-  onSelect,
-}: {
-  address: string;
-  folders: MailFolder[];
-  loading: boolean;
-  error: boolean;
-  current: string;
-  onSelect: (path: string) => void;
-}) {
-  const disconnect = useDisconnectMail();
-
-  return (
-    <ScrollView className="flex-1" contentContainerClassName="gap-0.5 p-2">
-      {loading ? <Text className="text-muted-foreground px-2 text-xs">Chargement…</Text> : null}
-      {error ? (
-        <Text className="text-destructive px-2 text-sm">
-          Les dossiers n'ont pas pu être chargés.
-        </Text>
-      ) : null}
-
-      {folders.map((entry) => {
-        const active = entry.path === current;
-        return (
-          <Pressable
-            key={entry.path}
-            onPress={() => onSelect(entry.path)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={`Ouvrir le dossier ${entry.name}`}
-            style={{ minHeight: MIN_TOUCH_TARGET - 8, paddingLeft: 8 + entry.depth * 16 }}
-            className={cn(
-              "flex-row items-center gap-2 rounded-md pr-2",
-              active ? "bg-muted" : "active:bg-muted",
-            )}
-          >
-            <Icon
-              as={entry.path === INBOX_PATH ? Inbox : active ? FolderOpen : Folder}
-              size={16}
-              className={active ? "text-primary" : "text-muted-foreground"}
-            />
-            <Text
-              className={cn("min-w-0 shrink text-sm", active ? "text-primary font-semibold" : "")}
-              numberOfLines={1}
-            >
-              {entry.name}
-            </Text>
-          </Pressable>
-        );
-      })}
-
-      <View className="border-border mt-3 gap-1 border-t px-2 pt-3">
-        <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-          {address}
-        </Text>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="self-start"
-          disabled={disconnect.isPending}
-          onPress={() => disconnect.mutate()}
-          accessibilityRole="button"
-          accessibilityLabel="Retirer cette boîte"
-        >
-          <Text>Retirer la boîte</Text>
-        </Button>
-      </View>
-    </ScrollView>
   );
 }
 
@@ -291,7 +476,17 @@ function ListPane({
   messages,
   loading,
   error,
+  unreachable,
   selected,
+  search,
+  onSearch,
+  unseenOnly,
+  onUnseenOnly,
+  filtering,
+  hasMore,
+  onMore,
+  showAccount,
+  addressOf,
   onRefresh,
   onSelect,
   onShowFolders,
@@ -300,12 +495,29 @@ function ListPane({
   messages: MailMessageSummary[];
   loading: boolean;
   error: unknown;
-  selected: number | null;
+  /** Adresses des boîtes qui n'ont pas répondu, dans la vue « Tous les comptes ». */
+  unreachable: string[];
+  selected: { accountId: string; uid: number } | null;
+  search: string;
+  onSearch: (value: string) => void;
+  unseenOnly: boolean;
+  onUnseenOnly: (value: boolean) => void;
+  /** Une recherche ou un filtre est en cours : la liste vide ne veut pas dire « dossier vide ». */
+  filtering: boolean;
+  /** Il y a probablement des mails plus anciens à charger. */
+  hasMore: boolean;
+  onMore: () => void;
+  /** Montre la boîte de chaque mail : utile quand plusieurs sont réunies. */
+  showAccount: boolean;
+  addressOf: (accountId: string) => string;
   onRefresh: () => void;
-  onSelect: (uid: number) => void;
+  onSelect: (message: MailMessageSummary) => void;
   /** Absent quand les dossiers sont déjà visibles à côté. */
   onShowFolders: (() => void) | undefined;
 }) {
+  const [searching, setSearching] = useState(false);
+  const groups = groupByDay(messages);
+
   return (
     <View className="flex-1">
       <View className="border-border flex-row items-center justify-between gap-2 border-b px-3 py-2">
@@ -325,16 +537,61 @@ function ListPane({
             {title}
           </Text>
         </View>
-        <Button
-          variant="ghost"
-          size="sm"
-          onPress={onRefresh}
-          accessibilityRole="button"
-          accessibilityLabel="Actualiser les mails"
-        >
-          <Icon as={RefreshCw} className="size-4" />
-        </Button>
+        <View className="flex-row items-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onPress={() => {
+              // Refermer la recherche l'efface : une liste filtrée à l'insu de
+              // l'utilisateur ferait croire à un dossier presque vide.
+              if (searching) onSearch("");
+              setSearching(!searching);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={searching ? "Fermer la recherche" : "Chercher un mail"}
+          >
+            <Icon as={searching ? X : Search} className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onPress={onRefresh}
+            accessibilityRole="button"
+            accessibilityLabel="Actualiser les mails"
+          >
+            <Icon as={RefreshCw} className="size-4" />
+          </Button>
+        </View>
       </View>
+
+      <View className="border-border gap-2 border-b px-3 py-2">
+        {searching ? (
+          <Input
+            value={search}
+            onChangeText={onSearch}
+            placeholder="Expéditeur, objet ou texte"
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            accessibilityLabel="Chercher un mail"
+          />
+        ) : null}
+        <SegmentedControl
+          options={[
+            { value: "all", label: "Tous" },
+            { value: "unseen", label: "Non lus" },
+          ]}
+          value={unseenOnly ? "unseen" : "all"}
+          onChange={(value) => onUnseenOnly(value === "unseen")}
+        />
+      </View>
+
+      {unreachable.length > 0 ? (
+        <Text className="text-destructive px-3 py-2 text-xs">
+          {`Boîte injoignable : ${unreachable.join(", ")}.`}
+        </Text>
+      ) : null}
 
       <ScrollView className="flex-1">
         {loading ? (
@@ -346,16 +603,43 @@ function ListPane({
               : "Les mails n'ont pas pu être chargés. Réessayez dans un instant."}
           </Text>
         ) : messages.length === 0 ? (
-          <Text className="text-muted-foreground p-3 text-sm">Aucun mail dans ce dossier.</Text>
+          <Text className="text-muted-foreground p-3 text-sm">
+            {filtering ? "Aucun mail ne correspond." : "Aucun mail dans ce dossier."}
+          </Text>
         ) : (
-          messages.map((message) => (
-            <MessageRow
-              key={message.uid}
-              message={message}
-              active={message.uid === selected}
-              onOpen={() => onSelect(message.uid)}
-            />
-          ))
+          <>
+            {groups.map((group) => (
+              <View key={group.label}>
+                <Text className="text-muted-foreground bg-muted/40 px-3 py-1 text-xs font-semibold">
+                  {group.label}
+                </Text>
+                {group.items.map((message) => (
+                  <MessageRow
+                    key={`${message.accountId}:${message.uid}`}
+                    message={message}
+                    account={showAccount ? addressOf(message.accountId) : undefined}
+                    active={
+                      selected?.accountId === message.accountId && selected.uid === message.uid
+                    }
+                    onOpen={() => onSelect(message)}
+                  />
+                ))}
+              </View>
+            ))}
+            {hasMore ? (
+              <View className="p-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onPress={onMore}
+                  accessibilityRole="button"
+                  accessibilityLabel="Afficher des mails plus anciens"
+                >
+                  <Text>Afficher des mails plus anciens</Text>
+                </Button>
+              </View>
+            ) : null}
+          </>
         )}
       </ScrollView>
     </View>
@@ -364,10 +648,13 @@ function ListPane({
 
 function MessageRow({
   message,
+  account,
   active,
   onOpen,
 }: {
   message: MailMessageSummary;
+  /** Adresse de la boîte, montrée quand plusieurs boîtes sont réunies. */
+  account: string | undefined;
   active: boolean;
   onOpen: () => void;
 }) {
@@ -394,11 +681,15 @@ function MessageRow({
           >
             {sender}
           </Text>
-          {message.date ? (
-            <Text className="text-muted-foreground shrink-0 text-xs">
-              {formatMailDate(message.date)}
-            </Text>
-          ) : null}
+          <View className="shrink-0 flex-row items-center gap-1">
+            {message.flagged ? <Icon as={Flag} size={12} className="text-destructive" /> : null}
+            {message.hasAttachments ? (
+              <Icon as={Paperclip} size={12} className="text-muted-foreground" />
+            ) : null}
+            {message.date ? (
+              <Text className="text-muted-foreground text-xs">{formatMailDate(message.date)}</Text>
+            ) : null}
+          </View>
         </View>
         <Text
           className={cn("text-sm", message.seen ? "text-muted-foreground" : "font-semibold")}
@@ -406,6 +697,16 @@ function MessageRow({
         >
           {subject}
         </Text>
+        {message.preview ? (
+          <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+            {message.preview}
+          </Text>
+        ) : null}
+        {account ? (
+          <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+            {account}
+          </Text>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -413,11 +714,34 @@ function MessageRow({
 
 function ReadPane({
   message,
+  folder,
+  folders,
+  inTrash,
+  inArchive,
+  actionError,
+  onMove,
+  onToggleFlag,
   loading,
   error,
   onBack,
+  onMarkUnread,
+  onCompose,
 }: {
   message: MailMessage | undefined;
+  /** Les autres dossiers de la boîte, pour « Déplacer ». */
+  folders: MailFolder[];
+  /** Le mail est déjà dans la corbeille ou les archives : le geste n'a plus de sens. */
+  inTrash: boolean;
+  inArchive: boolean;
+  /** Ce que le fournisseur a répondu au dernier geste raté. */
+  actionError: string | null;
+  onMove: ((destination: MoveMail) => void) | undefined;
+  onToggleFlag: (() => void) | undefined;
+  /** Dossier où le mail est ouvert. */
+  folder: string;
+  /** Remet le mail ouvert en non lu ; absent quand rien n'est ouvert. */
+  onMarkUnread: (() => void) | undefined;
+  onCompose: (kind: Exclude<ComposeKind, "new">) => void;
   loading: boolean;
   error: unknown;
   /** Absent quand la liste est déjà visible à côté. */
@@ -471,13 +795,249 @@ function ReadPane({
                 ) : null}
               </View>
             </View>
-            <Text className="pt-2 text-sm" selectable>
-              {message.text ??
-                "Ce mail ne contient pas de texte (images ou pièces jointes seules)."}
-            </Text>
+            <MessageActions
+              flagged={message.flagged}
+              folders={folders}
+              inTrash={inTrash}
+              inArchive={inArchive}
+              error={actionError}
+              onMove={onMove}
+              onToggleFlag={onToggleFlag}
+              onMarkUnread={onMarkUnread}
+              onCompose={onCompose}
+            />
+            <MessageContent message={message} folder={folder} />
           </>
         )}
       </ScrollView>
     </View>
+  );
+}
+
+/** Les images distantes d'un mail sont-elles à charger ? Il y en a-t-il seulement ? */
+function hasRemoteImages(html: string | null): boolean {
+  return html !== null && /<img[^>]+src=["']https?:/i.test(html);
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} Mo`;
+}
+
+/**
+ * Le contenu d'un mail ouvert : son texte ou sa mise en forme, puis ses pièces
+ * jointes. Les images distantes ne se chargent qu'à la demande : une image
+ * distante dit à l'expéditeur que le mail a été ouvert.
+ */
+function MessageContent({ message, folder }: { message: MailMessage; folder: string }) {
+  const [shown, setShown] = useState<string | null>(null);
+  const showImages = shown === `${message.accountId}:${message.uid}`;
+
+  return (
+    <>
+      {hasRemoteImages(message.html) && !showImages ? (
+        <View className="bg-muted flex-row items-center justify-between gap-2 rounded-md px-3 py-2">
+          <Text className="text-muted-foreground min-w-0 shrink text-xs">
+            Les images de ce mail ne sont pas affichées.
+          </Text>
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={() => setShown(`${message.accountId}:${message.uid}`)}
+            accessibilityRole="button"
+            accessibilityLabel="Afficher les images"
+          >
+            <Text>Afficher les images</Text>
+          </Button>
+        </View>
+      ) : null}
+
+      <MailBody html={message.html} text={message.text} showImages={showImages} />
+
+      {message.attachments.length > 0 ? (
+        <View className="border-border gap-1 border-t pt-3">
+          <Text className="text-muted-foreground text-xs font-semibold">
+            {message.attachments.length > 1 ? "Pièces jointes" : "Pièce jointe"}
+          </Text>
+          {message.attachments.map((attachment) => (
+            <AttachmentRow
+              key={attachment.index}
+              message={message}
+              folder={folder}
+              attachment={attachment}
+            />
+          ))}
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+function AttachmentRow({
+  message,
+  folder,
+  attachment,
+}: {
+  message: MailMessage;
+  /** Dossier où le mail a été ouvert : le serveur y cherche la pièce jointe. */
+  folder: string;
+  attachment: MailAttachment;
+}) {
+  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const download = async () => {
+    if (!CAN_DOWNLOAD) {
+      setState("error");
+      setError("Le téléchargement n'est pas encore disponible sur téléphone.");
+      return;
+    }
+    setState("loading");
+    setError(null);
+    try {
+      const blob = await api.mail.attachment(
+        message.accountId,
+        message.uid,
+        attachment.index,
+        folder,
+      );
+      downloadFile(blob, attachment.filename);
+      setState("idle");
+    } catch (failure) {
+      setState("error");
+      setError(failure instanceof Error ? failure.message : "Le téléchargement a échoué.");
+    }
+  };
+
+  return (
+    <View>
+      <Pressable
+        onPress={() => void download()}
+        disabled={state === "loading"}
+        accessibilityRole="button"
+        accessibilityLabel={`Télécharger ${attachment.filename}`}
+        style={{ minHeight: MIN_TOUCH_TARGET - 8 }}
+        className="flex-row items-center gap-2 rounded-md py-1 active:opacity-70"
+      >
+        <Icon as={Paperclip} size={16} className="text-muted-foreground" />
+        <Text className="min-w-0 shrink text-sm" numberOfLines={1}>
+          {attachment.filename}
+        </Text>
+        <Text className="text-muted-foreground shrink-0 text-xs">
+          {state === "loading" ? "Téléchargement…" : formatSize(attachment.size)}
+        </Text>
+        <Icon as={Download} size={14} className="text-muted-foreground" />
+      </Pressable>
+      {state === "error" && error ? (
+        <Text className="text-destructive text-xs">{error}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Les gestes sur le mail ouvert, les 20 % d'Outlook qu'on utilise le plus :
+ * archiver, supprimer, déplacer, indicateur, marquer non lu.
+ *
+ * Supprimer envoie à la corbeille, jamais d'effacement définitif : une erreur
+ * se rattrape en sortant le mail de la corbeille.
+ */
+function MessageActions({
+  flagged,
+  folders,
+  inTrash,
+  inArchive,
+  error,
+  onMove,
+  onToggleFlag,
+  onMarkUnread,
+  onCompose,
+}: {
+  flagged: boolean;
+  folders: MailFolder[];
+  inTrash: boolean;
+  inArchive: boolean;
+  error: string | null;
+  onMove: ((destination: MoveMail) => void) | undefined;
+  onToggleFlag: (() => void) | undefined;
+  onMarkUnread: (() => void) | undefined;
+  onCompose: (kind: Exclude<ComposeKind, "new">) => void;
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  return (
+    <View className="gap-2">
+      <View className="flex-row flex-wrap items-center gap-1">
+        <ActionButton icon={Reply} label="Répondre" onPress={() => onCompose("reply")} />
+        <ActionButton
+          icon={ReplyAll}
+          label="Répondre à tous"
+          onPress={() => onCompose("replyAll")}
+        />
+        <ActionButton icon={Forward} label="Transférer" onPress={() => onCompose("forward")} />
+        {onMove && !inArchive ? (
+          <ActionButton icon={Archive} label="Archiver" onPress={() => onMove({ to: "archive" })} />
+        ) : null}
+        {onMove && !inTrash ? (
+          <ActionButton icon={Trash2} label="Supprimer" onPress={() => onMove({ to: "trash" })} />
+        ) : null}
+        {onMove && folders.length > 0 ? (
+          <ActionButton
+            icon={FolderInput}
+            label="Déplacer"
+            onPress={(event) => setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
+          />
+        ) : null}
+        {onToggleFlag ? (
+          <ActionButton
+            icon={Flag}
+            label={flagged ? "Retirer l'indicateur" : "Indicateur"}
+            onPress={onToggleFlag}
+          />
+        ) : null}
+        {onMarkUnread ? <ActionButton label="Marquer comme non lu" onPress={onMarkUnread} /> : null}
+      </View>
+
+      {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
+
+      {menu && onMove ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={folders.map((target) => ({
+            label: target.name,
+            onPress: () => {
+              setMenu(null);
+              onMove({ to: "folder", folder: target.path });
+            },
+          }))}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function ActionButton({
+  icon,
+  label,
+  onPress,
+}: {
+  icon?: typeof Flag;
+  label: string;
+  onPress: (event: GestureResponderEvent) => void;
+}) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      {icon ? <Icon as={icon} className="size-4" /> : null}
+      <Text>{label}</Text>
+    </Button>
   );
 }
