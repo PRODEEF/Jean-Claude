@@ -59,6 +59,8 @@ export const mailMessageSummarySchema = z.object({
   preview: z.string(),
   /** Le mail porte au moins une pièce jointe : la liste y met un trombone. */
   hasAttachments: z.boolean(),
+  /** Marqué d'un drapeau (« Indicateur » chez Outlook) : à ne pas oublier. */
+  flagged: z.boolean(),
 });
 export type MailMessageSummary = z.infer<typeof mailMessageSummarySchema>;
 
@@ -131,6 +133,21 @@ export const mailInboxQuerySchema = mailListQuerySchema.omit({ folder: true });
 
 export const setMailSeenSchema = z.object({ seen: z.boolean() });
 export type SetMailSeen = z.infer<typeof setMailSeenSchema>;
+
+export const setMailFlagSchema = z.object({ flagged: z.boolean() });
+export type SetMailFlag = z.infer<typeof setMailFlagSchema>;
+
+/**
+ * Où va un mail qu'on déplace : la corbeille, les archives, ou un dossier au
+ * choix. « Supprimer » est « aller à la corbeille » : un mail n'est jamais
+ * effacé pour de bon d'ici, une erreur se rattrape en le sortant de la corbeille.
+ */
+export const moveMailSchema = z.discriminatedUnion("to", [
+  z.object({ to: z.literal("trash") }),
+  z.object({ to: z.literal("archive") }),
+  z.object({ to: z.literal("folder"), folder: z.string().trim().min(1).max(200) }),
+]);
+export type MoveMail = z.infer<typeof moveMailSchema>;
 
 /**
  * Boîte de réception de toutes les boîtes réunies, les plus récents d'abord.

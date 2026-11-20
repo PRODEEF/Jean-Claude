@@ -93,7 +93,7 @@
 - [ ] `FRONT` `Mails` **Réponse qui cite le message d'origine, signature, mise en forme simple (gras, italique, lien, liste)** — Étape 2, tranche D. <!--id:mail-reponse-signature-->
 - [ ] `FRONT` `Mails` **Suggestion des destinataires (adresses déjà utilisées)** — Étape 2, tranche D. Un carnet d'adresses qui se remplit tout seul, sans écran de gestion. <!--id:mail-destinataires-->
 - [ ] `FRONT` `Mails` **Pièces jointes à l'envoi** — Étape 2. <!--id:mail-pieces-envoi-->
-- [ ] `FRONT` `Mails` **Gestes sur un mail : Supprimer, Archiver, Déplacer vers un dossier, Indicateur (drapeau)** — Étape 1, tranche C. La barre d'actions de la capture d'Outlook de Yann, limitée aux 20 % utiles. **Supprimer = déplacer vers la Corbeille**, jamais effacer pour de bon : un mail supprimé par erreur se retrouve. <!--id:mail-actions-->
+- [x] `FRONT` `Mails` **Gestes sur un mail : Supprimer, Archiver, Déplacer vers un dossier, Indicateur (drapeau)** — Étape 1, tranche C. La barre d'actions de la capture d'Outlook de Yann, limitée aux 20 % utiles. **Supprimer = déplacer vers la Corbeille**, jamais effacer pour de bon : un mail supprimé par erreur se retrouve. <!--id:mail-actions-->
 - [ ] `ALGO` `Mails` **L'assistant rédige et envoie des mails (répondre, relancer), sur proposition** — Étape 3. Une proposition en attente que l'utilisateur accepte d'un geste, jamais un envoi direct (§12.1). <!--id:mail-assistant-envoie-->
 - [ ] `ALGO` `Mails` **Rappels liés à des mails** — Étape 3. <!--id:mail-rappels-->
 - [ ] `ALGO` `Mails` **Décider ce que l'assistant a le droit de lire (objet et expéditeur, ou le corps)** — Avant l'étape 3 : le contenu des mails partirait vers le modèle d'IA (§5.1, RGPD). ⏸ À décider avec Yann. <!--id:mail-rgpd-->
