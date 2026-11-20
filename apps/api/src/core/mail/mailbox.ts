@@ -1,11 +1,13 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser, type AddressObject } from "mailparser";
-import type { MailFolder, MailMessage, MailMessageSummary } from "@jc/domain";
+import nodemailer from "nodemailer";
+import type { MailFolder, MailMessage, MailMessageSummary, SendMail } from "@jc/domain";
 import { logger } from "../logger.js";
 import {
   ARCHIVE_NAMES,
   pickFolder,
   presentFolders,
+  SENT_NAMES,
   TRASH_NAMES,
   type RawFolder,
 } from "./folders.js";
@@ -92,6 +94,11 @@ export interface IMailbox {
     uid: number,
     seen: boolean,
   ): Promise<void>;
+  /**
+   * Envoie le mail par le serveur sortant de la boîte, puis en garde une copie
+   * dans « Envoyés ». Lève si l'envoi est refusé ; la copie, elle, est au mieux.
+   */
+  send(credentials: MailboxCredentials, mail: SendMail): Promise<void>;
 }
 
 /**
@@ -144,6 +151,14 @@ async function withFolder<T>(
 function formatAddresses(field: AddressObject | AddressObject[] | undefined): string {
   const objects = Array.isArray(field) ? field : field ? [field] : [];
   return objects.map((object) => object.text).join(", ");
+}
+
+/** Les adresses seules, sans les noms : ce que « Répondre » met dans les champs. */
+function addressesOf(field: AddressObject | AddressObject[] | undefined): string[] {
+  const objects = Array.isArray(field) ? field : field ? [field] : [];
+  return objects.flatMap((object) =>
+    object.value.flatMap((entry) => (entry.address ? [entry.address.toLowerCase()] : [])),
+  );
 }
 
 /** Aperçu d'un début de mail ; un texte illisible donne un aperçu vide, pas une liste cassée. */
@@ -285,6 +300,10 @@ export const mailbox: IMailbox = {
           flagged: fetched.flags?.has("\\Flagged") ?? false,
           text: parsed.text?.trim() ? parsed.text : null,
           html: parsed.html ? sanitizeMailHtml(inlineCidImages(parsed.html, images)) : null,
+          messageId: parsed.messageId ?? null,
+          replyTo: addressesOf(parsed.replyTo ?? parsed.from),
+          toList: addressesOf(parsed.to),
+          ccList: addressesOf(parsed.cc),
           // Une image intégrée au texte n'est pas une pièce jointe à proposer.
           attachments: parsed.attachments.flatMap((attachment, index) =>
             attachment.related
@@ -384,5 +403,60 @@ export const mailbox: IMailbox = {
       },
       false,
     );
+  },
+  async send(credentials, mail) {
+    // Le message est composé une fois : le même texte part par SMTP et se range dans « Envoyés ».
+    const composed = await nodemailer
+      .createTransport({ streamTransport: true, buffer: true, newline: "unix" })
+      .sendMail({
+        from: credentials.address,
+        to: mail.to,
+        cc: mail.cc,
+        subject: mail.subject,
+        text: mail.text,
+        ...(mail.inReplyTo ? { inReplyTo: mail.inReplyTo, references: mail.inReplyTo } : {}),
+      });
+    if (!Buffer.isBuffer(composed.message)) throw new Error("Message non composé.");
+    const raw = composed.message;
+
+    const transport = nodemailer.createTransport({
+      host: credentials.host,
+      port: 465,
+      secure: true,
+      auth: { user: credentials.address, pass: credentials.password },
+      socketTimeout: TIMEOUT_MS,
+      greetingTimeout: TIMEOUT_MS,
+      connectionTimeout: TIMEOUT_MS,
+    });
+    // Les copies cachées ne figurent pas dans les en-têtes : elles ne passent que par l'enveloppe.
+    await transport.sendMail({
+      envelope: { from: credentials.address, to: [...mail.to, ...mail.cc, ...mail.bcc] },
+      raw,
+    });
+
+    try {
+      const client = connect(credentials);
+      await client.connect();
+      try {
+        const folders: RawFolder[] = (await client.list()).map((entry) => ({
+          path: entry.path,
+          name: entry.name,
+          specialUse: entry.specialUse,
+          unseen: 0,
+          selectable: !entry.flags.has("\\Noselect"),
+        }));
+        const sent = pickFolder(folders, "\\Sent", SENT_NAMES);
+        if (sent) await client.append(sent, raw, ["\\Seen"]);
+      } finally {
+        await client.logout().catch(() => undefined);
+      }
+    } catch (error) {
+      // Le mail est parti : une copie manquante ne doit pas faire croire à un échec d'envoi.
+      logger.warn(
+        SCOPE,
+        "Copie dans Envoyés impossible.",
+        error instanceof Error ? error.message : error,
+      );
+    }
   },
 };

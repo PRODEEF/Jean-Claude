@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Inbox, Plus } from "lucide-react-native";
+import {
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  FolderOpen,
+  Inbox,
+  PenSquare,
+  Plus,
+} from "lucide-react-native";
 import type { MailAccount, MailFolder } from "@jc/domain";
 import { INBOX_PATH } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
@@ -30,6 +38,7 @@ export function MailFolderTree({
   allUnseen,
   onSelect,
   onAdd,
+  onCompose,
 }: {
   accounts: MailAccount[];
   view: MailView;
@@ -37,11 +46,22 @@ export function MailFolderTree({
   allUnseen: number;
   onSelect: (view: MailView) => void;
   onAdd: () => void;
+  onCompose: () => void;
 }) {
   const [collapsed, toggle] = useCollapsed();
 
   return (
     <ScrollView className="flex-1" contentContainerClassName="gap-0.5 p-2">
+      <Button
+        className="mb-2"
+        onPress={onCompose}
+        accessibilityRole="button"
+        accessibilityLabel="Nouveau message"
+      >
+        <Icon as={PenSquare} className="size-4" />
+        <Text>Nouveau message</Text>
+      </Button>
+
       {accounts.length > 1 ? (
         <TreeRow
           label="Tous les comptes"

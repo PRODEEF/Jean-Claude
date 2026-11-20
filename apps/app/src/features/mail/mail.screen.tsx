@@ -6,8 +6,11 @@ import {
   Download,
   Flag,
   Folder,
+  Forward,
   FolderInput,
   Paperclip,
+  Reply,
+  ReplyAll,
   RefreshCw,
   Search,
   Trash2,
@@ -22,11 +25,15 @@ import type {
   MoveMail,
 } from "@jc/domain";
 import {
+  draftFor,
+  EMPTY_DRAFT,
   groupByDay,
   INBOX_PATH,
   MAIL_MAX_LIMIT,
   MAIL_PAGE_SIZE,
   MAIL_PROVIDERS,
+  type ComposeKind,
+  type MailDraft,
   type MailProviderId,
 } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
@@ -43,6 +50,7 @@ import { Text } from "@/shared/ui/text";
 import { api } from "@/shared/lib/api";
 import { MailAvatar } from "./MailAvatar";
 import { MailBody } from "./MailBody";
+import { MailCompose } from "./MailCompose";
 import { CAN_DOWNLOAD, downloadFile } from "./download-file";
 import { MailFolderTree, type MailView } from "./MailFolderTree";
 import {
@@ -108,9 +116,7 @@ function ConnectForm({ onDone }: { onDone?: () => void }) {
 
   return (
     <View className="gap-3">
-      <Text className="text-sm">
-        Reliez une boîte mail pour la lire ici. Vous ne pouvez pas encore en envoyer.
-      </Text>
+      <Text className="text-sm">Reliez une boîte mail pour lire et écrire vos mails ici.</Text>
 
       <View className="gap-1">
         <Text className="text-muted-foreground text-xs">Fournisseur</Text>
@@ -202,7 +208,7 @@ function ConnectForm({ onDone }: { onDone?: () => void }) {
 }
 
 /** Ce qu'une seule colonne montre sur téléphone. */
-type Stage = "folders" | "list" | "message";
+type Stage = "folders" | "list" | "message" | "compose";
 
 function viewKey(view: MailView): string {
   return view.kind === "all" ? "all" : `${view.accountId}:${view.folder}`;
@@ -212,6 +218,12 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
   const expanded = useBreakpoint() === "expanded";
   const [chosen, setChosen] = useState<MailView | null>(null);
   const [adding, setAdding] = useState(false);
+  // Rédaction en cours ; la clé change à chaque ouverture pour repartir d'un formulaire neuf.
+  const [composing, setComposing] = useState<{
+    key: number;
+    accountId: string;
+    draft: MailDraft;
+  } | null>(null);
   const [stage, setStage] = useState<Stage>("list");
   const [opened, setOpened] = useState<{
     viewKey: string;
@@ -289,6 +301,15 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
   const addressOf = (accountId: string) =>
     accounts.find((account) => account.id === accountId)?.address ?? "";
 
+  const startCompose = (draft: MailDraft, accountId: string) => {
+    setComposing({ key: Date.now(), accountId, draft });
+    setStage("compose");
+  };
+  const closeCompose = () => {
+    setComposing(null);
+    if (!expanded) setStage("list");
+  };
+
   const foldersPane = adding ? (
     <ScrollView className="flex-1" contentContainerClassName="p-3">
       <ConnectForm
@@ -308,6 +329,9 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
         setStage("list");
       }}
       onAdd={() => setAdding(true)}
+      onCompose={() =>
+        startCompose(EMPTY_DRAFT, view.kind === "folder" ? view.accountId : (first?.id ?? ""))
+      }
     />
   );
 
@@ -400,16 +424,36 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
             }
           : undefined
       }
+      onCompose={(kind) => {
+        if (!current || !message.data) return;
+        startCompose(draftFor(kind, message.data, addressOf(current.accountId)), current.accountId);
+      }}
       loading={current !== null && message.isPending}
       error={message.isError ? message.error : null}
       onBack={expanded ? undefined : () => setStage("list")}
     />
   );
 
+  const composePane = composing ? (
+    <MailCompose
+      key={composing.key}
+      accounts={accounts}
+      accountId={composing.accountId}
+      draft={composing.draft}
+      onClose={closeCompose}
+    />
+  ) : null;
+
   if (!expanded) {
     return (
       <View className="flex-1">
-        {adding || stage === "folders" ? foldersPane : stage === "message" ? readPane : listPane}
+        {adding || stage === "folders"
+          ? foldersPane
+          : stage === "compose" && composePane
+            ? composePane
+            : stage === "message"
+              ? readPane
+              : listPane}
       </View>
     );
   }
@@ -422,7 +466,7 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
       <View style={{ width: 380 }} className="border-border border-r">
         {listPane}
       </View>
-      <View className="min-w-0 flex-1">{readPane}</View>
+      <View className="min-w-0 flex-1">{composePane ?? readPane}</View>
     </View>
   );
 }
@@ -681,6 +725,7 @@ function ReadPane({
   error,
   onBack,
   onMarkUnread,
+  onCompose,
 }: {
   message: MailMessage | undefined;
   /** Les autres dossiers de la boîte, pour « Déplacer ». */
@@ -696,6 +741,7 @@ function ReadPane({
   folder: string;
   /** Remet le mail ouvert en non lu ; absent quand rien n'est ouvert. */
   onMarkUnread: (() => void) | undefined;
+  onCompose: (kind: Exclude<ComposeKind, "new">) => void;
   loading: boolean;
   error: unknown;
   /** Absent quand la liste est déjà visible à côté. */
@@ -758,6 +804,7 @@ function ReadPane({
               onMove={onMove}
               onToggleFlag={onToggleFlag}
               onMarkUnread={onMarkUnread}
+              onCompose={onCompose}
             />
             <MessageContent message={message} folder={folder} />
           </>
@@ -905,6 +952,7 @@ function MessageActions({
   onMove,
   onToggleFlag,
   onMarkUnread,
+  onCompose,
 }: {
   flagged: boolean;
   folders: MailFolder[];
@@ -914,12 +962,20 @@ function MessageActions({
   onMove: ((destination: MoveMail) => void) | undefined;
   onToggleFlag: (() => void) | undefined;
   onMarkUnread: (() => void) | undefined;
+  onCompose: (kind: Exclude<ComposeKind, "new">) => void;
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   return (
     <View className="gap-2">
       <View className="flex-row flex-wrap items-center gap-1">
+        <ActionButton icon={Reply} label="Répondre" onPress={() => onCompose("reply")} />
+        <ActionButton
+          icon={ReplyAll}
+          label="Répondre à tous"
+          onPress={() => onCompose("replyAll")}
+        />
+        <ActionButton icon={Forward} label="Transférer" onPress={() => onCompose("forward")} />
         {onMove && !inArchive ? (
           <ActionButton icon={Archive} label="Archiver" onPress={() => onMove({ to: "archive" })} />
         ) : null}

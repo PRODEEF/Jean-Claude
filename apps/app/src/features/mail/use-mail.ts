@@ -11,6 +11,7 @@ import type {
   MailInbox,
   MailMessageSummary,
   MoveMail,
+  SendMailInput,
 } from "@jc/domain";
 import { api } from "@/shared/lib/api";
 
@@ -218,4 +219,15 @@ function showSeen(
   queryClient.setQueriesData<MailInbox>({ queryKey: ["mail", "inbox"] }, (inbox) =>
     inbox ? { ...inbox, messages: inbox.messages.map(mark) } : inbox,
   );
+}
+
+/** Envoie un mail ; « Envoyés » change, les listes sont donc relues. */
+export function useSendMail() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: { accountId: string; mail: SendMailInput }) =>
+      api.mail.send(input.accountId, input.mail),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mail"] }),
+  });
 }
