@@ -18,7 +18,7 @@
     "@supabase/supabase-js": "^2.47.0",
     "@vercel/functions": "^3.9.9",
     "ai": "^7.0.85",
-    "hono": "^4.13.5",
+    "hono": "^4.13.16",
     "imapflow": "^2.12.1",
     "mailparser": "^3.14.5",
     "nodemailer": "^7.0.13",
