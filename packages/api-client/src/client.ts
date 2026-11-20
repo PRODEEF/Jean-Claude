@@ -27,6 +27,7 @@ import {
   type MailMessage,
   type MailMessageSummary,
   type MoveMail,
+  type SendMailInput,
   type Folder,
   type FolderTreeNode,
   type Message,
@@ -226,6 +227,13 @@ export class JeanClaudeClient {
         method: "POST",
         query: { folder },
         body: { seen },
+      }),
+
+    /** Envoie un mail depuis une boîte reliée. */
+    send: (accountId: string, mail: SendMailInput) =>
+      this.http.request<void>(`/mail/accounts/${accountId}/send`, {
+        method: "POST",
+        body: mail,
       }),
   };
 

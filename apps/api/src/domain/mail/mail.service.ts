@@ -5,6 +5,7 @@ import type {
   MailInbox,
   MailMessage,
   MailMessageSummary,
+  SendMail,
 } from "@jc/domain";
 import { INBOX_PATH, MAIL_ATTACHMENT_MAX_BYTES, MAX_MAIL_ACCOUNTS } from "@jc/domain";
 import { httpError } from "../../core/http.js";
@@ -278,6 +279,25 @@ export class MailService {
       await this.mailbox.setSeen(credentials, folder, uid, seen);
     } catch (error) {
       throw this.unreachable(error);
+    }
+  }
+
+  /**
+   * Envoie un mail rédigé par l'utilisateur. Un refus du serveur sortant ne doit
+   * jamais passer pour un envoi réussi : l'écran garde alors le brouillon.
+   */
+  async send(
+    userId: string,
+    accountId: string,
+    mail: SendMail,
+    accessToken: string,
+  ): Promise<void> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    try {
+      await this.mailbox.send(credentials, mail);
+    } catch (error) {
+      logger.warn(SCOPE, "Envoi en échec.", error instanceof Error ? error.message : error);
+      throw httpError(502, "Le mail n'a pas pu être envoyé. Il n'est pas parti : réessayez.");
     }
   }
 

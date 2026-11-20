@@ -6,6 +6,7 @@ import {
   mailInboxQuerySchema,
   mailListQuerySchema,
   moveMailSchema,
+  sendMailSchema,
   setMailFlagSchema,
   setMailSeenSchema,
   uuidSchema,
@@ -155,6 +156,18 @@ export const mailRoutes = new Hono<AuthEnv>()
         move.to === "folder" ? { folder: move.folder } : move.to,
         user.accessToken,
       );
+      return c.body(null, 204);
+    },
+  )
+
+  .post(
+    "/accounts/:accountId/send",
+    validate("param", z.object({ accountId: uuidSchema })),
+    validate("json", sendMailSchema),
+    async (c) => {
+      const user = c.get("user");
+      const { accountId } = c.req.valid("param");
+      await service.send(user.id, accountId, c.req.valid("json"), user.accessToken);
       return c.body(null, 204);
     },
   )

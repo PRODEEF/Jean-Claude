@@ -103,3 +103,10 @@ export function pickFolder(
 /** Noms usuels de la corbeille et des archives, quand le serveur n'annonce pas de rôle. */
 export const TRASH_NAMES = ["Trash", "Corbeille", "Deleted Messages", "Deleted Items"] as const;
 export const ARCHIVE_NAMES = ["Archive", "Archives"] as const;
+export const SENT_NAMES = [
+  "Sent",
+  "Éléments envoyés",
+  "Messages envoyés",
+  "Sent Items",
+  "Sent Messages",
+] as const;

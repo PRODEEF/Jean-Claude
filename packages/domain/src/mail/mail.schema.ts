@@ -88,6 +88,12 @@ export const mailMessageSchema = mailMessageSummarySchema
     /** Mise en forme du message, déjà nettoyée par le serveur ; `null` pour un mail en texte seul. */
     html: z.string().nullable(),
     attachments: z.array(mailAttachmentSchema),
+    /** Identifiant du message, repris dans « En réponse à » pour que les réponses restent groupées. */
+    messageId: z.string().nullable(),
+    /** Adresses seules (sans les noms) : ce qu'il faut pour répondre sans retraiter `from` et `to`. */
+    replyTo: z.array(z.string()),
+    toList: z.array(z.string()),
+    ccList: z.array(z.string()),
   });
 export type MailMessage = z.infer<typeof mailMessageSchema>;
 
@@ -159,3 +165,29 @@ export const mailInboxSchema = z.object({
   unreachableAccountIds: z.array(uuidSchema),
 });
 export type MailInbox = z.infer<typeof mailInboxSchema>;
+
+/** Au-delà, un envoi n'est plus un message : une boîte refuserait de toute façon. */
+export const MAIL_MAX_RECIPIENTS = 50;
+const recipientSchema = z.string().trim().toLowerCase().email("Adresse invalide.").max(254);
+
+/**
+ * Mail à envoyer, rédigé par l'utilisateur lui-même : jamais par l'assistant
+ * (§12.1). Texte seul pour l'instant ; pas de pièce jointe à l'envoi.
+ */
+export const sendMailSchema = z
+  .object({
+    to: z.array(recipientSchema).max(MAIL_MAX_RECIPIENTS).default([]),
+    cc: z.array(recipientSchema).max(MAIL_MAX_RECIPIENTS).default([]),
+    bcc: z.array(recipientSchema).max(MAIL_MAX_RECIPIENTS).default([]),
+    subject: z.string().trim().max(500),
+    text: z.string().max(200_000),
+    /** Réponse : identifiant du mail auquel on répond. */
+    inReplyTo: z.string().max(998).optional(),
+  })
+  .refine((mail) => mail.to.length + mail.cc.length + mail.bcc.length > 0, {
+    message: "Ajoutez au moins un destinataire.",
+    path: ["to"],
+  });
+export type SendMail = z.infer<typeof sendMailSchema>;
+/** Ce que l'écran envoie : cc et cci peuvent manquer, le serveur les remplit. */
+export type SendMailInput = z.input<typeof sendMailSchema>;

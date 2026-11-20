@@ -53,6 +53,7 @@ function makeMailbox(overrides: Partial<IMailbox> = {}): IMailbox {
     getAttachment: jest.fn().mockResolvedValue(null),
     move: jest.fn().mockResolvedValue("moved"),
     setFlagged: jest.fn().mockResolvedValue(undefined),
+    send: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -591,6 +592,46 @@ describe("MailService", () => {
       const message = await service.readMessage("u1", account.id, "INBOX", 7, "token");
 
       expect(message).toMatchObject({ uid: 7, text: "Salut", accountId: account.id });
+    });
+  });
+
+  describe("send", () => {
+    const MAIL = { to: ["a@b.fr"], cc: [], bcc: [], subject: "Salut", text: "Bonjour" };
+
+    it("envoie depuis la boîte choisie", async () => {
+      const mailbox = makeMailbox();
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await service.send("u1", account.id, MAIL, "token");
+
+      expect(mailbox.send).toHaveBeenCalledWith(
+        expect.objectContaining({ address: "yann@exemple.fr" }),
+        MAIL,
+      );
+    });
+
+    it("refuse une boîte qui n'est pas la sienne", async () => {
+      const mailbox = makeMailbox();
+      const service = new MailService(makeRepository(), mailbox, KEY);
+
+      await expect(
+        service.send("u1", "00000000-0000-4000-8000-000000000999", MAIL, "token"),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(mailbox.send).not.toHaveBeenCalled();
+    });
+
+    it("ne laisse pas croire à un envoi quand le serveur refuse, sans rendre son message", async () => {
+      const mailbox = makeMailbox({
+        send: jest.fn().mockRejectedValue(new Error("535 mot de passe secret123")),
+      });
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      const error = await service.send("u1", account.id, MAIL, "token").catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ status: 502 });
+      expect(String((error as Error).message)).not.toContain("secret123");
     });
   });
 });
