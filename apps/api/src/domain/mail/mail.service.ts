@@ -6,10 +6,10 @@ import type {
   MailMessage,
   MailMessageSummary,
 } from "@jc/domain";
-import { INBOX_PATH, MAIL_PAGE_SIZE, MAX_MAIL_ACCOUNTS } from "@jc/domain";
+import { INBOX_PATH, MAX_MAIL_ACCOUNTS } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { logger } from "../../core/logger.js";
-import type { IMailbox, MailboxCredentials } from "../../core/mail/mailbox.js";
+import type { IMailbox, MailboxCredentials, MailboxListOptions } from "../../core/mail/mailbox.js";
 import { decryptSecret, encryptSecret } from "../../core/mail/secret-box.js";
 import type { IMailRepository, StoredMailAccount } from "./mail.repository.interface.js";
 
@@ -100,11 +100,12 @@ export class MailService {
     userId: string,
     accountId: string,
     folder: string,
+    options: MailboxListOptions,
     accessToken: string,
   ): Promise<MailMessageSummary[]> {
     const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
     try {
-      const messages = await this.mailbox.listMessages(credentials, folder, MAIL_PAGE_SIZE);
+      const messages = await this.mailbox.listMessages(credentials, folder, options);
       return messages.map((message) => ({ ...message, accountId }));
     } catch (error) {
       throw this.unreachable(error);
@@ -117,7 +118,11 @@ export class MailService {
    * Une boîte qui ne répond pas ne cache pas les autres : elle est signalée,
    * et le reste s'affiche.
    */
-  async listAllInbox(userId: string, accessToken: string): Promise<MailInbox> {
+  async listAllInbox(
+    userId: string,
+    options: MailboxListOptions,
+    accessToken: string,
+  ): Promise<MailInbox> {
     const accounts = await this.accounts.list(userId, accessToken);
     if (accounts.length > 0 && !this.encryptionKey) {
       throw httpError(503, "La messagerie n'est pas encore activée sur le serveur.");
@@ -128,7 +133,7 @@ export class MailService {
         const messages = await this.mailbox.listMessages(
           this.credentialsOf(account),
           INBOX_PATH,
-          MAIL_PAGE_SIZE,
+          options,
         );
         return messages.map((message) => ({ ...message, accountId: account.id }));
       }),
@@ -155,7 +160,7 @@ export class MailService {
       message.date ? new Date(message.date).getTime() : 0;
     messages.sort((a, b) => timeOf(b) - timeOf(a));
 
-    return { messages: messages.slice(0, MAIL_PAGE_SIZE), unreachableAccountIds };
+    return { messages: messages.slice(0, options.limit), unreachableAccountIds };
   }
 
   async readMessage(
@@ -174,6 +179,23 @@ export class MailService {
     }
     if (!message) throw httpError(404, "Message introuvable.");
     return { ...message, accountId };
+  }
+
+  /** Marque un mail lu ou non lu chez le fournisseur. */
+  async setSeen(
+    userId: string,
+    accountId: string,
+    folder: string,
+    uid: number,
+    seen: boolean,
+    accessToken: string,
+  ): Promise<void> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    try {
+      await this.mailbox.setSeen(credentials, folder, uid, seen);
+    } catch (error) {
+      throw this.unreachable(error);
+    }
   }
 
   private async accountOf(
