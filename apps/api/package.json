@@ -21,7 +21,7 @@
     "hono": "^4.13.5",
     "imapflow": "^2.12.1",
     "mailparser": "^3.14.5",
-    "nodemailer": "^7.0.13",
+    "nodemailer": "^10.1.4",
     "rrule": "^2.8.1",
     "unpdf": "^1.8.1",
     "xss": "^1.0.17",
