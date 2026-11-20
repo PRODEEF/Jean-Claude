@@ -9,6 +9,8 @@ export type RawFolder = {
   specialUse?: string | undefined;
   /** Séparateur de niveaux dans `path` (`/` ou `.`), absent d'un serveur à plat. */
   delimiter?: string | undefined;
+  /** Mails non lus, 0 quand le serveur ne le dit pas. */
+  unseen: number;
   /** Faux pour un simple conteneur de sous-dossiers, qu'on ne peut pas ouvrir. */
   selectable: boolean;
 };
@@ -72,5 +74,6 @@ export function presentFolders(raw: readonly RawFolder[]): MailFolder[] {
     path: folder.path,
     name: KNOWN[rank]?.label ?? folder.name,
     depth: depthOf(folder, rank !== -1),
+    unseen: folder.unseen,
   }));
 }

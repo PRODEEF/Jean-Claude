@@ -6,6 +6,10 @@ import { presentFolders } from "./folders.js";
 
 const SCOPE = "core.mail";
 
+/** Un mail tel que le serveur de courrier le donne : le rattachement à une boîte s'ajoute au-dessus. */
+export type MailboxSummary = Omit<MailMessageSummary, "accountId">;
+export type MailboxMessage = Omit<MailMessage, "accountId">;
+
 /** Ce qu'il faut pour ouvrir la boîte : le mot de passe est ici en clair, le temps d'un appel. */
 export type MailboxCredentials = { host: string; address: string; password: string };
 
@@ -25,13 +29,13 @@ export interface IMailbox {
     credentials: MailboxCredentials,
     folder: string,
     limit: number,
-  ): Promise<MailMessageSummary[]>;
+  ): Promise<MailboxSummary[]>;
   /** `null` quand le message n'existe plus. */
   readMessage(
     credentials: MailboxCredentials,
     folder: string,
     uid: number,
-  ): Promise<MailMessage | null>;
+  ): Promise<MailboxMessage | null>;
 }
 
 /** Au-delà, une boîte qui ne répond pas ferait attendre l'écran sans fin. */
@@ -89,7 +93,9 @@ export const mailbox: IMailbox = {
     const client = connect(credentials);
     await client.connect();
     try {
-      const folders = await client.list();
+      // Les non lus de chaque dossier : imapflow les demande dossier par dossier
+      // quand le serveur ne sait pas les donner d'un coup.
+      const folders = await client.list({ statusQuery: { unseen: true } });
       return presentFolders(
         folders.map((entry) => ({
           path: entry.path,
@@ -97,6 +103,7 @@ export const mailbox: IMailbox = {
           specialUse: entry.specialUse,
           delimiter: entry.delimiter,
           selectable: !entry.flags.has("\\Noselect"),
+          unseen: entry.status?.unseen ?? 0,
         })),
       );
     } finally {
@@ -111,7 +118,7 @@ export const mailbox: IMailbox = {
       const total = client.mailbox && client.mailbox.exists ? client.mailbox.exists : 0;
       if (total === 0) return [];
 
-      const messages: MailMessageSummary[] = [];
+      const messages: MailboxSummary[] = [];
       const range = `${Math.max(1, total - limit + 1)}:*`;
       for await (const message of client.fetch(range, { uid: true, envelope: true, flags: true })) {
         messages.push({

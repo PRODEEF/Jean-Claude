@@ -1,7 +1,7 @@
 import { presentFolders, type RawFolder } from "./folders.js";
 
 function folder(path: string, overrides: Partial<RawFolder> = {}): RawFolder {
-  return { path, name: path, selectable: true, ...overrides };
+  return { path, name: path, selectable: true, unseen: 0, ...overrides };
 }
 
 describe("presentFolders", () => {
@@ -24,7 +24,7 @@ describe("presentFolders", () => {
   it("nomme un dossier d'après son rôle, pas d'après son nom d'origine", () => {
     const result = presentFolders([folder("Éléments envoyés", { specialUse: "\\Sent" })]);
 
-    expect(result).toEqual([{ path: "Éléments envoyés", name: "Envoyés", depth: 0 }]);
+    expect(result).toEqual([{ path: "Éléments envoyés", name: "Envoyés", depth: 0, unseen: 0 }]);
   });
 
   it("garde le chemin d'origine, qui sert à ouvrir le dossier", () => {
@@ -77,5 +77,14 @@ describe("presentFolders", () => {
       ["Envoyés", 0],
       ["Banque", 0],
     ]);
+  });
+
+  it("garde le nombre de mails non lus de chaque dossier", () => {
+    const result = presentFolders([
+      folder("INBOX", { unseen: 12 }),
+      folder("Banque", { unseen: 3 }),
+    ]);
+
+    expect(result.map((entry) => entry.unseen)).toEqual([12, 3]);
   });
 });

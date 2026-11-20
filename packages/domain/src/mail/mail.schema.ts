@@ -1,19 +1,31 @@
 import { z } from "zod";
 import { isoDateTimeSchema, uuidSchema } from "../shared/primitives";
 
-/** Serveur OVH par défaut (MX Plan, Email Pro) : celui qu'utilise la plupart des boîtes. */
-export const DEFAULT_MAIL_HOST = "ssl0.ovh.net";
+/**
+ * Fournisseurs de courrier reliables, avec le serveur qu'on propose par défaut.
+ * OVH : MX Plan et Email Pro. Infomaniak : serveur de courrier unique.
+ */
+export const MAIL_PROVIDERS = [
+  { id: "ovh", label: "OVH", host: "ssl0.ovh.net" },
+  { id: "infomaniak", label: "Infomaniak", host: "mail.infomaniak.com" },
+] as const;
+export type MailProviderId = (typeof MAIL_PROVIDERS)[number]["id"];
+
+export const DEFAULT_MAIL_HOST = MAIL_PROVIDERS[0].host;
 
 /**
- * Un serveur de courrier d'OVH, et lui seul : le serveur de Jean-Claude s'y
- * connecte à la demande de l'utilisateur, un nom libre le ferait joindre
+ * Le serveur d'un fournisseur connu, et lui seul : le serveur de Jean-Claude
+ * s'y connecte à la demande de l'utilisateur, un nom libre le ferait joindre
  * n'importe quelle machine du réseau (§5.3).
  */
 export const mailHostSchema = z
   .string()
   .trim()
   .toLowerCase()
-  .regex(/^[a-z0-9-]+(\.[a-z0-9-]+)*\.ovh\.net$/, "Serveur OVH attendu (ex. ssl0.ovh.net).");
+  .regex(
+    /^([a-z0-9-]+(\.[a-z0-9-]+)*\.ovh\.net|mail\.infomaniak\.com)$/,
+    "Serveur OVH (ex. ssl0.ovh.net) ou Infomaniak (mail.infomaniak.com) attendu.",
+  );
 
 /** Boîte reliée : jamais le mot de passe, il ne quitte pas le serveur. */
 export const mailAccountSchema = z.object({
@@ -24,6 +36,9 @@ export const mailAccountSchema = z.object({
 });
 export type MailAccount = z.infer<typeof mailAccountSchema>;
 
+/** Au-delà, relier une boîte de plus est refusé : un garde-fou, pas un besoin. */
+export const MAX_MAIL_ACCOUNTS = 5;
+
 export const connectMailAccountSchema = z.object({
   address: z.string().trim().toLowerCase().email("Adresse e-mail invalide.").max(200),
   password: z.string().min(1, "Mot de passe requis.").max(200),
@@ -32,7 +47,9 @@ export const connectMailAccountSchema = z.object({
 export type ConnectMailAccount = z.infer<typeof connectMailAccountSchema>;
 
 export const mailMessageSummarySchema = z.object({
-  /** Identifiant du message dans la boîte de réception, stable d'une lecture à l'autre. */
+  /** Boîte à laquelle appartient le mail. */
+  accountId: uuidSchema,
+  /** Identifiant du message dans son dossier, stable d'une lecture à l'autre. */
   uid: z.number().int().positive(),
   from: z.string(),
   subject: z.string(),
@@ -55,6 +72,8 @@ export const mailFolderSchema = z.object({
   name: z.string(),
   /** Niveau d'emboîtement : 0 à la racine, 1 pour un sous-dossier… */
   depth: z.number().int().min(0),
+  /** Mails non lus du dossier. */
+  unseen: z.number().int().min(0),
 });
 export type MailFolder = z.infer<typeof mailFolderSchema>;
 
@@ -64,6 +83,17 @@ export const mailFolderQuerySchema = z.object({
   folder: z.string().trim().min(1).max(200).default(INBOX_PATH),
 });
 export type MailFolderQuery = z.infer<typeof mailFolderQuerySchema>;
+
+/**
+ * Boîte de réception de toutes les boîtes réunies, les plus récents d'abord.
+ * Une boîte qui ne répond pas n'empêche pas de lire les autres : elle est
+ * signalée à part.
+ */
+export const mailInboxSchema = z.object({
+  messages: z.array(mailMessageSummarySchema),
+  unreachableAccountIds: z.array(uuidSchema),
+});
+export type MailInbox = z.infer<typeof mailInboxSchema>;
 
 /** Messages lus d'un coup : les plus récents d'un dossier. */
 export const MAIL_PAGE_SIZE = 30;

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { ChevronLeft, Folder, FolderOpen, Inbox, RefreshCw } from "lucide-react-native";
-import type { MailFolder, MailMessage, MailMessageSummary } from "@jc/domain";
-import { DEFAULT_MAIL_HOST, INBOX_PATH } from "@jc/domain";
+import { ChevronLeft, Folder, RefreshCw } from "lucide-react-native";
+import type { MailAccount, MailMessage, MailMessageSummary } from "@jc/domain";
+import { INBOX_PATH, MAIL_PROVIDERS, type MailProviderId } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { formatFullDay, formatMailDate } from "@/shared/lib/dates";
@@ -11,67 +11,86 @@ import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
+import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { Text } from "@/shared/ui/text";
 import { MailAvatar } from "./MailAvatar";
+import { MailFolderTree, type MailView } from "./MailFolderTree";
 import {
+  useAllMailFolders,
   useConnectMail,
-  useDisconnectMail,
-  useMailAccount,
+  useMailAccounts,
   useMailFolders,
+  useMailInbox,
   useMailMessage,
   useMailMessages,
 } from "./use-mail";
 
 /**
- * Mails — lire sa boîte, sans rien envoyer.
+ * Mails — lire ses boîtes.
  *
- * Disposition d'une messagerie classique (Outlook, Apple Mail, Gmail) : les
- * dossiers à gauche, la liste des mails au milieu, la lecture à droite. Sur
- * téléphone, une seule colonne à la fois, avec un retour.
+ * Disposition d'une messagerie classique (Outlook, Apple Mail, Gmail) : l'arbre
+ * des boîtes et de leurs dossiers à gauche, la liste des mails au milieu, la
+ * lecture à droite. Sur téléphone, une seule colonne à la fois, avec un retour.
  *
- * Une seule boîte par personne pour l'instant (OVH d'abord, demande de Yann du
- * 19 novembre). Le mot de passe part au serveur à la connexion et n'est plus
- * jamais relu ici (invariant 5).
+ * Plusieurs boîtes (OVH, Infomaniak…), demande de Yann du 20 novembre. Le mot de
+ * passe part au serveur à la connexion et n'est plus jamais relu ici
+ * (invariant 5).
  */
 export function MailScreen() {
-  const account = useMailAccount();
-  const connected = account.data != null;
+  const accounts = useMailAccounts();
+  const connected = (accounts.data?.length ?? 0) > 0;
 
   return (
     <ScreenShell
       title="Mails"
       maxWidth={READING_MAX_WIDTH}
-      // La boîte porte ses propres défilements, un par colonne.
+      // Une fois reliée, la boîte porte ses propres défilements, un par colonne.
       scrolls={!connected}
     >
-      {account.isPending ? (
+      {accounts.isPending ? (
         <Text className="text-muted-foreground text-xs">Chargement…</Text>
-      ) : account.isError ? (
+      ) : accounts.isError ? (
         <Text className="text-destructive text-sm">
-          La boîte mail n'a pas pu être chargée. Réessayez dans un instant.
+          Les boîtes mail n'ont pas pu être chargées. Réessayez dans un instant.
         </Text>
-      ) : account.data == null ? (
+      ) : accounts.data.length === 0 ? (
         <ConnectForm />
       ) : (
-        <Mailbox address={account.data.address} />
+        <Mailbox accounts={accounts.data} />
       )}
     </ScreenShell>
   );
 }
 
-function ConnectForm() {
+function ConnectForm({ onDone }: { onDone?: () => void }) {
   const connect = useConnectMail();
+  const [provider, setProvider] = useState<MailProviderId>(MAIL_PROVIDERS[0].id);
   const [address, setAddress] = useState("");
   const [password, setPassword] = useState("");
-  const [host, setHost] = useState(DEFAULT_MAIL_HOST);
+  const [host, setHost] = useState<string>(MAIL_PROVIDERS[0].host);
 
   const canSubmit = address.trim().length > 0 && password.length > 0 && !connect.isPending;
+  const providerName = MAIL_PROVIDERS.find((entry) => entry.id === provider)?.label ?? "";
 
   return (
     <View className="gap-3">
       <Text className="text-sm">
-        Reliez votre boîte OVH pour lire vos mails ici. Vous ne pouvez pas encore en envoyer.
+        Reliez une boîte mail pour la lire ici. Vous ne pouvez pas encore en envoyer.
       </Text>
+
+      <View className="gap-1">
+        <Text className="text-muted-foreground text-xs">Fournisseur</Text>
+        <SegmentedControl
+          options={MAIL_PROVIDERS.map((entry) => ({ value: entry.id, label: entry.label }))}
+          value={provider}
+          onChange={(next) => {
+            setProvider(next);
+            // Le serveur suit le fournisseur choisi : l'utilisateur n'a pas à le connaître.
+            const entry = MAIL_PROVIDERS.find((candidate) => candidate.id === next);
+            if (entry) setHost(entry.host);
+          }}
+        />
+      </View>
 
       <View className="gap-1">
         <Text className="text-muted-foreground text-xs">Adresse e-mail</Text>
@@ -103,13 +122,13 @@ function ConnectForm() {
       </View>
 
       <View className="gap-1">
-        <Text className="text-muted-foreground text-xs">Serveur OVH</Text>
+        <Text className="text-muted-foreground text-xs">{`Serveur ${providerName}`}</Text>
         <Input
           value={host}
           onChangeText={setHost}
           autoCapitalize="none"
           autoCorrect={false}
-          accessibilityLabel="Serveur OVH"
+          accessibilityLabel={`Serveur ${providerName}`}
         />
       </View>
 
@@ -121,14 +140,29 @@ function ConnectForm() {
         </Text>
       ) : null}
 
-      <Button
-        disabled={!canSubmit}
-        onPress={() => connect.mutate({ address, password, host })}
-        accessibilityRole="button"
-        accessibilityLabel="Relier ma boîte"
-      >
-        <Text>{connect.isPending ? "Connexion…" : "Relier ma boîte"}</Text>
-      </Button>
+      <View className="flex-row gap-2">
+        <Button
+          className="flex-1"
+          disabled={!canSubmit}
+          onPress={() =>
+            connect.mutate({ address, password, host }, { onSuccess: () => onDone?.() })
+          }
+          accessibilityRole="button"
+          accessibilityLabel="Relier ma boîte"
+        >
+          <Text>{connect.isPending ? "Connexion…" : "Relier ma boîte"}</Text>
+        </Button>
+        {onDone ? (
+          <Button
+            variant="outline"
+            onPress={onDone}
+            accessibilityRole="button"
+            accessibilityLabel="Annuler"
+          >
+            <Text>Annuler</Text>
+          </Button>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -136,44 +170,113 @@ function ConnectForm() {
 /** Ce qu'une seule colonne montre sur téléphone. */
 type Stage = "folders" | "list" | "message";
 
-function Mailbox({ address }: { address: string }) {
+function viewKey(view: MailView): string {
+  return view.kind === "all" ? "all" : `${view.accountId}:${view.folder}`;
+}
+
+function Mailbox({ accounts }: { accounts: MailAccount[] }) {
   const expanded = useBreakpoint() === "expanded";
-  const [folder, setFolder] = useState(INBOX_PATH);
-  // Le mail ouvert est lié à son dossier : un numéro n'a de sens que dans le
-  // dossier où il a été lu, et un autre dossier en ouvrirait un autre mail.
-  const [opened, setOpened] = useState<{ folder: string; uid: number } | null>(null);
-  const uid = opened?.folder === folder ? opened.uid : null;
+  const [chosen, setChosen] = useState<MailView | null>(null);
+  const [adding, setAdding] = useState(false);
   const [stage, setStage] = useState<Stage>("list");
+  const [opened, setOpened] = useState<{
+    viewKey: string;
+    accountId: string;
+    folder: string;
+    uid: number;
+  } | null>(null);
 
-  const folders = useMailFolders();
-  const messages = useMailMessages(folder);
-  const message = useMailMessage(folder, uid);
-  const folderName = folders.data?.find((entry) => entry.path === folder)?.name ?? "Mails";
+  // La vue choisie peut viser une boîte qu'on vient de retirer : on revient alors
+  // à la vue par défaut — toutes les boîtes s'il y en a plusieurs, sinon la seule.
+  const first = accounts[0];
+  const defaultView: MailView =
+    accounts.length > 1 || !first
+      ? { kind: "all" }
+      : { kind: "folder", accountId: first.id, folder: INBOX_PATH };
+  const chosenIsValid =
+    chosen !== null &&
+    (chosen.kind === "all"
+      ? accounts.length > 1
+      : accounts.some((account) => account.id === chosen.accountId));
+  const view = chosen && chosenIsValid ? chosen : defaultView;
 
-  const foldersPane = (
-    <FolderPane
-      address={address}
-      folders={folders.data ?? []}
-      loading={folders.isPending}
-      error={folders.isError}
-      current={folder}
-      onSelect={(path) => {
-        setFolder(path);
+  const key = viewKey(view);
+  // Le mail ouvert est lié à sa vue : un numéro n'a de sens que dans le dossier
+  // où il a été lu, et une autre vue en ouvrirait un autre mail.
+  const current = opened?.viewKey === key ? opened : null;
+
+  const all = useMailInbox(view.kind === "all");
+  const single = useMailMessages(
+    view.kind === "folder" ? view.accountId : "",
+    view.kind === "folder" ? view.folder : INBOX_PATH,
+    view.kind === "folder",
+  );
+  const list = view.kind === "all" ? all : single;
+  const messages = (view.kind === "all" ? all.data?.messages : single.data) ?? [];
+  const unreachable = view.kind === "all" ? (all.data?.unreachableAccountIds ?? []) : [];
+
+  const message = useMailMessage(
+    current?.accountId ?? null,
+    current?.folder ?? INBOX_PATH,
+    current?.uid ?? null,
+  );
+
+  const folderQueries = useAllMailFolders(accounts);
+  const allUnseen = folderQueries.reduce(
+    (total, query) =>
+      total + (query.data?.find((folder) => folder.path === INBOX_PATH)?.unseen ?? 0),
+    0,
+  );
+
+  const activeFolders = useMailFolders(view.kind === "folder" ? view.accountId : (first?.id ?? ""));
+  const title =
+    view.kind === "all"
+      ? "Tous les comptes"
+      : (activeFolders.data?.find((folder) => folder.path === view.folder)?.name ?? "Mails");
+
+  const addressOf = (accountId: string) =>
+    accounts.find((account) => account.id === accountId)?.address ?? "";
+
+  const foldersPane = adding ? (
+    <ScrollView className="flex-1" contentContainerClassName="p-3">
+      <ConnectForm
+        onDone={() => {
+          setAdding(false);
+          setStage("folders");
+        }}
+      />
+    </ScrollView>
+  ) : (
+    <MailFolderTree
+      accounts={accounts}
+      view={view}
+      allUnseen={allUnseen}
+      onSelect={(next) => {
+        setChosen(next);
         setStage("list");
       }}
+      onAdd={() => setAdding(true)}
     />
   );
 
   const listPane = (
     <ListPane
-      title={folderName}
-      messages={messages.data ?? []}
-      loading={messages.isPending}
-      error={messages.isError ? messages.error : null}
-      selected={uid}
-      onRefresh={() => void messages.refetch()}
+      title={title}
+      messages={messages}
+      loading={list.isPending}
+      error={list.isError ? list.error : null}
+      unreachable={unreachable.map(addressOf)}
+      selected={current ? { accountId: current.accountId, uid: current.uid } : null}
+      showAccount={view.kind === "all"}
+      addressOf={addressOf}
+      onRefresh={() => void list.refetch()}
       onSelect={(next) => {
-        setOpened({ folder, uid: next });
+        setOpened({
+          viewKey: key,
+          accountId: next.accountId,
+          folder: view.kind === "folder" ? view.folder : INBOX_PATH,
+          uid: next.uid,
+        });
         setStage("message");
       }}
       onShowFolders={expanded ? undefined : () => setStage("folders")}
@@ -183,7 +286,7 @@ function Mailbox({ address }: { address: string }) {
   const readPane = (
     <ReadPane
       message={message.data}
-      loading={uid !== null && message.isPending}
+      loading={current !== null && message.isPending}
       error={message.isError ? message.error : null}
       onBack={expanded ? undefined : () => setStage("list")}
     />
@@ -192,14 +295,14 @@ function Mailbox({ address }: { address: string }) {
   if (!expanded) {
     return (
       <View className="flex-1">
-        {stage === "folders" ? foldersPane : stage === "message" ? readPane : listPane}
+        {adding || stage === "folders" ? foldersPane : stage === "message" ? readPane : listPane}
       </View>
     );
   }
 
   return (
     <View className="flex-1 flex-row">
-      <View style={{ width: 240 }} className="border-border border-r">
+      <View style={{ width: 260 }} className="border-border border-r">
         {foldersPane}
       </View>
       <View style={{ width: 380 }} className="border-border border-r">
@@ -210,88 +313,15 @@ function Mailbox({ address }: { address: string }) {
   );
 }
 
-function FolderPane({
-  address,
-  folders,
-  loading,
-  error,
-  current,
-  onSelect,
-}: {
-  address: string;
-  folders: MailFolder[];
-  loading: boolean;
-  error: boolean;
-  current: string;
-  onSelect: (path: string) => void;
-}) {
-  const disconnect = useDisconnectMail();
-
-  return (
-    <ScrollView className="flex-1" contentContainerClassName="gap-0.5 p-2">
-      {loading ? <Text className="text-muted-foreground px-2 text-xs">Chargement…</Text> : null}
-      {error ? (
-        <Text className="text-destructive px-2 text-sm">
-          Les dossiers n'ont pas pu être chargés.
-        </Text>
-      ) : null}
-
-      {folders.map((entry) => {
-        const active = entry.path === current;
-        return (
-          <Pressable
-            key={entry.path}
-            onPress={() => onSelect(entry.path)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={`Ouvrir le dossier ${entry.name}`}
-            style={{ minHeight: MIN_TOUCH_TARGET - 8, paddingLeft: 8 + entry.depth * 16 }}
-            className={cn(
-              "flex-row items-center gap-2 rounded-md pr-2",
-              active ? "bg-muted" : "active:bg-muted",
-            )}
-          >
-            <Icon
-              as={entry.path === INBOX_PATH ? Inbox : active ? FolderOpen : Folder}
-              size={16}
-              className={active ? "text-primary" : "text-muted-foreground"}
-            />
-            <Text
-              className={cn("min-w-0 shrink text-sm", active ? "text-primary font-semibold" : "")}
-              numberOfLines={1}
-            >
-              {entry.name}
-            </Text>
-          </Pressable>
-        );
-      })}
-
-      <View className="border-border mt-3 gap-1 border-t px-2 pt-3">
-        <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-          {address}
-        </Text>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="self-start"
-          disabled={disconnect.isPending}
-          onPress={() => disconnect.mutate()}
-          accessibilityRole="button"
-          accessibilityLabel="Retirer cette boîte"
-        >
-          <Text>Retirer la boîte</Text>
-        </Button>
-      </View>
-    </ScrollView>
-  );
-}
-
 function ListPane({
   title,
   messages,
   loading,
   error,
+  unreachable,
   selected,
+  showAccount,
+  addressOf,
   onRefresh,
   onSelect,
   onShowFolders,
@@ -300,9 +330,14 @@ function ListPane({
   messages: MailMessageSummary[];
   loading: boolean;
   error: unknown;
-  selected: number | null;
+  /** Adresses des boîtes qui n'ont pas répondu, dans la vue « Tous les comptes ». */
+  unreachable: string[];
+  selected: { accountId: string; uid: number } | null;
+  /** Montre la boîte de chaque mail : utile quand plusieurs sont réunies. */
+  showAccount: boolean;
+  addressOf: (accountId: string) => string;
   onRefresh: () => void;
-  onSelect: (uid: number) => void;
+  onSelect: (message: MailMessageSummary) => void;
   /** Absent quand les dossiers sont déjà visibles à côté. */
   onShowFolders: (() => void) | undefined;
 }) {
@@ -336,6 +371,12 @@ function ListPane({
         </Button>
       </View>
 
+      {unreachable.length > 0 ? (
+        <Text className="text-destructive px-3 py-2 text-xs">
+          {`Boîte injoignable : ${unreachable.join(", ")}.`}
+        </Text>
+      ) : null}
+
       <ScrollView className="flex-1">
         {loading ? (
           <Text className="text-muted-foreground p-3 text-xs">Chargement…</Text>
@@ -350,10 +391,11 @@ function ListPane({
         ) : (
           messages.map((message) => (
             <MessageRow
-              key={message.uid}
+              key={`${message.accountId}:${message.uid}`}
               message={message}
-              active={message.uid === selected}
-              onOpen={() => onSelect(message.uid)}
+              account={showAccount ? addressOf(message.accountId) : undefined}
+              active={selected?.accountId === message.accountId && selected.uid === message.uid}
+              onOpen={() => onSelect(message)}
             />
           ))
         )}
@@ -364,10 +406,13 @@ function ListPane({
 
 function MessageRow({
   message,
+  account,
   active,
   onOpen,
 }: {
   message: MailMessageSummary;
+  /** Adresse de la boîte, montrée quand plusieurs boîtes sont réunies. */
+  account: string | undefined;
   active: boolean;
   onOpen: () => void;
 }) {
@@ -406,6 +451,11 @@ function MessageRow({
         >
           {subject}
         </Text>
+        {account ? (
+          <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+            {account}
+          </Text>
+        ) : null}
       </View>
     </Pressable>
   );
