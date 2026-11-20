@@ -85,6 +85,18 @@ import { ApiError, HttpClient, type ApiClientOptions, type RequestOptions } from
  * contrat casse la compilation des deux côtés au lieu de passer inaperçue
  * jusqu'à l'exécution.
  */
+/** Ce qu'on demande d'une liste de mails : combien, quoi chercher, et les non lus seulement. */
+export type MailListParams = { limit?: number; q?: string; unseen?: boolean };
+
+/** `unseen` ne part dans l'adresse que s'il est demandé : « faux » veut dire « pas de filtre ». */
+function toMailQuery(params: MailListParams) {
+  return {
+    limit: params.limit,
+    q: params.q || undefined,
+    unseen: params.unseen ? true : undefined,
+  };
+}
+
 export class JeanClaudeClient {
   private readonly http: HttpClient;
 
@@ -168,20 +180,29 @@ export class JeanClaudeClient {
       this.http.request<void>(`/mail/accounts/${accountId}`, { method: "DELETE" }),
 
     /** Les boîtes de réception de toutes les boîtes, réunies. */
-    inbox: () => this.http.request<MailInbox>("/mail/inbox"),
+    inbox: (params: MailListParams = {}) =>
+      this.http.request<MailInbox>("/mail/inbox", { query: toMailQuery(params) }),
 
     folders: (accountId: string) =>
       this.http.request<MailFolder[]>(`/mail/accounts/${accountId}/folders`),
 
     /** Les messages les plus récents d'un dossier (la boîte de réception par défaut). */
-    messages: (accountId: string, folder?: string) =>
+    messages: (accountId: string, folder?: string, params: MailListParams = {}) =>
       this.http.request<MailMessageSummary[]>(`/mail/accounts/${accountId}/messages`, {
-        query: { folder },
+        query: { folder, ...toMailQuery(params) },
       }),
 
     message: (accountId: string, uid: number, folder?: string) =>
       this.http.request<MailMessage>(`/mail/accounts/${accountId}/messages/${uid}`, {
         query: { folder },
+      }),
+
+    /** Marque un mail lu ou non lu chez le fournisseur. */
+    setSeen: (accountId: string, uid: number, seen: boolean, folder?: string) =>
+      this.http.request<void>(`/mail/accounts/${accountId}/messages/${uid}/seen`, {
+        method: "POST",
+        query: { folder },
+        body: { seen },
       }),
   };
 

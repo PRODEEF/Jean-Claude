@@ -1,6 +1,13 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { connectMailAccountSchema, mailFolderQuerySchema, uuidSchema } from "@jc/domain";
+import {
+  connectMailAccountSchema,
+  mailFolderQuerySchema,
+  mailInboxQuerySchema,
+  mailListQuerySchema,
+  setMailSeenSchema,
+  uuidSchema,
+} from "@jc/domain";
 import { auth, type AuthEnv } from "../../core/auth/auth.middleware.js";
 import { config } from "../../core/config.js";
 import { validate } from "../../core/http.js";
@@ -37,9 +44,16 @@ export const mailRoutes = new Hono<AuthEnv>()
   })
 
   // Toutes les boîtes réunies : route littérale, avant tout ce qui est paramétré.
-  .get("/inbox", async (c) => {
+  .get("/inbox", validate("query", mailInboxQuerySchema), async (c) => {
     const user = c.get("user");
-    return c.json(await service.listAllInbox(user.id, user.accessToken));
+    const { limit, q, unseen } = c.req.valid("query");
+    return c.json(
+      await service.listAllInbox(
+        user.id,
+        { limit, query: q, unseenOnly: unseen },
+        user.accessToken,
+      ),
+    );
   })
 
   .get("/accounts/:accountId/folders", validate("param", accountParamSchema), async (c) => {
@@ -51,12 +65,20 @@ export const mailRoutes = new Hono<AuthEnv>()
   .get(
     "/accounts/:accountId/messages",
     validate("param", accountParamSchema),
-    validate("query", mailFolderQuerySchema),
+    validate("query", mailListQuerySchema),
     async (c) => {
       const user = c.get("user");
       const { accountId } = c.req.valid("param");
-      const { folder } = c.req.valid("query");
-      return c.json(await service.listMessages(user.id, accountId, folder, user.accessToken));
+      const { folder, limit, q, unseen } = c.req.valid("query");
+      return c.json(
+        await service.listMessages(
+          user.id,
+          accountId,
+          folder,
+          { limit, query: q, unseenOnly: unseen },
+          user.accessToken,
+        ),
+      );
     },
   )
 
@@ -69,5 +91,20 @@ export const mailRoutes = new Hono<AuthEnv>()
       const { accountId, uid } = c.req.valid("param");
       const { folder } = c.req.valid("query");
       return c.json(await service.readMessage(user.id, accountId, folder, uid, user.accessToken));
+    },
+  )
+
+  .post(
+    "/accounts/:accountId/messages/:uid/seen",
+    validate("param", messageParamSchema),
+    validate("query", mailFolderQuerySchema),
+    validate("json", setMailSeenSchema),
+    async (c) => {
+      const user = c.get("user");
+      const { accountId, uid } = c.req.valid("param");
+      const { folder } = c.req.valid("query");
+      const { seen } = c.req.valid("json");
+      await service.setSeen(user.id, accountId, folder, uid, seen, user.accessToken);
+      return c.body(null, 204);
     },
   );

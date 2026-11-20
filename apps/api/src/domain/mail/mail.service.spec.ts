@@ -8,6 +8,7 @@ import { MailService } from "./mail.service.js";
 const KEY = randomBytes(32).toString("base64");
 
 const OVH = { address: "yann@exemple.fr", password: "secret", host: "ssl0.ovh.net" };
+const PAGE = { limit: 30 };
 const INFOMANIAK = { address: "yann@autre.ch", password: "autre", host: "mail.infomaniak.com" };
 
 /** Dépôt en mémoire : il suit la logique d'une vraie table (une ligne par adresse). */
@@ -48,12 +49,13 @@ function makeMailbox(overrides: Partial<IMailbox> = {}): IMailbox {
     listFolders: jest.fn().mockResolvedValue([]),
     listMessages: jest.fn().mockResolvedValue([]),
     readMessage: jest.fn().mockResolvedValue(null),
+    setSeen: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
 
 function summary(uid: number, date: string | null): MailboxSummary {
-  return { uid, from: "a@b.fr", subject: `Mail ${uid}`, date, seen: false };
+  return { uid, from: "a@b.fr", subject: `Mail ${uid}`, date, seen: false, preview: "" };
 }
 
 describe("MailService", () => {
@@ -216,12 +218,12 @@ describe("MailService", () => {
       const service = new MailService(makeRepository(), mailbox, KEY);
       const account = await service.connect("u1", OVH, "token");
 
-      const messages = await service.listMessages("u1", account.id, "INBOX.Sent", "token");
+      const messages = await service.listMessages("u1", account.id, "INBOX.Sent", PAGE, "token");
 
       expect(mailbox.listMessages).toHaveBeenCalledWith(
         expect.objectContaining({ address: "yann@exemple.fr" }),
         "INBOX.Sent",
-        expect.any(Number),
+        PAGE,
       );
       expect(messages[0]?.accountId).toBe(account.id);
     });
@@ -233,9 +235,93 @@ describe("MailService", () => {
       const service = new MailService(makeRepository(), mailbox, KEY);
       const account = await service.connect("u1", OVH, "token");
 
-      await expect(service.listMessages("u1", account.id, "INBOX", "token")).rejects.toMatchObject({
+      await expect(
+        service.listMessages("u1", account.id, "INBOX", PAGE, "token"),
+      ).rejects.toMatchObject({
         status: 502,
       });
+    });
+  });
+
+  describe("recherche et non lus", () => {
+    it("transmet la recherche, le filtre non lus et le nombre demandé à la boîte", async () => {
+      const mailbox = makeMailbox();
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+      const options = { limit: 60, query: "facture", unseenOnly: true };
+
+      await service.listMessages("u1", account.id, "INBOX", options, "token");
+
+      expect(mailbox.listMessages).toHaveBeenCalledWith(expect.anything(), "INBOX", options);
+    });
+
+    it("applique la recherche à chaque boîte de la boîte de réception commune", async () => {
+      const mailbox = makeMailbox();
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      await service.connect("u1", OVH, "token");
+      await service.connect("u1", INFOMANIAK, "token");
+      const options = { limit: 30, query: "facture" };
+
+      await service.listAllInbox("u1", options, "token");
+
+      expect(mailbox.listMessages).toHaveBeenCalledTimes(2);
+      for (const call of (mailbox.listMessages as jest.Mock).mock.calls) {
+        expect(call[2]).toEqual(options);
+      }
+    });
+
+    it("ne rend pas plus de mails que demandé quand plusieurs boîtes répondent", async () => {
+      const mailbox = makeMailbox({
+        listMessages: jest
+          .fn()
+          .mockResolvedValue([
+            summary(3, "2026-11-20T10:00:00.000Z"),
+            summary(2, "2026-11-19T10:00:00.000Z"),
+            summary(1, "2026-11-18T10:00:00.000Z"),
+          ]),
+      });
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      await service.connect("u1", OVH, "token");
+      await service.connect("u1", INFOMANIAK, "token");
+
+      const inbox = await service.listAllInbox("u1", { limit: 4 }, "token");
+
+      expect(inbox.messages).toHaveLength(4);
+    });
+  });
+
+  describe("setSeen", () => {
+    it("marque le mail lu ou non lu dans la bonne boîte et le bon dossier", async () => {
+      const mailbox = makeMailbox();
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await service.setSeen("u1", account.id, "INBOX.Banque", 7, false, "token");
+
+      expect(mailbox.setSeen).toHaveBeenCalledWith(
+        expect.objectContaining({ address: "yann@exemple.fr" }),
+        "INBOX.Banque",
+        7,
+        false,
+      );
+    });
+
+    it("répond 404 quand la boîte n'existe pas", async () => {
+      const service = new MailService(makeRepository(), makeMailbox(), KEY);
+
+      await expect(
+        service.setSeen("u1", "inconnue", "INBOX", 7, true, "token"),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+
+    it("rend une erreur lisible quand la boîte ne répond pas", async () => {
+      const mailbox = makeMailbox({ setSeen: jest.fn().mockRejectedValue(new Error("ETIMEDOUT")) });
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await expect(
+        service.setSeen("u1", account.id, "INBOX", 7, true, "token"),
+      ).rejects.toMatchObject({ status: 502 });
     });
   });
 
@@ -254,7 +340,7 @@ describe("MailService", () => {
       const first = await service.connect("u1", OVH, "token");
       const second = await service.connect("u1", INFOMANIAK, "token");
 
-      const inbox = await service.listAllInbox("u1", "token");
+      const inbox = await service.listAllInbox("u1", PAGE, "token");
 
       expect(inbox.messages.map((m) => [m.accountId, m.uid])).toEqual([
         [first.id, 2],
@@ -275,7 +361,7 @@ describe("MailService", () => {
       const first = await service.connect("u1", OVH, "token");
       const second = await service.connect("u1", INFOMANIAK, "token");
 
-      const inbox = await service.listAllInbox("u1", "token");
+      const inbox = await service.listAllInbox("u1", PAGE, "token");
 
       expect(inbox.messages.map((m) => m.accountId)).toEqual([first.id]);
       expect(inbox.unreachableAccountIds).toEqual([second.id]);
@@ -290,7 +376,7 @@ describe("MailService", () => {
       const service = new MailService(makeRepository(), mailbox, KEY);
       await service.connect("u1", OVH, "token");
 
-      const inbox = await service.listAllInbox("u1", "token");
+      const inbox = await service.listAllInbox("u1", PAGE, "token");
 
       expect(inbox.messages.map((m) => m.uid)).toEqual([2, 1]);
     });
@@ -298,7 +384,7 @@ describe("MailService", () => {
     it("rend une boîte de réception vide quand aucune boîte n'est reliée", async () => {
       const service = new MailService(makeRepository(), makeMailbox(), KEY);
 
-      expect(await service.listAllInbox("u1", "token")).toEqual({
+      expect(await service.listAllInbox("u1", PAGE, "token")).toEqual({
         messages: [],
         unreachableAccountIds: [],
       });

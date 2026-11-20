@@ -55,10 +55,13 @@ export const mailMessageSummarySchema = z.object({
   subject: z.string(),
   date: isoDateTimeSchema.nullable(),
   seen: z.boolean(),
+  /** Début du texte du mail, sur une ligne : ce que la liste montre sous l'objet. */
+  preview: z.string(),
 });
 export type MailMessageSummary = z.infer<typeof mailMessageSummarySchema>;
 
-export const mailMessageSchema = mailMessageSummarySchema.extend({
+// L'aperçu n'a de sens que dans la liste : le message lu porte tout son texte.
+export const mailMessageSchema = mailMessageSummarySchema.omit({ preview: true }).extend({
   to: z.string(),
   /** Texte brut du message ; `null` quand il n'en porte pas (courrier en images seules). */
   text: z.string().nullable(),
@@ -79,10 +82,34 @@ export type MailFolder = z.infer<typeof mailFolderSchema>;
 
 export const INBOX_PATH = "INBOX";
 
+/** Mails montrés d'un coup, et plafond quand on demande « plus ». */
+export const MAIL_PAGE_SIZE = 30;
+export const MAIL_MAX_LIMIT = 200;
+
 export const mailFolderQuerySchema = z.object({
   folder: z.string().trim().min(1).max(200).default(INBOX_PATH),
 });
 export type MailFolderQuery = z.infer<typeof mailFolderQuerySchema>;
+
+/**
+ * Ce qu'on demande d'une liste de mails : combien, quoi chercher, et si l'on
+ * ne veut que les non lus. `unseen` s'écrit « true » dans l'adresse.
+ */
+export const mailListQuerySchema = mailFolderQuerySchema.extend({
+  limit: z.coerce.number().int().min(1).max(MAIL_MAX_LIMIT).default(MAIL_PAGE_SIZE),
+  q: z.string().trim().max(100).optional(),
+  unseen: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
+});
+export type MailListQuery = z.infer<typeof mailListQuerySchema>;
+
+/** Même demande sans dossier : la boîte de réception commune lit toujours les boîtes de réception. */
+export const mailInboxQuerySchema = mailListQuerySchema.omit({ folder: true });
+
+export const setMailSeenSchema = z.object({ seen: z.boolean() });
+export type SetMailSeen = z.infer<typeof setMailSeenSchema>;
 
 /**
  * Boîte de réception de toutes les boîtes réunies, les plus récents d'abord.
@@ -94,6 +121,3 @@ export const mailInboxSchema = z.object({
   unreachableAccountIds: z.array(uuidSchema),
 });
 export type MailInbox = z.infer<typeof mailInboxSchema>;
-
-/** Messages lus d'un coup : les plus récents d'un dossier. */
-export const MAIL_PAGE_SIZE = 30;

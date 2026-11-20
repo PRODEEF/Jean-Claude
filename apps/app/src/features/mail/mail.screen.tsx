@@ -1,8 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { ChevronLeft, Folder, RefreshCw } from "lucide-react-native";
+import { ChevronLeft, Folder, RefreshCw, Search, X } from "lucide-react-native";
 import type { MailAccount, MailMessage, MailMessageSummary } from "@jc/domain";
-import { INBOX_PATH, MAIL_PROVIDERS, type MailProviderId } from "@jc/domain";
+import {
+  groupByDay,
+  INBOX_PATH,
+  MAIL_MAX_LIMIT,
+  MAIL_PAGE_SIZE,
+  MAIL_PROVIDERS,
+  type MailProviderId,
+} from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { formatFullDay, formatMailDate } from "@/shared/lib/dates";
@@ -23,6 +30,8 @@ import {
   useMailInbox,
   useMailMessage,
   useMailMessages,
+  useSetMailSeen,
+  type MailListParams,
 } from "./use-mail";
 
 /**
@@ -201,15 +210,33 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
   const view = chosen && chosenIsValid ? chosen : defaultView;
 
   const key = viewKey(view);
+
+  // Recherche, filtre « non lus » et nombre de mails demandés. Chacun repart de
+  // zéro quand on change de vue : « plus de mails » dans un dossier n'a pas de
+  // sens dans un autre.
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [unseenOnly, setUnseenOnly] = useState(false);
+  const [more, setMore] = useState<{ scope: string; limit: number } | null>(null);
+  // Une recherche ne part qu'une fois la frappe posée : un appel par lettre
+  // ferait travailler la boîte pour rien.
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(search.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+  const scope = `${key}|${query}|${unseenOnly}`;
+  const limit = more?.scope === scope ? more.limit : MAIL_PAGE_SIZE;
+  const params: MailListParams = { limit, q: query, unseen: unseenOnly };
   // Le mail ouvert est lié à sa vue : un numéro n'a de sens que dans le dossier
   // où il a été lu, et une autre vue en ouvrirait un autre mail.
   const current = opened?.viewKey === key ? opened : null;
 
-  const all = useMailInbox(view.kind === "all");
+  const all = useMailInbox(view.kind === "all", params);
   const single = useMailMessages(
     view.kind === "folder" ? view.accountId : "",
     view.kind === "folder" ? view.folder : INBOX_PATH,
     view.kind === "folder",
+    params,
   );
   const list = view.kind === "all" ? all : single;
   const messages = (view.kind === "all" ? all.data?.messages : single.data) ?? [];
@@ -267,6 +294,13 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
       error={list.isError ? list.error : null}
       unreachable={unreachable.map(addressOf)}
       selected={current ? { accountId: current.accountId, uid: current.uid } : null}
+      search={search}
+      onSearch={setSearch}
+      unseenOnly={unseenOnly}
+      onUnseenOnly={setUnseenOnly}
+      filtering={query !== "" || unseenOnly}
+      hasMore={messages.length >= limit}
+      onMore={() => setMore({ scope, limit: Math.min(limit + MAIL_PAGE_SIZE, MAIL_MAX_LIMIT) })}
       showAccount={view.kind === "all"}
       addressOf={addressOf}
       onRefresh={() => void list.refetch()}
@@ -283,9 +317,23 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
     />
   );
 
+  const setSeen = useSetMailSeen();
   const readPane = (
     <ReadPane
       message={message.data}
+      onMarkUnread={
+        current
+          ? () => {
+              setSeen.mutate({
+                accountId: current.accountId,
+                folder: current.folder,
+                uid: current.uid,
+                seen: false,
+              });
+              if (!expanded) setStage("list");
+            }
+          : undefined
+      }
       loading={current !== null && message.isPending}
       error={message.isError ? message.error : null}
       onBack={expanded ? undefined : () => setStage("list")}
@@ -320,6 +368,13 @@ function ListPane({
   error,
   unreachable,
   selected,
+  search,
+  onSearch,
+  unseenOnly,
+  onUnseenOnly,
+  filtering,
+  hasMore,
+  onMore,
   showAccount,
   addressOf,
   onRefresh,
@@ -333,6 +388,15 @@ function ListPane({
   /** Adresses des boîtes qui n'ont pas répondu, dans la vue « Tous les comptes ». */
   unreachable: string[];
   selected: { accountId: string; uid: number } | null;
+  search: string;
+  onSearch: (value: string) => void;
+  unseenOnly: boolean;
+  onUnseenOnly: (value: boolean) => void;
+  /** Une recherche ou un filtre est en cours : la liste vide ne veut pas dire « dossier vide ». */
+  filtering: boolean;
+  /** Il y a probablement des mails plus anciens à charger. */
+  hasMore: boolean;
+  onMore: () => void;
   /** Montre la boîte de chaque mail : utile quand plusieurs sont réunies. */
   showAccount: boolean;
   addressOf: (accountId: string) => string;
@@ -341,6 +405,9 @@ function ListPane({
   /** Absent quand les dossiers sont déjà visibles à côté. */
   onShowFolders: (() => void) | undefined;
 }) {
+  const [searching, setSearching] = useState(false);
+  const groups = groupByDay(messages);
+
   return (
     <View className="flex-1">
       <View className="border-border flex-row items-center justify-between gap-2 border-b px-3 py-2">
@@ -360,15 +427,54 @@ function ListPane({
             {title}
           </Text>
         </View>
-        <Button
-          variant="ghost"
-          size="sm"
-          onPress={onRefresh}
-          accessibilityRole="button"
-          accessibilityLabel="Actualiser les mails"
-        >
-          <Icon as={RefreshCw} className="size-4" />
-        </Button>
+        <View className="flex-row items-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            onPress={() => {
+              // Refermer la recherche l'efface : une liste filtrée à l'insu de
+              // l'utilisateur ferait croire à un dossier presque vide.
+              if (searching) onSearch("");
+              setSearching(!searching);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={searching ? "Fermer la recherche" : "Chercher un mail"}
+          >
+            <Icon as={searching ? X : Search} className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onPress={onRefresh}
+            accessibilityRole="button"
+            accessibilityLabel="Actualiser les mails"
+          >
+            <Icon as={RefreshCw} className="size-4" />
+          </Button>
+        </View>
+      </View>
+
+      <View className="border-border gap-2 border-b px-3 py-2">
+        {searching ? (
+          <Input
+            value={search}
+            onChangeText={onSearch}
+            placeholder="Expéditeur, objet ou texte"
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            accessibilityLabel="Chercher un mail"
+          />
+        ) : null}
+        <SegmentedControl
+          options={[
+            { value: "all", label: "Tous" },
+            { value: "unseen", label: "Non lus" },
+          ]}
+          value={unseenOnly ? "unseen" : "all"}
+          onChange={(value) => onUnseenOnly(value === "unseen")}
+        />
       </View>
 
       {unreachable.length > 0 ? (
@@ -387,17 +493,43 @@ function ListPane({
               : "Les mails n'ont pas pu être chargés. Réessayez dans un instant."}
           </Text>
         ) : messages.length === 0 ? (
-          <Text className="text-muted-foreground p-3 text-sm">Aucun mail dans ce dossier.</Text>
+          <Text className="text-muted-foreground p-3 text-sm">
+            {filtering ? "Aucun mail ne correspond." : "Aucun mail dans ce dossier."}
+          </Text>
         ) : (
-          messages.map((message) => (
-            <MessageRow
-              key={`${message.accountId}:${message.uid}`}
-              message={message}
-              account={showAccount ? addressOf(message.accountId) : undefined}
-              active={selected?.accountId === message.accountId && selected.uid === message.uid}
-              onOpen={() => onSelect(message)}
-            />
-          ))
+          <>
+            {groups.map((group) => (
+              <View key={group.label}>
+                <Text className="text-muted-foreground bg-muted/40 px-3 py-1 text-xs font-semibold">
+                  {group.label}
+                </Text>
+                {group.items.map((message) => (
+                  <MessageRow
+                    key={`${message.accountId}:${message.uid}`}
+                    message={message}
+                    account={showAccount ? addressOf(message.accountId) : undefined}
+                    active={
+                      selected?.accountId === message.accountId && selected.uid === message.uid
+                    }
+                    onOpen={() => onSelect(message)}
+                  />
+                ))}
+              </View>
+            ))}
+            {hasMore ? (
+              <View className="p-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onPress={onMore}
+                  accessibilityRole="button"
+                  accessibilityLabel="Afficher des mails plus anciens"
+                >
+                  <Text>Afficher des mails plus anciens</Text>
+                </Button>
+              </View>
+            ) : null}
+          </>
         )}
       </ScrollView>
     </View>
@@ -451,6 +583,11 @@ function MessageRow({
         >
           {subject}
         </Text>
+        {message.preview ? (
+          <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+            {message.preview}
+          </Text>
+        ) : null}
         {account ? (
           <Text className="text-muted-foreground text-xs" numberOfLines={1}>
             {account}
@@ -466,8 +603,11 @@ function ReadPane({
   loading,
   error,
   onBack,
+  onMarkUnread,
 }: {
   message: MailMessage | undefined;
+  /** Remet le mail ouvert en non lu ; absent quand rien n'est ouvert. */
+  onMarkUnread: (() => void) | undefined;
   loading: boolean;
   error: unknown;
   /** Absent quand la liste est déjà visible à côté. */
@@ -521,6 +661,18 @@ function ReadPane({
                 ) : null}
               </View>
             </View>
+            {onMarkUnread ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="self-start"
+                onPress={onMarkUnread}
+                accessibilityRole="button"
+                accessibilityLabel="Marquer comme non lu"
+              >
+                <Text>Marquer comme non lu</Text>
+              </Button>
+            ) : null}
             <Text className="pt-2 text-sm" selectable>
               {message.text ??
                 "Ce mail ne contient pas de texte (images ou pièces jointes seules)."}
