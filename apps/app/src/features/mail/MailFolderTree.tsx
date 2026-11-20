@@ -6,6 +6,7 @@ import {
   Folder,
   FolderOpen,
   Inbox,
+  Mails,
   PenSquare,
   Plus,
 } from "lucide-react-native";
@@ -128,6 +129,10 @@ function AccountNode({
   }, [confirming]);
 
   const list = folders.data ?? [];
+  // La pastille de la boîte compte les non lus de sa réception, comme « Tous les comptes ».
+  const inboxUnseen = list.find((folder) => folder.path === INBOX_PATH)?.unseen ?? 0;
+  const inboxActive =
+    view.kind === "folder" && view.accountId === account.id && view.folder === INBOX_PATH;
   // Un dossier est caché dès qu'un de ses ancêtres est replié : on suit la
   // profondeur en descendant la liste, qui range chaque enfant sous son parent.
   const parents = new Set<string>();
@@ -153,16 +158,39 @@ function AccountNode({
           accessibilityLabel={`${open ? "Replier" : "Déplier"} la boîte ${account.address}`}
           hitSlop={8}
           style={{ minHeight: MIN_TOUCH_TARGET - 8 }}
-          className="min-w-0 flex-1 flex-row items-center gap-1 rounded-md pl-1 pr-2 active:bg-muted"
+          className="items-center justify-center pl-1 pr-1 active:opacity-70"
         >
           <Icon
             as={open ? ChevronDown : ChevronRight}
             size={16}
             className="text-muted-foreground"
           />
+        </Pressable>
+        <Pressable
+          // Un appui sur la boîte ouvre sa réception et déplie ses dossiers : on
+          // vient pour lire, pas pour ranger l'arbre. Le chevron seul replie.
+          onPress={() => {
+            if (!open) onToggle(accountKey(account.id));
+            onSelect({ kind: "folder", accountId: account.id, folder: INBOX_PATH });
+          }}
+          accessibilityRole="button"
+          accessibilityState={{ selected: inboxActive }}
+          accessibilityLabel={`Ouvrir la boîte de réception de ${account.address}${inboxUnseen > 0 ? `, ${inboxUnseen} non lus` : ""}`}
+          style={{ minHeight: MIN_TOUCH_TARGET - 8 }}
+          className="min-w-0 flex-1 flex-row items-center gap-2 rounded-md pr-2 active:bg-muted"
+        >
+          <Icon as={Mails} size={18} className="text-primary" />
           <Text className="min-w-0 shrink text-sm font-semibold" numberOfLines={1}>
             {account.address}
           </Text>
+          {inboxUnseen > 0 ? (
+            <View
+              accessibilityElementsHidden
+              className="bg-primary ml-auto min-w-5 shrink-0 items-center rounded-full px-1.5 py-0.5"
+            >
+              <Text className="text-primary-foreground text-xs font-semibold">{inboxUnseen}</Text>
+            </View>
+          ) : null}
         </Pressable>
         <Pressable
           onPress={() => (confirming ? disconnect.mutate(account.id) : setConfirming(true))}
