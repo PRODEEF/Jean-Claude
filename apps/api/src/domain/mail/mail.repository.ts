@@ -17,18 +17,30 @@ function toAccount(row: MailAccountRow): MailAccount {
   return { id: row.id, address: row.address, host: row.host, createdAt: row.created_at };
 }
 
+function toStored(row: MailAccountRow): StoredMailAccount {
+  return { ...toAccount(row), passwordEncrypted: row.password_encrypted };
+}
+
 export const mailRepository: IMailRepository = {
-  async find(userId, accessToken): Promise<StoredMailAccount | null> {
+  async list(userId, accessToken) {
     const { data, error } = await forUser(accessToken)
       .from("mail_accounts")
       .select(COLUMNS)
       .eq("user_id", userId)
+      .order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data as MailAccountRow[]).map(toStored);
+  },
+
+  async findById(userId, id, accessToken) {
+    const { data, error } = await forUser(accessToken)
+      .from("mail_accounts")
+      .select(COLUMNS)
+      .eq("user_id", userId)
+      .eq("id", id)
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!data) return null;
-
-    const row = data as MailAccountRow;
-    return { ...toAccount(row), passwordEncrypted: row.password_encrypted };
+    return data ? toStored(data as MailAccountRow) : null;
   },
 
   async save(userId, input, accessToken) {
@@ -41,7 +53,7 @@ export const mailRepository: IMailRepository = {
           host: input.host,
           password_encrypted: input.passwordEncrypted,
         },
-        { onConflict: "user_id" },
+        { onConflict: "user_id,address" },
       )
       .select(COLUMNS)
       .single();
@@ -49,11 +61,12 @@ export const mailRepository: IMailRepository = {
     return toAccount(data as MailAccountRow);
   },
 
-  async remove(userId, accessToken) {
+  async remove(userId, id, accessToken) {
     const { error } = await forUser(accessToken)
       .from("mail_accounts")
       .delete()
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .eq("id", id);
     if (error) throw new Error(error.message);
   },
 };

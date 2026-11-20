@@ -23,6 +23,7 @@ import {
   type FeedbackStatus,
   type MailAccount,
   type MailFolder,
+  type MailInbox,
   type MailMessage,
   type MailMessageSummary,
   type Folder,
@@ -157,22 +158,31 @@ export class JeanClaudeClient {
    * connexion et n'en revient jamais.
    */
   readonly mail = {
-    /** `null` tant qu'aucune boîte n'est reliée. */
-    account: () => this.http.request<MailAccount | null>("/mail/account"),
+    /** Les boîtes reliées ; vide tant qu'aucune ne l'est. */
+    accounts: () => this.http.request<MailAccount[]>("/mail/accounts"),
 
     connect: (input: ConnectMailAccount) =>
-      this.http.request<MailAccount>("/mail/account", { method: "POST", body: input }),
+      this.http.request<MailAccount>("/mail/accounts", { method: "POST", body: input }),
 
-    disconnect: () => this.http.request<void>("/mail/account", { method: "DELETE" }),
+    disconnect: (accountId: string) =>
+      this.http.request<void>(`/mail/accounts/${accountId}`, { method: "DELETE" }),
 
-    folders: () => this.http.request<MailFolder[]>("/mail/folders"),
+    /** Les boîtes de réception de toutes les boîtes, réunies. */
+    inbox: () => this.http.request<MailInbox>("/mail/inbox"),
+
+    folders: (accountId: string) =>
+      this.http.request<MailFolder[]>(`/mail/accounts/${accountId}/folders`),
 
     /** Les messages les plus récents d'un dossier (la boîte de réception par défaut). */
-    messages: (folder?: string) =>
-      this.http.request<MailMessageSummary[]>("/mail/messages", { query: { folder } }),
+    messages: (accountId: string, folder?: string) =>
+      this.http.request<MailMessageSummary[]>(`/mail/accounts/${accountId}/messages`, {
+        query: { folder },
+      }),
 
-    message: (uid: number, folder?: string) =>
-      this.http.request<MailMessage>(`/mail/messages/${uid}`, { query: { folder } }),
+    message: (accountId: string, uid: number, folder?: string) =>
+      this.http.request<MailMessage>(`/mail/accounts/${accountId}/messages/${uid}`, {
+        query: { folder },
+      }),
   };
 
   /** Espaces d'équipe — voir docs/COLLABORATION.md. */
