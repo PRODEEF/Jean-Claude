@@ -26,6 +26,7 @@ import {
   type MailInbox,
   type MailMessage,
   type MailMessageSummary,
+  type MoveMail,
   type Folder,
   type FolderTreeNode,
   type Message,
@@ -201,6 +202,22 @@ export class JeanClaudeClient {
     attachment: (accountId: string, uid: number, index: number, folder?: string) =>
       this.http.blob(`/mail/accounts/${accountId}/messages/${uid}/attachments/${index}`, {
         query: { folder },
+      }),
+
+    /** Déplace un mail : corbeille, archives ou dossier au choix. Jamais d'effacement définitif. */
+    move: (accountId: string, uid: number, destination: MoveMail, folder?: string) =>
+      this.http.request<void>(`/mail/accounts/${accountId}/messages/${uid}/move`, {
+        method: "POST",
+        query: { folder },
+        body: destination,
+      }),
+
+    /** Pose ou retire le drapeau d'un mail. */
+    setFlagged: (accountId: string, uid: number, flagged: boolean, folder?: string) =>
+      this.http.request<void>(`/mail/accounts/${accountId}/messages/${uid}/flag`, {
+        method: "POST",
+        query: { folder },
+        body: { flagged },
       }),
 
     /** Marque un mail lu ou non lu chez le fournisseur. */

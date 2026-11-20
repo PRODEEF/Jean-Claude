@@ -5,7 +5,13 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { ConnectMailAccount, MailAccount, MailInbox, MailMessageSummary } from "@jc/domain";
+import type {
+  ConnectMailAccount,
+  MailAccount,
+  MailInbox,
+  MailMessageSummary,
+  MoveMail,
+} from "@jc/domain";
 import { api } from "@/shared/lib/api";
 
 const ACCOUNTS_KEY = ["mail", "accounts"] as const;
@@ -40,10 +46,11 @@ export function useDisconnectMail() {
 }
 
 /** Les dossiers d'une boîte, avec leurs non lus. */
-export function useMailFolders(accountId: string) {
+export function useMailFolders(accountId: string, enabled = true) {
   return useQuery({
     queryKey: ["mail", "folders", accountId],
     queryFn: () => api.mail.folders(accountId),
+    enabled,
     refetchInterval: REFRESH_MS,
   });
 }
@@ -118,6 +125,80 @@ export function useSetMailSeen() {
     onSettled: (_data, _error, input) =>
       queryClient.invalidateQueries({ queryKey: ["mail", "folders", input.accountId] }),
   });
+}
+
+/** Pose ou retire le drapeau d'un mail, à l'écran d'abord puis chez le fournisseur. */
+export function useSetMailFlag() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: { accountId: string; folder: string; uid: number; flagged: boolean }) =>
+      api.mail.setFlagged(input.accountId, input.uid, input.flagged, input.folder),
+    onMutate: (input) => showFlag(queryClient, input.accountId, input.uid, input.flagged),
+    // Un drapeau qui n'a pas pu être posé ne doit pas rester affiché : on relit.
+    onError: () => queryClient.invalidateQueries({ queryKey: ["mail"] }),
+  });
+}
+
+/**
+ * Déplace un mail (corbeille, archives, dossier). Le mail quitte la liste tout
+ * de suite ; si le fournisseur refuse, les listes sont relues et il revient.
+ */
+export function useMoveMail() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: {
+      accountId: string;
+      folder: string;
+      uid: number;
+      destination: MoveMail;
+    }) => api.mail.move(input.accountId, input.uid, input.destination, input.folder),
+    onMutate: (input) => hideMessage(queryClient, input.accountId, input.uid),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["mail"] }),
+  });
+}
+
+/** Retire un mail de toutes les listes déjà chargées. */
+function hideMessage(
+  queryClient: ReturnType<typeof useQueryClient>,
+  accountId: string,
+  uid: number,
+): void {
+  const keep = (message: MailMessageSummary) =>
+    !(message.accountId === accountId && message.uid === uid);
+
+  queryClient.setQueriesData<MailMessageSummary[]>(
+    { queryKey: ["mail", "messages", accountId] },
+    (messages) => messages?.filter(keep),
+  );
+  queryClient.setQueriesData<MailInbox>({ queryKey: ["mail", "inbox"] }, (inbox) =>
+    inbox ? { ...inbox, messages: inbox.messages.filter(keep) } : inbox,
+  );
+}
+
+/** Reporte le drapeau d'un mail dans toutes les listes déjà chargées. */
+function showFlag(
+  queryClient: ReturnType<typeof useQueryClient>,
+  accountId: string,
+  uid: number,
+  flagged: boolean,
+): void {
+  const mark = (message: MailMessageSummary) =>
+    message.accountId === accountId && message.uid === uid ? { ...message, flagged } : message;
+
+  queryClient.setQueriesData<MailMessageSummary[]>(
+    { queryKey: ["mail", "messages", accountId] },
+    (messages) => messages?.map(mark),
+  );
+  queryClient.setQueriesData<MailInbox>({ queryKey: ["mail", "inbox"] }, (inbox) =>
+    inbox ? { ...inbox, messages: inbox.messages.map(mark) } : inbox,
+  );
+  // Le mail ouvert montre aussi son drapeau.
+  queryClient.setQueriesData<{ flagged: boolean; uid: number; accountId: string }>(
+    { queryKey: ["mail", "message", accountId] },
+    (message) => (message && message.uid === uid ? { ...message, flagged } : message),
+  );
 }
 
 /** Reporte l'état lu d'un mail dans toutes les listes déjà chargées. */

@@ -51,6 +51,8 @@ function makeMailbox(overrides: Partial<IMailbox> = {}): IMailbox {
     readMessage: jest.fn().mockResolvedValue(null),
     setSeen: jest.fn().mockResolvedValue(undefined),
     getAttachment: jest.fn().mockResolvedValue(null),
+    move: jest.fn().mockResolvedValue("moved"),
+    setFlagged: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -64,6 +66,7 @@ function summary(uid: number, date: string | null): MailboxSummary {
     seen: false,
     preview: "",
     hasAttachments: false,
+    flagged: false,
   };
 }
 
@@ -354,6 +357,108 @@ describe("MailService", () => {
     });
   });
 
+  describe("move", () => {
+    it("envoie le mail à la corbeille de sa boîte", async () => {
+      const mailbox = makeMailbox();
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await service.move("u1", account.id, "INBOX", 7, "trash", "token");
+
+      expect(mailbox.move).toHaveBeenCalledWith(
+        expect.objectContaining({ address: "yann@exemple.fr" }),
+        "INBOX",
+        7,
+        "trash",
+      );
+    });
+
+    it("transmet un dossier choisi", async () => {
+      const mailbox = makeMailbox();
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await service.move("u1", account.id, "INBOX", 7, { folder: "INBOX.Banque" }, "token");
+
+      expect(mailbox.move).toHaveBeenCalledWith(expect.anything(), "INBOX", 7, {
+        folder: "INBOX.Banque",
+      });
+    });
+
+    it("dit qu'il n'y a pas de corbeille plutôt que de ranger le mail n'importe où", async () => {
+      const mailbox = makeMailbox({ move: jest.fn().mockResolvedValue("no-destination") });
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await expect(
+        service.move("u1", account.id, "INBOX", 7, "trash", "token"),
+      ).rejects.toMatchObject({ status: 400, message: "Cette boîte n'a pas de corbeille." });
+    });
+
+    it("dit qu'il n'y a pas d'archives", async () => {
+      const mailbox = makeMailbox({ move: jest.fn().mockResolvedValue("no-destination") });
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await expect(
+        service.move("u1", account.id, "INBOX", 7, "archive", "token"),
+      ).rejects.toMatchObject({
+        status: 400,
+        message: "Cette boîte n'a pas de dossier d'archives.",
+      });
+    });
+
+    it("refuse de déplacer un mail là où il est déjà", async () => {
+      const mailbox = makeMailbox({ move: jest.fn().mockResolvedValue("already-there") });
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await expect(
+        service.move("u1", account.id, "Trash", 7, "trash", "token"),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it("ne fait pas croire que c'est fait quand la boîte ne répond pas", async () => {
+      const mailbox = makeMailbox({ move: jest.fn().mockRejectedValue(new Error("ETIMEDOUT")) });
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await expect(
+        service.move("u1", account.id, "INBOX", 7, "trash", "token"),
+      ).rejects.toMatchObject({ status: 502 });
+    });
+
+    it("répond 404 quand la boîte n'existe pas", async () => {
+      const service = new MailService(makeRepository(), makeMailbox(), KEY);
+
+      await expect(
+        service.move("u1", "inconnue", "INBOX", 7, "trash", "token"),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe("setFlagged", () => {
+    it("pose le drapeau sur le bon mail", async () => {
+      const mailbox = makeMailbox();
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await service.setFlagged("u1", account.id, "INBOX", 7, true, "token");
+
+      expect(mailbox.setFlagged).toHaveBeenCalledWith(expect.anything(), "INBOX", 7, true);
+    });
+
+    it("rend une erreur lisible quand la boîte ne répond pas", async () => {
+      const mailbox = makeMailbox({ setFlagged: jest.fn().mockRejectedValue(new Error("x")) });
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await expect(
+        service.setFlagged("u1", account.id, "INBOX", 7, true, "token"),
+      ).rejects.toMatchObject({ status: 502 });
+    });
+  });
+
   describe("setSeen", () => {
     it("marque le mail lu ou non lu dans la bonne boîte et le bon dossier", async () => {
       const mailbox = makeMailbox();
@@ -477,6 +582,7 @@ describe("MailService", () => {
           text: "Salut",
           html: null,
           attachments: [],
+          flagged: false,
         }),
       });
       const service = new MailService(makeRepository(), mailbox, KEY);

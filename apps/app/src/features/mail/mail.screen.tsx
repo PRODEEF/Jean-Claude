@@ -1,15 +1,26 @@
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View, type GestureResponderEvent } from "react-native";
 import {
+  Archive,
   ChevronLeft,
   Download,
+  Flag,
   Folder,
+  FolderInput,
   Paperclip,
   RefreshCw,
   Search,
+  Trash2,
   X,
 } from "lucide-react-native";
-import type { MailAccount, MailAttachment, MailMessage, MailMessageSummary } from "@jc/domain";
+import type {
+  MailAccount,
+  MailAttachment,
+  MailFolder,
+  MailMessage,
+  MailMessageSummary,
+  MoveMail,
+} from "@jc/domain";
 import {
   groupByDay,
   INBOX_PATH,
@@ -23,6 +34,7 @@ import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { formatFullDay, formatMailDate } from "@/shared/lib/dates";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
+import { ContextMenu } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
@@ -41,6 +53,8 @@ import {
   useMailInbox,
   useMailMessage,
   useMailMessages,
+  useMoveMail,
+  useSetMailFlag,
   useSetMailSeen,
   type MailListParams,
 } from "./use-mail";
@@ -329,9 +343,49 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
   );
 
   const setSeen = useSetMailSeen();
+  const move = useMoveMail();
+  const setFlag = useSetMailFlag();
+  const openedFolders = useMailFolders(current?.accountId ?? "", current !== null);
+  const openedFolderName =
+    openedFolders.data?.find((entry) => entry.path === current?.folder)?.name ?? "";
   const readPane = (
     <ReadPane
       message={message.data}
+      folders={(openedFolders.data ?? []).filter((entry) => entry.path !== current?.folder)}
+      inTrash={openedFolderName === "Corbeille"}
+      inArchive={openedFolderName === "Archives"}
+      actionError={move.isError ? move.error.message : null}
+      onMove={
+        current
+          ? (destination) =>
+              move.mutate(
+                {
+                  accountId: current.accountId,
+                  folder: current.folder,
+                  uid: current.uid,
+                  destination,
+                },
+                {
+                  // Le mail a quitté le dossier : on referme sa lecture.
+                  onSuccess: () => {
+                    setOpened(null);
+                    if (!expanded) setStage("list");
+                  },
+                },
+              )
+          : undefined
+      }
+      onToggleFlag={
+        current && message.data
+          ? () =>
+              setFlag.mutate({
+                accountId: current.accountId,
+                folder: current.folder,
+                uid: current.uid,
+                flagged: !message.data?.flagged,
+              })
+          : undefined
+      }
       folder={current?.folder ?? INBOX_PATH}
       onMarkUnread={
         current
@@ -584,6 +638,7 @@ function MessageRow({
             {sender}
           </Text>
           <View className="shrink-0 flex-row items-center gap-1">
+            {message.flagged ? <Icon as={Flag} size={12} className="text-destructive" /> : null}
             {message.hasAttachments ? (
               <Icon as={Paperclip} size={12} className="text-muted-foreground" />
             ) : null}
@@ -616,12 +671,27 @@ function MessageRow({
 function ReadPane({
   message,
   folder,
+  folders,
+  inTrash,
+  inArchive,
+  actionError,
+  onMove,
+  onToggleFlag,
   loading,
   error,
   onBack,
   onMarkUnread,
 }: {
   message: MailMessage | undefined;
+  /** Les autres dossiers de la boîte, pour « Déplacer ». */
+  folders: MailFolder[];
+  /** Le mail est déjà dans la corbeille ou les archives : le geste n'a plus de sens. */
+  inTrash: boolean;
+  inArchive: boolean;
+  /** Ce que le fournisseur a répondu au dernier geste raté. */
+  actionError: string | null;
+  onMove: ((destination: MoveMail) => void) | undefined;
+  onToggleFlag: (() => void) | undefined;
   /** Dossier où le mail est ouvert. */
   folder: string;
   /** Remet le mail ouvert en non lu ; absent quand rien n'est ouvert. */
@@ -679,18 +749,16 @@ function ReadPane({
                 ) : null}
               </View>
             </View>
-            {onMarkUnread ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="self-start"
-                onPress={onMarkUnread}
-                accessibilityRole="button"
-                accessibilityLabel="Marquer comme non lu"
-              >
-                <Text>Marquer comme non lu</Text>
-              </Button>
-            ) : null}
+            <MessageActions
+              flagged={message.flagged}
+              folders={folders}
+              inTrash={inTrash}
+              inArchive={inArchive}
+              error={actionError}
+              onMove={onMove}
+              onToggleFlag={onToggleFlag}
+              onMarkUnread={onMarkUnread}
+            />
             <MessageContent message={message} folder={folder} />
           </>
         )}
@@ -818,5 +886,102 @@ function AttachmentRow({
         <Text className="text-destructive text-xs">{error}</Text>
       ) : null}
     </View>
+  );
+}
+
+/**
+ * Les gestes sur le mail ouvert, les 20 % d'Outlook qu'on utilise le plus :
+ * archiver, supprimer, déplacer, indicateur, marquer non lu.
+ *
+ * Supprimer envoie à la corbeille, jamais d'effacement définitif : une erreur
+ * se rattrape en sortant le mail de la corbeille.
+ */
+function MessageActions({
+  flagged,
+  folders,
+  inTrash,
+  inArchive,
+  error,
+  onMove,
+  onToggleFlag,
+  onMarkUnread,
+}: {
+  flagged: boolean;
+  folders: MailFolder[];
+  inTrash: boolean;
+  inArchive: boolean;
+  error: string | null;
+  onMove: ((destination: MoveMail) => void) | undefined;
+  onToggleFlag: (() => void) | undefined;
+  onMarkUnread: (() => void) | undefined;
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  return (
+    <View className="gap-2">
+      <View className="flex-row flex-wrap items-center gap-1">
+        {onMove && !inArchive ? (
+          <ActionButton icon={Archive} label="Archiver" onPress={() => onMove({ to: "archive" })} />
+        ) : null}
+        {onMove && !inTrash ? (
+          <ActionButton icon={Trash2} label="Supprimer" onPress={() => onMove({ to: "trash" })} />
+        ) : null}
+        {onMove && folders.length > 0 ? (
+          <ActionButton
+            icon={FolderInput}
+            label="Déplacer"
+            onPress={(event) => setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
+          />
+        ) : null}
+        {onToggleFlag ? (
+          <ActionButton
+            icon={Flag}
+            label={flagged ? "Retirer l'indicateur" : "Indicateur"}
+            onPress={onToggleFlag}
+          />
+        ) : null}
+        {onMarkUnread ? <ActionButton label="Marquer comme non lu" onPress={onMarkUnread} /> : null}
+      </View>
+
+      {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
+
+      {menu && onMove ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={folders.map((target) => ({
+            label: target.name,
+            onPress: () => {
+              setMenu(null);
+              onMove({ to: "folder", folder: target.path });
+            },
+          }))}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function ActionButton({
+  icon,
+  label,
+  onPress,
+}: {
+  icon?: typeof Flag;
+  label: string;
+  onPress: (event: GestureResponderEvent) => void;
+}) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      {icon ? <Icon as={icon} className="size-4" /> : null}
+      <Text>{label}</Text>
+    </Button>
   );
 }

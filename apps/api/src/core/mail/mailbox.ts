@@ -2,7 +2,13 @@ import { ImapFlow } from "imapflow";
 import { simpleParser, type AddressObject } from "mailparser";
 import type { MailFolder, MailMessage, MailMessageSummary } from "@jc/domain";
 import { logger } from "../logger.js";
-import { presentFolders } from "./folders.js";
+import {
+  ARCHIVE_NAMES,
+  pickFolder,
+  presentFolders,
+  TRASH_NAMES,
+  type RawFolder,
+} from "./folders.js";
 import { inlineCidImages, sanitizeMailHtml } from "./html.js";
 import { previewOf } from "./preview.js";
 import { hasAttachments, type BodyNode } from "./structure.js";
@@ -12,6 +18,15 @@ const SCOPE = "core.mail";
 /** Un mail tel que le serveur de courrier le donne : le rattachement à une boîte s'ajoute au-dessus. */
 export type MailboxSummary = Omit<MailMessageSummary, "accountId">;
 export type MailboxMessage = Omit<MailMessage, "accountId">;
+
+/** Où va un mail déplacé : la corbeille, les archives, ou un dossier au choix. */
+export type MailboxDestination = "trash" | "archive" | { folder: string };
+
+/**
+ * Ce qu'il est advenu d'un déplacement : fait, sans destination dans cette
+ * boîte (« aucune corbeille »), ou le mail est déjà là où on l'envoie.
+ */
+export type MoveOutcome = "moved" | "no-destination" | "already-there";
 
 /** Une pièce jointe, avec son contenu, prête à être renvoyée. */
 export type MailboxAttachment = { filename: string; contentType: string; content: Buffer };
@@ -56,6 +71,20 @@ export interface IMailbox {
     uid: number,
     index: number,
   ): Promise<MailboxAttachment | null>;
+  /** Déplace un message ; jamais d'effacement définitif. */
+  move(
+    credentials: MailboxCredentials,
+    folder: string,
+    uid: number,
+    destination: MailboxDestination,
+  ): Promise<MoveOutcome>;
+  /** Pose ou retire le drapeau d'un message. */
+  setFlagged(
+    credentials: MailboxCredentials,
+    folder: string,
+    uid: number,
+    flagged: boolean,
+  ): Promise<void>;
   /** Marque un message lu ou non lu chez le fournisseur. */
   setSeen(
     credentials: MailboxCredentials,
@@ -209,6 +238,7 @@ export const mailbox: IMailbox = {
           subject: message.envelope?.subject ?? "",
           date: message.envelope?.date ? new Date(message.envelope.date).toISOString() : null,
           seen: message.flags?.has("\\Seen") ?? false,
+          flagged: message.flags?.has("\\Flagged") ?? false,
           preview: await previewFrom(message.source),
           hasAttachments: hasAttachments(message.bodyStructure as BodyNode | undefined),
         });
@@ -252,6 +282,7 @@ export const mailbox: IMailbox = {
           subject: parsed.subject ?? "",
           date: parsed.date ? parsed.date.toISOString() : null,
           seen: true,
+          flagged: fetched.flags?.has("\\Flagged") ?? false,
           text: parsed.text?.trim() ? parsed.text : null,
           html: parsed.html ? sanitizeMailHtml(inlineCidImages(parsed.html, images)) : null,
           // Une image intégrée au texte n'est pas une pièce jointe à proposer.
@@ -290,6 +321,56 @@ export const mailbox: IMailbox = {
         content: attachment.content,
       };
     });
+  },
+
+  async move(credentials, folder, uid, destination) {
+    const client = connect(credentials);
+    await client.connect();
+    try {
+      let target: string | null;
+      if (typeof destination === "object") {
+        target = destination.folder;
+      } else {
+        const raw: RawFolder[] = (await client.list()).map((entry) => ({
+          path: entry.path,
+          name: entry.name,
+          specialUse: entry.specialUse,
+          unseen: 0,
+          selectable: !entry.flags.has("\\Noselect"),
+        }));
+        target =
+          destination === "trash"
+            ? pickFolder(raw, "\\Trash", TRASH_NAMES)
+            : pickFolder(raw, "\\Archive", ARCHIVE_NAMES);
+      }
+      if (!target) return "no-destination";
+      if (target === folder) return "already-there";
+
+      const lock = await client.getMailboxLock(folder);
+      try {
+        await client.messageMove(String(uid), target, { uid: true });
+      } finally {
+        lock.release();
+      }
+      return "moved";
+    } finally {
+      await client.logout().catch((error: unknown) => {
+        logger.warn(SCOPE, "Fermeture de la connexion en échec.", error);
+      });
+    }
+  },
+
+  async setFlagged(credentials, folder, uid, flagged) {
+    await withFolder(
+      credentials,
+      folder,
+      async (client) => {
+        const flags = ["\\Flagged"];
+        if (flagged) await client.messageFlagsAdd(String(uid), flags, { uid: true });
+        else await client.messageFlagsRemove(String(uid), flags, { uid: true });
+      },
+      false,
+    );
   },
 
   async setSeen(credentials, folder, uid, seen) {

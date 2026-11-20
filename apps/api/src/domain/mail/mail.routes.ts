@@ -5,6 +5,8 @@ import {
   mailFolderQuerySchema,
   mailInboxQuerySchema,
   mailListQuerySchema,
+  moveMailSchema,
+  setMailFlagSchema,
   setMailSeenSchema,
   uuidSchema,
 } from "@jc/domain";
@@ -132,5 +134,42 @@ export const mailRoutes = new Hono<AuthEnv>()
         // Le fichier se télécharge, il ne s'ouvre jamais dans la page de l'application.
         "X-Content-Type-Options": "nosniff",
       });
+    },
+  )
+
+  .post(
+    "/accounts/:accountId/messages/:uid/move",
+    validate("param", messageParamSchema),
+    validate("query", mailFolderQuerySchema),
+    validate("json", moveMailSchema),
+    async (c) => {
+      const user = c.get("user");
+      const { accountId, uid } = c.req.valid("param");
+      const { folder } = c.req.valid("query");
+      const move = c.req.valid("json");
+      await service.move(
+        user.id,
+        accountId,
+        folder,
+        uid,
+        move.to === "folder" ? { folder: move.folder } : move.to,
+        user.accessToken,
+      );
+      return c.body(null, 204);
+    },
+  )
+
+  .post(
+    "/accounts/:accountId/messages/:uid/flag",
+    validate("param", messageParamSchema),
+    validate("query", mailFolderQuerySchema),
+    validate("json", setMailFlagSchema),
+    async (c) => {
+      const user = c.get("user");
+      const { accountId, uid } = c.req.valid("param");
+      const { folder } = c.req.valid("query");
+      const { flagged } = c.req.valid("json");
+      await service.setFlagged(user.id, accountId, folder, uid, flagged, user.accessToken);
+      return c.body(null, 204);
     },
   );

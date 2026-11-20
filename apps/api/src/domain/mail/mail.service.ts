@@ -12,6 +12,7 @@ import { logger } from "../../core/logger.js";
 import type {
   IMailbox,
   MailboxAttachment,
+  MailboxDestination,
   MailboxCredentials,
   MailboxListOptions,
 } from "../../core/mail/mailbox.js";
@@ -211,6 +212,56 @@ export class MailService {
       );
     }
     return attachment;
+  }
+
+  /**
+   * Déplace un mail : à la corbeille, aux archives, ou dans un dossier au choix.
+   * Jamais d'effacement définitif ; une boîte sans corbeille ou sans archives
+   * le dit plutôt que de ranger le mail n'importe où.
+   */
+  async move(
+    userId: string,
+    accountId: string,
+    folder: string,
+    uid: number,
+    destination: MailboxDestination,
+    accessToken: string,
+  ): Promise<void> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    let outcome;
+    try {
+      outcome = await this.mailbox.move(credentials, folder, uid, destination);
+    } catch (error) {
+      throw this.unreachable(error);
+    }
+    if (outcome === "no-destination") {
+      throw httpError(
+        400,
+        destination === "trash"
+          ? "Cette boîte n'a pas de corbeille."
+          : "Cette boîte n'a pas de dossier d'archives.",
+      );
+    }
+    if (outcome === "already-there") {
+      throw httpError(400, "Ce mail est déjà dans ce dossier.");
+    }
+  }
+
+  /** Pose ou retire le drapeau d'un mail. */
+  async setFlagged(
+    userId: string,
+    accountId: string,
+    folder: string,
+    uid: number,
+    flagged: boolean,
+    accessToken: string,
+  ): Promise<void> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    try {
+      await this.mailbox.setFlagged(credentials, folder, uid, flagged);
+    } catch (error) {
+      throw this.unreachable(error);
+    }
   }
 
   /** Marque un mail lu ou non lu chez le fournisseur. */
