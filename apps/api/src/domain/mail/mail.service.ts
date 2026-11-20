@@ -6,10 +6,15 @@ import type {
   MailMessage,
   MailMessageSummary,
 } from "@jc/domain";
-import { INBOX_PATH, MAX_MAIL_ACCOUNTS } from "@jc/domain";
+import { INBOX_PATH, MAIL_ATTACHMENT_MAX_BYTES, MAX_MAIL_ACCOUNTS } from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { logger } from "../../core/logger.js";
-import type { IMailbox, MailboxCredentials, MailboxListOptions } from "../../core/mail/mailbox.js";
+import type {
+  IMailbox,
+  MailboxAttachment,
+  MailboxCredentials,
+  MailboxListOptions,
+} from "../../core/mail/mailbox.js";
 import { decryptSecret, encryptSecret } from "../../core/mail/secret-box.js";
 import type { IMailRepository, StoredMailAccount } from "./mail.repository.interface.js";
 
@@ -179,6 +184,33 @@ export class MailService {
     }
     if (!message) throw httpError(404, "Message introuvable.");
     return { ...message, accountId };
+  }
+
+  /** Une pièce jointe, prête à être renvoyée au client. */
+  async getAttachment(
+    userId: string,
+    accountId: string,
+    folder: string,
+    uid: number,
+    index: number,
+    accessToken: string,
+  ): Promise<MailboxAttachment> {
+    const credentials = this.credentialsOf(await this.accountOf(userId, accountId, accessToken));
+    let attachment: MailboxAttachment | null;
+    try {
+      attachment = await this.mailbox.getAttachment(credentials, folder, uid, index);
+    } catch (error) {
+      throw this.unreachable(error);
+    }
+    if (!attachment) throw httpError(404, "Pièce jointe introuvable.");
+    // Au-delà, l'hébergement ne laisse pas passer la réponse : mieux vaut le dire.
+    if (attachment.content.length > MAIL_ATTACHMENT_MAX_BYTES) {
+      throw httpError(
+        413,
+        "Cette pièce jointe est trop volumineuse pour être ouverte ici (4 Mo au plus).",
+      );
+    }
+    return attachment;
   }
 
   /** Marque un mail lu ou non lu chez le fournisseur. */

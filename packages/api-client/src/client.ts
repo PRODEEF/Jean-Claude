@@ -197,6 +197,12 @@ export class JeanClaudeClient {
         query: { folder },
       }),
 
+    /** Le fichier d'une pièce jointe, à enregistrer côté appareil. */
+    attachment: (accountId: string, uid: number, index: number, folder?: string) =>
+      this.http.blob(`/mail/accounts/${accountId}/messages/${uid}/attachments/${index}`, {
+        query: { folder },
+      }),
+
     /** Marque un mail lu ou non lu chez le fournisseur. */
     setSeen: (accountId: string, uid: number, seen: boolean, folder?: string) =>
       this.http.request<void>(`/mail/accounts/${accountId}/messages/${uid}/seen`, {

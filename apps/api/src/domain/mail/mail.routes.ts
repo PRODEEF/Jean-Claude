@@ -19,6 +19,7 @@ const service = new MailService(mailRepository, mailbox, config.mailEncryptionKe
 
 const accountParamSchema = z.object({ accountId: uuidSchema });
 const messageParamSchema = accountParamSchema.extend({ uid: z.coerce.number().int().positive() });
+const attachmentParamSchema = messageParamSchema.extend({ index: z.coerce.number().int().min(0) });
 
 /**
  * Boîtes mail : un geste direct de l'utilisateur, comme ses réglages — jamais
@@ -106,5 +107,30 @@ export const mailRoutes = new Hono<AuthEnv>()
       const { seen } = c.req.valid("json");
       await service.setSeen(user.id, accountId, folder, uid, seen, user.accessToken);
       return c.body(null, 204);
+    },
+  )
+
+  .get(
+    "/accounts/:accountId/messages/:uid/attachments/:index",
+    validate("param", attachmentParamSchema),
+    validate("query", mailFolderQuerySchema),
+    async (c) => {
+      const user = c.get("user");
+      const { accountId, uid, index } = c.req.valid("param");
+      const { folder } = c.req.valid("query");
+      const attachment = await service.getAttachment(
+        user.id,
+        accountId,
+        folder,
+        uid,
+        index,
+        user.accessToken,
+      );
+      return c.body(new Uint8Array(attachment.content), 200, {
+        "Content-Type": attachment.contentType,
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(attachment.filename)}`,
+        // Le fichier se télécharge, il ne s'ouvre jamais dans la page de l'application.
+        "X-Content-Type-Options": "nosniff",
+      });
     },
   );
