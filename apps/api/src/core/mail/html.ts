@@ -1,4 +1,11 @@
-import { escapeAttrValue, filterXSS, getDefaultWhiteList, safeAttrValue } from "xss";
+import xss from "xss";
+
+// `xss` est un module CommonJS : Node refuse d'en lire les exports nommés en ESM
+// (le serveur plantait au démarrage, en production seulement). Seul l'import par
+// défaut passe, et il porte les mêmes fonctions — d'où ce cast, sans autre risque
+// que la déclaration de types, qui ne décrit pas cette forme.
+const { escapeAttrValue, filterXSS, getDefaultWhiteList, safeAttrValue } =
+  xss as unknown as typeof import("xss");
 
 const COMMON = ["style", "dir"];
 
