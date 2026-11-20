@@ -57,15 +57,36 @@ export const mailMessageSummarySchema = z.object({
   seen: z.boolean(),
   /** Début du texte du mail, sur une ligne : ce que la liste montre sous l'objet. */
   preview: z.string(),
+  /** Le mail porte au moins une pièce jointe : la liste y met un trombone. */
+  hasAttachments: z.boolean(),
 });
 export type MailMessageSummary = z.infer<typeof mailMessageSummarySchema>;
 
-// L'aperçu n'a de sens que dans la liste : le message lu porte tout son texte.
-export const mailMessageSchema = mailMessageSummarySchema.omit({ preview: true }).extend({
-  to: z.string(),
-  /** Texte brut du message ; `null` quand il n'en porte pas (courrier en images seules). */
-  text: z.string().nullable(),
+/** Pièce jointe d'un mail ouvert, à télécharger par son rang. */
+export const mailAttachmentSchema = z.object({
+  /** Rang dans le message, à renvoyer tel quel pour la télécharger. */
+  index: z.number().int().min(0),
+  filename: z.string(),
+  contentType: z.string(),
+  /** Taille en octets. */
+  size: z.number().int().min(0),
 });
+export type MailAttachment = z.infer<typeof mailAttachmentSchema>;
+
+/** Au-delà, la réponse du serveur dépasse ce que l'hébergement laisse passer. */
+export const MAIL_ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024;
+
+// L'aperçu et le trombone n'ont de sens que dans la liste : le message lu porte tout son contenu.
+export const mailMessageSchema = mailMessageSummarySchema
+  .omit({ preview: true, hasAttachments: true })
+  .extend({
+    to: z.string(),
+    /** Texte brut du message ; `null` quand il n'en porte pas (courrier en images seules). */
+    text: z.string().nullable(),
+    /** Mise en forme du message, déjà nettoyée par le serveur ; `null` pour un mail en texte seul. */
+    html: z.string().nullable(),
+    attachments: z.array(mailAttachmentSchema),
+  });
 export type MailMessage = z.infer<typeof mailMessageSchema>;
 
 /** Dossier de la boîte (Boîte de réception, Envoyés…) : `name` est déjà celui qu'on affiche. */

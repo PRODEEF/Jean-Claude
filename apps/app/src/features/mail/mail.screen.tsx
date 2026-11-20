@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { ChevronLeft, Folder, RefreshCw, Search, X } from "lucide-react-native";
-import type { MailAccount, MailMessage, MailMessageSummary } from "@jc/domain";
+import {
+  ChevronLeft,
+  Download,
+  Folder,
+  Paperclip,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react-native";
+import type { MailAccount, MailAttachment, MailMessage, MailMessageSummary } from "@jc/domain";
 import {
   groupByDay,
   INBOX_PATH,
@@ -20,7 +28,10 @@ import { Input } from "@/shared/ui/input";
 import { READING_MAX_WIDTH, ScreenShell } from "@/shared/ui/screen-shell";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { Text } from "@/shared/ui/text";
+import { api } from "@/shared/lib/api";
 import { MailAvatar } from "./MailAvatar";
+import { MailBody } from "./MailBody";
+import { CAN_DOWNLOAD, downloadFile } from "./download-file";
 import { MailFolderTree, type MailView } from "./MailFolderTree";
 import {
   useAllMailFolders,
@@ -321,6 +332,7 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
   const readPane = (
     <ReadPane
       message={message.data}
+      folder={current?.folder ?? INBOX_PATH}
       onMarkUnread={
         current
           ? () => {
@@ -571,11 +583,14 @@ function MessageRow({
           >
             {sender}
           </Text>
-          {message.date ? (
-            <Text className="text-muted-foreground shrink-0 text-xs">
-              {formatMailDate(message.date)}
-            </Text>
-          ) : null}
+          <View className="shrink-0 flex-row items-center gap-1">
+            {message.hasAttachments ? (
+              <Icon as={Paperclip} size={12} className="text-muted-foreground" />
+            ) : null}
+            {message.date ? (
+              <Text className="text-muted-foreground text-xs">{formatMailDate(message.date)}</Text>
+            ) : null}
+          </View>
         </View>
         <Text
           className={cn("text-sm", message.seen ? "text-muted-foreground" : "font-semibold")}
@@ -600,12 +615,15 @@ function MessageRow({
 
 function ReadPane({
   message,
+  folder,
   loading,
   error,
   onBack,
   onMarkUnread,
 }: {
   message: MailMessage | undefined;
+  /** Dossier où le mail est ouvert. */
+  folder: string;
   /** Remet le mail ouvert en non lu ; absent quand rien n'est ouvert. */
   onMarkUnread: (() => void) | undefined;
   loading: boolean;
@@ -673,13 +691,132 @@ function ReadPane({
                 <Text>Marquer comme non lu</Text>
               </Button>
             ) : null}
-            <Text className="pt-2 text-sm" selectable>
-              {message.text ??
-                "Ce mail ne contient pas de texte (images ou pièces jointes seules)."}
-            </Text>
+            <MessageContent message={message} folder={folder} />
           </>
         )}
       </ScrollView>
+    </View>
+  );
+}
+
+/** Les images distantes d'un mail sont-elles à charger ? Il y en a-t-il seulement ? */
+function hasRemoteImages(html: string | null): boolean {
+  return html !== null && /<img[^>]+src=["']https?:/i.test(html);
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} Mo`;
+}
+
+/**
+ * Le contenu d'un mail ouvert : son texte ou sa mise en forme, puis ses pièces
+ * jointes. Les images distantes ne se chargent qu'à la demande : une image
+ * distante dit à l'expéditeur que le mail a été ouvert.
+ */
+function MessageContent({ message, folder }: { message: MailMessage; folder: string }) {
+  const [shown, setShown] = useState<string | null>(null);
+  const showImages = shown === `${message.accountId}:${message.uid}`;
+
+  return (
+    <>
+      {hasRemoteImages(message.html) && !showImages ? (
+        <View className="bg-muted flex-row items-center justify-between gap-2 rounded-md px-3 py-2">
+          <Text className="text-muted-foreground min-w-0 shrink text-xs">
+            Les images de ce mail ne sont pas affichées.
+          </Text>
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={() => setShown(`${message.accountId}:${message.uid}`)}
+            accessibilityRole="button"
+            accessibilityLabel="Afficher les images"
+          >
+            <Text>Afficher les images</Text>
+          </Button>
+        </View>
+      ) : null}
+
+      <MailBody html={message.html} text={message.text} showImages={showImages} />
+
+      {message.attachments.length > 0 ? (
+        <View className="border-border gap-1 border-t pt-3">
+          <Text className="text-muted-foreground text-xs font-semibold">
+            {message.attachments.length > 1 ? "Pièces jointes" : "Pièce jointe"}
+          </Text>
+          {message.attachments.map((attachment) => (
+            <AttachmentRow
+              key={attachment.index}
+              message={message}
+              folder={folder}
+              attachment={attachment}
+            />
+          ))}
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+function AttachmentRow({
+  message,
+  folder,
+  attachment,
+}: {
+  message: MailMessage;
+  /** Dossier où le mail a été ouvert : le serveur y cherche la pièce jointe. */
+  folder: string;
+  attachment: MailAttachment;
+}) {
+  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const download = async () => {
+    if (!CAN_DOWNLOAD) {
+      setState("error");
+      setError("Le téléchargement n'est pas encore disponible sur téléphone.");
+      return;
+    }
+    setState("loading");
+    setError(null);
+    try {
+      const blob = await api.mail.attachment(
+        message.accountId,
+        message.uid,
+        attachment.index,
+        folder,
+      );
+      downloadFile(blob, attachment.filename);
+      setState("idle");
+    } catch (failure) {
+      setState("error");
+      setError(failure instanceof Error ? failure.message : "Le téléchargement a échoué.");
+    }
+  };
+
+  return (
+    <View>
+      <Pressable
+        onPress={() => void download()}
+        disabled={state === "loading"}
+        accessibilityRole="button"
+        accessibilityLabel={`Télécharger ${attachment.filename}`}
+        style={{ minHeight: MIN_TOUCH_TARGET - 8 }}
+        className="flex-row items-center gap-2 rounded-md py-1 active:opacity-70"
+      >
+        <Icon as={Paperclip} size={16} className="text-muted-foreground" />
+        <Text className="min-w-0 shrink text-sm" numberOfLines={1}>
+          {attachment.filename}
+        </Text>
+        <Text className="text-muted-foreground shrink-0 text-xs">
+          {state === "loading" ? "Téléchargement…" : formatSize(attachment.size)}
+        </Text>
+        <Icon as={Download} size={14} className="text-muted-foreground" />
+      </Pressable>
+      {state === "error" && error ? (
+        <Text className="text-destructive text-xs">{error}</Text>
+      ) : null}
     </View>
   );
 }

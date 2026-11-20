@@ -50,12 +50,21 @@ function makeMailbox(overrides: Partial<IMailbox> = {}): IMailbox {
     listMessages: jest.fn().mockResolvedValue([]),
     readMessage: jest.fn().mockResolvedValue(null),
     setSeen: jest.fn().mockResolvedValue(undefined),
+    getAttachment: jest.fn().mockResolvedValue(null),
     ...overrides,
   };
 }
 
 function summary(uid: number, date: string | null): MailboxSummary {
-  return { uid, from: "a@b.fr", subject: `Mail ${uid}`, date, seen: false, preview: "" };
+  return {
+    uid,
+    from: "a@b.fr",
+    subject: `Mail ${uid}`,
+    date,
+    seen: false,
+    preview: "",
+    hasAttachments: false,
+  };
 }
 
 describe("MailService", () => {
@@ -290,6 +299,61 @@ describe("MailService", () => {
     });
   });
 
+  describe("getAttachment", () => {
+    it("rend la pièce jointe demandée de la bonne boîte", async () => {
+      const file = {
+        filename: "facture.pdf",
+        contentType: "application/pdf",
+        content: Buffer.from("x"),
+      };
+      const mailbox = makeMailbox({ getAttachment: jest.fn().mockResolvedValue(file) });
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      const result = await service.getAttachment("u1", account.id, "INBOX", 7, 2, "token");
+
+      expect(result).toBe(file);
+      expect(mailbox.getAttachment).toHaveBeenCalledWith(
+        expect.objectContaining({ address: "yann@exemple.fr" }),
+        "INBOX",
+        7,
+        2,
+      );
+    });
+
+    it("répond 404 quand la pièce jointe n'existe pas", async () => {
+      const service = new MailService(makeRepository(), makeMailbox(), KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await expect(
+        service.getAttachment("u1", account.id, "INBOX", 7, 0, "token"),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+
+    it("refuse une pièce jointe trop lourde pour l'hébergement", async () => {
+      const big = {
+        filename: "video.mov",
+        contentType: "video/quicktime",
+        content: Buffer.alloc(5 * 1024 * 1024),
+      };
+      const mailbox = makeMailbox({ getAttachment: jest.fn().mockResolvedValue(big) });
+      const service = new MailService(makeRepository(), mailbox, KEY);
+      const account = await service.connect("u1", OVH, "token");
+
+      await expect(
+        service.getAttachment("u1", account.id, "INBOX", 7, 0, "token"),
+      ).rejects.toMatchObject({ status: 413 });
+    });
+
+    it("répond 404 quand la boîte n'existe pas", async () => {
+      const service = new MailService(makeRepository(), makeMailbox(), KEY);
+
+      await expect(
+        service.getAttachment("u1", "inconnue", "INBOX", 7, 0, "token"),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
   describe("setSeen", () => {
     it("marque le mail lu ou non lu dans la bonne boîte et le bon dossier", async () => {
       const mailbox = makeMailbox();
@@ -411,6 +475,8 @@ describe("MailService", () => {
           date: null,
           seen: false,
           text: "Salut",
+          html: null,
+          attachments: [],
         }),
       });
       const service = new MailService(makeRepository(), mailbox, KEY);

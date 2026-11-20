@@ -3,13 +3,18 @@ import { simpleParser, type AddressObject } from "mailparser";
 import type { MailFolder, MailMessage, MailMessageSummary } from "@jc/domain";
 import { logger } from "../logger.js";
 import { presentFolders } from "./folders.js";
+import { inlineCidImages, sanitizeMailHtml } from "./html.js";
 import { previewOf } from "./preview.js";
+import { hasAttachments, type BodyNode } from "./structure.js";
 
 const SCOPE = "core.mail";
 
 /** Un mail tel que le serveur de courrier le donne : le rattachement à une boîte s'ajoute au-dessus. */
 export type MailboxSummary = Omit<MailMessageSummary, "accountId">;
 export type MailboxMessage = Omit<MailMessage, "accountId">;
+
+/** Une pièce jointe, avec son contenu, prête à être renvoyée. */
+export type MailboxAttachment = { filename: string; contentType: string; content: Buffer };
 
 /** Ce qu'il faut pour ouvrir la boîte : le mot de passe est ici en clair, le temps d'un appel. */
 export type MailboxCredentials = { host: string; address: string; password: string };
@@ -44,6 +49,13 @@ export interface IMailbox {
     folder: string,
     uid: number,
   ): Promise<MailboxMessage | null>;
+  /** `null` quand le message ou la pièce jointe n'existe pas. */
+  getAttachment(
+    credentials: MailboxCredentials,
+    folder: string,
+    uid: number,
+    index: number,
+  ): Promise<MailboxAttachment | null>;
   /** Marque un message lu ou non lu chez le fournisseur. */
   setSeen(
     credentials: MailboxCredentials,
@@ -187,6 +199,7 @@ export const mailbox: IMailbox = {
         uid: true,
         envelope: true,
         flags: true,
+        bodyStructure: true,
         source: { start: 0, maxLength: PREVIEW_BYTES },
       };
       for await (const message of client.fetch(range, query, byUid ? { uid: true } : {})) {
@@ -197,6 +210,7 @@ export const mailbox: IMailbox = {
           date: message.envelope?.date ? new Date(message.envelope.date).toISOString() : null,
           seen: message.flags?.has("\\Seen") ?? false,
           preview: await previewFrom(message.source),
+          hasAttachments: hasAttachments(message.bodyStructure as BodyNode | undefined),
         });
       }
       return messages.sort((a, b) => b.uid - a.uid);
@@ -220,6 +234,17 @@ export const mailbox: IMailbox = {
         if (!wasSeen) await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true });
 
         const parsed = await simpleParser(fetched.source);
+        const images = parsed.attachments.flatMap((attachment) =>
+          attachment.cid
+            ? [
+                {
+                  contentId: attachment.cid,
+                  contentType: attachment.contentType,
+                  content: attachment.content,
+                },
+              ]
+            : [],
+        );
         return {
           uid: fetched.uid,
           from: formatAddresses(parsed.from),
@@ -228,10 +253,43 @@ export const mailbox: IMailbox = {
           date: parsed.date ? parsed.date.toISOString() : null,
           seen: true,
           text: parsed.text?.trim() ? parsed.text : null,
+          html: parsed.html ? sanitizeMailHtml(inlineCidImages(parsed.html, images)) : null,
+          // Une image intégrée au texte n'est pas une pièce jointe à proposer.
+          attachments: parsed.attachments.flatMap((attachment, index) =>
+            attachment.related
+              ? []
+              : [
+                  {
+                    index,
+                    filename: attachment.filename ?? `pièce-jointe-${index + 1}`,
+                    contentType: attachment.contentType,
+                    size: attachment.size,
+                  },
+                ],
+          ),
         };
       },
       false,
     );
+  },
+
+  async getAttachment(credentials, folder, uid, index) {
+    return withFolder(credentials, folder, async (client) => {
+      const fetched = await client.fetchOne(
+        String(uid),
+        { uid: true, source: true },
+        { uid: true },
+      );
+      if (!fetched || !fetched.source) return null;
+
+      const attachment = (await simpleParser(fetched.source)).attachments[index];
+      if (!attachment) return null;
+      return {
+        filename: attachment.filename ?? `pièce-jointe-${index + 1}`,
+        contentType: attachment.contentType,
+        content: attachment.content,
+      };
+    });
   },
 
   async setSeen(credentials, folder, uid, seen) {
