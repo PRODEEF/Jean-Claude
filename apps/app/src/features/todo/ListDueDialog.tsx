@@ -5,7 +5,6 @@ import { DateTimeField } from "@/shared/ui/date-time-field";
 import { Modal } from "@/shared/ui/modal";
 import { SegmentedControl, type SegmentedOption } from "@/shared/ui/segmented-control";
 import { Text } from "@/shared/ui/text";
-import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { useDayPartBounds } from "@/shared/hooks/use-profile";
 import { formatDateInput, parseTimeInput } from "@/shared/lib/date-input";
 import { parseDue, timeOf, toMessage } from "./TaskListDialog";
@@ -131,28 +130,5 @@ export function DueDialog({
         />
       </View>
     </Modal>
-  );
-}
-
-/** L'échéance d'une liste personnelle, enregistrée par `PATCH /tasks/:id`. */
-export function ListDueDialog({ list, onClose }: { list: TaskList; onClose: () => void }) {
-  const { updateList } = useTaskActions();
-  const [failure, setFailure] = useState<string | null>(null);
-
-  return (
-    <DueDialog
-      title={list.title}
-      dueAt={list.dueAt}
-      dueAllDay={list.dueAllDay}
-      pending={updateList.isPending}
-      failure={failure}
-      onSubmit={(patch) =>
-        updateList.mutate(
-          { id: list.id, patch },
-          { onSuccess: onClose, onError: (cause) => setFailure(toMessage(cause)) },
-        )
-      }
-      onClose={onClose}
-    />
   );
 }
