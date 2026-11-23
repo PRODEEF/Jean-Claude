@@ -102,6 +102,7 @@
 - [ ] `FRONT` `Mails` **Suggestion des destinataires (adresses déjà utilisées)** — Étape 2, tranche D. Un carnet d'adresses qui se remplit tout seul, sans écran de gestion. <!--id:mail-destinataires-->
 - [ ] `FRONT` `Mails` **Pièces jointes à l'envoi** — Étape 2. <!--id:mail-pieces-envoi-->
 - [x] `FRONT` `Mails` **Gestes sur un mail : Supprimer, Archiver, Déplacer vers un dossier, Indicateur (drapeau)** — Étape 1, tranche C. La barre d'actions de la capture d'Outlook de Yann, limitée aux 20 % utiles. **Supprimer = déplacer vers la Corbeille**, jamais effacer pour de bon : un mail supprimé par erreur se retrouve. <!--id:mail-actions-->
+- [x] `FRONT` `Mails` **Pastille ronde de non lus à côté de chaque boîte, et un appui sur la boîte ouvre sa réception** — Demande de Yann, 23 novembre (capture : pastille bleue « 1 » à côté de `pro@…`). **Fait (V0.00.87, en production)** : la pastille compte les non lus de la boîte de réception, même repliée ; un appui sur le nom ouvre la réception et déplie les dossiers, le chevron seul replie. <!--id:mail-pastille-boite-->
 - [ ] `ALGO` `Mails` **L'assistant rédige et envoie des mails (répondre, relancer), sur proposition** — Étape 3. Une proposition en attente que l'utilisateur accepte d'un geste, jamais un envoi direct (§12.1). <!--id:mail-assistant-envoie-->
 - [ ] `ALGO` `Mails` **Rappels liés à des mails** — Étape 3. <!--id:mail-rappels-->
 - [ ] `ALGO` `Mails` **Décider ce que l'assistant a le droit de lire (objet et expéditeur, ou le corps)** — Avant l'étape 3 : le contenu des mails partirait vers le modèle d'IA (§5.1, RGPD). ⏸ À décider avec Yann. <!--id:mail-rgpd-->
@@ -153,6 +154,7 @@
 
 - [ ] `DATA` `Notifications` **La pastille de discussion (notification) pose de temps en temps problème** — Cause probable connue : le compteur unread_count est incrémenté par trigger mais jamais décrémenté à la suppression. Après une édition ou une reprise de tour, il peut sur-compter. À confirmer par un cas reproductible. <!--id:bug-pastille-discussion-->
 - [x] `ALGO` `Conversations` **Un bloc {"title": …} s'affiche dans la réponse de Jean-Claude** — Vu le 5 novembre sur une nouvelle conversation (« Bonjour ») : le modèle écrit le titre en JSON dans sa réponse, avec le texte « Nouvelle conversation ». Le filtre de fuites ne regarde que le tout début de la réponse ; ici le bloc arrive après la phrase d'accueil. Correctif prévu : retirer aussi ce bloc quand il arrive plus loin, dans le message enregistré. Cause de fond : le modèle par défaut (ministral-14b) est peu fiable sur les outils. Corrigé sur `dev` (PR #178, 5 novembre) : le bloc est retiré, y compris du message enregistré. À retester après le déploiement en production. **Revu le 20 novembre :** corrigé et en production ; à retester en vrai. <!--id:bug-titre-json-visible-->
+- [x] `BACKEND` `BUG` **Panne de production du 20 novembre : l'API ne démarrait plus (« indisponible » partout)** — Cause : la bibliothèque de nettoyage des mails (`xss`, module CommonJS) importée en exports nommés, que Node refuse en production ; les tests ne le voyaient pas. **Corrigé (V0.00.86, en production, PR #337).** <!--id:bug-panne-xss-20-novembre-->
 
 ### Accès aux données
 
@@ -167,6 +169,7 @@
 ### Infra
 
 - [x] `BACKEND` `Infra` **Projet Supabase en région UE** — « À faire avant tout remplissage de données » (§8). Statut non confirmé. Confirmé le 5 novembre : projet « Jean-Claude », région West EU (Paris). <!--id:infra-supabase-ue-->
+- [x] `INFRA` `Infra` **Contrôle de démarrage de l'API dans la CI** — Après la panne du 20 novembre : la CI démarre l'API construite sous Node pur et vérifie que `/api/health` répond ; elle échoue avec l'ancien import fautif. **Fait (PR #342).** <!--id:infra-controle-demarrage-->
 - [ ] `BACKEND` `Infra` **npx supabase config push** — Tant que non fait, le projet hébergé envoie un lien et non un code à 8 chiffres (§6.1). Lié à l'invitation par mail (Connexion). <!--id:infra-supabase-config-push-->
 - [ ] `BACKEND` `Infra` **7 PR Dependabot ouvertes (#163 à #169)** — Merger celles dont la CI est verte. #168 (zod 3 → 4) échoue et demande une migration. **Revu le 20 novembre :** ouvertes : #163, #164, #165, #167, #219, #267, #272. La PR groupée #323 (zod 4, @vercel/functions, @expo/cli) a été fermée le 19 novembre : zod 4 casse `z.record` ; le robot est invité à ignorer la version majeure de zod. <!--id:infra-dependabot-->
 - [ ] `BACKEND` `Infra` **Réparer l'historique des migrations Supabase** — La base connaît 5 migrations absentes du dépôt (versions 20260928080757, 20260928092328, 20260929073035, 20260929075602, 20260929085857), appliquées directement dans Supabase : `supabase db push` refuse de tourner. La migration 20261105160000 a donc été passée à la main dans l'éditeur SQL le 5 novembre. Ne pas lancer `migration repair --status reverted` : il ferait rejouer des migrations déjà appliquées. À traiter à froid, après comparaison du schéma distant et du dépôt. <!--id:infra-historique-migrations-->
@@ -217,6 +220,8 @@
 
 - [ ] `FRONT` `TODO` **Glisser-déposer des tâches : vérifier que l'ordre est conservé après rechargement** — Y compris sous les bandeaux du jour. <!--id:test-glisse-depose-ordre-->
 - [ ] `FRONT` `Mobile` **Application sur iOS et Android** — Presque rien n'y a été joué. <!--id:test-ios-android-->
+- [ ] `FRONT` `Mails` **Essayer la messagerie sur les vraies boîtes** — Tout a été vérifié sur de fausses boîtes seulement : lecture, aperçu, recherche, mails mis en forme, pièces jointes, supprimer / archiver / déplacer / drapeau, envoi (OVH), réponse, transfert, brouillon, « Annuler l'envoi », Paramètres, colonnes glissables. Le nom du serveur Infomaniak (`mail.infomaniak.com`) reste à confirmer. À faire par Yann, retours à Claude. <!--id:test-mail-vraies-boites-->
+- [ ] `FRONT` `Calendrier / TODO` **Essayer la vue Todo sur les vraies listes** — Remonter le temps, bandeaux de jour (gris, aujourd'hui en bleu), cartes sans contour, renommer sur place, case d'une liste vide, commandes de ligne au survol. Vérifié sur de fausses listes seulement. <!--id:test-todo-calendrier-vraies-listes-->
 - [ ] `FRONT` `Feedback` **Restaurer le pouce sélectionné après rechargement** — La notation est enregistrée mais pas renvoyée. <!--id:front-pouce-reload-->
 - [ ] `FRONT` `Dossiers` **Lisibilité de la barre latérale au 5e niveau de dossiers** — À voir avec un vrai volume. <!--id:front-lisibilite-5e-niveau-->
 
