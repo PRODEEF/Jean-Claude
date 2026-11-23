@@ -29,3 +29,6 @@ jobs:
           EXPO_PUBLIC_API_URL: https://example.invalid
           EXPO_PUBLIC_SUPABASE_URL: https://example.invalid
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+      # Démarre l'API construite sous Node pur : attrape les plantages au chargement
+      # que Jest ne voit pas (import CommonJS en exports nommés, par exemple).
+      - run: npm run smoke --workspace @jc/api
