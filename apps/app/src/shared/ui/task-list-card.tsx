@@ -87,6 +87,8 @@ export function TaskListCardHeader({
   onFolderPress,
   onDuePress,
   onTypePress,
+  dueSlot,
+  timeSlot,
   onMenuPress,
   menuLabel,
   location,
@@ -103,6 +105,10 @@ export function TaskListCardHeader({
   leading?: ReactNode;
   onFolderPress: (event: GestureResponderEvent) => void;
   onDuePress: (event: GestureResponderEvent) => void;
+  /** Remplace le bouton d'échéance : la carte y pose un sélecteur de date direct. */
+  dueSlot?: ReactNode;
+  /** Après le dossier : l'invite « Heure » d'une liste qui n'en a pas encore. */
+  timeSlot?: ReactNode;
   /** Absent, le type n'est qu'une indication ; présent, un appui propose de le changer. */
   onTypePress?: (event: GestureResponderEvent) => void;
   onMenuPress: (event: GestureResponderEvent) => void;
@@ -204,10 +210,11 @@ export function TaskListCardHeader({
         <View className="min-w-0 max-w-full shrink flex-row items-center gap-1">{leading}</View>
         {type}
         {folder}
+        {timeSlot}
         {/* Pousse l'échéance à droite quand tout tient sur la ligne ; elle
             descend à gauche quand elle n'y tient plus. */}
         <View style={{ flexGrow: 1, flexBasis: 8 }} />
-        {dueButton}
+        {dueSlot ?? dueButton}
       </View>
       <View className="absolute right-0 top-0">{menu}</View>
       {location || repeat ? (

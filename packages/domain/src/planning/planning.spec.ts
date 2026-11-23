@@ -1,6 +1,8 @@
 import type { CalendarEvent, ListOccurrence, Task, TaskListWithTasks } from "../index";
 import {
+  busyIntervalsOfDay,
   byDueDate,
+  firstFreeSlot,
   calendarDayOf,
   dateOfCalendarDay,
   datedLists,
@@ -977,5 +979,68 @@ describe("vue Todo qui remonte le temps", () => {
     const chunks = todoChunks(todoSpanDays(span), span.focus);
 
     expect(chunks.map((chunk) => chunk.length)).toEqual([30, 31]);
+  });
+});
+
+describe("premier créneau libre", () => {
+  const day = new Date(2026, 10, 23);
+  const at = (hour: number, minute = 0) => new Date(2026, 10, 23, hour, minute).toISOString();
+  const timed = (hour: number, endHour?: number) => ({
+    dueAt: at(hour),
+    dueAllDay: false,
+    endsAt: endHour === undefined ? null : at(endHour),
+  });
+
+  it("prend l'heure demandée quand la journée est libre", () => {
+    expect(firstFreeSlot([], 14 * 60)).toBe(14 * 60);
+  });
+
+  it("se pose après ce qui est déjà en place (exemple de Yann : pris jusqu'à 15h, on prend 16h)", () => {
+    const busy = busyIntervalsOfDay(day, [timed(12), timed(13), timed(14), timed(15)], []);
+    expect(firstFreeSlot(busy, 12 * 60)).toBe(16 * 60);
+  });
+
+  it("saute un créneau déjà pris plus tard et garde le premier trou", () => {
+    const busy = busyIntervalsOfDay(day, [timed(12), timed(14)], []);
+    expect(firstFreeSlot(busy, 12 * 60)).toBe(13 * 60);
+  });
+
+  it("compte la durée d'un élément qui a une heure de fin", () => {
+    const busy = busyIntervalsOfDay(day, [timed(13, 16)], []);
+    expect(firstFreeSlot(busy, 13 * 60)).toBe(16 * 60);
+  });
+
+  it("une demie heure bloque les deux heures qu'elle touche", () => {
+    const busy = busyIntervalsOfDay(
+      day,
+      [{ dueAt: at(15, 30), dueAllDay: false, endsAt: null }],
+      [],
+    );
+    expect(firstFreeSlot(busy, 15 * 60)).toBe(17 * 60);
+  });
+
+  it("ignore les éléments d'une journée entière et ceux des autres jours", () => {
+    const busy = busyIntervalsOfDay(
+      day,
+      [
+        { dueAt: at(9), dueAllDay: true, endsAt: null },
+        { dueAt: new Date(2026, 10, 24, 9).toISOString(), dueAllDay: false, endsAt: null },
+      ],
+      [],
+    );
+    expect(busy).toEqual([]);
+  });
+
+  it("compte aussi les rendez-vous", () => {
+    const busy = busyIntervalsOfDay(day, [], [{ startsAt: at(9), endsAt: at(10), allDay: false }]);
+    expect(firstFreeSlot(busy, 9 * 60)).toBe(10 * 60);
+  });
+
+  it("retombe sur l'heure demandée quand tout est pris jusqu'à 22h", () => {
+    const busy = Array.from({ length: 15 }, (_, i) => ({
+      from: (8 + i) * 60,
+      to: (9 + i) * 60,
+    }));
+    expect(firstFreeSlot(busy, 8 * 60)).toBe(8 * 60);
   });
 });

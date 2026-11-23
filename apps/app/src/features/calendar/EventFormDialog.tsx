@@ -37,8 +37,6 @@ export type EventDialogTarget =
       mode: "create";
       day: Date;
       minute: number;
-      /** Posé sur « Journée » : le « + » d'un jour n'impose aucune heure. */
-      allDay?: boolean;
       groupId?: string;
       anchor?: Point;
     }
@@ -65,7 +63,7 @@ export function EventFormDialog({ target, onClose }: EventFormDialogProps) {
 function keyOf(target: EventDialogTarget): string {
   return target.mode === "edit"
     ? `edit-${target.event.id}`
-    : `create-${target.day.toISOString()}-${target.minute}-${target.allDay ?? false}`;
+    : `create-${target.day.toISOString()}-${target.minute}`;
 }
 
 function initialValues(target: EventDialogTarget): EventFormValues {
@@ -74,7 +72,6 @@ function initialValues(target: EventDialogTarget): EventFormValues {
   const hour = Math.floor(target.minute / 60);
   return {
     ...emptyForm(target.day),
-    allDay: target.allDay ?? false,
     startTime: `${String(hour).padStart(2, "0")}:00`,
     // Le formulaire ne porte qu'une date : une heure de plus depuis 23h
     // passerait au lendemain. La fin s'arrête donc à 23h59 — borner à 23h

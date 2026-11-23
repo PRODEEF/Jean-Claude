@@ -26,7 +26,10 @@ import {
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import type { FolderChoice } from "@/shared/hooks/use-folder-choices";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
-import { ListDuePanel } from "./ListDuePanel";
+import { ListDuePanel, useDueSave } from "./ListDuePanel";
+import { timeOf } from "./TaskListDialog";
+import { InlinePicker } from "@/shared/ui/inline-picker";
+import { formatDateInput } from "@/shared/lib/date-input";
 import { TaskListEditor } from "./TaskListEditor";
 
 /**
@@ -184,6 +187,13 @@ export function ListCard({
   // La date seule à droite ; l'heure passe devant le titre, en gras.
   const due = list.dueAt ? formatFullDay(new Date(list.dueAt)) : undefined;
   const time = list.dueAt && list.dueAllDay === false ? formatTime(list.dueAt) : undefined;
+  const dueText = list.dueAt ? formatDateInput(new Date(list.dueAt)) : "";
+  const saveDue = useDueSave(list);
+  const [dueError, setDueError] = useState<string | null>(null);
+  const openDuePanel = (event: unknown) => {
+    const point = (event as { nativeEvent?: { pageX: number; pageY: number } }).nativeEvent;
+    if (point) setDuePanel({ x: point.pageX, y: point.pageY });
+  };
   const folderName = folders.find((folder) => folder.id === list.folderId)?.name;
 
   const chooseFolder = (folderId: string | null) => {
@@ -240,8 +250,38 @@ export function ListCard({
             setFolderMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
           }
           // L'échéance se change d'un appui, sans passer par « Modifier la liste ».
-          onDuePress={(event) =>
-            setDuePanel({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+          onDuePress={openDuePanel}
+          dueSlot={
+            <InlinePicker
+              mode="date"
+              value={dueText}
+              onChange={(next) => saveDue(next, timeOf(list.dueAt, list.dueAllDay), setDueError)}
+              onNativePress={openDuePanel}
+              accessibilityLabel={`Échéance de ${list.title} : ${due ?? "aucune"}`}
+            >
+              <View className={cn("rounded-md px-1.5", flat ? "py-0.5" : "py-1")}>
+                <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+                  {due ?? "Date"}
+                </Text>
+              </View>
+            </InlinePicker>
+          }
+          // Une liste sans heure propose d'en poser une, comme « Dossier » et
+          // « Date » le font : sans cela, aucun geste n'y mène.
+          timeSlot={
+            time || !list.dueAt ? undefined : (
+              <InlinePicker
+                mode="time"
+                value=""
+                onChange={(next) => saveDue(dueText, next, setDueError)}
+                onNativePress={openDuePanel}
+                accessibilityLabel={`Heure de ${list.title} : aucune`}
+              >
+                <View className={cn("rounded-md px-1.5", flat ? "py-0.5" : "py-1")}>
+                  <Text className="text-muted-foreground text-xs">Heure</Text>
+                </View>
+              </InlinePicker>
+            )
           }
           onTypePress={(event) =>
             setTypeMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
@@ -303,16 +343,15 @@ export function ListCard({
               ) : (
                 <>
                   {time ? (
-                    <Pressable
-                      onPress={(event) =>
-                        setDuePanel({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
-                      }
-                      hitSlop={8}
-                      accessibilityRole="button"
+                    <InlinePicker
+                      mode="time"
+                      value={timeOf(list.dueAt, list.dueAllDay)}
+                      onChange={(next) => saveDue(dueText, next, setDueError)}
+                      onNativePress={openDuePanel}
                       accessibilityLabel={`Heure de ${list.title} : ${time}`}
                     >
                       <Text className="text-sm font-semibold">{time}</Text>
-                    </Pressable>
+                    </InlinePicker>
                   ) : null}
                   <Pressable
                     onPress={() => {
@@ -341,6 +380,8 @@ export function ListCard({
             </>
           }
         />
+
+        {dueError ? <Text className="text-destructive pl-2 pt-0.5 text-xs">{dueError}</Text> : null}
 
         <CollapsibleContent>
           {/* La capture ne demande rien d'autre que du texte : ni date, ni
