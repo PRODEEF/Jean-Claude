@@ -1,4 +1,9 @@
-import { toAssistantModel, type AssistantScope, type Theme } from "@jc/domain";
+import {
+  toAssistantModel,
+  type AssistantScope,
+  type CalendarViewChoice,
+  type Theme,
+} from "@jc/domain";
 import { httpError } from "../../core/http.js";
 import { admin, forUser } from "../../core/supabase/supabase.js";
 import type { IUserRepository, ProfilePatch, ProfileRecord } from "./user.repository.interface.js";
@@ -20,6 +25,7 @@ type ProfileRow = {
   day_part_evening_from: number;
   remind_in_channel: boolean;
   remind_by_email: boolean;
+  calendar_default_view: CalendarViewChoice;
   created_at: string;
   /**
    * Ligne de `admins` embarquée par PostgREST : un objet quand elle existe,
@@ -54,6 +60,7 @@ function toEntity(row: ProfileRow): ProfileRecord {
       flatBanner: row.flat_banner,
       remindInChannel: row.remind_in_channel,
       remindByEmail: row.remind_by_email,
+      calendarDefaultView: row.calendar_default_view,
       dayPartBounds: {
         afternoonFrom: row.day_part_afternoon_from,
         eveningFrom: row.day_part_evening_from,
@@ -66,7 +73,7 @@ function toEntity(row: ProfileRow): ProfileRecord {
 }
 
 const COLUMNS =
-  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, day_part_afternoon_from, day_part_evening_from, remind_in_channel, remind_by_email, created_at, admins(user_id)";
+  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, day_part_afternoon_from, day_part_evening_from, remind_in_channel, remind_by_email, calendar_default_view, created_at, admins(user_id)";
 
 export const userRepository: IUserRepository = {
   async findById(userId, accessToken) {
@@ -98,6 +105,8 @@ export const userRepository: IUserRepository = {
     if (patch.flatBanner !== undefined) payload["flat_banner"] = patch.flatBanner;
     if (patch.remindInChannel !== undefined) payload["remind_in_channel"] = patch.remindInChannel;
     if (patch.remindByEmail !== undefined) payload["remind_by_email"] = patch.remindByEmail;
+    if (patch.calendarDefaultView !== undefined)
+      payload["calendar_default_view"] = patch.calendarDefaultView;
     if (patch.dayPartBounds !== undefined) {
       payload["day_part_afternoon_from"] = patch.dayPartBounds.afternoonFrom;
       payload["day_part_evening_from"] = patch.dayPartBounds.eveningFrom;

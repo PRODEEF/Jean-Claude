@@ -26,7 +26,7 @@ import {
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import type { FolderChoice } from "@/shared/hooks/use-folder-choices";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
-import { ListDueDialog } from "./ListDueDialog";
+import { ListDuePanel } from "./ListDuePanel";
 import { TaskListEditor } from "./TaskListEditor";
 
 /**
@@ -98,7 +98,9 @@ export function ListCard({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   /** Point d'ouverture du choix de dossier, `null` s'il est fermé. */
   const [folderMenu, setFolderMenu] = useState<{ x: number; y: number } | null>(null);
-  const [editingDue, setEditingDue] = useState(false);
+  // Date et heure se règlent dans un panneau sous le doigt, sans fenêtre.
+  const [duePanel, setDuePanel] = useState<{ x: number; y: number } | null>(null);
+  const [typeMenu, setTypeMenu] = useState<{ x: number; y: number } | null>(null);
   // Le titre se change sur place : un appui l'ouvre en saisie, Entrée ou la
   // sortie du champ l'enregistre, Échap l'abandonne (demande de Yann, 23 novembre).
   const [renaming, setRenaming] = useState(false);
@@ -179,7 +181,9 @@ export function ListCard({
   };
 
   const shopping = list.kind === "shopping";
-  const due = dueLabel(list);
+  // La date seule à droite ; l'heure passe devant le titre, en gras.
+  const due = list.dueAt ? formatFullDay(new Date(list.dueAt)) : undefined;
+  const time = list.dueAt && list.dueAllDay === false ? formatTime(list.dueAt) : undefined;
   const folderName = folders.find((folder) => folder.id === list.folderId)?.name;
 
   const chooseFolder = (folderId: string | null) => {
@@ -190,6 +194,15 @@ export function ListCard({
   const folderItems: ContextMenuItem[] = [
     { label: "Aucun dossier", onPress: () => chooseFolder(null) },
     ...folders.map((folder) => ({ label: folder.name, onPress: () => chooseFolder(folder.id) })),
+  ];
+
+  const chooseKind = (kind: "todo" | "shopping") => {
+    setTypeMenu(null);
+    if (kind !== list.kind) updateList.mutate({ id: list.id, patch: { kind } });
+  };
+  const typeItems: ContextMenuItem[] = [
+    { label: "Liste de tâches", onPress: () => chooseKind("todo") },
+    { label: "Liste d'achats", onPress: () => chooseKind("shopping") },
   ];
 
   const items: ContextMenuItem[] = [
@@ -227,7 +240,12 @@ export function ListCard({
             setFolderMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
           }
           // L'échéance se change d'un appui, sans passer par « Modifier la liste ».
-          onDuePress={() => setEditingDue(true)}
+          onDuePress={(event) =>
+            setDuePanel({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+          }
+          onTypePress={(event) =>
+            setTypeMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+          }
           onMenuPress={(event) =>
             setMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
           }
@@ -283,20 +301,34 @@ export function ListCard({
                   )}
                 />
               ) : (
-                <Pressable
-                  onPress={() => {
-                    setDraftTitle(list.title);
-                    renameDone.current = false;
-                    setRenaming(true);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Renommer ${list.title}`}
-                  className="shrink"
-                >
-                  <Text className="shrink text-sm font-semibold" numberOfLines={1}>
-                    {list.title}
-                  </Text>
-                </Pressable>
+                <>
+                  {time ? (
+                    <Pressable
+                      onPress={(event) =>
+                        setDuePanel({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+                      }
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Heure de ${list.title} : ${time}`}
+                    >
+                      <Text className="text-sm font-semibold">{time}</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    onPress={() => {
+                      setDraftTitle(list.title);
+                      renameDone.current = false;
+                      setRenaming(true);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Renommer ${list.title}`}
+                    className="shrink"
+                  >
+                    <Text className="shrink text-sm font-semibold" numberOfLines={1}>
+                      {list.title}
+                    </Text>
+                  </Pressable>
+                </>
               )}
               {/* Derrière le titre : devant, il ne reste que le repli. */}
               {gripRef ? (
@@ -339,7 +371,17 @@ export function ListCard({
           onClose={() => setFolderMenu(null)}
         />
       ) : null}
-      {editingDue ? <ListDueDialog list={list} onClose={() => setEditingDue(false)} /> : null}
+      {typeMenu ? (
+        <ContextMenu
+          x={typeMenu.x}
+          y={typeMenu.y}
+          items={typeItems}
+          onClose={() => setTypeMenu(null)}
+        />
+      ) : null}
+      {duePanel ? (
+        <ListDuePanel list={list} x={duePanel.x} y={duePanel.y} onClose={() => setDuePanel(null)} />
+      ) : null}
     </TaskListCardFrame>
   );
 }

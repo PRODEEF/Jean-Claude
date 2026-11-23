@@ -316,6 +316,7 @@ function makePreferences(
     dayPartBounds: { afternoonFrom: 12, eveningFrom: 19 },
     remindInChannel: true,
     remindByEmail: true,
+    calendarDefaultView: "todo",
     timezone: "Europe/Paris",
     llmModel: null,
     ...overrides,

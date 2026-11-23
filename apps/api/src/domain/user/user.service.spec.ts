@@ -25,6 +25,7 @@ function makeRecord(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       dayPartBounds: { afternoonFrom: 12, eveningFrom: 19 },
       remindInChannel: true,
       remindByEmail: true,
+      calendarDefaultView: "todo",
       scope: {
         morningReminders: true,
         folderOrganization: true,

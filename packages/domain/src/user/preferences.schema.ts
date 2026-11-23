@@ -224,6 +224,10 @@ function isKnownTimezone(value: string): boolean {
   }
 }
 
+/** Vues du calendrier — `todo` déroule les listes du mois, jour après jour. */
+export const calendarViewSchema = z.enum(["day", "week", "month", "year", "todo"]);
+export type CalendarViewChoice = z.infer<typeof calendarViewSchema>;
+
 export const userPreferencesSchema = z.object({
   /** L'assistant est renommable — « Jean-Claude » n'est que la valeur par défaut. */
   assistantName: z.string().trim().min(1).max(40).default(DEFAULT_ASSISTANT_NAME),
@@ -256,6 +260,8 @@ export const userPreferencesSchema = z.object({
   remindInChannel: z.boolean().default(true),
   /** Un e-mail à l'heure d'un rappel, en plus du canal. La notification viendra à part. */
   remindByEmail: z.boolean().default(true),
+  /** Vue sur laquelle le calendrier s'ouvre à chaque arrivée. */
+  calendarDefaultView: calendarViewSchema.default("todo"),
 });
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
@@ -330,6 +336,8 @@ export const updateUserProfileSchema = z
     remindInChannel: z.boolean(),
     /** Un rappel de rendez-vous arrive, ou non, par e-mail. */
     remindByEmail: z.boolean(),
+    /** Vue sur laquelle le calendrier s'ouvre à chaque arrivée. */
+    calendarDefaultView: calendarViewSchema,
   })
   .partial();
 
