@@ -36,12 +36,15 @@ export function TaskListCardFrame({
   children,
   desktop,
   highlighted = false,
+  flat = false,
   cardRef,
 }: {
   children: ReactNode;
   desktop: boolean;
   /** Carte visée depuis la barre latérale. */
   highlighted?: boolean;
+  /** Sans contour ni marge : la carte s'inscrit dans une journée du calendrier. */
+  flat?: boolean;
   /** Pour amener la carte à l'écran. */
   cardRef?: Ref<View>;
 }) {
@@ -49,9 +52,13 @@ export function TaskListCardFrame({
     <View
       ref={cardRef}
       className={cn(
-        "rounded-xl border",
-        desktop ? "p-2" : "p-3",
-        highlighted ? "border-primary" : "border-border",
+        flat
+          ? "py-0.5"
+          : cn(
+              "rounded-xl border",
+              desktop ? "p-2" : "p-3",
+              highlighted ? "border-primary" : "border-border",
+            ),
       )}
     >
       {children}
@@ -83,7 +90,10 @@ export function TaskListCardHeader({
   menuLabel,
   location,
   repeat,
+  compact = false,
 }: {
+  /** Réduit les boutons et les marges : la ligne repliée prend moins de hauteur. */
+  compact?: boolean;
   /** Pour les libellés d'accessibilité. */
   title: string;
   shopping: boolean;
@@ -118,7 +128,10 @@ export function TaskListCardHeader({
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={`Dossier de ${title} : ${folderName ?? "aucun"}`}
-      className="min-w-0 shrink flex-row items-center gap-1 rounded-md px-1.5 py-1"
+      className={cn(
+        "min-w-0 shrink flex-row items-center gap-1 rounded-md px-1.5",
+        compact ? "py-0.5" : "py-1",
+      )}
     >
       <Icon as={Folder} size={14} className="text-muted-foreground" />
       <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
@@ -136,7 +149,10 @@ export function TaskListCardHeader({
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={`Échéance de ${title} : ${due ?? "aucune"}`}
-      className="shrink-0 flex-row items-center gap-1 rounded-md px-1.5 py-1"
+      className={cn(
+        "shrink-0 flex-row items-center gap-1 rounded-md px-1.5",
+        compact ? "py-0.5" : "py-1",
+      )}
     >
       <Text className="text-muted-foreground text-xs" numberOfLines={1}>
         {due ?? "Date"}
@@ -151,7 +167,7 @@ export function TaskListCardHeader({
       hitSlop={8}
       onPress={onMenuPress}
       accessibilityLabel={menuLabel}
-      className="size-8"
+      className={compact ? "size-7" : "size-8"}
     >
       <Icon as={MoreHorizontal} size={16} className="text-muted-foreground" />
     </Button>
@@ -160,7 +176,12 @@ export function TaskListCardHeader({
   return (
     <View className="relative">
       {/* Réserve à droite la place du menu, qui est posé par-dessus. */}
-      <View className="flex-row flex-wrap items-center gap-x-2 gap-y-0.5 pr-10">
+      <View
+        className={cn(
+          "flex-row flex-wrap items-center gap-x-2 gap-y-0.5",
+          compact ? "pr-8" : "pr-10",
+        )}
+      >
         <View className="min-w-0 max-w-full shrink flex-row items-center gap-1">{leading}</View>
         {type}
         {folder}

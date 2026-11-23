@@ -25,6 +25,10 @@ import {
   limitPastLists,
   openTaskCount,
   todoDays,
+  todoSpanFor,
+  earlierTodoStart,
+  todoSpanDays,
+  todoChunks,
 } from "./planning";
 
 /**
@@ -342,8 +346,17 @@ describe("isListDone", () => {
     expect(isListDone(list)).toBe(false);
   });
 
-  it("est fausse sur une liste vide : elle est vide, pas faite", () => {
+  it("est fausse sur une liste vide qu'on n'a pas cochée", () => {
     expect(isListDone(makeList())).toBe(false);
+  });
+
+  it("suit le « fait » de la liste elle-même quand elle n'a pas de tâche", () => {
+    expect(isListDone(makeList({ doneAt: "2026-11-23T10:00:00.000Z" }))).toBe(true);
+  });
+
+  it("ignore son « fait » quand elle a des tâches : ce sont elles qui comptent", () => {
+    const list = makeList({ doneAt: "2026-11-23T10:00:00.000Z", tasks: [task("a")] });
+    expect(isListDone(list)).toBe(false);
   });
 });
 
@@ -914,5 +927,55 @@ describe("currentListId", () => {
   it("ignore les listes sans date, et rend rien s'il n'y en a que de ce genre", () => {
     expect(currentListId(listsInTimeOrder([makeList({ id: "x" })]), NOW)).toBeNull();
     expect(currentListId([], NOW)).toBeNull();
+  });
+});
+
+describe("vue Todo qui remonte le temps", () => {
+  const today = new Date(2026, 10, 23, 14, 0);
+
+  it("pose le mois en cours sur aujourd'hui, avec le mois précédent au-dessus", () => {
+    const span = todoSpanFor(new Date(2026, 10, 5), today);
+
+    expect(span.focus).toEqual(new Date(2026, 10, 23));
+    expect(span.from).toEqual(new Date(2026, 9, 1));
+    expect(span.toMonth).toEqual(new Date(2026, 10, 1));
+  });
+
+  it("pose un autre mois sur son premier jour", () => {
+    const span = todoSpanFor(new Date(2026, 11, 14), today);
+
+    expect(span.focus).toEqual(new Date(2026, 11, 1));
+    expect(span.from).toEqual(new Date(2026, 10, 1));
+  });
+
+  it("remonte d'un mois entier à la fois", () => {
+    expect(earlierTodoStart(new Date(2026, 9, 1))).toEqual(new Date(2026, 8, 1));
+    expect(earlierTodoStart(new Date(2026, 0, 1))).toEqual(new Date(2025, 11, 1));
+  });
+
+  it("déroule tous les jours, du début au dernier jour du mois d'arrivée", () => {
+    const days = todoSpanDays(todoSpanFor(new Date(2026, 10, 5), today));
+
+    expect(days).toHaveLength(31 + 30);
+    expect(days[0]).toEqual(new Date(2026, 9, 1));
+    expect(days[days.length - 1]).toEqual(new Date(2026, 10, 30));
+  });
+
+  it("coupe les blocs à chaque mois et au jour de départ", () => {
+    const span = todoSpanFor(new Date(2026, 10, 5), today);
+    const chunks = todoChunks(todoSpanDays(span), span.focus);
+
+    expect(chunks.map((chunk) => [chunk[0]?.getDate(), chunk.length])).toEqual([
+      [1, 31],
+      [1, 22],
+      [23, 8],
+    ]);
+  });
+
+  it("ne coupe pas un mois entier dont le départ est le premier jour", () => {
+    const span = todoSpanFor(new Date(2026, 11, 14), today);
+    const chunks = todoChunks(todoSpanDays(span), span.focus);
+
+    expect(chunks.map((chunk) => chunk.length)).toEqual([30, 31]);
   });
 });

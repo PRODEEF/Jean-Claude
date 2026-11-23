@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CalendarEntry,
   CalendarRange,
@@ -15,10 +15,13 @@ import { api } from "@/shared/lib/api";
  * autre jeu de données, pas une invalidation du précédent — revenir en arrière
  * réaffiche alors le mois déjà chargé sans requête.
  */
-export function useCalendarEvents(range: CalendarRange) {
+export function useCalendarEvents(range: CalendarRange, keepPrevious = false) {
   return useQuery({
     queryKey: ["calendar", range.from, range.to],
     queryFn: () => api.calendar.list(range),
+    // Vue Todo : la fenêtre s'allonge en défilant. Garder la précédente évite
+    // que les rendez-vous disparaissent le temps de relire la plus longue.
+    ...(keepPrevious ? { placeholderData: keepPreviousData } : {}),
   });
 }
 
@@ -27,10 +30,11 @@ export function useCalendarEvents(range: CalendarRange) {
  * todo). Sous la clé `taskLists` : tout ce qui change une liste — cocher, déplacer
  * une date, supprimer — invalide déjà cette clé, donc les dates se relisent seules.
  */
-export function useListOccurrences(range: CalendarRange) {
+export function useListOccurrences(range: CalendarRange, keepPrevious = false) {
   return useQuery({
     queryKey: ["taskLists", "occurrences", range.from, range.to],
     queryFn: () => api.tasks.occurrences(range),
+    ...(keepPrevious ? { placeholderData: keepPreviousData } : {}),
   });
 }
 

@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, View } from "react-native";
+import {
+  ScrollView,
+  View,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from "react-native";
 import { useRouter } from "expo-router";
-import { ChevronLeft, ChevronRight, ListPlus, Plus } from "lucide-react-native";
+import { ChevronRight, ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEntry, CalendarRange, TaskList, TaskListWithTasks } from "@jc/domain";
 import {
   calendarDayOf,
@@ -12,7 +18,11 @@ import {
   momentOf,
   listsOfDay,
   listsWithoutVisibleEvent,
-  todoDays,
+  earlierTodoStart,
+  todoChunks,
+  todoSpanDays,
+  todoSpanFor,
+  type TodoSpan,
 } from "@jc/domain";
 import { spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
@@ -118,11 +128,23 @@ export function CalendarScreen() {
   const router = useRouter();
   const scroll = useRef<ScrollView>(null);
 
-  const days = useMemo(() => visibleDays(view, anchor), [view, anchor]);
+  // Vue Todo : une étendue de jours qui s'allonge vers le passé quand on défile,
+  // et non plus le seul mois affiché (demande de Yann, 23 novembre).
+  const [todoSpan, setTodoSpan] = useState<TodoSpan>(() => todoSpanFor(new Date(), new Date()));
+  const todoDaysList = useMemo(() => todoSpanDays(todoSpan), [todoSpan]);
+  const days = useMemo(
+    () =>
+      view === "todo"
+        ? // Un mois de plus que l'affiché : le mois qui apparaîtra en remontant
+          // est alors déjà chargé, sans saut de page à son arrivée.
+          todoSpanDays({ ...todoSpan, from: earlierTodoStart(todoSpan.from) })
+        : visibleDays(view, anchor),
+    [view, anchor, todoSpan],
+  );
   const range = useMemo(() => rangeOf(days), [days]);
-  const { data, isPending, isError } = useCalendarEvents(range);
+  const { data, isPending, isError } = useCalendarEvents(range, view === "todo");
   const { data: storedLists } = useTaskLists();
-  const { data: occurrences } = useListOccurrences(range);
+  const { data: occurrences } = useListOccurrences(range, view === "todo");
   // Une liste qui se répète se lit à chacune de ses dates : tout ce qui suit lit
   // ces copies, pas la liste de base (fusion rendez-vous / todo, étape 5).
   const allLists = useMemo(
@@ -182,26 +204,112 @@ export function CalendarScreen() {
    */
   const [hideEmptyDays, setHideEmptyDays] = useState(false);
 
-  // Les jours réels du mois affiché, sans le débord des mois voisins que
-  // porte la grille : une todoliste du 31 août n'a pas sa place dans « le
-  // mois de septembre ». Le mois en cours s'ouvre sur aujourd'hui.
-  const monthDays = useMemo(
+  // Les jours de la vue Todo qui portent quelque chose, pour le masquage des
+  // jours vides.
+  const todoListDays = useMemo(
     () =>
-      todoDays(
-        days.filter((day) => day.getMonth() === anchor.getMonth()),
-        new Date(),
-      ),
-    [days, anchor],
-  );
-  const monthListDays = useMemo(
-    () =>
-      monthDays.filter(
+      todoDaysList.filter(
         (day) =>
           listsOfDay(allDatedLists, day).length > 0 ||
           standaloneEvents.some((event) => isSameDay(new Date(event.startsAt), day)),
       ),
-    [monthDays, allDatedLists, standaloneEvents],
+    [todoDaysList, allDatedLists, standaloneEvents],
   );
+  const todoShownDays = hideEmptyDays ? todoListDays : todoDaysList;
+  const todoChunkList = useMemo(
+    () => todoChunks(todoShownDays, todoSpan.focus),
+    [todoShownDays, todoSpan.focus],
+  );
+
+  // ── Défilement de la vue Todo ──
+  // `pendingFocus` : le bloc de départ n'est pas encore posé en haut ; dès qu'il
+  // est mesuré, on y défile. `chunkNodes` : les blocs affichés, mesurés à la
+  // demande pour savoir quel mois on survole (leur position change à chaque mois
+  // ajouté au-dessus, aucune valeur retenue ne resterait juste). `prependFrom` :
+  // hauteur avant l'ajout d'un mois au-dessus, pour que la page ne saute pas.
+  const pendingFocus = useRef<number | null>(null);
+  const chunkNodes = useRef(new Map<number, { node: View; first: Date }>());
+  const measuring = useRef(false);
+  const scrollY = useRef(0);
+  const contentHeight = useRef(0);
+  const prependFrom = useRef<number | null>(null);
+
+  const resetTodo = (month: Date) => {
+    const next = todoSpanFor(month, new Date());
+    pendingFocus.current = next.focus.getTime();
+    setTodoSpan(next);
+  };
+
+  const onChunkLayout = (first: Date, event: LayoutChangeEvent) => {
+    if (pendingFocus.current === first.getTime()) {
+      pendingFocus.current = null;
+      scroll.current?.scrollTo({ y: event.nativeEvent.layout.y, animated: false });
+    }
+  };
+
+  // Le mois du bandeau suit ce qui est en haut de l'écran.
+  const syncMonthWithScroll = (y: number) => {
+    const inner = scroll.current?.getInnerViewNode();
+    if (!inner || measuring.current) return;
+    const entries = [...chunkNodes.current.values()];
+    let pending = entries.length;
+    if (pending === 0) return;
+    measuring.current = true;
+    let current: Date | null = null;
+    let currentTop = -Infinity;
+    const done = () => {
+      pending -= 1;
+      if (pending > 0) return;
+      measuring.current = false;
+      if (
+        current &&
+        (current.getMonth() !== anchor.getMonth() || current.getFullYear() !== anchor.getFullYear())
+      ) {
+        setAnchor(new Date(current.getFullYear(), current.getMonth(), 1));
+      }
+    };
+    for (const { node, first } of entries) {
+      node.measureLayout(
+        inner,
+        (_left, top) => {
+          if (top <= y + 80 && top > currentTop) {
+            current = first;
+            currentTop = top;
+          }
+          done();
+        },
+        done,
+      );
+    }
+  };
+
+  const onTodoScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = event.nativeEvent.contentOffset.y;
+    scrollY.current = y;
+    syncMonthWithScroll(y);
+
+    // Près du haut : un mois de plus vers le passé.
+    if (y < 600 && prependFrom.current === null && pendingFocus.current === null) {
+      prependFrom.current = contentHeight.current;
+      // Sans rien d'ajouté (jours vides masqués), la hauteur ne bouge pas : on
+      // libère le verrou quand même, pour que le mois suivant puisse venir.
+      setTimeout(() => {
+        prependFrom.current = null;
+      }, 800);
+      setTodoSpan((span) => ({ ...span, from: earlierTodoStart(span.from) }));
+    }
+  };
+
+  const onTodoContentSize = (_width: number, height: number) => {
+    // Le mois ajouté au-dessus pousse tout vers le bas : on rattrape de la
+    // même hauteur pour que ce qu'on lisait reste sous les yeux.
+    if (prependFrom.current !== null) {
+      const added = height - prependFrom.current;
+      prependFrom.current = null;
+      if (added > 0) scroll.current?.scrollTo({ y: scrollY.current + added, animated: false });
+    }
+    contentHeight.current = height;
+  };
 
   // La sélection suit la période affichée : sans cela, la liste du jour
   // resterait sur septembre alors que la grille montre octobre — le contresens
@@ -209,21 +317,24 @@ export function CalendarScreen() {
   const shift = (direction: 1 | -1) => {
     const next = shiftAnchor(view, anchor, direction);
     setAnchor(next);
+    if (view === "todo") resetTodo(next);
     setPickedDay(null);
     if (view === "week") setSelectedDay(startOfWeek(next));
     else if (view !== "year") setSelectedDay(startOfDay(next));
   };
 
-  const shiftFromBottom = (direction: 1 | -1) => {
-    shift(direction);
-    scroll.current?.scrollTo({ y: 0, animated: false });
-  };
-
   const goToToday = () => {
     const today = new Date();
     setAnchor(today);
+    if (view === "todo") resetTodo(today);
     setSelectedDay(startOfDay(today));
     setPickedDay(null);
+  };
+
+  // Entrer dans la vue Todo repart du mois affiché : jour de départ posé en haut.
+  const changeView = (next: CalendarView) => {
+    if (next === "todo" && view !== "todo") resetTodo(anchor);
+    setView(next);
   };
 
   // Minuit, et non l'heure courante : une liste datée sur un jour n'a pas
@@ -408,138 +519,163 @@ export function CalendarScreen() {
       <View className="min-h-0 flex-1">
         <View className="bg-background">
           <View style={[contentColumn(compact, GRID_MAX_WIDTH), { paddingVertical: spacing.md }]}>
-          <CalendarToolbar
-            label={periodLabel(view, anchor)}
-            view={view}
-            onViewChange={setView}
-            onPrevious={() => shift(-1)}
-            onNext={() => shift(1)}
-            onToday={goToToday}
-          />
+            <CalendarToolbar
+              label={periodLabel(view, anchor)}
+              view={view}
+              onViewChange={changeView}
+              onPrevious={() => shift(-1)}
+              onNext={() => shift(1)}
+              onToday={goToToday}
+            />
           </View>
         </View>
 
         {view === "todo" ? (
-        <ScrollView
-          ref={scroll}
-          style={{ flex: 1 }}
-          contentContainerStyle={[
-            contentColumn(compact, GRID_MAX_WIDTH),
-            { paddingVertical: spacing.lg, gap: spacing.lg },
-          ]}
-        >
-        <View className="gap-2">
-          <View className="flex-row items-center justify-end gap-2">
-            <Text className="text-muted-foreground text-xs">Jours sans liste</Text>
-            <Switch
-              value={!hideEmptyDays}
-              onValueChange={(value) => setHideEmptyDays(!value)}
-              accessibilityLabel="Afficher les jours sans liste"
-            />
-          </View>
+          <ScrollView
+            ref={scroll}
+            style={{ flex: 1 }}
+            scrollEventThrottle={50}
+            onScroll={onTodoScroll}
+            onContentSizeChange={onTodoContentSize}
+            contentContainerStyle={[
+              contentColumn(compact, GRID_MAX_WIDTH),
+              { paddingVertical: spacing.lg, gap: spacing.lg },
+            ]}
+          >
+            <View className="flex-row items-center justify-end gap-2">
+              <Text className="text-muted-foreground text-xs">Jours sans liste</Text>
+              <Switch
+                value={!hideEmptyDays}
+                onValueChange={(value) => setHideEmptyDays(!value)}
+                accessibilityLabel="Afficher les jours sans liste"
+              />
+            </View>
 
-          {hideEmptyDays && monthListDays.length === 0 ? (
-            <Text className="text-muted-foreground text-sm">Rien de prévu sur cette période.</Text>
-          ) : (
-            <DueListsBoard
-              days={hideEmptyDays ? monthListDays : monthDays}
-              lists={allDatedLists}
-              events={standaloneEvents}
-              onOpenEvent={openEvent}
-            />
-          )}
+            {hideEmptyDays && todoShownDays.length === 0 ? (
+              <Text className="text-muted-foreground text-sm">
+                Rien de prévu sur cette période.
+              </Text>
+            ) : (
+              // Un bloc par mois (et un pour le jour de départ) : le mois en haut
+              // de l'écran donne le libellé du bandeau, et on remonte le temps en
+              // défilant. Chaque bloc commence à son premier jour : son titre dit le mois.
+              todoChunkList.map((chunk) => {
+                const first = chunk[0];
+                if (!first) return null;
+                return (
+                  <View
+                    key={first.getTime()}
+                    className="gap-3"
+                    ref={(node) => {
+                      if (node) chunkNodes.current.set(first.getTime(), { node, first });
+                      else chunkNodes.current.delete(first.getTime());
+                    }}
+                    onLayout={(event) => onChunkLayout(first, event)}
+                  >
+                    {first.getDate() === 1 ? (
+                      <Text className="text-muted-foreground text-xs font-semibold uppercase">
+                        {monthLabel(first)}
+                      </Text>
+                    ) : null}
+                    <DueListsBoard
+                      days={chunk}
+                      lists={allDatedLists}
+                      events={standaloneEvents}
+                      onOpenEvent={openEvent}
+                    />
+                  </View>
+                );
+              })
+            )}
 
-          {/* Au bout du mois, changer de période sans remonter jusqu'aux
-              flèches. Le défilement repart en haut, là où commence le mois
-              ouvert. */}
-          <View className="flex-row items-center justify-between gap-2 pt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => shiftFromBottom(-1)}
-              accessibilityRole="button"
-              accessibilityLabel={`Afficher ${monthLabel(addMonths(anchor, -1))}`}
-            >
-              <Icon as={ChevronLeft} className="size-4" />
-              <Text>{monthLabel(addMonths(anchor, -1))}</Text>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => shiftFromBottom(1)}
-              accessibilityRole="button"
-              accessibilityLabel={`Afficher ${monthLabel(addMonths(anchor, 1))}`}
-            >
-              <Text>{monthLabel(addMonths(anchor, 1))}</Text>
-              <Icon as={ChevronRight} className="size-4" />
-            </Button>
-          </View>
-        </View>
-        </ScrollView>
+            {/* Au bout, le mois suivant s'ajoute à la suite : on ne remonte pas
+              jusqu'aux flèches pour aller plus loin. */}
+            <View className="flex-row items-center justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onPress={() =>
+                  setTodoSpan((span) => ({
+                    ...span,
+                    toMonth: addMonths(span.toMonth, 1),
+                  }))
+                }
+                accessibilityRole="button"
+                accessibilityLabel={`Afficher ${monthLabel(addMonths(todoSpan.toMonth, 1))}`}
+              >
+                <Text>{monthLabel(addMonths(todoSpan.toMonth, 1))}</Text>
+                <Icon as={ChevronRight} className="size-4" />
+              </Button>
+            </View>
+          </ScrollView>
         ) : (
-        <View
-          className="min-h-0 flex-1 gap-3"
-          style={[contentColumn(compact, GRID_MAX_WIDTH), { paddingVertical: spacing.md }]}
-        >
-          {isError ? (
-            <Text className="text-destructive text-sm">
-              Le calendrier n'a pas pu être chargé. Réessayez dans un instant.
-            </Text>
-          ) : null}
+          <View
+            className="min-h-0 flex-1 gap-3"
+            style={[contentColumn(compact, GRID_MAX_WIDTH), { paddingVertical: spacing.md }]}
+          >
+            {isError ? (
+              <Text className="text-destructive text-sm">
+                Le calendrier n'a pas pu être chargé. Réessayez dans un instant.
+              </Text>
+            ) : null}
 
-          {view === "month" ? (
-            <MonthGrid
-              days={days}
-              anchor={anchor}
-              events={events}
-              lists={dueLists}
-              selectedDay={pickedDay}
-              onSelectDay={selectDay}
-              onOpenEvent={openEvent}
-              {...(pane.available
-                ? { onOpenList: (list) => pane.open(listPaneContent(list)) }
-                : {})}
-              onMoveList={moveListToDay}
-              onSwapLists={swapListHours}
-              compact={compact}
-            />
-          ) : null}
-
-          {view === "year" ? (
-            <ScrollView style={{ flex: 1 }}>
-              <YearGrid
+            {view === "month" ? (
+              <MonthGrid
+                days={days}
                 anchor={anchor}
                 events={events}
-                onSelectMonth={(month) => {
-                  setAnchor(month);
-                  setSelectedDay(startOfDay(month));
-                  setPickedDay(null);
-                  setView("month");
-                }}
+                lists={dueLists}
+                selectedDay={pickedDay}
+                onSelectDay={selectDay}
+                onOpenEvent={openEvent}
+                {...(pane.available
+                  ? { onOpenList: (list) => pane.open(listPaneContent(list)) }
+                  : {})}
+                onMoveList={moveListToDay}
+                onSwapLists={swapListHours}
+                compact={compact}
               />
-            </ScrollView>
-          ) : null}
+            ) : null}
 
-          {view === "day" || view === "week" ? (
-            <TimeGrid
-              days={days}
-              events={events}
-              lists={dueLists}
-              onOpenEvent={openEvent}
-              onOpenList={showList}
-              onCreateAt={createAt}
-              onMoveList={moveList}
-            />
-          ) : null}
+            {view === "year" ? (
+              <ScrollView style={{ flex: 1 }}>
+                <YearGrid
+                  anchor={anchor}
+                  events={events}
+                  onSelectMonth={(month) => {
+                    setAnchor(month);
+                    setSelectedDay(startOfDay(month));
+                    setPickedDay(null);
+                    setView("month");
+                  }}
+                />
+              </ScrollView>
+            ) : null}
 
-          {moveFailure ? <Text className="text-destructive text-xs">{moveFailure}</Text> : null}
-          {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
-        </View>
+            {view === "day" || view === "week" ? (
+              <TimeGrid
+                days={days}
+                events={events}
+                lists={dueLists}
+                onOpenEvent={openEvent}
+                onOpenList={showList}
+                onCreateAt={createAt}
+                onMoveList={moveList}
+              />
+            ) : null}
+
+            {moveFailure ? <Text className="text-destructive text-xs">{moveFailure}</Text> : null}
+            {isPending ? <Text className="text-muted-foreground text-xs">Chargement…</Text> : null}
+          </View>
         )}
       </View>
 
       <EventFormDialog target={dialogTarget} onClose={() => setDialogTarget(null)} />
-      <EventDetailDialog event={eventDetail} onClose={() => setEventDetail(null)} onEdit={editEvent} />
+      <EventDetailDialog
+        event={eventDetail}
+        onClose={() => setEventDetail(null)}
+        onEdit={editEvent}
+      />
 
       {/* La liste créée s'ouvre dans son onglet : c'est là qu'on la remplit,
           ligne par ligne, plutôt que dans une seconde saisie qui aurait à
@@ -549,7 +685,11 @@ export function CalendarScreen() {
         onClose={() => setListTarget(null)}
         onCreated={(created) => router.push(`/todo?list=${created.id}` as never)}
       />
-      <TaskListDetailDialog list={listDetail} onClose={() => setListDetail(null)} onEdit={editList} />
+      <TaskListDetailDialog
+        list={listDetail}
+        onClose={() => setListDetail(null)}
+        onEdit={editList}
+      />
       {seriesMove ? (
         <Modal
           open
