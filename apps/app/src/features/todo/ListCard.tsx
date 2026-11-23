@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Ref, type RefObject } from "react";
-import { ScrollView, View } from "react-native";
+import { Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
 import {
   isListDone,
@@ -14,6 +14,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui
 import { ContextMenu, type ContextMenuItem } from "@/shared/ui/context-menu";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
+import { FONT_FAMILY } from "@/shared/lib/fonts";
+import { cn } from "@/shared/lib/utils";
 import {
   TaskListCardBody,
   TaskListCardFrame,
@@ -52,6 +54,7 @@ export function ListCard({
   folders,
   highlighted = false,
   landing = false,
+  flat = false,
   desktop,
   scrollRef,
   query,
@@ -67,6 +70,8 @@ export function ListCard({
   folders: FolderChoice[];
   highlighted?: boolean;
   landing?: boolean;
+  /** Sans contour, plus basse : la carte du calendrier, déjà située par son jour. */
+  flat?: boolean;
   desktop: boolean;
   scrollRef?: RefObject<ScrollView | null>;
   query: string;
@@ -94,7 +99,31 @@ export function ListCard({
   /** Point d'ouverture du choix de dossier, `null` s'il est fermé. */
   const [folderMenu, setFolderMenu] = useState<{ x: number; y: number } | null>(null);
   const [editingDue, setEditingDue] = useState(false);
-  const { updateList, updateTask } = useTaskActions();
+  // Le titre se change sur place : un appui l'ouvre en saisie, Entrée ou la
+  // sortie du champ l'enregistre, Échap l'abandonne (demande de Yann, 23 novembre).
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(list.title);
+  const cancelRename = useRef(false);
+  // Entrée ferme le champ : sa sortie (`onBlur`) ne doit pas enregistrer une seconde fois.
+  const renameDone = useRef(false);
+  const finishRename = () => {
+    if (renameDone.current) return;
+    renameDone.current = true;
+    const next = draftTitle.trim();
+    setRenaming(false);
+    if (cancelRename.current) {
+      cancelRename.current = false;
+      setDraftTitle(list.title);
+      return;
+    }
+    // Un titre vidé n'est pas un titre : on garde l'ancien.
+    if (next === "" || next === list.title) {
+      setDraftTitle(list.title);
+      return;
+    }
+    updateList.mutate({ id: list.id, patch: { title: next } });
+  };
+  const { updateList, updateTask, setOccurrence } = useTaskActions();
   const card = useRef<View>(null);
 
   // Amène la carte visée depuis la barre latérale à l'écran : la mettre en
@@ -133,6 +162,16 @@ export function ListCard({
   // pas d'état à elle, elle se lit dans ses tâches (aucune colonne en base).
   const toggleAll = () => {
     const done = !allDone;
+    // Une liste sans tâche n'a rien à cocher : c'est elle qui porte son « fait » —
+    // pour la seule date de la série, quand c'est une copie de série.
+    if (list.tasks.length === 0) {
+      if (list.occurrenceAt) {
+        setOccurrence.mutate({ id: list.id, input: { occurrenceAt: list.occurrenceAt, done } });
+      } else {
+        updateList.mutate({ id: list.id, patch: { done } });
+      }
+      return;
+    }
     for (const task of list.tasks) {
       if (task.done !== done)
         updateTask.mutate({ listId: list.id, taskId: task.id, patch: { done } });
@@ -172,9 +211,10 @@ export function ListCard({
   ];
 
   return (
-    <TaskListCardFrame cardRef={card} desktop={desktop} highlighted={highlighted}>
+    <TaskListCardFrame cardRef={card} desktop={desktop} highlighted={highlighted} flat={flat}>
       <Collapsible open={open} onOpenChange={setOpen}>
         <TaskListCardHeader
+          compact={flat}
           title={list.title}
           shopping={shopping}
           folderName={folderName}
@@ -200,7 +240,7 @@ export function ListCard({
                   size="icon"
                   hitSlop={8}
                   accessibilityLabel={open ? `Replier ${list.title}` : `Déplier ${list.title}`}
-                  className="-ml-1 size-8"
+                  className={flat ? "-ml-1 size-7" : "-ml-1 size-8"}
                 >
                   <Icon
                     as={open ? ChevronDown : ChevronRight}
@@ -212,7 +252,6 @@ export function ListCard({
 
               <TaskRowCheckbox
                 done={allDone}
-                pending={list.tasks.length === 0}
                 label={
                   allDone
                     ? `Décocher toute la liste ${list.title}`
@@ -221,9 +260,44 @@ export function ListCard({
                 onPress={toggleAll}
               />
 
-              <Text className="shrink text-sm font-semibold" numberOfLines={1}>
-                {list.title}
-              </Text>
+              {renaming ? (
+                <TextInput
+                  value={draftTitle}
+                  onChangeText={setDraftTitle}
+                  autoFocus
+                  selectTextOnFocus
+                  maxLength={120}
+                  accessibilityLabel={`Titre de la liste ${list.title}`}
+                  onKeyPress={(event) => {
+                    if (event.nativeEvent.key === "Escape") {
+                      cancelRename.current = true;
+                      finishRename();
+                    }
+                  }}
+                  onSubmitEditing={finishRename}
+                  onBlur={finishRename}
+                  style={{ fontFamily: FONT_FAMILY, minWidth: 220 }}
+                  className={cn(
+                    "text-foreground border-input rounded-md border px-1.5 py-0.5 text-sm font-semibold",
+                    Platform.select({ web: "outline-none" }),
+                  )}
+                />
+              ) : (
+                <Pressable
+                  onPress={() => {
+                    setDraftTitle(list.title);
+                    renameDone.current = false;
+                    setRenaming(true);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Renommer ${list.title}`}
+                  className="shrink"
+                >
+                  <Text className="shrink text-sm font-semibold" numberOfLines={1}>
+                    {list.title}
+                  </Text>
+                </Pressable>
+              )}
               {/* Derrière le titre : devant, il ne reste que le repli. */}
               {gripRef ? (
                 <TaskRowGrip
