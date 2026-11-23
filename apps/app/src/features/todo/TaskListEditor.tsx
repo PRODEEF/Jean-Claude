@@ -557,6 +557,36 @@ function EditorRow({
     onDrop,
   });
 
+  // Les commandes de la ligne s'ouvrent au survol de la souris (demande de Yann,
+  // 23 novembre), en plus de la ligne où l'on écrit. Elles restent un instant
+  // après la sortie du champ : appuyer sur un bouton fait perdre le curseur au
+  // champ, et la commande disparaissait avant que l'appui n'aboutisse — c'est
+  // ce qui les rendait inertes.
+  const [hovered, setHovered] = useState(false);
+  const [lingering, setLingering] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const row = rowRef.current as unknown as HTMLElement | null;
+    if (!row) return;
+    const enter = () => setHovered(true);
+    const leave = () => setHovered(false);
+    row.addEventListener("mouseenter", enter);
+    row.addEventListener("mouseleave", leave);
+    return () => {
+      row.removeEventListener("mouseenter", enter);
+      row.removeEventListener("mouseleave", leave);
+    };
+  }, [rowRef]);
+  useEffect(() => {
+    if (active) {
+      setLingering(true);
+      return;
+    }
+    const timer = setTimeout(() => setLingering(false), 400);
+    return () => clearTimeout(timer);
+  }, [active]);
+  const showControls = active || hovered || lingering;
+
   const marked = insertBefore === index;
 
   return (
@@ -615,7 +645,7 @@ function EditorRow({
       {/* Les commandes de retrait ne s'affichent que sur la ligne active :
           à demeure, elles doubleraient la hauteur de chaque rangée et
           feraient de la liste un formulaire. */}
-      {active ? (
+      {showControls ? (
         <View className="flex-row items-center">
           <RowButton
             icon={ChevronsLeft}
