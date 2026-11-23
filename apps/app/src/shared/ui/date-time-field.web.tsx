@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -25,35 +26,56 @@ export function DateTimeField({
   const { palette, scheme } = useTheme();
 
   return (
-    <input
-      type={mode}
-      value={mode === "date" ? toIsoDate(value) : value}
-      onChange={(event) => {
-        const next = event.currentTarget.value;
-        onChange(mode === "date" ? fromIsoDate(next) : next);
-      }}
-      required={!clearable}
-      aria-label={accessibilityLabel}
-      style={{
-        width: "100%",
-        boxSizing: "border-box",
-        minHeight: MIN_TOUCH_TARGET,
-        paddingLeft: spacing.md,
-        paddingRight: spacing.md,
-        borderWidth: 1,
-        borderStyle: "solid",
-        borderColor: palette.border,
-        borderRadius: radius.md,
-        backgroundColor: palette.background,
-        color: palette.text,
-        fontFamily: FONT_FAMILY,
-        fontSize: fontSize.sm,
-        // Le calendrier déroulant du navigateur suit le thème de l'app, pas
-        // celui du système.
-        colorScheme: scheme,
-      }}
-    />
+    <>
+      {/* L'icône d'horloge ou de calendrier disparaît : un appui sur le champ
+          ouvre directement la liste d'heures ou le calendrier (demande de
+          Yann, 23 novembre). */}
+      <style>{`.jc-picker-field::-webkit-calendar-picker-indicator{display:none}`}</style>
+      <input
+        className="jc-picker-field"
+        onClick={openPicker}
+        type={mode}
+        value={mode === "date" ? toIsoDate(value) : value}
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          onChange(mode === "date" ? fromIsoDate(next) : next);
+        }}
+        required={!clearable}
+        aria-label={accessibilityLabel}
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          minHeight: MIN_TOUCH_TARGET,
+          paddingLeft: spacing.md,
+          paddingRight: spacing.md,
+          borderWidth: 1,
+          borderStyle: "solid",
+          borderColor: palette.border,
+          borderRadius: radius.md,
+          backgroundColor: palette.background,
+          color: palette.text,
+          fontFamily: FONT_FAMILY,
+          fontSize: fontSize.sm,
+          // Le calendrier déroulant du navigateur suit le thème de l'app, pas
+          // celui du système.
+          colorScheme: scheme,
+        }}
+      />
+    </>
   );
+}
+
+/**
+ * Ouvre le sélecteur du navigateur. `showPicker` exige un geste de l'utilisateur
+ * et peut être refusé (navigateur ancien, champ désactivé) : le champ reste
+ * alors saisissable au clavier, rien d'autre à faire.
+ */
+function openPicker(event: MouseEvent<HTMLInputElement>) {
+  try {
+    event.currentTarget.showPicker();
+  } catch {
+    // Saisie au clavier toujours possible.
+  }
 }
 
 /** `JJ/MM/AAAA` → `AAAA-MM-JJ`, la seule forme qu'accepte le champ HTML. */

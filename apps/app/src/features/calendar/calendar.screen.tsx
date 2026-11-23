@@ -10,11 +10,13 @@ import { useRouter } from "expo-router";
 import { ChevronRight, ListPlus, Plus } from "lucide-react-native";
 import type { CalendarEntry, CalendarRange, TaskList, TaskListWithTasks } from "@jc/domain";
 import {
+  busyIntervalsOfDay,
   calendarDayOf,
   datedLists,
   projectOccurrences,
   dueForMoment,
   dueForSlot,
+  firstFreeSlot,
   momentOf,
   listsOfDay,
   listsWithoutVisibleEvent,
@@ -387,7 +389,17 @@ export function CalendarScreen() {
   };
   // Depuis une case de la grille, la fenêtre s'ouvre à côté du clic et ne le
   // recouvre pas ; le bouton « Événement » de la barre n'a pas de case à éviter.
-  const createAt = (day: Date, minute = DEFAULT_CREATE_MINUTE) => {
+  // Sans heure choisie (bouton, clic sur un jour), le premier créneau d'une
+  // heure libre du jour — après ce qui est déjà en place (demande de Yann,
+  // 23 novembre). Aujourd'hui, jamais une heure déjà écoulée.
+  const freeMinuteOn = (day: Date) => {
+    const now = new Date();
+    return firstFreeSlot(
+      busyIntervalsOfDay(day, allDatedLists, events),
+      Math.max(DEFAULT_CREATE_MINUTE, isSameDay(day, now) ? (now.getHours() + 1) * 60 : 0),
+    );
+  };
+  const createAt = (day: Date, minute = freeMinuteOn(day)) => {
     const anchor = recentPointer();
     setDialogTarget({ mode: "create", day, minute, ...(anchor ? { anchor } : {}) });
   };
@@ -396,7 +408,7 @@ export function CalendarScreen() {
   const selectDay = (day: Date) => {
     setSelectedDay(day);
     setPickedDay(day);
-    createAt(day, DEFAULT_CREATE_MINUTE);
+    createAt(day);
   };
   // Liste déposée sur un jour de la grille horaire : à l'heure lâchée, ou sans
   // heure depuis le bandeau. Un dépôt qui ne change rien n'appelle pas le serveur.
@@ -527,7 +539,11 @@ export function CalendarScreen() {
           <Button
             size="sm"
             onPress={() =>
-              setDialogTarget({ mode: "create", day: selectedDay, minute: DEFAULT_CREATE_MINUTE })
+              setDialogTarget({
+                mode: "create",
+                day: selectedDay,
+                minute: freeMinuteOn(selectedDay),
+              })
             }
             accessibilityRole="button"
             accessibilityLabel="Nouvel événement"

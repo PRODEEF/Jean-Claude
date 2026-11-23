@@ -3,10 +3,12 @@ import { Platform, Pressable, View } from "react-native";
 import { Plus } from "lucide-react-native";
 import type { CalendarEntry, MomentKey, Task, TaskList, TaskListWithTasks } from "@jc/domain";
 import {
+  busyIntervalsOfDay,
   calendarDayOf,
   dayOfTask,
   dueForMoment,
   dueOnForDay,
+  firstFreeSlot,
   momentOf,
   momentsOfDay,
   openTaskCount,
@@ -29,6 +31,8 @@ import { useListDragHandle, useMomentDropZone, type DayDrag } from "./lib/list-d
 
 /** Heure proposée à un événement créé sur « Journée » puis rendu précis : 9 h. */
 const DEFAULT_CREATE_MINUTE = 9 * 60;
+/** Début du matin pour la recherche d'un créneau libre — le matin n'a pas de borne de réglage. */
+const MORNING_FROM_HOUR = 8;
 
 export type DueListsBoardProps = {
   /** Les jours à afficher, dans l'ordre — une semaine ou un mois selon l'appelant. */
@@ -75,16 +79,24 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
    * l'utilisateur n'a plus qu'à écrire le titre et ses tâches (§13.4.1).
    */
   const addList = (day: Date, moment: MomentKey) => {
-    const due = dueForMoment(day, moment, { dueAt: null, dueAllDay: null }, bounds);
-    // Le même formulaire que « + Événement » (demande de Yann, 23 novembre) :
-    // une todoliste datée et un rendez-vous sont désormais le même objet.
-    const start = due.dueAllDay === false && due.dueAt ? new Date(due.dueAt) : null;
-    setEventTarget({
-      mode: "create",
-      day,
-      minute: start ? start.getHours() * 60 : DEFAULT_CREATE_MINUTE,
-      allDay: start === null,
-    });
+    // Sans heure choisie, le formulaire propose le premier créneau d'une heure
+    // libre du moment visé : après ce qui est déjà en place (demande de Yann,
+    // 23 novembre).
+    const fromHour =
+      moment === "morning"
+        ? MORNING_FROM_HOUR
+        : moment === "afternoon"
+          ? bounds.afternoonFrom
+          : moment === "evening"
+            ? bounds.eveningFrom
+            : DEFAULT_CREATE_MINUTE / 60;
+    const dayEvents = events.filter((event) => isSameDay(new Date(event.startsAt), day));
+    const minute = firstFreeSlot(
+      busyIntervalsOfDay(day, lists, dayEvents),
+      // Aujourd'hui, pas de créneau déjà écoulé.
+      Math.max(fromHour * 60, isSameDay(day, today) ? (today.getHours() + 1) * 60 : 0),
+    );
+    setEventTarget({ mode: "create", day, minute });
   };
   /** Pas d'échéance dans le passé : le serveur la refuse, autant ne pas proposer le geste. */
   const canAddOn = (day: Date) => startOfDay(day).getTime() >= startOfDay(today).getTime();
