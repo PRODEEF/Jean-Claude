@@ -218,6 +218,69 @@ export function todoDays(monthDays: Date[], today: Date): Date[] {
   return monthDays.filter((day) => startOfDay(day).getTime() >= start);
 }
 
+// ── Vue Todo qui remonte le temps ──────────────────────────────────────────
+
+/**
+ * Ce que la vue Todo affiche : de `from` à la fin du mois `toMonth`, et le jour
+ * `focus` est celui où le défilement se pose à l'ouverture.
+ */
+export type TodoSpan = { from: Date; focus: Date; toMonth: Date };
+
+const firstOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
+
+/**
+ * Étendue d'ouverture de la vue Todo pour un mois.
+ *
+ * Le mois en cours se pose sur aujourd'hui, un autre mois sur son premier jour
+ * (comme `todoDays`) ; mais les jours qui précèdent restent affichés au-dessus,
+ * un mois de plus : l'utilisateur remonte le temps en faisant défiler, sans
+ * bouton (demande de Yann, 23 novembre).
+ */
+export function todoSpanFor(anchor: Date, today: Date): TodoSpan {
+  const month = firstOfMonth(anchor);
+  const focus =
+    month.getFullYear() === today.getFullYear() && month.getMonth() === today.getMonth()
+      ? startOfDay(today)
+      : month;
+  return {
+    from: new Date(month.getFullYear(), month.getMonth() - 1, 1),
+    focus,
+    toMonth: month,
+  };
+}
+
+/** Début de l'étendue une fois remontée d'un mois : on charge toujours des mois entiers. */
+export function earlierTodoStart(from: Date): Date {
+  return new Date(from.getFullYear(), from.getMonth() - 1, 1);
+}
+
+/** Tous les jours de l'étendue, du premier au dernier du mois d'arrivée. */
+export function todoSpanDays(span: TodoSpan): Date[] {
+  const last = new Date(span.toMonth.getFullYear(), span.toMonth.getMonth() + 1, 0);
+  const days: Date[] = [];
+  for (let day = startOfDay(span.from); day.getTime() <= last.getTime(); day = addDays(day, 1)) {
+    days.push(day);
+  }
+  return days;
+}
+
+/**
+ * Découpe les jours en blocs : un nouveau bloc commence à chaque mois, et au
+ * jour de départ. Chaque bloc est dessiné à part, ce qui permet de poser le
+ * défilement en haut du bloc de départ et de situer les mois en défilant.
+ */
+export function todoChunks(days: Date[], focus: Date): Date[][] {
+  const chunks: Date[][] = [];
+  for (const day of days) {
+    const last = chunks[chunks.length - 1];
+    const previous = last?.[last.length - 1];
+    const sameMonth = previous !== undefined && previous.getMonth() === day.getMonth();
+    if (last && sameMonth && !isSameDay(day, focus)) last.push(day);
+    else chunks.push([day]);
+  }
+  return chunks;
+}
+
 // ── Ce que porte une journée ───────────────────────────────────────────────
 
 /**

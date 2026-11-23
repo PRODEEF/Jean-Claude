@@ -125,7 +125,7 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
           .find((task) => task.id === openedTask.id) ?? null);
 
   return (
-    <View className={desktop ? "gap-2" : "gap-3"}>
+    <View className={desktop ? "gap-4" : "gap-5"}>
       {moveFailure ? <Text className="text-destructive text-sm">{moveFailure}</Text> : null}
       {days.map((day) => {
         const dayEvents = events
@@ -146,26 +146,34 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
         const isToday = isSameDay(day, today);
 
         return (
-          <View
-            key={day.toISOString()}
-            className={`gap-2 rounded-xl border ${desktop ? "p-2" : "p-3"} ${
-              isToday ? "border-primary" : "border-border"
-            }`}
-          >
-            <View className="flex-row items-center justify-between gap-2">
+          // Pas de cadre autour de la journée : seul le fond de son titre la
+          // distingue — gris, et bleu pour aujourd'hui (demande de Yann, 23 novembre).
+          <View key={day.toISOString()} className="gap-2">
+            <View
+              className={`h-9 flex-row items-center justify-between gap-2 rounded-lg px-3 ${
+                isToday ? "bg-primary" : "bg-border"
+              }`}
+            >
               <Text
                 className={`text-sm font-semibold uppercase ${
-                  isToday ? "text-primary" : "text-foreground"
+                  isToday ? "text-primary-foreground" : "text-foreground"
                 }`}
               >
                 {formatFullDay(day)}
               </Text>
               <View className="flex-row items-center gap-1">
                 {remaining > 0 ? (
-                  <Text className="text-muted-foreground text-sm">{remaining} à faire</Text>
+                  <Text
+                    className={`text-sm ${
+                      isToday ? "text-primary-foreground" : "text-muted-foreground"
+                    }`}
+                  >
+                    {remaining} à faire
+                  </Text>
                 ) : null}
                 {canAddOn(day) ? (
                   <AddListButton
+                    onPrimary={isToday}
                     label={`Ajouter une liste le ${formatFullDay(day)}`}
                     onPress={() => addList(day, "anytime")}
                   />
@@ -243,10 +251,13 @@ function AddListButton({
   label,
   onPress,
   small = false,
+  onPrimary = false,
 }: {
   label: string;
   onPress: () => void;
   small?: boolean;
+  /** Posé sur le fond bleu d'aujourd'hui : l'icône passe en blanc. */
+  onPrimary?: boolean;
 }) {
   return (
     <Button
@@ -257,7 +268,11 @@ function AddListButton({
       accessibilityLabel={label}
       className={small ? "size-6" : "size-7"}
     >
-      <Icon as={Plus} size={small ? 14 : 16} className="text-muted-foreground" />
+      <Icon
+        as={Plus}
+        size={small ? 14 : 16}
+        className={onPrimary ? "text-primary-foreground" : "text-muted-foreground"}
+      />
     </Button>
   );
 }
@@ -272,7 +287,9 @@ function EventLine({ event, onPress }: { event: CalendarEntry; onPress: () => vo
       accessibilityLabel={`Rendez-vous ${event.title}${time ? `, à ${time}` : ""}`}
       className="bg-accent-soft h-7 flex-row items-center gap-2 rounded-md px-2"
     >
-      {time ? <Text className="text-accent-soft-foreground text-sm font-semibold">{time}</Text> : null}
+      {time ? (
+        <Text className="text-accent-soft-foreground text-sm font-semibold">{time}</Text>
+      ) : null}
       <Text className="text-accent-soft-foreground min-w-0 flex-1 text-sm" numberOfLines={1}>
         {event.title}
       </Text>
