@@ -31,10 +31,8 @@ import {
   INBOX_PATH,
   MAIL_MAX_LIMIT,
   MAIL_PAGE_SIZE,
-  MAIL_PROVIDERS,
   type ComposeKind,
   type MailDraft,
-  type MailProviderId,
 } from "@jc/domain";
 import { MIN_TOUCH_TARGET } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
@@ -49,14 +47,16 @@ import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { Text } from "@/shared/ui/text";
 import { api } from "@/shared/lib/api";
 import { MailAvatar } from "./MailAvatar";
+import { ConnectForm } from "./ConnectForm";
 import { MailBody } from "./MailBody";
+import { ColumnResizer, FOLDERS_RANGE, LIST_RANGE, useColumnWidths } from "./MailColumns";
 import { MailCompose } from "./MailCompose";
+import { MailSettings } from "./MailSettings";
 import { loadMailDraft, type SavedDraft } from "./use-mail-draft";
 import { CAN_DOWNLOAD, downloadFile } from "./download-file";
 import { MailFolderTree, type MailView } from "./MailFolderTree";
 import {
   useAllMailFolders,
-  useConnectMail,
   useMailAccounts,
   useMailFolders,
   useMailInbox,
@@ -105,109 +105,6 @@ export function MailScreen() {
   );
 }
 
-function ConnectForm({ onDone }: { onDone?: () => void }) {
-  const connect = useConnectMail();
-  const [provider, setProvider] = useState<MailProviderId>(MAIL_PROVIDERS[0].id);
-  const [address, setAddress] = useState("");
-  const [password, setPassword] = useState("");
-  const [host, setHost] = useState<string>(MAIL_PROVIDERS[0].host);
-
-  const canSubmit = address.trim().length > 0 && password.length > 0 && !connect.isPending;
-  const providerName = MAIL_PROVIDERS.find((entry) => entry.id === provider)?.label ?? "";
-
-  return (
-    <View className="gap-3">
-      <Text className="text-sm">Reliez une boîte mail pour lire et écrire vos mails ici.</Text>
-
-      <View className="gap-1">
-        <Text className="text-muted-foreground text-xs">Fournisseur</Text>
-        <SegmentedControl
-          options={MAIL_PROVIDERS.map((entry) => ({ value: entry.id, label: entry.label }))}
-          value={provider}
-          onChange={(next) => {
-            setProvider(next);
-            // Le serveur suit le fournisseur choisi : l'utilisateur n'a pas à le connaître.
-            const entry = MAIL_PROVIDERS.find((candidate) => candidate.id === next);
-            if (entry) setHost(entry.host);
-          }}
-        />
-      </View>
-
-      <View className="gap-1">
-        <Text className="text-muted-foreground text-xs">Adresse e-mail</Text>
-        <Input
-          value={address}
-          onChangeText={setAddress}
-          placeholder="vous@exemple.fr"
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="email"
-          keyboardType="email-address"
-          textContentType="emailAddress"
-          accessibilityLabel="Adresse e-mail"
-        />
-      </View>
-
-      <View className="gap-1">
-        <Text className="text-muted-foreground text-xs">Mot de passe de la boîte</Text>
-        <Input
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="current-password"
-          textContentType="password"
-          accessibilityLabel="Mot de passe de la boîte"
-        />
-      </View>
-
-      <View className="gap-1">
-        <Text className="text-muted-foreground text-xs">{`Serveur ${providerName}`}</Text>
-        <Input
-          value={host}
-          onChangeText={setHost}
-          autoCapitalize="none"
-          autoCorrect={false}
-          accessibilityLabel={`Serveur ${providerName}`}
-        />
-      </View>
-
-      {connect.isError ? (
-        <Text className="text-destructive text-sm">
-          {connect.error instanceof Error
-            ? connect.error.message
-            : "La connexion a échoué. Réessayez dans un instant."}
-        </Text>
-      ) : null}
-
-      <View className="flex-row gap-2">
-        <Button
-          className="flex-1"
-          disabled={!canSubmit}
-          onPress={() =>
-            connect.mutate({ address, password, host }, { onSuccess: () => onDone?.() })
-          }
-          accessibilityRole="button"
-          accessibilityLabel="Relier ma boîte"
-        >
-          <Text>{connect.isPending ? "Connexion…" : "Relier ma boîte"}</Text>
-        </Button>
-        {onDone ? (
-          <Button
-            variant="outline"
-            onPress={onDone}
-            accessibilityRole="button"
-            accessibilityLabel="Annuler"
-          >
-            <Text>Annuler</Text>
-          </Button>
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
 /** Ce qu'une seule colonne montre sur téléphone. */
 type Stage = "folders" | "list" | "message" | "compose";
 
@@ -218,7 +115,8 @@ function viewKey(view: MailView): string {
 function Mailbox({ accounts }: { accounts: MailAccount[] }) {
   const expanded = useBreakpoint() === "expanded";
   const [chosen, setChosen] = useState<MailView | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const columns = useColumnWidths();
   // Rédaction en cours ; la clé change à chaque ouverture pour repartir d'un formulaire neuf.
   const [composing, setComposing] = useState<{
     key: number;
@@ -317,32 +215,35 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
     if (!expanded) setStage("list");
   };
 
-  const foldersPane = adding ? (
-    <ScrollView className="flex-1" contentContainerClassName="p-3">
-      <ConnectForm
-        onDone={() => {
-          setAdding(false);
-          setStage("folders");
-        }}
-      />
-    </ScrollView>
-  ) : (
+  const foldersPane = (
     <MailFolderTree
       accounts={accounts}
       view={view}
       allUnseen={allUnseen}
       onSelect={(next) => {
+        setSettingsOpen(false);
         setChosen(next);
         setStage("list");
       }}
-      onAdd={() => setAdding(true)}
-      onCompose={() =>
+      onSettings={() => setSettingsOpen(true)}
+      onCompose={() => {
+        setSettingsOpen(false);
         startCompose(
           EMPTY_DRAFT,
           view.kind === "folder" ? view.accountId : (first?.id ?? ""),
           "new",
-        )
-      }
+        );
+      }}
+    />
+  );
+
+  const settingsPane = (
+    <MailSettings
+      accounts={accounts}
+      onClose={() => {
+        setSettingsOpen(false);
+        if (!expanded) setStage("folders");
+      }}
     />
   );
 
@@ -464,26 +365,52 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
   if (!expanded) {
     return (
       <View className="flex-1">
-        {adding || stage === "folders"
-          ? foldersPane
-          : stage === "compose" && composePane
-            ? composePane
-            : stage === "message"
-              ? readPane
-              : listPane}
+        {settingsOpen
+          ? settingsPane
+          : stage === "folders"
+            ? foldersPane
+            : stage === "compose" && composePane
+              ? composePane
+              : stage === "message"
+                ? readPane
+                : listPane}
       </View>
     );
   }
 
+  // Les séparateurs se glissent : la largeur choisie est retenue sur l'appareil.
+  const { widths, setWidths, persist } = columns;
   return (
     <View className="flex-1 flex-row">
-      <View style={{ width: 260 }} className="border-border border-r">
-        {foldersPane}
-      </View>
-      <View style={{ width: 380 }} className="border-border border-r">
-        {listPane}
-      </View>
-      <View className="min-w-0 flex-1">{composePane ?? readPane}</View>
+      <View style={{ width: widths.folders }}>{foldersPane}</View>
+      <ColumnResizer
+        label="Largeur de la colonne des dossiers"
+        width={widths.folders}
+        range={FOLDERS_RANGE}
+        onResize={(folders) => setWidths({ ...widths, folders })}
+        onCommit={(folders) => {
+          setWidths({ ...widths, folders });
+          persist({ ...widths, folders });
+        }}
+      />
+      {settingsOpen ? (
+        <View className="min-w-0 flex-1">{settingsPane}</View>
+      ) : (
+        <>
+          <View style={{ width: widths.list }}>{listPane}</View>
+          <ColumnResizer
+            label="Largeur de la liste des mails"
+            width={widths.list}
+            range={LIST_RANGE}
+            onResize={(list) => setWidths({ ...widths, list })}
+            onCommit={(list) => {
+              setWidths({ ...widths, list });
+              persist({ ...widths, list });
+            }}
+          />
+          <View className="min-w-0 flex-1">{composePane ?? readPane}</View>
+        </>
+      )}
     </View>
   );
 }
