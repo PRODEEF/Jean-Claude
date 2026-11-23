@@ -51,6 +51,7 @@ import { api } from "@/shared/lib/api";
 import { MailAvatar } from "./MailAvatar";
 import { MailBody } from "./MailBody";
 import { MailCompose } from "./MailCompose";
+import { loadMailDraft, type SavedDraft } from "./use-mail-draft";
 import { CAN_DOWNLOAD, downloadFile } from "./download-file";
 import { MailFolderTree, type MailView } from "./MailFolderTree";
 import {
@@ -223,6 +224,8 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
     key: number;
     accountId: string;
     draft: MailDraft;
+    draftKey: string;
+    saved: SavedDraft | null;
   } | null>(null);
   const [stage, setStage] = useState<Stage>("list");
   const [opened, setOpened] = useState<{
@@ -301,9 +304,13 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
   const addressOf = (accountId: string) =>
     accounts.find((account) => account.id === accountId)?.address ?? "";
 
-  const startCompose = (draft: MailDraft, accountId: string) => {
-    setComposing({ key: Date.now(), accountId, draft });
-    setStage("compose");
+  // Le brouillon d'un même message (nouveau, ou réponse à tel mail) est retrouvé
+  // à la réouverture : on le charge avant d'afficher le formulaire.
+  const startCompose = (draft: MailDraft, accountId: string, draftKey: string) => {
+    void loadMailDraft(draftKey).then((saved) => {
+      setComposing({ key: Date.now(), accountId, draft, draftKey, saved });
+      setStage("compose");
+    });
   };
   const closeCompose = () => {
     setComposing(null);
@@ -330,7 +337,11 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
       }}
       onAdd={() => setAdding(true)}
       onCompose={() =>
-        startCompose(EMPTY_DRAFT, view.kind === "folder" ? view.accountId : (first?.id ?? ""))
+        startCompose(
+          EMPTY_DRAFT,
+          view.kind === "folder" ? view.accountId : (first?.id ?? ""),
+          "new",
+        )
       }
     />
   );
@@ -426,7 +437,11 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
       }
       onCompose={(kind) => {
         if (!current || !message.data) return;
-        startCompose(draftFor(kind, message.data, addressOf(current.accountId)), current.accountId);
+        startCompose(
+          draftFor(kind, message.data, addressOf(current.accountId)),
+          current.accountId,
+          `${kind}:${current.accountId}:${current.folder}:${current.uid}`,
+        );
       }}
       loading={current !== null && message.isPending}
       error={message.isError ? message.error : null}
@@ -440,6 +455,8 @@ function Mailbox({ accounts }: { accounts: MailAccount[] }) {
       accounts={accounts}
       accountId={composing.accountId}
       draft={composing.draft}
+      draftKey={composing.draftKey}
+      saved={composing.saved}
       onClose={closeCompose}
     />
   ) : null;
