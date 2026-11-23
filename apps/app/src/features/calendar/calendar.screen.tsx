@@ -26,6 +26,7 @@ import {
 } from "@jc/domain";
 import { spacing } from "@jc/design";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useCalendarDefaultView } from "@/shared/hooks/use-profile";
 import { useDetailPane } from "@/shared/providers/detail-pane";
 import { useTaskActions, useTaskLists } from "@/shared/hooks/use-task-lists";
 import { Button } from "@/shared/ui/button";
@@ -106,7 +107,11 @@ function rangeOf(days: Date[]): CalendarRange {
 export function CalendarScreen() {
   const compact = useBreakpoint() === "compact";
 
-  const [view, setView] = useState<CalendarView>("month");
+  // `null` tant que l'utilisateur n'a pas touché au sélecteur : la vue suit
+  // alors son réglage de compte, même si le profil arrive après le premier rendu.
+  const defaultView = useCalendarDefaultView();
+  const [chosenView, setView] = useState<CalendarView | null>(null);
+  const view = chosenView ?? defaultView;
   const [anchor, setAnchor] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   // Le gris d'un jour n'apparaît qu'après un clic dessus : `selectedDay` existe
