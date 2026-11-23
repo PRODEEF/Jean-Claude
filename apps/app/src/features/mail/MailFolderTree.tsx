@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import {
   ChevronDown,
@@ -18,7 +17,7 @@ import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
 import { useCollapsed } from "./use-collapsed";
-import { useDisconnectMail, useMailFolders } from "./use-mail";
+import { useMailFolders } from "./use-mail";
 
 /** Ce que la liste de droite montre : tout, ou un dossier d'une boîte. */
 export type MailView = { kind: "all" } | { kind: "folder"; accountId: string; folder: string };
@@ -38,7 +37,7 @@ export function MailFolderTree({
   view,
   allUnseen,
   onSelect,
-  onAdd,
+  onSettings,
   onCompose,
 }: {
   accounts: MailAccount[];
@@ -46,7 +45,7 @@ export function MailFolderTree({
   /** Non lus des boîtes de réception, toutes boîtes comprises. */
   allUnseen: number;
   onSelect: (view: MailView) => void;
-  onAdd: () => void;
+  onSettings: () => void;
   onCompose: () => void;
 }) {
   const [collapsed, toggle] = useCollapsed();
@@ -87,15 +86,12 @@ export function MailFolderTree({
 
       <View className="border-border mt-3 border-t px-1 pt-2">
         <Button
-          variant="ghost"
-          size="sm"
-          className="self-start"
-          onPress={onAdd}
+          onPress={onSettings}
           accessibilityRole="button"
-          accessibilityLabel="Ajouter une boîte"
+          accessibilityLabel="Paramètres de la messagerie"
         >
           <Icon as={Plus} className="size-4" />
-          <Text>Ajouter une boîte</Text>
+          <Text>Paramètres</Text>
         </Button>
       </View>
     </ScrollView>
@@ -116,18 +112,7 @@ function AccountNode({
   onSelect: (view: MailView) => void;
 }) {
   const folders = useMailFolders(account.id);
-  const disconnect = useDisconnectMail();
   const open = !collapsed.has(accountKey(account.id));
-  const [confirming, setConfirming] = useState(false);
-
-  // Un seul appui ne retire pas la boîte : il demande confirmation, et l'oublie
-  // au bout de quelques secondes.
-  useEffect(() => {
-    if (!confirming) return;
-    const timer = setTimeout(() => setConfirming(false), 4000);
-    return () => clearTimeout(timer);
-  }, [confirming]);
-
   const list = folders.data ?? [];
   // La pastille de la boîte compte les non lus de sa réception, comme « Tous les comptes ».
   const inboxUnseen = list.find((folder) => folder.path === INBOX_PATH)?.unseen ?? 0;
@@ -191,23 +176,6 @@ function AccountNode({
               <Text className="text-primary-foreground text-xs font-semibold">{inboxUnseen}</Text>
             </View>
           ) : null}
-        </Pressable>
-        <Pressable
-          onPress={() => (confirming ? disconnect.mutate(account.id) : setConfirming(true))}
-          accessibilityRole="button"
-          accessibilityLabel={
-            confirming
-              ? `Confirmer le retrait de la boîte ${account.address}`
-              : `Retirer la boîte ${account.address}`
-          }
-          hitSlop={8}
-          className="shrink-0 rounded-md px-2 py-1"
-        >
-          <Text
-            className={cn("text-xs", confirming ? "text-destructive" : "text-muted-foreground")}
-          >
-            {confirming ? "Retirer ?" : "Retirer"}
-          </Text>
         </Pressable>
       </View>
 
