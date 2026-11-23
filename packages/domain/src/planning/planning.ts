@@ -715,3 +715,61 @@ export function layoutDayLists(
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
+
+// ── Premier créneau libre ──────────────────────────────────────────────────
+
+/** Plage occupée d'une journée, en minutes depuis minuit. */
+export type BusyInterval = { from: number; to: number };
+
+/** Durée supposée d'un élément daté sans heure de fin : une heure. */
+const DEFAULT_BUSY_MINUTES = 60;
+
+/**
+ * Plages occupées d'un jour par les listes et rendez-vous qui ont une heure.
+ *
+ * Un élément « journée entière » n'occupe aucun créneau : il ne bloque rien.
+ * Sans heure de fin, ou avec une fin hors du jour, l'élément tient une heure.
+ */
+export function busyIntervalsOfDay(
+  day: Date,
+  lists: readonly Pick<TaskList, "dueAt" | "dueAllDay" | "endsAt">[],
+  events: readonly Pick<CalendarEvent, "startsAt" | "endsAt" | "allDay">[],
+): BusyInterval[] {
+  const intervals: BusyInterval[] = [];
+  const add = (startIso: string | null, endIso: string | null | undefined) => {
+    if (startIso === null) return;
+    const start = new Date(startIso);
+    if (!isSameDay(start, day)) return;
+
+    const from = start.getHours() * 60 + start.getMinutes();
+    const end = endIso ? new Date(endIso) : null;
+    const to =
+      end !== null && isSameDay(end, day) && end.getHours() * 60 + end.getMinutes() > from
+        ? end.getHours() * 60 + end.getMinutes()
+        : from + DEFAULT_BUSY_MINUTES;
+    intervals.push({ from, to });
+  };
+
+  for (const list of lists) if (list.dueAllDay === false) add(list.dueAt, list.endsAt);
+  for (const event of events) if (!event.allDay) add(event.startsAt, event.endsAt);
+  return intervals;
+}
+
+/**
+ * Premier créneau d'une heure pleine libre à partir de `fromMinute`, en
+ * minutes depuis minuit (demande de Yann, 23 novembre) : un événement créé sans
+ * heure se pose après ce qui est déjà en place, pas à une heure arbitraire.
+ *
+ * Le dernier départ possible est 22 h, pour que le créneau finisse avant
+ * minuit. Tout est pris jusque-là : on retombe sur la première heure pleine
+ * demandée, plutôt que de refuser de proposer quoi que ce soit.
+ */
+export function firstFreeSlot(busy: readonly BusyInterval[], fromMinute: number): number {
+  const firstHour = Math.ceil(fromMinute / 60);
+  for (let hour = firstHour; hour <= 22; hour += 1) {
+    const from = hour * 60;
+    const to = from + 60;
+    if (!busy.some((interval) => interval.from < to && interval.to > from)) return from;
+  }
+  return firstHour * 60;
+}

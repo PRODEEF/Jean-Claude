@@ -20,6 +20,38 @@ const MOMENTS: SegmentedOption<Moment>[] = [
 ];
 
 /**
+ * Enregistre la date et l'heure d'une liste : mêmes règles que `DueDialog`
+ * (`parseDue`). Un choix invalide n'est pas écrit, `onError` reçoit le message ;
+ * un choix réussi l'appelle avec `null`.
+ *
+ * Partagé entre le panneau (téléphone) et les sélecteurs posés sur la carte
+ * (web), qui n'ont pas la même mise en page mais la même règle.
+ */
+export function useDueSave(list: TaskList) {
+  const { updateList } = useTaskActions();
+
+  return (date: string, time: string, onError: (message: string | null) => void) => {
+    const due = parseDue(date, time, list.dueAt);
+    if (!due.ok) {
+      onError(due.message);
+      return;
+    }
+    onError(null);
+    // Rien à écrire si rien n'a changé : le champ de date renvoie sa valeur au
+    // moindre geste.
+    if (due.value === list.dueAt && (due.allDay ?? list.dueAllDay) === list.dueAllDay) return;
+
+    updateList.mutate(
+      {
+        id: list.id,
+        patch: { dueAt: due.value, ...(due.allDay === null ? {} : { dueAllDay: due.allDay }) },
+      },
+      { onError: (cause) => onError(toMessage(cause)) },
+    );
+  };
+}
+
+/**
  * Date et heure d'une liste, réglées dans un panneau posé sous le doigt plutôt
  * que dans une fenêtre (demande de Yann, 23 novembre) : chaque choix s'enregistre
  * aussitôt, il n'y a ni titre ni bouton « Enregistrer ».
@@ -38,8 +70,8 @@ export function ListDuePanel({
   y: number;
   onClose: () => void;
 }) {
-  const { updateList } = useTaskActions();
   const bounds = useDayPartBounds();
+  const saveDue = useDueSave(list);
   const [date, setDate] = useState(() =>
     list.dueAt === null ? "" : formatDateInput(new Date(list.dueAt)),
   );
@@ -49,25 +81,7 @@ export function ListDuePanel({
   const typed = parseTimeInput(time);
   const moment: Moment = typed ? dayPartOfHour(typed.hours, bounds) : "day";
 
-  const save = (nextDate: string, nextTime: string) => {
-    const due = parseDue(nextDate, nextTime, list.dueAt);
-    if (!due.ok) {
-      setError(due.message);
-      return;
-    }
-    setError(null);
-    // Rien à écrire si rien n'a changé : le champ de date renvoie sa valeur au
-    // moindre geste.
-    if (due.value === list.dueAt && (due.allDay ?? list.dueAllDay) === list.dueAllDay) return;
-
-    updateList.mutate(
-      {
-        id: list.id,
-        patch: { dueAt: due.value, ...(due.allDay === null ? {} : { dueAllDay: due.allDay }) },
-      },
-      { onError: (cause) => setError(toMessage(cause)) },
-    );
-  };
+  const save = (nextDate: string, nextTime: string) => saveDue(nextDate, nextTime, setError);
 
   const changeDate = (next: string) => {
     setDate(next);
