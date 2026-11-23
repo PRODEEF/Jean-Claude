@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DEFAULT_ASSISTANT_NAME,
   DEFAULT_DAY_PART_BOUNDS,
+  type CalendarViewChoice,
   type DayPartBounds,
   type UpdateUserProfile,
   type UserProfile,
@@ -136,4 +137,10 @@ export function useAssistantName(): string {
 export function useDayPartBounds(): DayPartBounds {
   const { data } = useProfile();
   return data?.preferences.dayPartBounds ?? DEFAULT_DAY_PART_BOUNDS;
+}
+
+/** Vue sur laquelle le calendrier s'ouvre — Todo tant que le profil n'est pas chargé. */
+export function useCalendarDefaultView(): CalendarViewChoice {
+  const { data } = useProfile();
+  return data?.preferences.calendarDefaultView ?? "todo";
 }

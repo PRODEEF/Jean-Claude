@@ -109,6 +109,16 @@ describe("préférences", () => {
     expect(updateUserProfileSchema.parse({ llmModel: null })).toEqual({ llmModel: null });
   });
 
+  it("ouvre le calendrier sur Todo tant que rien n'est choisi", () => {
+    expect(userPreferencesSchema.parse({ scope: {} }).calendarDefaultView).toBe("todo");
+  });
+
+  it("refuse une vue de calendrier inconnue", () => {
+    expect(updateUserProfileSchema.safeParse({ calendarDefaultView: "agenda" }).success).toBe(
+      false,
+    );
+  });
+
   it("refuse un modèle absent du catalogue", () => {
     expect(updateUserProfileSchema.safeParse({ llmModel: "openai/gpt-4" }).success).toBe(false);
   });

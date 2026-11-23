@@ -16,6 +16,7 @@ import {
   EVENING_FROM_CHOICES,
   toCatalogueModel,
   type AssistantScope,
+  type CalendarViewChoice,
   type Theme,
 } from "@jc/domain";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
@@ -38,6 +39,14 @@ import { Select } from "@/shared/ui/select";
 import { Separator } from "@/shared/ui/separator";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
+
+const CALENDAR_VIEWS: { value: CalendarViewChoice; label: string }[] = [
+  { value: "todo", label: "Todo" },
+  { value: "day", label: "Jour" },
+  { value: "week", label: "Semaine" },
+  { value: "month", label: "Mois" },
+  { value: "year", label: "Année" },
+];
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: "light", label: "Clair" },
@@ -393,6 +402,19 @@ export function SettingsScreen() {
               placeholder="Choisir une heure"
               disabled={updateProfile.isPending}
               accessibilityLabel="Heure de début du soir"
+            />
+          </SettingRow>
+        </Section>
+
+        <Section title="Calendrier">
+          <SettingRow
+            label="Vue à l'ouverture"
+            hint="La vue sur laquelle le calendrier s'ouvre chaque fois que vous y revenez."
+          >
+            <SegmentedControl
+              options={CALENDAR_VIEWS}
+              value={profile?.preferences.calendarDefaultView ?? "todo"}
+              onChange={(value) => updateProfile.mutate({ calendarDefaultView: value })}
             />
           </SettingRow>
         </Section>
