@@ -7,6 +7,7 @@ import { Icon } from "@/shared/ui/icon";
 import { Input } from "@/shared/ui/input";
 import { Text } from "@/shared/ui/text";
 import { useSendMail } from "./use-mail";
+import { clearMailDraft, saveMailDraft, type SavedDraft } from "./use-mail-draft";
 
 /** Le temps pour se raviser : le mail ne part qu'une fois ce délai écoulé. */
 const UNDO_DELAY_MS = 5000;
@@ -29,21 +30,29 @@ export function MailCompose({
   accounts,
   accountId,
   draft,
+  draftKey,
+  saved,
   onClose,
 }: {
   accounts: MailAccount[];
   accountId: string;
   draft: MailDraft;
+  /** Où le brouillon se retient : un par nouveau message, un par réponse. */
+  draftKey: string;
+  /** Brouillon retrouvé sur l'appareil ; remplace le modèle de départ. */
+  saved: SavedDraft | null;
   onClose: () => void;
 }) {
   const send = useSendMail();
-  const [from, setFrom] = useState(accountId);
-  const [to, setTo] = useState(draft.to.join(", "));
-  const [cc, setCc] = useState(draft.cc.join(", "));
-  const [bcc, setBcc] = useState("");
-  const [showCopies, setShowCopies] = useState(draft.cc.length > 0);
-  const [subject, setSubject] = useState(draft.subject);
-  const [text, setText] = useState(draft.text);
+  const [from, setFrom] = useState(saved?.from ?? accountId);
+  const [to, setTo] = useState(saved?.to ?? draft.to.join(", "));
+  const [cc, setCc] = useState(saved?.cc ?? draft.cc.join(", "));
+  const [bcc, setBcc] = useState(saved?.bcc ?? "");
+  const [showCopies, setShowCopies] = useState(
+    saved ? saved.cc !== "" || saved.bcc !== "" : draft.cc.length > 0,
+  );
+  const [subject, setSubject] = useState(saved?.subject ?? draft.subject);
+  const [text, setText] = useState(saved?.text ?? draft.text);
   // Compte à rebours de « Annuler l'envoi » : non nul tant que le mail n'est pas parti.
   const [leaving, setLeaving] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -54,6 +63,26 @@ export function MailCompose({
     },
     [],
   );
+
+  // Le brouillon se retient dès qu'on touche à un champ, pas avant : un modèle de
+  // réponse jamais modifié n'a pas à être gardé. Un envoi en cours le fige.
+  const touched = useRef(saved !== null);
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    touched.current = true;
+  }, [from, to, cc, bcc, subject, text]);
+  useEffect(() => {
+    if (!touched.current || leaving) return;
+    const timer = setTimeout(
+      () => saveMailDraft(draftKey, { from, to, cc, bcc, subject, text }),
+      500,
+    );
+    return () => clearTimeout(timer);
+  }, [draftKey, from, to, cc, bcc, subject, text, leaving]);
 
   const recipients = parseRecipients(to);
   const canSend = recipients.length + parseRecipients(cc).length + parseRecipients(bcc).length > 0;
@@ -74,7 +103,10 @@ export function MailCompose({
           },
         },
         {
-          onSuccess: onClose,
+          onSuccess: () => {
+            clearMailDraft(draftKey);
+            onClose();
+          },
           // Parti de travers : on rend la main, le brouillon est intact.
           onError: () => setLeaving(false),
         },
@@ -129,6 +161,24 @@ export function MailCompose({
       </View>
 
       <ScrollView className="flex-1" contentContainerClassName="gap-3 p-4">
+        {saved && !leaving ? (
+          <View className="flex-row items-center justify-between gap-2">
+            <Text className="text-muted-foreground text-xs">Brouillon retrouvé.</Text>
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={() => {
+                clearMailDraft(draftKey);
+                onClose();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Jeter le brouillon"
+            >
+              <Text>Jeter le brouillon</Text>
+            </Button>
+          </View>
+        ) : null}
+
         {leaving && !send.isPending ? (
           <Text className="text-muted-foreground text-xs">
             Le mail part dans quelques secondes. Appuyez sur « Annuler l'envoi » pour le retenir.
