@@ -232,7 +232,10 @@ export function CalendarScreen() {
   // demande pour savoir quel mois on survole (leur position change à chaque mois
   // ajouté au-dessus, aucune valeur retenue ne resterait juste). `prependFrom` :
   // hauteur avant l'ajout d'un mois au-dessus, pour que la page ne saute pas.
-  const pendingFocus = useRef<number | null>(null);
+  // Posé dès l'arrivée : quand Todo est la vue d'ouverture, personne n'appelle
+  // `resetTodo` — la page restait sur le haut du mois précédent, « octobre »
+  // un 23 novembre (retour de Yann, V0.00.92).
+  const pendingFocus = useRef<number | null>(todoSpan.focus.getTime());
   const chunkNodes = useRef(new Map<number, { node: View; first: Date }>());
   const measuring = useRef(false);
   const scrollY = useRef(0);
@@ -241,6 +244,22 @@ export function CalendarScreen() {
 
   const resetTodo = (month: Date) => {
     const next = todoSpanFor(month, new Date());
+    // Même début et même jour de départ qu'affichés : le bloc de départ ne
+    // change pas de place, donc aucune mesure ne viendra — « Aujourd'hui »
+    // restait sans effet depuis la page d'ouverture. On défile alors
+    // directement dessus (un mois ajouté plus bas ne le déplace pas).
+    const samePlace =
+      next.from.getTime() === todoSpan.from.getTime() &&
+      next.focus.getTime() === todoSpan.focus.getTime();
+    const inner = scroll.current?.getInnerViewNode();
+    const target = chunkNodes.current.get(next.focus.getTime());
+    if (samePlace && inner && target) {
+      setTodoSpan(next);
+      target.node.measureLayout(inner, (_left, top) =>
+        scroll.current?.scrollTo({ y: top, animated: false }),
+      );
+      return;
+    }
     pendingFocus.current = next.focus.getTime();
     setTodoSpan(next);
   };
