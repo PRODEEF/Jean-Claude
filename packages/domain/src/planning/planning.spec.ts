@@ -346,8 +346,17 @@ describe("isListDone", () => {
     expect(isListDone(list)).toBe(false);
   });
 
-  it("est fausse sur une liste vide : elle est vide, pas faite", () => {
+  it("est fausse sur une liste vide qu'on n'a pas cochée", () => {
     expect(isListDone(makeList())).toBe(false);
+  });
+
+  it("suit le « fait » de la liste elle-même quand elle n'a pas de tâche", () => {
+    expect(isListDone(makeList({ doneAt: "2026-11-23T10:00:00.000Z" }))).toBe(true);
+  });
+
+  it("ignore son « fait » quand elle a des tâches : ce sont elles qui comptent", () => {
+    const list = makeList({ doneAt: "2026-11-23T10:00:00.000Z", tasks: [task("a")] });
+    expect(isListDone(list)).toBe(false);
   });
 });
 

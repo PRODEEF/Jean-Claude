@@ -413,11 +413,15 @@ export function openTaskCount(list: TaskListWithTasks): number {
 /**
  * Une liste est cochée quand elle a des tâches et qu'aucune ne reste.
  *
- * Elle n'a pas d'état propre : cocher la liste coche ses tâches, cocher toutes
- * ses tâches la coche. Une liste vide n'est pas « faite », elle est vide.
+ * Avec des tâches, elle n'a pas d'état propre : cocher la liste coche ses
+ * tâches, cocher toutes ses tâches la coche. Sans tâche — « Caler call visio »,
+ * un rendez-vous converti en liste —, il n'y a rien à déduire : c'est son
+ * propre « fait » (`doneAt`) qui parle, que l'utilisateur coche à la main
+ * (demande de Yann, 23 novembre).
  */
 export function isListDone(list: TaskListWithTasks): boolean {
-  return list.tasks.length > 0 && openTaskCount(list) === 0;
+  if (list.tasks.length === 0) return list.doneAt !== null;
+  return openTaskCount(list) === 0;
 }
 
 /** Ce que « Mes listes » peut ne montrer que : le passé, ou ce qui n'a pas de date. */

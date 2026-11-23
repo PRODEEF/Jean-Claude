@@ -362,6 +362,7 @@ function DueList({
   return (
     <View ref={cardRef}>
       <ListCard
+        flat
         list={saved}
         folders={folders}
         desktop={desktop}

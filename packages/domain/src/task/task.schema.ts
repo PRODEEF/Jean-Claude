@@ -197,7 +197,16 @@ export const createTaskListSchema = z.object({
 
 export type CreateTaskList = z.infer<typeof createTaskListSchema>;
 
-export const updateTaskListSchema = createTaskListSchema.partial();
+/**
+ * Modification d'une liste.
+ *
+ * `done` ne vaut que pour une liste sans tâche, qui n'a rien dont déduire son
+ * « fait » (`doneAt`) : l'utilisateur la coche à la main. Une liste qui a des
+ * tâches se lit dans ses tâches, et ce champ n'y change rien d'affiché.
+ */
+export const updateTaskListSchema = createTaskListSchema
+  .partial()
+  .extend({ done: z.boolean().optional() });
 
 export type UpdateTaskList = z.infer<typeof updateTaskListSchema>;
 

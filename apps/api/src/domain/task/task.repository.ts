@@ -210,6 +210,7 @@ export const taskRepository: ITaskRepository = {
     if (patch.notes !== undefined) payload["notes"] = patch.notes;
     if (patch.location !== undefined) payload["location"] = patch.location;
     if (patch.eventId !== undefined) payload["event_id"] = patch.eventId;
+    if (patch.done !== undefined) payload["done_at"] = patch.done ? new Date().toISOString() : null;
 
     const { data, error } = await forUser(accessToken)
       .from("task_lists")
@@ -242,19 +243,17 @@ export const taskRepository: ITaskRepository = {
   },
 
   async upsertOccurrence(userId, listId, row, accessToken) {
-    const { error } = await forUser(accessToken)
-      .from("task_list_occurrences")
-      .upsert(
-        {
-          user_id: userId,
-          list_id: listId,
-          occurrence_at: row.occurrenceAt,
-          done_at: row.doneAt,
-          moved_to: row.movedTo,
-          cancelled: row.cancelled,
-        },
-        { onConflict: "list_id,occurrence_at" },
-      );
+    const { error } = await forUser(accessToken).from("task_list_occurrences").upsert(
+      {
+        user_id: userId,
+        list_id: listId,
+        occurrence_at: row.occurrenceAt,
+        done_at: row.doneAt,
+        moved_to: row.movedTo,
+        cancelled: row.cancelled,
+      },
+      { onConflict: "list_id,occurrence_at" },
+    );
 
     if (error) throw new Error(error.message);
   },
