@@ -24,7 +24,11 @@ import { ListCard } from "@/features/todo/ListCard";
 import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { Text } from "@/shared/ui/text";
+import { EventFormDialog, type EventDialogTarget } from "./EventFormDialog";
 import { useListDragHandle, useMomentDropZone, type DayDrag } from "./lib/list-drag";
+
+/** Heure proposée à un événement créé sur « Journée » puis rendu précis : 9 h. */
+const DEFAULT_CREATE_MINUTE = 9 * 60;
 
 export type DueListsBoardProps = {
   /** Les jours à afficher, dans l'ordre — une semaine ou un mois selon l'appelant. */
@@ -50,6 +54,7 @@ export type DueListsBoardProps = {
 export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoardProps) {
   const today = new Date();
   const [listTarget, setListTarget] = useState<TaskListTarget | null>(null);
+  const [eventTarget, setEventTarget] = useState<EventDialogTarget | null>(null);
   const [deletingList, setDeletingList] = useState<TaskList | null>(null);
   const [openedTask, setOpenedTask] = useState<Task | null>(null);
   // Resserré sur grand écran seulement : un mois entier de listes tient mal
@@ -71,7 +76,15 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
    */
   const addList = (day: Date, moment: MomentKey) => {
     const due = dueForMoment(day, moment, { dueAt: null, dueAllDay: null }, bounds);
-    setListTarget({ mode: "create", folderId: null, dueAt: due.dueAt, dueAllDay: due.dueAllDay });
+    // Le même formulaire que « + Événement » (demande de Yann, 23 novembre) :
+    // une todoliste datée et un rendez-vous sont désormais le même objet.
+    const start = due.dueAllDay === false && due.dueAt ? new Date(due.dueAt) : null;
+    setEventTarget({
+      mode: "create",
+      day,
+      minute: start ? start.getHours() * 60 : DEFAULT_CREATE_MINUTE,
+      allDay: start === null,
+    });
   };
   /** Pas d'échéance dans le passé : le serveur la refuse, autant ne pas proposer le geste. */
   const canAddOn = (day: Date) => startOfDay(day).getTime() >= startOfDay(today).getTime();
@@ -235,6 +248,7 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
         );
       })}
 
+      <EventFormDialog target={eventTarget} onClose={() => setEventTarget(null)} />
       <TaskListDialog target={listTarget} onClose={() => setListTarget(null)} />
       <TaskListDeleteDialog list={deletingList} onClose={() => setDeletingList(null)} />
       <TaskDialog task={editedTask} onClose={() => setOpenedTask(null)} />

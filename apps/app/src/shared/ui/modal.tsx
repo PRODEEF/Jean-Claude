@@ -125,8 +125,7 @@ export function Modal({
   const compact = useBreakpoint() === "compact";
   const viewport = useWindowDimensions();
   // Sur le web seulement : une feuille de téléphone n'a pas de « côté ».
-  const beside =
-    Platform.OS === "web" && !compact && anchor ? placeBeside(anchor, viewport) : null;
+  const beside = Platform.OS === "web" && !compact && anchor ? placeBeside(anchor, viewport) : null;
   const insets = useSafeAreaInsets();
   const { cssVariables } = useTheme();
 
@@ -177,7 +176,7 @@ export function Modal({
                     : cn(
                         MAX_HEIGHT_EXPANDED,
                         "rounded-xl",
-                        variant === "confirm" ? "max-w-md" : "max-w-lg",
+                        variant === "confirm" ? "max-w-md" : "min-w-[440px] max-w-lg",
                       ),
                 )}
               >
@@ -187,7 +186,7 @@ export function Modal({
 
                 <View
                   className={cn(
-                    "flex-row items-start gap-4 px-6 pb-5 pt-5",
+                    "flex-row items-start gap-4 px-5 pb-3 pt-4",
                     variant === "form" && "border-border border-b",
                   )}
                 >
@@ -251,7 +250,7 @@ export function Modal({
                   // pied hors de `max-h-[85vh]` au lieu de faire défiler ce corps.
                   <ScrollView
                     className="min-h-0 shrink"
-                    contentContainerClassName="gap-5 px-6 py-5"
+                    contentContainerClassName="gap-3 px-5 py-4"
                     keyboardShouldPersistTaps="handled"
                   >
                     {children}

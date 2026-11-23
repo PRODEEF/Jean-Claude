@@ -86,6 +86,7 @@ export function TaskListCardHeader({
   leading,
   onFolderPress,
   onDuePress,
+  onTypePress,
   onMenuPress,
   menuLabel,
   location,
@@ -101,7 +102,9 @@ export function TaskListCardHeader({
   due: string | undefined;
   leading?: ReactNode;
   onFolderPress: (event: GestureResponderEvent) => void;
-  onDuePress: () => void;
+  onDuePress: (event: GestureResponderEvent) => void;
+  /** Absent, le type n'est qu'une indication ; présent, un appui propose de le changer. */
+  onTypePress?: (event: GestureResponderEvent) => void;
   onMenuPress: (event: GestureResponderEvent) => void;
   menuLabel: string;
   /** Lieu du rendez-vous, sous l'en-tête quand il y en a un. */
@@ -109,8 +112,8 @@ export function TaskListCardHeader({
   /** Libellé de la répétition (« Toutes les semaines »), quand la liste se répète. */
   repeat?: string | undefined;
 }) {
-  const type = (
-    <View className="flex-row items-center gap-2">
+  const typeContent = (
+    <>
       <Icon
         as={shopping ? ShoppingBasket : ListChecks}
         size={16}
@@ -119,7 +122,23 @@ export function TaskListCardHeader({
       <Text className="text-muted-foreground shrink text-xs" numberOfLines={1}>
         {shopping ? "Liste d'achats" : "Liste de tâches"}
       </Text>
-    </View>
+    </>
+  );
+  const type = onTypePress ? (
+    <Pressable
+      onPress={onTypePress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={`Type de ${title} : ${shopping ? "liste d'achats" : "liste de tâches"}`}
+      className={cn(
+        "min-w-0 shrink flex-row items-center gap-1.5 rounded-md px-1.5",
+        compact ? "py-0.5" : "py-1",
+      )}
+    >
+      {typeContent}
+    </Pressable>
+  ) : (
+    <View className="flex-row items-center gap-2">{typeContent}</View>
   );
 
   const folder = (

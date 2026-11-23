@@ -2,10 +2,10 @@ import { useState } from "react";
 import { View } from "react-native";
 import { RECURRENCE_CHOICES, rruleForPreset, type CalendarEntry } from "@jc/domain";
 import { ApiError } from "@jc/api-client";
-import { Button } from "@/shared/ui/button";
 import { DateTimeField } from "@/shared/ui/date-time-field";
 import { Input } from "@/shared/ui/input";
 import { Modal } from "@/shared/ui/modal";
+import { Select } from "@/shared/ui/select";
 import type { Point } from "@/shared/lib/popover-placement";
 import { Switch } from "@/shared/ui/switch";
 import { Text } from "@/shared/ui/text";
@@ -20,9 +20,28 @@ import {
   type EventFormValues,
 } from "./lib/event-form";
 
+const RECURRENCE_OPTIONS = RECURRENCE_CHOICES.map((choice) => ({
+  value: choice.preset,
+  label: choice.label,
+}));
+
+// `Select` ne parle qu'en chaînes : les minutes (ou `null`) y passent par leur texte.
+const REMINDER_OPTIONS = REMINDER_CHOICES.map((choice) => ({
+  value: String(choice.minutes),
+  label: choice.label,
+}));
+
 export type EventDialogTarget =
   /** `groupId` : depuis une conversation d'espace, pour le calendrier de tous ses membres. */
-  | { mode: "create"; day: Date; minute: number; groupId?: string; anchor?: Point }
+  | {
+      mode: "create";
+      day: Date;
+      minute: number;
+      /** Posé sur « Journée » : le « + » d'un jour n'impose aucune heure. */
+      allDay?: boolean;
+      groupId?: string;
+      anchor?: Point;
+    }
   | { mode: "edit"; event: CalendarEntry };
 
 export type EventFormDialogProps = {
@@ -46,7 +65,7 @@ export function EventFormDialog({ target, onClose }: EventFormDialogProps) {
 function keyOf(target: EventDialogTarget): string {
   return target.mode === "edit"
     ? `edit-${target.event.id}`
-    : `create-${target.day.toISOString()}-${target.minute}`;
+    : `create-${target.day.toISOString()}-${target.minute}-${target.allDay ?? false}`;
 }
 
 function initialValues(target: EventDialogTarget): EventFormValues {
@@ -55,6 +74,7 @@ function initialValues(target: EventDialogTarget): EventFormValues {
   const hour = Math.floor(target.minute / 60);
   return {
     ...emptyForm(target.day),
+    allDay: target.allDay ?? false,
     startTime: `${String(hour).padStart(2, "0")}:00`,
     // Le formulaire ne porte qu'une date : une heure de plus depuis 23h
     // passerait au lendemain. La fin s'arrête donc à 23h59 — borner à 23h
@@ -134,7 +154,7 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
     <Modal
       open
       onClose={onClose}
-      title={editing ? "Modifier l'événement" : "Nouvel événement"}
+      title={editing ? "Modifier l'événement" : "Nouveau"}
       // Dire pour qui l'on écrit : un événement d'espace s'affiche chez tous.
       {...(shared
         ? { description: "Visible et modifiable par tous les membres de la conversation." }
@@ -179,18 +199,49 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
           onChangeText={(text) => patch("title", text)}
           placeholder="Rendez-vous chez le kiné"
           autoFocus={!editing}
-          accessibilityLabel="Titre de l'événement"
+          accessibilityLabel="Titre"
         />
       </Field>
 
-      <Field label="Date">
-        <DateTimeField
-          mode="date"
-          value={values.date}
-          onChange={(text) => patch("date", text)}
-          accessibilityLabel="Date de l'événement"
-        />
-      </Field>
+      {/* Date, début et fin sur une seule ligne : le formulaire tient sans défiler. */}
+      <View className="flex-row gap-2">
+        <View className="flex-[1.6]">
+          <Field label="Date">
+            <DateTimeField
+              mode="date"
+              value={values.date}
+              onChange={(text) => patch("date", text)}
+              accessibilityLabel="Date"
+            />
+          </Field>
+        </View>
+        {values.allDay ? null : (
+          <>
+            <View className="flex-1">
+              <Field label="Début">
+                <DateTimeField
+                  mode="time"
+                  value={values.startTime}
+                  onChange={changeStart}
+                  accessibilityLabel="Heure de début"
+                />
+              </Field>
+            </View>
+            <View className="flex-1">
+              <Field label="Fin">
+                <DateTimeField
+                  mode="time"
+                  value={values.endTime}
+                  onChange={changeEnd}
+                  placeholder="Aucune"
+                  clearable
+                  accessibilityLabel="Heure de fin"
+                />
+              </Field>
+            </View>
+          </>
+        )}
+      </View>
 
       <View className="flex-row items-center justify-between">
         <Text className="text-foreground text-sm">Journée entière</Text>
@@ -201,88 +252,60 @@ function EventForm({ target, onClose }: { target: EventDialogTarget; onClose: ()
         />
       </View>
 
-      {values.allDay ? null : (
-        <View className="flex-row gap-3">
+      {/* Répétition et rappel côte à côte, en listes déroulantes : onze boutons
+          en rang pesaient plus que le reste du formulaire. Répétition et lieu :
+          les rendez-vous personnels seulement, ceux d'un espace restent des
+          rendez-vous classiques. */}
+      <View className="flex-row gap-2">
+        {personal ? (
           <View className="flex-1">
-            <Field label="Début">
-              <DateTimeField
-                mode="time"
-                value={values.startTime}
-                onChange={changeStart}
-                accessibilityLabel="Heure de début"
-              />
-            </Field>
-          </View>
-          <View className="flex-1">
-            <Field label="Fin">
-              <DateTimeField
-                mode="time"
-                value={values.endTime}
-                onChange={changeEnd}
+            <Field label="Répétition">
+              <Select
+                value={values.recurrence}
+                options={RECURRENCE_OPTIONS}
+                onChange={(preset) => patch("recurrence", preset)}
                 placeholder="Aucune"
-                clearable
-                accessibilityLabel="Heure de fin"
+                accessibilityLabel="Répétition"
               />
             </Field>
           </View>
-        </View>
-      )}
-
-      {/* Lieu et répétition : les rendez-vous personnels seulement. Ceux d'un
-          espace restent des rendez-vous classiques, sans l'un ni l'autre. */}
-      {personal ? (
-        <>
-          <Field label="Répétition">
-            <View className="flex-row flex-wrap gap-2">
-              {RECURRENCE_CHOICES.map((choice) => (
-                <Button
-                  key={choice.preset}
-                  size="sm"
-                  variant={values.recurrence === choice.preset ? "secondary" : "outline"}
-                  onPress={() => patch("recurrence", choice.preset)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: values.recurrence === choice.preset }}
-                >
-                  <Text>{choice.label}</Text>
-                </Button>
-              ))}
-            </View>
-          </Field>
-
-          <Field label="Lieu">
-            <Input
-              value={values.location}
-              onChangeText={(text) => patch("location", text)}
-              placeholder="Ajouter un lieu"
-              accessibilityLabel="Lieu de l'événement"
+        ) : null}
+        <View className="flex-1">
+          <Field label="Rappel">
+            <Select
+              value={String(values.reminderMinutesBefore)}
+              options={REMINDER_OPTIONS}
+              onChange={(key) =>
+                patch(
+                  "reminderMinutesBefore",
+                  REMINDER_CHOICES.find((choice) => String(choice.minutes) === key)?.minutes ??
+                    null,
+                )
+              }
+              placeholder="Aucun"
+              accessibilityLabel="Rappel"
             />
           </Field>
-        </>
-      ) : null}
-
-      <Field label="Rappel">
-        <View className="flex-row flex-wrap gap-2">
-          {REMINDER_CHOICES.map((choice) => (
-            <Button
-              key={choice.label}
-              size="sm"
-              variant={values.reminderMinutesBefore === choice.minutes ? "secondary" : "outline"}
-              onPress={() => patch("reminderMinutesBefore", choice.minutes)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: values.reminderMinutesBefore === choice.minutes }}
-            >
-              <Text>{choice.label}</Text>
-            </Button>
-          ))}
         </View>
-      </Field>
+      </View>
+
+      {personal ? (
+        <Field label="Lieu">
+          <Input
+            value={values.location}
+            onChangeText={(text) => patch("location", text)}
+            placeholder="Ajouter un lieu"
+            accessibilityLabel="Lieu"
+          />
+        </Field>
+      ) : null}
 
       <Field label="Notes">
         <Input
           value={values.notes}
           onChangeText={(text) => patch("notes", text)}
           multiline
-          className="h-24"
+          className="h-16"
           accessibilityLabel="Notes"
         />
       </Field>
