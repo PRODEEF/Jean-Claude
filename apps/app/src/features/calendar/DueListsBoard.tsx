@@ -150,7 +150,9 @@ export function DueListsBoard({ days, lists, events, onOpenEvent }: DueListsBoar
           .find((task) => task.id === openedTask.id) ?? null);
 
   return (
-    <View className={desktop ? "gap-4" : "gap-5"}>
+    // Deux fois l'écart d'avant (16 et 20 pt) : les journées se lisaient collées
+    // (demande de Yann, 24 novembre).
+    <View className={desktop ? "gap-8" : "gap-10"}>
       {moveFailure ? <Text className="text-destructive text-sm">{moveFailure}</Text> : null}
       {days.map((day) => {
         const dayEvents = events

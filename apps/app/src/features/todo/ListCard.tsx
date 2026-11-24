@@ -27,6 +27,7 @@ import {
 import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import type { FolderChoice } from "@/shared/hooks/use-folder-choices";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
+import { useListOpen } from "./use-list-open";
 import { ListDuePanel, useDueSave } from "./ListDuePanel";
 import { timeOf, toMessage } from "./TaskListDialog";
 import { InlinePicker } from "@/shared/ui/inline-picker";
@@ -96,8 +97,9 @@ export function ListCard({
   onDelete: () => void;
   onOpenTask: (task: Task) => void;
 }) {
-  /** Dépliée par défaut : une liste repliée d'office se ferait oublier. */
-  const [open, setOpen] = useState(true);
+  // Retenu hors de la carte : elle est démontée quand on change de section, et
+  // un chevron fermé doit le rester (demande de Yann, 24 novembre).
+  const [open, setOpen] = useListOpen(list.id);
 
   // Suit l'ordre global, y compris pour une carte apparue après lui (filtre,
   // nouvelle liste) : elle se range avec les autres.
