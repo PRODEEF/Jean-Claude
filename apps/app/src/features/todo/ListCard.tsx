@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type Ref, type RefObject } from "react";
 import { Platform, Pressable, ScrollView, TextInput, View } from "react-native";
 import { ChevronDown, ChevronRight } from "lucide-react-native";
 import {
+  duplicateOfList,
   isListDone,
   presetOfRrule,
   RECURRENCE_CHOICES,
@@ -27,7 +28,7 @@ import { formatFullDay, formatTime } from "@/shared/lib/dates";
 import type { FolderChoice } from "@/shared/hooks/use-folder-choices";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { ListDuePanel, useDueSave } from "./ListDuePanel";
-import { timeOf } from "./TaskListDialog";
+import { timeOf, toMessage } from "./TaskListDialog";
 import { InlinePicker } from "@/shared/ui/inline-picker";
 import { formatDateInput } from "@/shared/lib/date-input";
 import { TaskListEditor } from "./TaskListEditor";
@@ -64,6 +65,7 @@ export function ListCard({
   fold,
   visibleTaskIds,
   dueOnForNew,
+  placeAt,
   gripRef,
   onEdit,
   onDelete,
@@ -83,6 +85,11 @@ export function ListCard({
   visibleTaskIds?: readonly string[];
   /** Jour des lignes nouvelles, quand on écrit depuis un autre jour que l'échéance de la liste. */
   dueOnForNew?: string;
+  /**
+   * Échéance de la date affichée, quand la carte montre une date d'une série :
+   * c'est là que se pose une copie, pas au début de la série.
+   */
+  placeAt?: Pick<TaskList, "dueAt" | "dueAllDay">;
   /** Poignée pour déplacer la liste (web) : absente, la carte ne se déplace pas. */
   gripRef?: Ref<View>;
   onEdit: () => void;
@@ -128,7 +135,7 @@ export function ListCard({
     }
     updateList.mutate({ id: list.id, patch: { title: next } });
   };
-  const { updateList, updateTask, setOccurrence } = useTaskActions();
+  const { updateList, updateTask, setOccurrence, createList, fillList } = useTaskActions();
   const card = useRef<View>(null);
 
   // Amène la carte visée depuis la barre latérale à l'écran : la mettre en
@@ -215,6 +222,27 @@ export function ListCard({
     { label: "Liste d'achats", onPress: () => chooseKind("shopping") },
   ];
 
+  // La copie se pose là où se trouve la liste (demande de Yann, 24 novembre).
+  // Les règles — ce qui suit, ce qui ne suit pas — sont dans `duplicateOfList`.
+  const duplicate = () => {
+    setMenu(null);
+    setDueError(null);
+    const copy = duplicateOfList({ ...list, ...placeAt }, new Date());
+    createList.mutate(copy.list, {
+      onSuccess: (created) => {
+        if (copy.items.length === 0) return;
+        fillList.mutate(
+          { listId: created.id, input: { items: copy.items } },
+          {
+            onError: () =>
+              setDueError("La copie est créée, mais ses tâches n'ont pas pu être copiées."),
+          },
+        );
+      },
+      onError: (cause) => setDueError(toMessage(cause)),
+    });
+  };
+
   const items: ContextMenuItem[] = [
     {
       label: "Modifier la liste",
@@ -223,6 +251,7 @@ export function ListCard({
         onEdit();
       },
     },
+    { label: "Dupliquer la liste", onPress: duplicate },
     {
       label: "Supprimer la liste",
       destructive: true,
