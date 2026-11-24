@@ -398,6 +398,7 @@ function DueList({
         onDelete={() => onDeleteList(saved)}
         {...(subset ? { visibleTaskIds: list.tasks.map((task) => task.id) } : {})}
         {...(dueOn ? { dueOnForNew: dueOn } : {})}
+        placeAt={{ dueAt: list.dueAt, dueAllDay: list.dueAllDay }}
         {...(draggable ? { gripRef } : {})}
       />
     </View>
