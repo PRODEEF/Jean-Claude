@@ -9,6 +9,7 @@ import {
   rememberPayloadSchema,
   deleteItemPayloadSchema,
   updateEventPayloadSchema,
+  updateSettingsPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
   updateTaskListItemsPayloadSchema,
@@ -183,6 +184,10 @@ export class AssistantService {
     }
     if (suggestion.kind === "update_event") {
       await this.updateEvent(suggestion, accessToken);
+      return nothingApplied();
+    }
+    if (suggestion.kind === "update_settings") {
+      await this.updateSettings(userId, suggestion, accessToken);
       return nothingApplied();
     }
     if (suggestion.kind === "delete_item") {
@@ -465,6 +470,28 @@ export class AssistantService {
     if (payload.data.endsAt !== undefined) patch.endsAt = payload.data.endsAt;
 
     await this.calendar.update(payload.data.eventId, patch, accessToken);
+  }
+
+  /**
+   * Applique les réglages proposés, après le geste de l'utilisateur.
+   *
+   * Le schéma de la charge utile est une liste fermée : même une proposition
+   * enregistrée avec d'autres champs ne peut pas toucher au modèle, au périmètre
+   * ou au compte — `parse` les écarte avant l'écriture.
+   */
+  private async updateSettings(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<void> {
+    const payload = updateSettingsPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de réglage illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    await this.users.update(userId, payload.data, accessToken);
   }
 
   /** Supprime le rendez-vous ou la liste désignés, après le geste de l'utilisateur. */

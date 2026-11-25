@@ -329,6 +329,7 @@ function makePreferences(
       proactiveScheduling: true,
       learnsPreferences: true,
       readsAgenda: true,
+      adjustsSettings: true,
       ...scope,
     },
   };
@@ -3660,6 +3661,27 @@ describe("ConversationService", () => {
         expect(lastRequest(llm).system ?? "").not.toContain("[rendez-vous");
       });
 
+      it("propose de régler l'outil en disant au modèle les réglages actuels", async () => {
+        const llm = makeLlm();
+
+        await see(classic(), llm, makeUserRepository(), []);
+
+        const system = lastRequest(llm).system ?? "";
+        expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_update_settings");
+        expect(system).toContain("Réglages actuels");
+        expect(system).toContain("thème system");
+        expect(system).toContain("après-midi dès 12 h, soir dès 19 h");
+      });
+
+      it("refuse de régler l'outil quand l'utilisateur l'a coupé, serveur compris", async () => {
+        const llm = makeLlm();
+
+        await see(classic(), llm, makeUserRepository({ adjustsSettings: false }), []);
+
+        expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_update_settings");
+        expect(lastRequest(llm).system ?? "").not.toContain("Réglages actuels");
+      });
+
       it("ne lit rien quand l'utilisateur a coupé « Jean-Claude voit mon agenda et mes listes »", async () => {
         const llm = makeLlm();
         const calendar = makeCalendarRepository([makeEvent({ title: "Kiné" })]);
@@ -4024,6 +4046,7 @@ describe("ConversationService", () => {
             proactiveTaskDetection: false,
             proactiveScheduling: false,
             learnsPreferences: false,
+            adjustsSettings: false,
           }),
         ),
         { content: "Donne-moi une recette de tarte.", inputMode: "text", attachmentIds: [] },

@@ -668,6 +668,48 @@ describe("SuggestionService", () => {
       );
     });
 
+    it("traduit une demande de réglage en proposition update_settings", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          { message: "Je passe en thème sombre ?", theme: "dark", remindByEmail: false },
+          "suggest_update_settings",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_settings",
+          payload: { theme: "dark", remindByEmail: false },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("abandonne un réglage hors liste : le modèle de langage ne se change pas ainsi", async () => {
+      const repo = makeRepository();
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const captured = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          { message: "Je change de modèle ?", llmModel: "openai/gpt-5.4-mini" },
+          "suggest_update_settings",
+        ),
+        TOKEN,
+      );
+
+      expect(captured).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
     it("traduit un signalement en proposition report_bug", async () => {
       const repo = makeRepository();
 

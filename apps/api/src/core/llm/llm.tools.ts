@@ -1036,6 +1036,65 @@ export const SUGGEST_DELETE_ITEM: LlmTool = {
   },
 };
 
+/**
+ * Régler l'outil à la place de l'utilisateur, sur sa demande (§12.1).
+ *
+ * Liste fermée de réglages cosmétiques ou de confort. Ni le modèle de langage,
+ * ni le périmètre de l'assistant, ni le fuseau, ni le compte : l'assistant ne
+ * règle pas ce qui borne son propre pouvoir.
+ */
+export const SUGGEST_UPDATE_SETTINGS: LlmTool = {
+  name: "suggest_update_settings",
+  description:
+    "À appeler quand l'utilisateur demande explicitement de changer un réglage de " +
+    "l'application : thème clair ou sombre, couleur ou nom de l'assistant, vue sur " +
+    "laquelle le calendrier s'ouvre, rappels dans le canal ou par e-mail, heures où " +
+    "l'après-midi et le soir commencent. Les réglages actuels sont donnés dans la " +
+    "consigne : ne propose pas ce qui est déjà ainsi. Ne change jamais autre chose : " +
+    "ni le modèle, ni les capacités de l'assistant, ni le compte — dis que cela se " +
+    "règle dans les Réglages. Jamais de ta propre initiative.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, sous forme de question, nommant ce qui " +
+          "change — ex. « Je passe l'application en thème sombre ? ». Ne jamais la " +
+          "présenter comme faite. 500 caractères maximum.",
+      },
+      theme: { type: "string", enum: ["light", "dark", "system"], description: "Thème." },
+      assistantName: { type: "string", description: "Nouveau nom de l'assistant, 40 caractères." },
+      assistantColor: {
+        type: "string",
+        description: "Couleur de l'assistant, au format hexadécimal #RRGGBB.",
+      },
+      calendarDefaultView: {
+        type: "string",
+        enum: ["day", "week", "month", "year", "todo"],
+        description: "Vue sur laquelle le calendrier s'ouvre.",
+      },
+      remindInChannel: {
+        type: "boolean",
+        description: "Rappels écrits dans le canal Jean-Claude, ou non.",
+      },
+      remindByEmail: { type: "boolean", description: "Rappels envoyés par e-mail, ou non." },
+      dayPartBounds: {
+        type: "object",
+        description:
+          "Heures de la journée : toujours les deux ensemble, en reprenant celle qui " +
+          "ne change pas depuis les réglages actuels.",
+        properties: {
+          afternoonFrom: { type: "integer", description: "Début de l'après-midi, de 10 à 15." },
+          eveningFrom: { type: "integer", description: "Début du soir, de 17 à 22." },
+        },
+        required: ["afternoonFrom", "eveningFrom"],
+      },
+    },
+    required: ["message"],
+  },
+};
+
 export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_ITEMS,
@@ -1047,6 +1106,7 @@ export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_MEMORY,
   SUGGEST_UPDATE_EVENT,
   SUGGEST_DELETE_ITEM,
+  SUGGEST_UPDATE_SETTINGS,
   ASK_QUESTION,
 ];
 
@@ -1071,6 +1131,7 @@ export const ASSISTANT_TOOLS: LlmTool[] = [
   SUGGEST_MEMORY,
   SUGGEST_UPDATE_EVENT,
   SUGGEST_DELETE_ITEM,
+  SUGGEST_UPDATE_SETTINGS,
   ASK_QUESTION,
 ];
 
@@ -1100,6 +1161,7 @@ const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   // couper « voit mon agenda » coupe aussi ces deux gestes.
   [SUGGEST_UPDATE_EVENT.name]: "readsAgenda",
   [SUGGEST_DELETE_ITEM.name]: "readsAgenda",
+  [SUGGEST_UPDATE_SETTINGS.name]: "adjustsSettings",
 };
 
 /**

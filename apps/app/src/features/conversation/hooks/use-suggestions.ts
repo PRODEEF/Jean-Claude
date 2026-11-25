@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ResolveSuggestion, Suggestion } from "@jc/domain";
 import { api } from "@/shared/lib/api";
+import { PROFILE_KEY } from "@/shared/hooks/use-profile";
 
 /**
  * Propositions de l'assistant sur ce fil (§12.1).
@@ -38,6 +39,8 @@ export function useSuggestions(conversationId: string) {
         // événements : les deux onglets doivent les montrer sans rechargement.
         queryClient.invalidateQueries({ queryKey: ["taskLists"] }),
         queryClient.invalidateQueries({ queryKey: ["calendar"] }),
+        // Un réglage accepté change le profil : thème, couleur et nom se lisent dedans.
+        queryClient.invalidateQueries({ queryKey: PROFILE_KEY }),
       ]);
     },
   });
