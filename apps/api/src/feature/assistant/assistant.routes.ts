@@ -17,6 +17,8 @@ import { suggestionRepository } from "../../domain/suggestion/suggestion.reposit
 import { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
 import { taskRepository } from "../../domain/task/task.repository.js";
 import { TaskService } from "../../domain/task/task.service.js";
+import { memoryRepository } from "../../domain/memory/memory.repository.js";
+import { MemoryService } from "../../domain/memory/memory.service.js";
 import { userRepository } from "../../domain/user/user.repository.js";
 import { AssistantService } from "./assistant.service.js";
 import { workspaceEventRepository } from "../../domain/workspace-event/workspace-event.repository.js";
@@ -31,6 +33,7 @@ const calendar = new CalendarService(
 );
 const tasks = new TaskService(taskRepository, calendarRepository, userRepository);
 const feedback = new FeedbackService(feedbackRepository, llm);
+const memoryService = new MemoryService(memoryRepository);
 
 const service = new AssistantService(
   suggestions,
@@ -44,11 +47,13 @@ const service = new AssistantService(
     calendar,
     tasks,
     attachmentRepository,
+    memoryRepository,
   ),
   tasks,
   calendar,
   userRepository,
   feedback,
+  memoryService,
 );
 
 export const assistantRoutes = new Hono<AuthEnv>()

@@ -11,6 +11,7 @@ import {
   createTaskListsPayloadSchema,
   dateOfCalendarDay,
   reportBugPayloadSchema,
+  rememberPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
   updateTaskListItemsPayloadSchema,
@@ -775,6 +776,8 @@ function outcomeLabel(suggestion: Suggestion): string {
       return "Liste mise à jour";
     case "report_bug":
       return reportLabels(suggestion).outcome;
+    case "remember":
+      return "C'est retenu";
     default: {
       // Exhaustivité vérifiée à la compilation : un `kind` ajouté à
       // `suggestionKindSchema` sans mise à jour de ce switch fait échouer le
@@ -978,6 +981,19 @@ function useSuggestionPreview(suggestion: Suggestion): {
 
     return {
       acceptLabel: reportLabels(suggestion).accept,
+      lines: proposed.success
+        ? [{ key: "content", label: proposed.data.content, nested: false }]
+        : [],
+    };
+  }
+
+  // La phrase qui sera retenue, telle quelle : c'est elle que l'utilisateur
+  // retrouvera et pourra corriger dans « Ce que Jean-Claude sait de moi ».
+  if (suggestion.kind === "remember") {
+    const proposed = rememberPayloadSchema.safeParse(suggestion.payload);
+
+    return {
+      acceptLabel: "Retenir",
       lines: proposed.success
         ? [{ key: "content", label: proposed.data.content, nested: false }]
         : [],

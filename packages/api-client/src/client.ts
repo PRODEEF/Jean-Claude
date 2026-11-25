@@ -21,6 +21,9 @@ import {
   type Feedback,
   type FeedbackAnalysis,
   type FeedbackStatus,
+  type CreateMemory,
+  type Memory,
+  type UpdateMemory,
   type MailAccount,
   type MailFolder,
   type MailInbox,
@@ -135,6 +138,23 @@ export class JeanClaudeClient {
      * sans délai de grâce.
      */
     deleteAccount: () => this.http.request<void>("/me", { method: "DELETE" }),
+  };
+
+  /**
+   * Ce que Jean-Claude retient de l'utilisateur. L'assistant n'y écrit que par
+   * une proposition acceptée (§12.1) ; ces routes sont le geste direct de
+   * l'utilisateur sur sa propre liste.
+   */
+  readonly memories = {
+    list: () => this.http.request<Memory[]>("/memories"),
+
+    create: (input: CreateMemory) =>
+      this.http.request<Memory>("/memories", { method: "POST", body: input }),
+
+    update: (id: string, input: UpdateMemory) =>
+      this.http.request<Memory>(`/memories/${id}`, { method: "PATCH", body: input }),
+
+    remove: (id: string) => this.http.request<void>(`/memories/${id}`, { method: "DELETE" }),
   };
 
   /**

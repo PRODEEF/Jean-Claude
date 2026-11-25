@@ -9,6 +9,7 @@ import { conversationRoutes } from "./domain/conversation/conversation.routes.js
 import { feedbackRoutes } from "./domain/feedback/feedback.routes.js";
 import { folderRoutes } from "./domain/folder/folder.routes.js";
 import { groupRoutes } from "./domain/group/group.routes.js";
+import { memoryRoutes } from "./domain/memory/memory.routes.js";
 import { mailRoutes } from "./domain/mail/mail.routes.js";
 import { taskRoutes } from "./domain/task/task.routes.js";
 import { workspaceRoutes } from "./domain/workspace/workspace.routes.js";
@@ -48,6 +49,7 @@ export const app = new Hono()
   .route("/api/assistant", assistantRoutes)
   .route("/api/feedback", feedbackRoutes)
   .route("/api/mail", mailRoutes)
+  .route("/api/memories", memoryRoutes)
   .route("/api/workspaces", workspaceRoutes)
   .route("/api/groups", groupRoutes)
   .route("/api/workspace-lists", workspaceListRoutes)

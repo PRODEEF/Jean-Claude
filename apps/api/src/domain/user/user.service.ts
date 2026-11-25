@@ -71,6 +71,7 @@ export class UserService {
         structureSuggestions: scope.structureSuggestions ?? base.structureSuggestions,
         proactiveTaskDetection: scope.proactiveTaskDetection ?? base.proactiveTaskDetection,
         proactiveScheduling: scope.proactiveScheduling ?? base.proactiveScheduling,
+        learnsPreferences: scope.learnsPreferences ?? base.learnsPreferences,
       },
     };
   }
