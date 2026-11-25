@@ -12,6 +12,8 @@ import {
   dateOfCalendarDay,
   reportBugPayloadSchema,
   rememberPayloadSchema,
+  deleteItemPayloadSchema,
+  updateEventPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
   updateTaskListItemsPayloadSchema,
@@ -778,6 +780,10 @@ function outcomeLabel(suggestion: Suggestion): string {
       return reportLabels(suggestion).outcome;
     case "remember":
       return "C'est retenu";
+    case "update_event":
+      return "Rendez-vous modifié";
+    case "delete_item":
+      return "C'est supprimé";
     default: {
       // Exhaustivité vérifiée à la compilation : un `kind` ajouté à
       // `suggestionKindSchema` sans mise à jour de ce switch fait échouer le
@@ -970,6 +976,33 @@ function useSuggestionPreview(suggestion: Suggestion): {
       acceptLabel: "Décaler la liste",
       lines: proposed.success
         ? [{ key: proposed.data.listId, label: dueLabel(proposed.data.dueAt), nested: false }]
+        : [],
+    };
+  }
+
+  // Ce qui change, en clair : le nouveau titre et le nouveau début. Le
+  // rendez-vous visé est déjà nommé dans la phrase de l'assistant.
+  if (suggestion.kind === "update_event") {
+    const proposed = updateEventPayloadSchema.safeParse(suggestion.payload);
+    const lines: PreviewLine[] = [];
+    if (proposed.success) {
+      if (proposed.data.title !== undefined) {
+        lines.push({ key: "title", label: proposed.data.title, nested: false });
+      }
+      if (proposed.data.startsAt !== undefined) {
+        lines.push({ key: "startsAt", label: dueLabel(proposed.data.startsAt), nested: false });
+      }
+    }
+    return { acceptLabel: "Modifier le rendez-vous", lines };
+  }
+
+  // Ce qui part, nommé sur la carte : on supprime en connaissance de cause.
+  if (suggestion.kind === "delete_item") {
+    const proposed = deleteItemPayloadSchema.safeParse(suggestion.payload);
+    return {
+      acceptLabel: "Supprimer",
+      lines: proposed.success
+        ? [{ key: proposed.data.itemId, label: proposed.data.title, nested: false }]
         : [],
     };
   }

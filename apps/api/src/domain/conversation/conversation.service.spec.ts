@@ -3610,6 +3610,56 @@ describe("ConversationService", () => {
         expect(system).not.toContain("Terminée");
       });
 
+      it("donne l'identifiant des rendez-vous et des listes, pour pouvoir les désigner", async () => {
+        const llm = makeLlm();
+        const calendar = makeCalendarRepository([
+          makeEvent({ id: "evt-kine", title: "Kiné", startsAt: "2026-09-03T16:00:00.000Z" }),
+        ]);
+
+        await see(classic(), llm, makeUserRepository(), [dated({ id: "list-finance" })], calendar);
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("[rendez-vous evt-kine]");
+        expect(system).toContain("[liste list-finance]");
+        expect(system).toContain("suggest_update_event");
+        expect(lastRequest(llm).tools?.map((t) => t.name)).toEqual(
+          expect.arrayContaining(["suggest_update_event", "suggest_delete_item"]),
+        );
+      });
+
+      it("signale une série : la modifier ou la supprimer vaut pour toutes ses occurrences", async () => {
+        const llm = makeLlm();
+        const calendar = makeCalendarRepository([
+          makeEvent({ id: "evt-serie", title: "Kiné", rrule: "FREQ=WEEKLY;BYDAY=TU" }),
+        ]);
+
+        await see(classic(), llm, makeUserRepository(), [], calendar);
+
+        expect(lastRequest(llm).system ?? "").toContain("[rendez-vous evt-serie, série]");
+      });
+
+      it("n'expose ni déplacement ni suppression quand l'agenda est vide", async () => {
+        const llm = makeLlm();
+
+        await see(classic(), llm, makeUserRepository(), []);
+
+        const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+        expect(tools).not.toContain("suggest_update_event");
+        expect(tools).not.toContain("suggest_delete_item");
+      });
+
+      it("refuse déplacement et suppression quand l'agenda est coupé, serveur compris", async () => {
+        const llm = makeLlm();
+        const calendar = makeCalendarRepository([makeEvent({ title: "Kiné" })]);
+
+        await see(classic(), llm, makeUserRepository({ readsAgenda: false }), [dated()], calendar);
+
+        const tools = lastRequest(llm).tools?.map((t) => t.name) ?? [];
+        expect(tools).not.toContain("suggest_update_event");
+        expect(tools).not.toContain("suggest_delete_item");
+        expect(lastRequest(llm).system ?? "").not.toContain("[rendez-vous");
+      });
+
       it("ne lit rien quand l'utilisateur a coupé « Jean-Claude voit mon agenda et mes listes »", async () => {
         const llm = makeLlm();
         const calendar = makeCalendarRepository([makeEvent({ title: "Kiné" })]);

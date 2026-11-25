@@ -2148,4 +2148,151 @@ describe("AssistantService", () => {
       expect(suggestions.listForConversation).toHaveBeenCalledWith("conv-1", TOKEN);
     });
   });
+
+  describe("acceptation d'un déplacement ou d'une suppression", () => {
+    const EVENT_ID = "22222222-2222-4222-8222-222222222222";
+    const existing = {
+      id: EVENT_ID,
+      title: "Dentiste",
+      notes: null,
+      startsAt: "2026-09-03T08:00:00.000Z",
+      endsAt: null,
+      allDay: false,
+      rrule: null,
+      reminderMinutesBefore: null,
+      folderId: null,
+      conversationId: null,
+      createdByAssistant: false,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+
+    function calendarWithEvent(): ICalendarRepository {
+      const events = makeCalendarRepository();
+      events.findById = jest.fn().mockResolvedValue(existing);
+      events.update = jest.fn().mockResolvedValue(existing);
+      return events;
+    }
+
+    it("déplace le rendez-vous désigné, sans toucher aux champs non cités", async () => {
+      const events = calendarWithEvent();
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "update_event",
+            message: "Je déplace Dentiste à jeudi 10h ?",
+            payload: { eventId: EVENT_ID, startsAt: "2026-09-10T08:00:00.000Z" },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(events.update).toHaveBeenCalledWith(
+        EVENT_ID,
+        { startsAt: "2026-09-10T08:00:00.000Z" },
+        TOKEN,
+      );
+    });
+
+    it("refuse un déplacement qui ne change rien", async () => {
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_event",
+              message: "Je déplace Dentiste ?",
+              payload: { eventId: EVENT_ID },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          makeTaskRepository(),
+          calendarWithEvent(),
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+
+    it("refuse de déplacer un rendez-vous supprimé entre-temps", async () => {
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_event",
+              message: "Je déplace Dentiste ?",
+              payload: { eventId: EVENT_ID, title: "Dentiste (annulé)" },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          makeTaskRepository(),
+          makeCalendarRepository(),
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+
+    it("supprime le rendez-vous désigné, et seulement à l'acceptation", async () => {
+      const events = calendarWithEvent();
+      events.delete = jest.fn().mockResolvedValue(undefined);
+      const store = makeSuggestionStore(
+        makeSuggestion({
+          kind: "delete_item",
+          message: "Je supprime Dentiste ?",
+          payload: { itemType: "event", itemId: EVENT_ID, title: "Dentiste" },
+        }),
+      );
+      const service = makeService(
+        store,
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      );
+
+      await service.resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+      expect(events.delete).not.toHaveBeenCalled();
+    });
+
+    it("supprime bien à l'acceptation", async () => {
+      const events = calendarWithEvent();
+      events.delete = jest.fn().mockResolvedValue(undefined);
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "delete_item",
+            message: "Je supprime Dentiste ?",
+            payload: { itemType: "event", itemId: EVENT_ID, title: "Dentiste" },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        events,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(events.delete).toHaveBeenCalledWith(EVENT_ID, TOKEN);
+    });
+
+    it("refuse une suppression dont la charge utile est illisible", async () => {
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "delete_item",
+              message: "Je supprime ?",
+              payload: { itemType: "event" },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          makeTaskRepository(),
+          calendarWithEvent(),
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
 });
