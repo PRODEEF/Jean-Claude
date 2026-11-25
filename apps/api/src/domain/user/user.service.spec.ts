@@ -32,6 +32,7 @@ function makeRecord(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
         structureSuggestions: true,
         proactiveTaskDetection: true,
         proactiveScheduling: true,
+        learnsPreferences: true,
       },
     },
     ...overrides,
@@ -127,6 +128,7 @@ describe("UserService", () => {
             structureSuggestions: true,
             proactiveTaskDetection: true,
             proactiveScheduling: true,
+            learnsPreferences: true,
           },
         },
         OWNER.accessToken,
@@ -171,7 +173,11 @@ describe("UserService", () => {
     });
 
     it("enregistre la préférence de bandeau uni", async () => {
-      const update = jest.fn().mockResolvedValue(makeRecord({ preferences: { ...makeRecord().preferences, flatBanner: true } }));
+      const update = jest
+        .fn()
+        .mockResolvedValue(
+          makeRecord({ preferences: { ...makeRecord().preferences, flatBanner: true } }),
+        );
       const service = new UserService(makeRepository({ update }));
 
       const profile = await service.updateProfile(OWNER, { flatBanner: true });

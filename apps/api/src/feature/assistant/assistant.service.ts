@@ -6,6 +6,7 @@ import {
   createProjectFoldersPayloadSchema,
   createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
+  rememberPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
   updateTaskListItemsPayloadSchema,
@@ -33,6 +34,7 @@ import type { FeedbackService } from "../../domain/feedback/feedback.service.js"
 import type { FolderService } from "../../domain/folder/folder.service.js";
 import type { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
 import type { TaskService } from "../../domain/task/task.service.js";
+import type { MemoryService } from "../../domain/memory/memory.service.js";
 import type { IUserRepository } from "../../domain/user/user.repository.interface.js";
 
 /** Fuseau retenu quand le profil est illisible — celui du schéma partagé. */
@@ -88,6 +90,8 @@ export class AssistantService {
     private readonly calendar: CalendarService,
     private readonly users: IUserRepository,
     private readonly feedback: FeedbackService,
+    /** Absent (tests), accepter un souvenir échoue plutôt que de faire croire qu'il est retenu. */
+    private readonly memories?: MemoryService,
   ) {}
 
   /**
@@ -172,6 +176,10 @@ export class AssistantService {
     }
     if (suggestion.kind === "report_bug") {
       await this.reportBug(userId, suggestion, accessToken);
+      return nothingApplied();
+    }
+    if (suggestion.kind === "remember") {
+      await this.remember(userId, suggestion, accessToken);
       return nothingApplied();
     }
     if (suggestion.kind === "create_recurring_event") {
@@ -401,6 +409,27 @@ export class AssistantService {
     }
 
     await this.feedback.submitGeneral(userId, payload.data, accessToken);
+  }
+
+  /**
+   * Retient ce que l'utilisateur vient d'accepter de faire retenir.
+   *
+   * Le geste a eu lieu : c'est l'acceptation qui arrive ici (§12.1). La phrase
+   * retenue est celle que la carte lui a montrée, jamais une autre.
+   */
+  private async remember(
+    userId: string,
+    suggestion: Suggestion,
+    accessToken: string,
+  ): Promise<void> {
+    const payload = rememberPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success || !this.memories) {
+      logger.error(SCOPE, "Souvenir à retenir illisible ou service absent", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    await this.memories.add(userId, payload.data.content, "assistant", accessToken);
   }
 
   /**

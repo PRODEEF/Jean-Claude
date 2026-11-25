@@ -208,6 +208,8 @@ export const reminderRepository: IReminderRepository = {
       remind_by_email: boolean;
     }[];
 
+    const memories = await memoriesOf(userIds);
+
     return Promise.all(
       rows.map(async (row): Promise<ReminderRecipient> => ({
         userId: row.id,

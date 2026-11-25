@@ -6,6 +6,7 @@ import {
   FEEDBACK_CONTENT_MAX_LENGTH,
 } from "../feedback/feedback.schema";
 import { folderPurposeSchema } from "../folder/folder.schema";
+import { memoryContentSchema } from "../memory/memory.schema";
 import { calendarDateSchema } from "../shared/search.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 import { taskListKindSchema } from "../task/task.schema";
@@ -32,6 +33,12 @@ export const assistantScopeSchema = z.object({
   proactiveTaskDetection: z.boolean().default(true),
   /** Création d'événements datés à partir d'échéances mentionnées (A.3). */
   proactiveScheduling: z.boolean().default(true),
+  /**
+   * Retenir ce que l'utilisateur laisse voir de ses goûts et de ses habitudes
+   * (« Ce que Jean-Claude sait de moi »). Chaque souvenir reste une proposition
+   * qu'il accepte d'un geste (§12.1).
+   */
+  learnsPreferences: z.boolean().default(true),
 });
 
 export type AssistantScope = z.infer<typeof assistantScopeSchema>;
@@ -64,6 +71,8 @@ export const suggestionKindSchema = z.enum([
   "update_task_list_items",
   /** « On dirait un bug, je le signale ? » — ou une idée, une réclamation (A.10) */
   "report_bug",
+  /** « Je retiens que tu préfères courir le matin ? » (second cerveau) */
+  "remember",
 ]);
 
 export type SuggestionKind = z.infer<typeof suggestionKindSchema>;
@@ -415,3 +424,16 @@ export const reportBugPayloadSchema = z.object({
 });
 
 export type ReportBugPayload = z.infer<typeof reportBugPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `remember` : ce que Jean-Claude retiendrait.
+ *
+ * Une phrase courte, à la troisième personne (« Préfère courir le matin »), que
+ * l'utilisateur relit avant d'accepter et retrouve dans « Ce que Jean-Claude
+ * sait de moi ».
+ */
+export const rememberPayloadSchema = z.object({
+  content: memoryContentSchema,
+});
+
+export type RememberPayload = z.infer<typeof rememberPayloadSchema>;

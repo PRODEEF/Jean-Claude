@@ -554,6 +554,49 @@ describe("SuggestionService", () => {
       jest.restoreAllMocks();
     });
 
+    it("traduit un souvenir proposé en proposition remember", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je retiens que tu préfères courir le matin, c'est bon ?",
+            content: "Préfère courir le matin.",
+          },
+          "suggest_memory",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "remember",
+          message: "Je retiens que tu préfères courir le matin, c'est bon ?",
+          payload: { content: "Préfère courir le matin." },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("abandonne un souvenir vide plutôt que de proposer une carte sans rien à retenir", async () => {
+      const repo = makeRepository();
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const captured = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall({ message: "Je retiens ?", content: "   " }, "suggest_memory"),
+        TOKEN,
+      );
+
+      expect(captured).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
     it("traduit un signalement en proposition report_bug", async () => {
       const repo = makeRepository();
 
@@ -605,7 +648,10 @@ describe("SuggestionService", () => {
         USER,
         expect.objectContaining({
           kind: "report_bug",
-          payload: { category: "idea", content: "Pouvoir archiver plusieurs conversations d'un coup." },
+          payload: {
+            category: "idea",
+            content: "Pouvoir archiver plusieurs conversations d'un coup.",
+          },
         }),
         TOKEN,
       );
@@ -643,7 +689,10 @@ describe("SuggestionService", () => {
       const suggestion = await new SuggestionService(repo).capture(
         USER,
         CONVERSATION,
-        makeToolCall({ message: "On dirait un bug, je le signale ?", content: "   " }, "report_bug"),
+        makeToolCall(
+          { message: "On dirait un bug, je le signale ?", content: "   " },
+          "report_bug",
+        ),
         TOKEN,
       );
 

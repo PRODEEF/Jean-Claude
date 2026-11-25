@@ -2,6 +2,7 @@ import { Children, Fragment, useState, type ComponentProps, type ReactNode } fro
 import { Pressable, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Brain,
   ChevronRight,
   LogOut,
   MessageSquareText,
@@ -20,6 +21,7 @@ import {
   type Theme,
 } from "@jc/domain";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
+import { MemoryDialog } from "@/features/memory/MemoryDialog";
 import { AccountDeleteDialog } from "@/features/settings/AccountDeleteDialog";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
 import { useCurrentUser } from "@/shared/hooks/use-current-user";
@@ -97,6 +99,11 @@ const CAPABILITIES: {
     label: "Échéances et rendez-vous",
     hint: "Proposer de poser une date sur ce qui en mérite une.",
   },
+  {
+    key: "learnsPreferences",
+    label: "Retenir mes goûts et mes habitudes",
+    hint: "Proposer de retenir ce que vous laissez voir de vos routines, pour mieux vous aider.",
+  },
 ];
 
 /**
@@ -124,6 +131,7 @@ export function SettingsScreen() {
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
 
   const health = useQuery({ queryKey: ["health"], queryFn: () => api.health.check() });
@@ -444,6 +452,16 @@ export function SettingsScreen() {
           </SettingRow>
         </Section>
 
+        <Section title="Jean-Claude et moi">
+          <ActionRow
+            icon={Brain}
+            label="Ce que Jean-Claude sait de moi"
+            hint="Ce qu'il retient de vos goûts et de vos habitudes : à relire, corriger ou supprimer."
+            onPress={() => setMemoryOpen(true)}
+            chevron
+          />
+        </Section>
+
         <Section title="Aide">
           <ActionRow
             icon={MessageSquareText}
@@ -483,6 +501,7 @@ export function SettingsScreen() {
       </View>
 
       <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      {memoryOpen ? <MemoryDialog onClose={() => setMemoryOpen(false)} /> : null}
       <AccountDeleteDialog open={deleteAccountOpen} onClose={() => setDeleteAccountOpen(false)} />
     </ScreenShell>
   );
