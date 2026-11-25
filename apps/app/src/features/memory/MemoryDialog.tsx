@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { Trash2 } from "lucide-react-native";
 import { MEMORY_MAX_LENGTH, type Memory } from "@jc/domain";
@@ -113,8 +113,12 @@ function MemoryRow({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(memory.content);
+  // Entrée ferme le champ, dont la sortie (`onBlur`) ne doit pas enregistrer une seconde fois.
+  const finished = useRef(false);
 
   const finish = () => {
+    if (finished.current) return;
+    finished.current = true;
     const content = draft.trim();
     if (content.length === 0 || content === memory.content) {
       setDraft(memory.content);
@@ -141,6 +145,7 @@ function MemoryRow({
           <Pressable
             onPress={() => {
               setDraft(memory.content);
+              finished.current = false;
               setEditing(true);
             }}
             accessibilityRole="button"
