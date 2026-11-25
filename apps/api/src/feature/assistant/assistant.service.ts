@@ -7,6 +7,8 @@ import {
   createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
   rememberPayloadSchema,
+  deleteItemPayloadSchema,
+  updateEventPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
   updateTaskListItemsPayloadSchema,
@@ -23,6 +25,7 @@ import {
   type Suggestion,
   type TaskList,
   type TaskListKind,
+  type UpdateCalendarEvent,
   type UserPreferences,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
@@ -176,6 +179,14 @@ export class AssistantService {
     }
     if (suggestion.kind === "report_bug") {
       await this.reportBug(userId, suggestion, accessToken);
+      return nothingApplied();
+    }
+    if (suggestion.kind === "update_event") {
+      await this.updateEvent(suggestion, accessToken);
+      return nothingApplied();
+    }
+    if (suggestion.kind === "delete_item") {
+      await this.deleteItem(suggestion, accessToken);
       return nothingApplied();
     }
     if (suggestion.kind === "remember") {
@@ -430,6 +441,46 @@ export class AssistantService {
     }
 
     await this.memories.add(userId, payload.data.content, "assistant", accessToken);
+  }
+
+  /**
+   * Déplace ou renomme un rendez-vous qui existe déjà.
+   *
+   * `CalendarService.update` relit le rendez-vous et contrôle la cohérence
+   * début/fin : un rendez-vous supprimé entre la proposition et son acceptation
+   * rend un 404 plutôt que d'écrire dans le vide.
+   */
+  private async updateEvent(suggestion: Suggestion, accessToken: string): Promise<void> {
+    const payload = updateEventPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de modification de rendez-vous illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    // Clé par clé : un champ absent laisse la colonne intacte, un `null` l'efface.
+    const patch: UpdateCalendarEvent = {};
+    if (payload.data.title !== undefined) patch.title = payload.data.title;
+    if (payload.data.startsAt !== undefined) patch.startsAt = payload.data.startsAt;
+    if (payload.data.endsAt !== undefined) patch.endsAt = payload.data.endsAt;
+
+    await this.calendar.update(payload.data.eventId, patch, accessToken);
+  }
+
+  /** Supprime le rendez-vous ou la liste désignés, après le geste de l'utilisateur. */
+  private async deleteItem(suggestion: Suggestion, accessToken: string): Promise<void> {
+    const payload = deleteItemPayloadSchema.safeParse(suggestion.payload);
+
+    if (!payload.success) {
+      logger.error(SCOPE, "Charge utile de suppression illisible", suggestion.id);
+      throw httpError(422, "Cette proposition n'est plus exploitable.");
+    }
+
+    if (payload.data.itemType === "event") {
+      await this.calendar.delete(payload.data.itemId, accessToken);
+    } else {
+      await this.tasks.deleteList(payload.data.itemId, accessToken);
+    }
   }
 
   /**

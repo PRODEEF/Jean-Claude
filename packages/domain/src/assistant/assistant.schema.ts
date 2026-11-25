@@ -79,6 +79,10 @@ export const suggestionKindSchema = z.enum([
   "report_bug",
   /** « Je retiens que tu préfères courir le matin ? » (second cerveau) */
   "remember",
+  /** « Je déplace ton dentiste à jeudi 10h ? » (second cerveau) */
+  "update_event",
+  /** « Je supprime le rendez-vous du 3 ? » — toujours validé d'un geste (§12.1) */
+  "delete_item",
 ]);
 
 export type SuggestionKind = z.infer<typeof suggestionKindSchema>;
@@ -356,6 +360,41 @@ export const updateTaskListDueDatePayloadSchema = z.object({
 });
 
 export type UpdateTaskListDueDatePayload = z.infer<typeof updateTaskListDueDatePayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `update_event` : déplacer ou renommer un
+ * rendez-vous qui existe déjà.
+ *
+ * Au moins un des champs à changer : une proposition qui ne change rien n'a
+ * rien à demander. `endsAt` accepte `null` pour retirer la fin.
+ */
+export const updateEventPayloadSchema = z
+  .object({
+    eventId: uuidSchema,
+    title: labelSchema.optional(),
+    startsAt: isoDateTimeSchema.optional(),
+    endsAt: isoDateTimeSchema.nullable().optional(),
+  })
+  .refine(
+    (payload) =>
+      payload.title !== undefined || payload.startsAt !== undefined || payload.endsAt !== undefined,
+    "Un rendez-vous à modifier doit changer de titre, de début ou de fin.",
+  );
+
+export type UpdateEventPayload = z.infer<typeof updateEventPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `delete_item` : supprimer un rendez-vous ou
+ * une todoliste. Le titre est recopié pour que la carte nomme ce qui part sans
+ * relire la base, et pour que l'utilisateur voie ce qu'il valide.
+ */
+export const deleteItemPayloadSchema = z.object({
+  itemType: z.enum(["event", "list"]),
+  itemId: uuidSchema,
+  title: labelSchema,
+});
+
+export type DeleteItemPayload = z.infer<typeof deleteItemPayloadSchema>;
 
 /**
  * Charge utile d'une suggestion `update_task_list_items` (§12.1, A.2).

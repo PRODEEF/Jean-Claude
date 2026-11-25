@@ -62,6 +62,8 @@ import {
   OPEN_NEW_CONVERSATION,
   REPORT_BUG,
   SUGGEST_MEMORY,
+  SUGGEST_UPDATE_EVENT,
+  SUGGEST_DELETE_ITEM,
   SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
@@ -163,6 +165,9 @@ const KNOWN_TOOL_NAMES = [
  * noter. Retirés pendant l'accueil : la consigne d'accueil n'en dit rien, et
  * l'échange doit y rester une conversation plutôt qu'une suite de cartes.
  */
+/** Déplacer ou supprimer ce que l'agenda de la consigne désigne. */
+const ORGANIZATION_TOOLS = [SUGGEST_UPDATE_EVENT, SUGGEST_DELETE_ITEM];
+
 const CHANNEL_REMINDER_TOOLS = [SUGGEST_TASK_LIST, SUGGEST_EVENTS, SUGGEST_RECURRING_EVENT];
 
 /**
@@ -1288,7 +1293,10 @@ export class ConversationService {
       // sont vides, et la consigne d'accueil doit rester une conversation.
       if (context.onboarding) {
         const welcoming = tools.filter(
-          (tool) => !CHANNEL_REMINDER_TOOLS.includes(tool) && tool !== SUGGEST_MEMORY,
+          (tool) =>
+            !CHANNEL_REMINDER_TOOLS.includes(tool) &&
+            tool !== SUGGEST_MEMORY &&
+            !ORGANIZATION_TOOLS.includes(tool),
         );
         welcoming.push(FINISH_ONBOARDING);
         return {
@@ -1318,7 +1326,10 @@ export class ConversationService {
           !(tool === SUGGEST_PROJECT_FOLDERS && isPending(decided, "create_project_folders")) &&
           !(tool === SUGGEST_RECURRING_EVENT && isPending(decided, "create_recurring_event")) &&
           !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")) &&
-          !(tool === SUGGEST_MEMORY && isPending(decided, "remember")),
+          !(tool === SUGGEST_MEMORY && isPending(decided, "remember")) &&
+          !(ORGANIZATION_TOOLS.includes(tool) && !canDesignate(organization)) &&
+          !(tool === SUGGEST_UPDATE_EVENT && isPending(decided, "update_event")) &&
+          !(tool === SUGGEST_DELETE_ITEM && isPending(decided, "delete_item")),
       );
 
       // L'arborescence n'est remise au modèle que s'il peut en proposer une :
@@ -1370,8 +1381,14 @@ export class ConversationService {
         // réponse avant d'en empiler une seconde.
         !(
           tool === SUGGEST_TASK_LIST_DUE_DATE &&
-          (lists.length === 0 || isPending(decided, "update_task_list_due_date"))
+          ((lists.length === 0 && !canDesignate(organization)) ||
+            isPending(decided, "update_task_list_due_date"))
         ) &&
+        // Rien à déplacer ni à supprimer sans élément de l'agenda à désigner, et
+        // une proposition du même geste qui attend déjà un geste n'est pas doublée.
+        !(ORGANIZATION_TOOLS.includes(tool) && !canDesignate(organization)) &&
+        !(tool === SUGGEST_UPDATE_EVENT && isPending(decided, "update_event")) &&
+        !(tool === SUGGEST_DELETE_ITEM && isPending(decided, "delete_item")) &&
         // Cocher ou renommer suppose des lignes à désigner : une liste
         // vide n'a pas d'identifiant de tâche, et le modèle en inventerait
         // un. Une modification déjà proposée attend un geste avant d'en
@@ -3179,7 +3196,7 @@ function buildSystemPrompt(
       ...TOOL_ANSWER_RULE,
       "Seule exception : `open_new_conversation`, après lequel tu n'écris rien.",
       ...FORMAT_RULES,
-      ...describeOrganization(todo.organization, context.timezone),
+      ...describeOrganization(todo.organization, context.timezone, canEditOrganization(todo.tools)),
     ];
 
     const known = todo.channel?.folders ?? [];
@@ -3201,6 +3218,9 @@ function buildSystemPrompt(
     if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) channel.push(...RECURRING_EVENT_RULES);
     if (todo.tools.includes(SUGGEST_EVENTS)) channel.push(...EVENTS_RULES);
     if (todo.tools.includes(SUGGEST_MEMORY)) channel.push(...MEMORY_RULES);
+    if (canEditOrganization(todo.tools) && canDesignate(todo.organization)) {
+      channel.push(...ORGANIZATION_RULES);
+    }
 
     if (todo.tools.includes(SUGGEST_PROJECT_FOLDERS)) {
       channel.push(
@@ -3234,10 +3254,13 @@ function buildSystemPrompt(
     ...TOOL_ANSWER_RULE,
     ...FORMAT_RULES,
     ...describeMemory(context.memory),
-    ...describeOrganization(todo.organization, context.timezone),
+    ...describeOrganization(todo.organization, context.timezone, canEditOrganization(todo.tools)),
   ];
 
   if (todo.tools.includes(SUGGEST_MEMORY)) lines.push(...MEMORY_RULES);
+  if (canEditOrganization(todo.tools) && canDesignate(todo.organization)) {
+    lines.push(...ORGANIZATION_RULES);
+  }
 
   // Réclamée seulement si le tour a de quoi y répondre : sans outil de
   // proposition, la consigne pousserait le modèle à annoncer en clair une
@@ -3484,17 +3507,30 @@ const MAX_UNDATED_LISTS = 12;
  * dépliées. La limite de fenêtre est dite au modèle plutôt que laissée à
  * deviner : une semaine vide ne veut pas dire qu'il n'y a rien au-delà.
  */
-function describeOrganization(organization: Organization | null, timezone: string): string[] {
+function describeOrganization(
+  organization: Organization | null,
+  timezone: string,
+  withIds = false,
+): string[] {
   if (!organization) return [];
+
+  // Les identifiants ne sont donnés que si un outil peut les consommer : ils
+  // allongent la consigne pour rien sinon. Un événement d'espace partagé n'a
+  // pas d'identifiant : il ne se modifie pas depuis ici.
+  const idOfEvent = (event: CalendarEntry): string =>
+    withIds && event.space === null
+      ? ` [rendez-vous ${event.id}${event.rrule === null ? "" : ", série"}]`
+      : "";
+  const idOfList = (list: TaskListWithTasks): string => (withIds ? ` [liste ${list.id}]` : "");
 
   const entries = [
     ...organization.events.map((event) => ({
       at: new Date(event.startsAt).getTime(),
-      line: `- ${describeWhen(event.startsAt, event.allDay, timezone)} — ${event.title}`,
+      line: `- ${describeWhen(event.startsAt, event.allDay, timezone)} — ${event.title}${idOfEvent(event)}`,
     })),
     ...organization.due.map(({ list, occurrence }) => ({
       at: new Date(occurrence.startsAt).getTime(),
-      line: `- ${describeWhen(occurrence.startsAt, occurrence.allDay, timezone)} — ${list.title} (${describeListState(list, occurrence.doneAt !== null)})`,
+      line: `- ${describeWhen(occurrence.startsAt, occurrence.allDay, timezone)} — ${list.title} (${describeListState(list, occurrence.doneAt !== null)})${idOfList(list)}`,
     })),
   ]
     .sort((a, b) => a.at - b.at)
@@ -3519,7 +3555,9 @@ function describeOrganization(organization: Organization | null, timezone: strin
     lines.push(
       "",
       "Listes sans date encore ouvertes : " +
-        open.map(({ list, todo }) => `« ${list.title} » (${todo} à faire)`).join(" ; ") +
+        open
+          .map(({ list, todo }) => `« ${list.title} » (${todo} à faire)${idOfList(list)}`)
+          .join(" ; ") +
         ".",
     );
   }
@@ -3533,6 +3571,39 @@ function describeOrganization(organization: Organization | null, timezone: strin
   }
   return lines;
 }
+
+/** Vrai quand l'agenda de la consigne contient de quoi désigner un élément par son identifiant. */
+function canDesignate(organization: Organization | null): boolean {
+  if (!organization) return false;
+  return (
+    organization.events.some((event) => event.space === null) ||
+    organization.due.length > 0 ||
+    organization.undated.length > 0
+  );
+}
+
+function canEditOrganization(tools: LlmTool[]): boolean {
+  return (
+    ORGANIZATION_TOOLS.some((tool) => tools.includes(tool)) ||
+    tools.includes(SUGGEST_TASK_LIST_DUE_DATE)
+  );
+}
+
+/**
+ * Consignes de modification de l'agenda : l'identifiant vient de l'agenda
+ * ci-dessus, et rien n'est jamais présenté comme fait (§12.1).
+ */
+const ORGANIZATION_RULES = [
+  "",
+  "Pour déplacer ou renommer un rendez-vous de l'agenda ci-dessus, appelle",
+  "`suggest_update_event` ; pour décaler une liste, `suggest_task_list_due_date` ;",
+  "pour supprimer un rendez-vous ou une liste, `suggest_delete_item`. Recopie",
+  "l'identifiant et le titre depuis la ligne concernée, caractère pour caractère.",
+  "Ces gestes ne se font que sur demande explicite : ne déplace et ne supprime",
+  "jamais de ta propre initiative, même pour libérer un créneau — propose alors",
+  "seulement, en phrase, et laisse l'utilisateur le demander. Une série se",
+  "modifie ou se supprime en entier. Ne dis jamais que c'est fait : demande.",
+];
 
 /** « liste de tâches, 3 à faire », « liste d'achats, faite ». */
 function describeListState(list: TaskListWithTasks, done: boolean): string {

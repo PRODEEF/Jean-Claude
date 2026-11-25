@@ -7,6 +7,8 @@ import {
   createTaskListsPayloadSchema,
   reportBugPayloadSchema,
   rememberPayloadSchema,
+  updateEventPayloadSchema,
+  deleteItemPayloadSchema,
   updateTaskListDueDatePayloadSchema,
   updateTaskListItemsPayloadSchema,
   uuidSchema,
@@ -28,6 +30,8 @@ import {
   SUGGEST_TASK_LIST_DUE_DATE,
   SUGGEST_TASK_LIST_ITEMS,
   SUGGEST_UPDATE_TASK_ITEMS,
+  SUGGEST_UPDATE_EVENT,
+  SUGGEST_DELETE_ITEM,
 } from "../../core/llm/llm.tools.js";
 import type { ISuggestionRepository } from "./suggestion.repository.interface.js";
 
@@ -186,6 +190,12 @@ function translate(
   } else if (toolCall.name === REPORT_BUG.name) {
     const payload = reportBugPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "report_bug", payload: payload.data };
+  } else if (toolCall.name === SUGGEST_UPDATE_EVENT.name) {
+    const payload = updateEventPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "update_event", payload: payload.data };
+  } else if (toolCall.name === SUGGEST_DELETE_ITEM.name) {
+    const payload = deleteItemPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "delete_item", payload: payload.data };
   } else if (toolCall.name === SUGGEST_MEMORY.name) {
     const payload = rememberPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "remember", payload: payload.data };
