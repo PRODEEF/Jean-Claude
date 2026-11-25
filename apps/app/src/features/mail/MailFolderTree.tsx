@@ -51,50 +51,57 @@ export function MailFolderTree({
   const [collapsed, toggle] = useCollapsed();
 
   return (
-    <ScrollView className="flex-1" contentContainerClassName="gap-0.5 p-2">
-      <Button
-        className="mb-2"
-        onPress={onCompose}
-        accessibilityRole="button"
-        accessibilityLabel="Nouveau message"
-      >
-        <Icon as={PenSquare} className="size-4" />
-        <Text>Nouveau message</Text>
-      </Button>
-
-      {accounts.length > 1 ? (
-        <TreeRow
-          label="Tous les comptes"
-          icon={Inbox}
-          unseen={allUnseen}
-          active={view.kind === "all"}
-          depth={0}
-          onPress={() => onSelect({ kind: "all" })}
-        />
-      ) : null}
-
-      {accounts.map((account) => (
-        <AccountNode
-          key={account.id}
-          account={account}
-          view={view}
-          collapsed={collapsed}
-          onToggle={toggle}
-          onSelect={onSelect}
-        />
-      ))}
-
-      <View className="border-border mt-3 border-t px-1 pt-2">
+    <View className="flex-1">
+      {/* Hors du défilement : la barre de défilement, quand elle apparaît, ne
+          doit pas rétrécir ni décaler « Nouveau message » et « Tous les
+          comptes » (retour de Yann, 25 novembre). */}
+      <View className="gap-0.5 px-2 pt-2">
         <Button
-          onPress={onSettings}
+          className="mb-2"
+          onPress={onCompose}
           accessibilityRole="button"
-          accessibilityLabel="Paramètres de la messagerie"
+          accessibilityLabel="Nouveau message"
         >
-          <Icon as={Plus} className="size-4" />
-          <Text>Paramètres</Text>
+          <Icon as={PenSquare} className="size-4" />
+          <Text>Nouveau message</Text>
         </Button>
+
+        {accounts.length > 1 ? (
+          <TreeRow
+            label="Tous les comptes"
+            icon={Inbox}
+            unseen={allUnseen}
+            active={view.kind === "all"}
+            depth={0}
+            onPress={() => onSelect({ kind: "all" })}
+          />
+        ) : null}
       </View>
-    </ScrollView>
+
+      <ScrollView className="flex-1" contentContainerClassName="gap-0.5 p-2 pt-0.5">
+        {accounts.map((account) => (
+          <AccountNode
+            key={account.id}
+            account={account}
+            view={view}
+            collapsed={collapsed}
+            onToggle={toggle}
+            onSelect={onSelect}
+          />
+        ))}
+
+        <View className="border-border mt-3 border-t px-1 pt-2">
+          <Button
+            onPress={onSettings}
+            accessibilityRole="button"
+            accessibilityLabel="Paramètres de la messagerie"
+          >
+            <Icon as={Plus} className="size-4" />
+            <Text>Paramètres</Text>
+          </Button>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 

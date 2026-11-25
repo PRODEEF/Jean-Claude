@@ -70,7 +70,10 @@ export default function AppLayout() {
             onCollapse={() => setPreference(false)}
           />
         ) : null}
-        <SidebarChromeProvider collapsed={!visible}>
+        {/* Repliée sur ordinateur, la barre reste en bande d'icônes : on ne
+            perd ni la navigation ni les sections, qui rouvrent la barre. */}
+        {docked && !visible ? <AppSidebar rail onExpand={() => setPreference(true)} /> : null}
+        <SidebarChromeProvider collapsed={!visible && !docked}>
           {/* Le volet de droite n'existe que sur grand écran : sur téléphone, il
              deviendra une page à part, et en attendant l'écran garde son geste. */}
           <DetailPaneProvider available={expanded}>
@@ -78,7 +81,7 @@ export default function AppLayout() {
               <Slot />
               {/* Même coin que dans la barre ouverte (`p-3`). Le titre du
                 bandeau commence à droite de ce bouton, pas en dessous. */}
-              {!visible ? (
+              {!visible && !docked ? (
                 <View className="absolute left-3 top-3 z-10">
                   <Button
                     variant="ghost"
