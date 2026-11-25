@@ -23,7 +23,7 @@ const RRULE_FREQ = /(?:^|;)FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(?:;|$)/i;
  * refuse de produire la suggestion correspondante.
  */
 export const assistantScopeSchema = z.object({
-  /** Rappels du matin (jour) et du lundi (semaine). */
+  /** Point du matin : la journée écrite dans le canal chaque matin. */
   morningReminders: z.boolean().default(true),
   /** Aide au rangement : proposer un dossier, corriger un classement. */
   folderOrganization: z.boolean().default(true),
