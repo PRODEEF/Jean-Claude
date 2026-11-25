@@ -1,6 +1,11 @@
 import { logger } from "../../core/logger.js";
-import { reminderMessage } from "./reminder-message.js";
-import type { IReminderRepository, ReminderChannel } from "./reminder.repository.interface.js";
+import { reminderMessage, type ReminderMessageInput } from "./reminder-message.js";
+import type { ReminderWriter } from "./reminder-writer.js";
+import type {
+  IReminderRepository,
+  ReminderChannel,
+  ReminderRecipient,
+} from "./reminder.repository.interface.js";
 import {
   MAX_LEAD_MS,
   dueListReminders,
@@ -33,6 +38,8 @@ export class ReminderService {
   constructor(
     private readonly reminders: IReminderRepository,
     private readonly sendEmail: ReminderMailer,
+    /** Absent, tous les rappels partent en phrase fixe. */
+    private readonly write?: ReminderWriter,
   ) {}
 
   async run(now: Date = new Date()): Promise<ReminderRun> {
@@ -61,13 +68,16 @@ export class ReminderService {
       const recipient = recipients.get(event.userId);
       if (!recipient) continue;
 
-      const message = reminderMessage({
-        title: event.title,
-        startsAt: occurrenceAt,
-        allDay: event.allDay,
-        reminderMinutesBefore: event.reminderMinutesBefore ?? 0,
-        timezone: recipient.timezone,
-      });
+      const message = await this.compose(
+        {
+          title: event.title,
+          startsAt: occurrenceAt,
+          allDay: event.allDay,
+          reminderMinutesBefore: event.reminderMinutesBefore ?? 0,
+          timezone: recipient.timezone,
+        },
+        recipient,
+      );
       const slot = {
         label: event.id,
         claim: (channel: ReminderChannel) => this.reminders.claim(event.id, occurrenceAt, channel),
@@ -93,13 +103,16 @@ export class ReminderService {
         const recipient = recipients.get(list.userId);
         if (!recipient) continue;
 
-        const message = reminderMessage({
-          title: list.title,
-          startsAt: occurrenceAt,
-          allDay: list.dueAllDay ?? false,
-          reminderMinutesBefore: list.reminderMinutesBefore ?? 0,
-          timezone: recipient.timezone,
-        });
+        const message = await this.compose(
+          {
+            title: list.title,
+            startsAt: occurrenceAt,
+            allDay: list.dueAllDay ?? false,
+            reminderMinutesBefore: list.reminderMinutesBefore ?? 0,
+            timezone: recipient.timezone,
+          },
+          recipient,
+        );
         const slot = {
           label: `liste ${list.id}`,
           claim: (channel: ReminderChannel) =>
@@ -127,6 +140,33 @@ export class ReminderService {
     }
 
     return run;
+  }
+
+  /**
+   * La phrase du rappel, écrite une seule fois pour le canal et l'e-mail.
+   *
+   * Le rédacteur peut échouer — panne, délai, phrase sans l'heure : le rappel
+   * part alors en phrase fixe. Un rappel ne se perd jamais pour une question de style.
+   */
+  private async compose(
+    input: ReminderMessageInput,
+    recipient: Pick<ReminderRecipient, "displayName" | "assistantName" | "memory">,
+  ): Promise<string> {
+    if (!this.write) return reminderMessage(input);
+
+    try {
+      return await this.write(input, {
+        displayName: recipient.displayName,
+        assistantName: recipient.assistantName,
+        memory: recipient.memory,
+      });
+    } catch (error) {
+      logger.warn(
+        SCOPE,
+        `Rappel en phrase fixe, rédaction impossible : ${error instanceof Error ? error.message : "erreur inconnue"}`,
+      );
+      return reminderMessage(input);
+    }
   }
 
   /** Rappels de listes à envoyer ; une lecture qui échoue donne zéro rappel, pas une panne. */

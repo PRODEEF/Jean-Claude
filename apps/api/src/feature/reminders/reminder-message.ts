@@ -5,23 +5,46 @@
  * Paris. Reste un message d'information : il ne propose rien et ne modifie rien
  * (§12.1).
  */
-export function reminderMessage(input: {
+export type ReminderMessageInput = {
   title: string;
   startsAt: string;
   allDay: boolean;
   reminderMinutesBefore: number;
   timezone: string;
-}): string {
-  const { title, startsAt, allDay, reminderMinutesBefore, timezone } = input;
-  const start = new Date(startsAt);
+};
 
-  if (allDay) {
-    return `Rappel : ${title}, ${formatDay(start, timezone)}.`;
-  }
+/**
+ * Ce qu'un rappel dit, en mots : le jour, l'heure et l'avance, déjà écrits dans
+ * le fuseau de l'utilisateur. La phrase fixe et le rédacteur de phrases
+ * (`reminder-writer.ts`) partent de ces mêmes mots, donc ne se contredisent pas.
+ */
+export function describeReminder(input: ReminderMessageInput): {
+  day: string;
+  clock: string | null;
+  lead: string | null;
+} {
+  const start = new Date(input.startsAt);
+  const day = formatDay(start, input.timezone);
+  if (input.allDay) return { day, clock: null, lead: null };
 
-  const clock = formatClock(start, timezone);
-  return reminderMinutesBefore > 0
-    ? `Rappel : ${title}, à ${clock} (dans ${formatLead(reminderMinutesBefore)}).`
+  return {
+    day,
+    clock: formatClock(start, input.timezone),
+    lead: input.reminderMinutesBefore > 0 ? formatLead(input.reminderMinutesBefore) : null,
+  };
+}
+
+/**
+ * La phrase fixe : celle qui part quand le modèle ne répond pas ou se trompe.
+ * Sèche, mais toujours juste.
+ */
+export function reminderMessage(input: ReminderMessageInput): string {
+  const { title } = input;
+  const { day, clock, lead } = describeReminder(input);
+
+  if (clock === null) return `Rappel : ${title}, ${day}.`;
+  return lead !== null
+    ? `Rappel : ${title}, à ${clock} (dans ${lead}).`
     : `Rappel : ${title}, c'est maintenant (${clock}).`;
 }
 
