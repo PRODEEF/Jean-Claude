@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "expo-router";
 import { vars } from "nativewind";
 import {
   ChevronsUpDown,
+  Folder as FolderIcon,
   Inbox,
   ListChecks,
   LogOut,
@@ -92,6 +93,9 @@ export const SIDEBAR_DEFAULT_WIDTH = 256;
 export const SIDEBAR_MIN_WIDTH = 200;
 export const SIDEBAR_MAX_WIDTH = 420;
 
+/** Largeur de la bande d'icônes qui reste quand la barre est repliée (ordinateur). */
+export const SIDEBAR_RAIL_WIDTH = 56;
+
 export type AppSidebarProps = {
   /** Referme le tiroir après navigation — sans effet quand la barre est fixe. */
   onNavigate?: () => void;
@@ -101,6 +105,14 @@ export type AppSidebarProps = {
   onResize?: (width: number) => void;
   /** Masque la barre depuis son propre en-tête. */
   onCollapse?: () => void;
+  /**
+   * Barre repliée en bande d'icônes : chaque section devient son symbole et
+   * rouvre la barre d'un appui. Les fenêtres (recherche, invitations, nouvel
+   * espace, menu du compte) restent celles de la barre ouverte.
+   */
+  rail?: boolean;
+  /** Rouvre la barre depuis la bande. */
+  onExpand?: () => void;
 };
 
 /** Mails, calendrier puis listes : l'ordre de l'en-tête de la barre. */
@@ -122,6 +134,8 @@ export function AppSidebar({
   width = SIDEBAR_DEFAULT_WIDTH,
   onResize,
   onCollapse,
+  rail = false,
+  onExpand,
 }: AppSidebarProps) {
   const { displayName, initials } = useCurrentUser();
   const { signOut } = useAuth();
@@ -296,300 +310,421 @@ export function AppSidebar({
       // `surface` — celui de la barre elle-même. La rangée active s'y fondait :
       // rien ne montrait que le calendrier était ouvert. Il est foncé ici, pour
       // la barre seulement ; ailleurs, il se pose sur le fond blanc de l'écran.
-      style={[{ width }, vars({ "--accent": palette.border })]}
+      style={[{ width: rail ? SIDEBAR_RAIL_WIDTH : width }, vars({ "--accent": palette.border })]}
     >
-      <View className="gap-2 p-3">
-          {/* Replier et chercher à gauche, courrier à droite. */}
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center gap-1">
-              {onCollapse ? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onPress={onCollapse}
-                  accessibilityLabel="Masquer la navigation"
-                >
-                  <Icon as={PanelLeft} size={18} className="text-muted-foreground" />
-                </Button>
-              ) : null}
-              <Button
-                variant="ghost"
-                size="icon"
-                onPress={() => setSearching(true)}
-                accessibilityLabel="Rechercher une conversation"
-              >
-                <Icon as={Search} size={18} className="text-muted-foreground" />
-              </Button>
-            </View>
-            <View className="relative">
-              <Button
-                variant="ghost"
-                size="icon"
-                onPress={() => setInvitationsOpen(true)}
-                accessibilityLabel={
-                  pendingInvitations > 0
-                    ? `Invitations, ${pendingInvitations} en attente`
-                    : "Invitations"
-                }
-              >
-                <Icon as={Mail} size={18} className="text-muted-foreground" />
-              </Button>
-              {pendingInvitations > 0 ? (
-                <View className="pointer-events-none absolute -right-0.5 -top-0.5">
-                  <UnreadBadge count={pendingInvitations} />
-                </View>
-              ) : null}
-            </View>
-          </View>
-
-          <View className="gap-0.5">
-            {/* L'action la plus fréquente en premier, seule mise en valeur de la
-                liste, comme le « New chat » de Claude (§4.2). La pastille déborde
-                de 2 pt de chaque côté pour garder les libellés alignés sur ceux
-                des rangées à icône nue. */}
-            <Button
-              variant="ghost"
-              onPress={() => go("/chat")}
-              accessibilityLabel="Démarrer une nouvelle conversation"
-              className="justify-start gap-3 px-2"
-            >
-              <View className="-mx-0.5 size-5 items-center justify-center rounded-full bg-primary">
-                <Icon as={Plus} size={14} className="text-primary-foreground" />
-              </View>
-              <Text className="flex-1 text-sm font-medium text-foreground" numberOfLines={1}>
-                Nouvelle conversation
-              </Text>
-            </Button>
-            <NavRow
-              icon={MessageCircle}
-              iconClassName="text-foreground"
-              label={
-                <>
-                  <Text className="font-semibold text-foreground">{assistantName}</Text>
-                  {" - Canal permanent"}
-                </>
-              }
-              accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
-              active={pathname === "/assistant"}
-              onPress={() => go("/assistant")}
-              trailing={
-                <UnreadBadge
-                  count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
-                  pendingQuestion={
-                    pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
-                  }
-                />
-              }
-            />
-            {HEADER_SHORTCUTS.map((link) => (
-              <NavRow
-                key={link.href}
-                icon={link.icon}
-                iconClassName="text-foreground"
-                label={link.label}
-                active={pathname === link.href}
-                onPress={() => go(link.href)}
-              />
-            ))}
-            <NavRow
-              icon={Users}
-              iconClassName="text-foreground"
-              label="Nouvel espace collaboratif"
-              active={false}
-              onPress={() => setCreatingWorkspace(true)}
-            />
-          </View>
-      </View>
-
-      <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
-          {/* L'en-tête fait office de zone racine : y déposer un dossier le sort
-            de son parent. Sans elle, le geste serait à sens unique — on saurait
-            ranger un dossier, jamais l'en ressortir. */}
-          <View ref={rootDropRef} className={cx("rounded-md", isOverRoot)}>
-            <SectionLabel
-              action={{ label: "Créer un dossier", onPress: createRootFolder }}
-              collapse={{ open: foldersOpen, onToggle: toggleFolders }}
-              unread={foldersUnread}
-            >
-              Mes dossiers
-            </SectionLabel>
-          </View>
-
-          {moveError ? (
-            <Text className="text-destructive px-2 py-1 text-xs">{moveError}</Text>
-          ) : null}
-
-          {extractError ? (
-            <Text className="text-destructive px-2 py-1 text-xs">{extractError}</Text>
-          ) : null}
-
-          {/* Message fixe, et non `error.message` : une erreur brute de fetch ou
-            du serveur peut porter des fragments de requête, donc des données
-            de l'utilisateur. */}
-          {error ? (
-            <Text className="px-2 py-1 text-xs text-destructive">
-              Dossiers indisponibles pour le moment.
-            </Text>
-          ) : null}
-
-          {!error && !isLoading && groups.length === 0 && naming === null ? (
-            <Button variant="ghost" onPress={createRootFolder} className="justify-start gap-2 px-2">
-              <Icon as={Plus} size={14} className="text-muted-foreground" />
-              <Text className="text-xs font-normal text-muted-foreground">
-                Créer un premier dossier
-              </Text>
-            </Button>
-          ) : null}
-
-          {foldersOpen
-            ? groups.map((group) => (
-              <FolderGroup
-                key={group.folder.id}
-                group={group}
-                depth={1}
-                pathname={pathname}
-                naming={naming}
-                renamedConversation={renaming}
-                onOpen={go}
-                onMenu={setMenuTarget}
-                onCloseNaming={() => setNaming(null)}
-                onNewConversation={(folderId) => go(`/chat?folderId=${folderId}`)}
-                onConversationMenu={setConversationMenu}
-                onCloseRenaming={() => setRenaming(null)}
-                onDropConversation={dropOnFolder}
-                onDropFolder={moveFolder}
-              />
-            ))
-            : null}
-
-          {naming?.kind === "create" && naming.parentId === null ? (
-            <FolderNameRow target={naming} onDone={() => setNaming(null)} />
-          ) : null}
-
-          <SectionLabel
-            action={{
-              label: "Créer un espace collaboratif",
-              onPress: () => setCreatingWorkspace(true),
-            }}
-            collapse={{ open: collaborationsOpen, onToggle: toggleCollaborations }}
-            unread={collaborationsUnread}
-          >
-            Mes collaborations
-          </SectionLabel>
-
-          {collaborationsOpen ? (
-            <>
-              {workspaces.error ? (
-                <Text className="px-2 py-1 text-xs text-destructive">
-                  Espaces indisponibles pour le moment.
-                </Text>
-              ) : null}
-
-              {workspaceItems.map((workspace) => (
-                <WorkspaceSidebarBody
-                  key={workspace.id}
-                  workspaceId={workspace.id}
-                  workspaceName={workspace.name}
-                  pathname={pathname}
-                  onNavigate={go}
-                />
-              ))}
-            </>
-          ) : null}
-
-          {/* Toutes les conversations, personnelles et de groupe, à plat — y
-            compris celles déjà rangées dans un dossier. Ce n'est pas une
-            duplication : la même conversation reste visible depuis son dossier
-            et depuis cette vue chronologique (§5.2, A.1). */}
-          <SectionLabel
-            collapse={{ open: conversationsOpen, onToggle: toggleConversations }}
-            unread={recentUnread}
-          >
-            Récents
-          </SectionLabel>
-
-          {/* Tranche prise dans ce qui est déjà chargé : les dossiers ont besoin
-              de toutes les conversations pour se remplir, un chargement paginé
-              ne ferait donc qu'un second appel pour les mêmes données. */}
-          {groupsUnavailable ? (
-            <Text className="px-2 py-1 text-xs text-destructive">
-              Conversations de groupe indisponibles pour le moment.
-            </Text>
-          ) : null}
-
-          {extractGroupList.error ? (
-            <Text className="px-2 py-1 text-xs text-destructive">
-              {extractGroupList.error instanceof ApiError && extractGroupList.error.status < 500
-                ? extractGroupList.error.message
-                : "La conversion en todoliste a échoué. Réessayez dans un instant."}
-            </Text>
-          ) : null}
-
-          {conversationsOpen
-            ? recent.slice(0, recentLimit).map((entry) =>
-              entry.kind === "personal" ? (
-                renaming?.id === entry.conversation.id ? (
-                  <ConversationNameRow
-                    key={`personal-${entry.id}`}
-                    conversation={entry.conversation}
-                    onDone={() => setRenaming(null)}
-                  />
-                ) : (
-                  <ConversationRow
-                    key={`personal-${entry.id}`}
-                    conversation={entry.conversation}
-                    pathname={pathname}
-                    onOpen={go}
-                    onMenu={setConversationMenu}
-                    draggable={false}
-                  />
-                )
-              ) : (
-                <RecentGroupRow
-                  key={`group-${entry.id}`}
-                  group={entry.group}
-                  pathname={pathname}
-                  onOpen={go}
-                  onMenu={setGroupMenu}
-                />
-              ),
-            )
-            : null}
-
-          {conversationsOpen && recent.length > recentLimit ? (
-            <ShowMoreRow onPress={() => setRecentLimit((limit) => limit + RECENT_PAGE_SIZE)} />
-          ) : null}
-        </ScrollView>
-
-      <Separator />
-
-      <View className="gap-0.5 p-3">
-          {/* Le profil en pied de barre ouvre le menu du compte : Claude,
-              ChatGPT et Slack le placent tous là (§4.2). Les actions rares —
-              signalement, revue des retours — y sont rangées plutôt qu'en
-              tête de barre. */}
+      {rail ? (
+        <View className="flex-1 items-center gap-1 py-3">
+          <RailButton
+            icon={PanelLeft}
+            label="Afficher la navigation"
+            onPress={() => onExpand?.()}
+          />
+          <RailButton
+            icon={Search}
+            label="Rechercher une conversation"
+            onPress={() => setSearching(true)}
+          />
           <Button
             variant="ghost"
+            size="icon"
+            onPress={() => go("/chat")}
+            accessibilityLabel="Démarrer une nouvelle conversation"
+          >
+            <View className="size-6 items-center justify-center rounded-full bg-primary">
+              <Icon as={Plus} size={16} className="text-primary-foreground" />
+            </View>
+          </Button>
+          <RailButton
+            icon={MessageCircle}
+            label={`Ouvrir le fil permanent avec ${assistantName}`}
+            active={pathname === "/assistant"}
+            badge={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
+            onPress={() => go("/assistant")}
+          />
+          {HEADER_SHORTCUTS.map((link) => (
+            <RailButton
+              key={link.href}
+              icon={link.icon}
+              label={link.label}
+              active={pathname === link.href}
+              onPress={() => go(link.href)}
+            />
+          ))}
+
+          <View className="my-2 h-px w-6 bg-border" />
+
+          {/* Chaque section devient son symbole ; l'appui rouvre la barre sur
+              elle, dépliée. */}
+          <RailButton
+            icon={FolderIcon}
+            label="Mes dossiers"
+            badge={foldersUnread}
+            onPress={() => {
+              if (!foldersOpen) toggleFolders();
+              onExpand?.();
+            }}
+          />
+          <RailButton
+            icon={Users}
+            label="Mes collaborations"
+            badge={collaborationsUnread}
+            onPress={() => {
+              if (!collaborationsOpen) toggleCollaborations();
+              onExpand?.();
+            }}
+          />
+          <RailButton
+            label="Nouvel espace collaboratif"
+            onPress={() => setCreatingWorkspace(true)}
+            symbol={
+              <View>
+                <Icon as={Users} size={20} className="text-foreground" />
+                <View className="absolute -bottom-1 -right-1.5 size-3.5 items-center justify-center rounded-full bg-secondary">
+                  <Icon as={Plus} size={11} className="text-foreground" />
+                </View>
+              </View>
+            }
+          />
+          <RailButton
+            icon={MessagesSquare}
+            label="Récent"
+            badge={recentUnread}
+            onPress={() => {
+              if (!conversationsOpen) toggleConversations();
+              onExpand?.();
+            }}
+          />
+
+          <View className="flex-1" />
+
+          <RailButton
+            icon={Mail}
+            label={
+              pendingInvitations > 0
+                ? `Invitations, ${pendingInvitations} en attente`
+                : "Invitations"
+            }
+            badge={pendingInvitations}
+            onPress={() => setInvitationsOpen(true)}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
             onPress={(event) =>
               setProfileMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
             }
             accessibilityLabel={`Menu du compte de ${displayName}`}
-            className={selected(
-              "h-auto min-w-0 justify-start gap-3 px-2 py-2",
-              pathname === "/settings",
-            )}
+            className={selected("", pathname === "/settings")}
           >
-            <Avatar alt={`Avatar de ${displayName}`} className="size-8">
+            <Avatar alt={`Avatar de ${displayName}`} className="size-7">
               <AvatarFallback className="bg-primary">
                 <Text className="text-xs font-semibold text-primary-foreground">{initials}</Text>
               </AvatarFallback>
             </Avatar>
-            <Text className="flex-1 text-sm font-medium text-foreground" numberOfLines={1}>
-              {displayName}
-            </Text>
-            <Icon as={ChevronsUpDown} size={14} className="text-muted-foreground" />
           </Button>
-      </View>
+        </View>
+      ) : (
+        <>
+          <View className="gap-2 p-3">
+            {/* Replier et chercher à gauche, courrier à droite. */}
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center gap-1">
+                {onCollapse ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onPress={onCollapse}
+                    accessibilityLabel="Masquer la navigation"
+                  >
+                    <Icon as={PanelLeft} size={18} className="text-muted-foreground" />
+                  </Button>
+                ) : null}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onPress={() => setSearching(true)}
+                  accessibilityLabel="Rechercher une conversation"
+                >
+                  <Icon as={Search} size={18} className="text-muted-foreground" />
+                </Button>
+              </View>
+              <View className="relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onPress={() => setInvitationsOpen(true)}
+                  accessibilityLabel={
+                    pendingInvitations > 0
+                      ? `Invitations, ${pendingInvitations} en attente`
+                      : "Invitations"
+                  }
+                >
+                  <Icon as={Mail} size={18} className="text-muted-foreground" />
+                </Button>
+                {pendingInvitations > 0 ? (
+                  <View className="pointer-events-none absolute -right-0.5 -top-0.5">
+                    <UnreadBadge count={pendingInvitations} />
+                  </View>
+                ) : null}
+              </View>
+            </View>
+
+            <View className="gap-0.5">
+              {/* L'action la plus fréquente en premier, seule mise en valeur de la
+                liste, comme le « New chat » de Claude (§4.2). La pastille déborde
+                de 2 pt de chaque côté pour garder les libellés alignés sur ceux
+                des rangées à icône nue. */}
+              <Button
+                variant="ghost"
+                onPress={() => go("/chat")}
+                accessibilityLabel="Démarrer une nouvelle conversation"
+                className="justify-start gap-3 px-2"
+              >
+                <View className="-mx-0.5 size-5 items-center justify-center rounded-full bg-primary">
+                  <Icon as={Plus} size={14} className="text-primary-foreground" />
+                </View>
+                <Text className="flex-1 text-sm font-medium text-foreground" numberOfLines={1}>
+                  Nouvelle conversation
+                </Text>
+              </Button>
+              <NavRow
+                icon={MessageCircle}
+                iconClassName="text-foreground"
+                label={
+                  <>
+                    <Text className="font-semibold text-foreground">{assistantName}</Text>
+                    {" - Canal permanent"}
+                  </>
+                }
+                accessibilityLabel={`Ouvrir le fil permanent avec ${assistantName}`}
+                active={pathname === "/assistant"}
+                onPress={() => go("/assistant")}
+                trailing={
+                  <UnreadBadge
+                    count={pathname === "/assistant" ? 0 : (channel?.unreadCount ?? 0)}
+                    pendingQuestion={
+                      pathname === "/assistant" ? false : (channel?.hasPendingQuestion ?? false)
+                    }
+                  />
+                }
+              />
+              {HEADER_SHORTCUTS.map((link) => (
+                <NavRow
+                  key={link.href}
+                  icon={link.icon}
+                  iconClassName="text-foreground"
+                  label={link.label}
+                  active={pathname === link.href}
+                  onPress={() => go(link.href)}
+                />
+              ))}
+              <NavRow
+                icon={Users}
+                iconClassName="text-foreground"
+                label="Nouvel espace collaboratif"
+                active={false}
+                onPress={() => setCreatingWorkspace(true)}
+              />
+            </View>
+          </View>
+
+          <ScrollView className="flex-1" contentContainerClassName="px-3 pb-4">
+            {/* L'en-tête fait office de zone racine : y déposer un dossier le sort
+            de son parent. Sans elle, le geste serait à sens unique — on saurait
+            ranger un dossier, jamais l'en ressortir. */}
+            <View ref={rootDropRef} className={cx("rounded-md", isOverRoot)}>
+              <SectionLabel
+                action={{ label: "Créer un dossier", onPress: createRootFolder }}
+                collapse={{ open: foldersOpen, onToggle: toggleFolders }}
+                unread={foldersUnread}
+              >
+                Mes dossiers
+              </SectionLabel>
+            </View>
+
+            {moveError ? (
+              <Text className="text-destructive px-2 py-1 text-xs">{moveError}</Text>
+            ) : null}
+
+            {extractError ? (
+              <Text className="text-destructive px-2 py-1 text-xs">{extractError}</Text>
+            ) : null}
+
+            {/* Message fixe, et non `error.message` : une erreur brute de fetch ou
+            du serveur peut porter des fragments de requête, donc des données
+            de l'utilisateur. */}
+            {error ? (
+              <Text className="px-2 py-1 text-xs text-destructive">
+                Dossiers indisponibles pour le moment.
+              </Text>
+            ) : null}
+
+            {!error && !isLoading && groups.length === 0 && naming === null ? (
+              <Button
+                variant="ghost"
+                onPress={createRootFolder}
+                className="justify-start gap-2 px-2"
+              >
+                <Icon as={Plus} size={14} className="text-muted-foreground" />
+                <Text className="text-xs font-normal text-muted-foreground">
+                  Créer un premier dossier
+                </Text>
+              </Button>
+            ) : null}
+
+            {foldersOpen
+              ? groups.map((group) => (
+                  <FolderGroup
+                    key={group.folder.id}
+                    group={group}
+                    depth={1}
+                    pathname={pathname}
+                    naming={naming}
+                    renamedConversation={renaming}
+                    onOpen={go}
+                    onMenu={setMenuTarget}
+                    onCloseNaming={() => setNaming(null)}
+                    onNewConversation={(folderId) => go(`/chat?folderId=${folderId}`)}
+                    onConversationMenu={setConversationMenu}
+                    onCloseRenaming={() => setRenaming(null)}
+                    onDropConversation={dropOnFolder}
+                    onDropFolder={moveFolder}
+                  />
+                ))
+              : null}
+
+            {naming?.kind === "create" && naming.parentId === null ? (
+              <FolderNameRow target={naming} onDone={() => setNaming(null)} />
+            ) : null}
+
+            <SectionLabel
+              action={{
+                label: "Créer un espace collaboratif",
+                onPress: () => setCreatingWorkspace(true),
+              }}
+              collapse={{ open: collaborationsOpen, onToggle: toggleCollaborations }}
+              unread={collaborationsUnread}
+            >
+              Mes collaborations
+            </SectionLabel>
+
+            {collaborationsOpen ? (
+              <>
+                {workspaces.error ? (
+                  <Text className="px-2 py-1 text-xs text-destructive">
+                    Espaces indisponibles pour le moment.
+                  </Text>
+                ) : null}
+
+                {workspaceItems.map((workspace) => (
+                  <WorkspaceSidebarBody
+                    key={workspace.id}
+                    workspaceId={workspace.id}
+                    workspaceName={workspace.name}
+                    pathname={pathname}
+                    onNavigate={go}
+                  />
+                ))}
+              </>
+            ) : null}
+
+            {/* Toutes les conversations, personnelles et de groupe, à plat — y
+            compris celles déjà rangées dans un dossier. Ce n'est pas une
+            duplication : la même conversation reste visible depuis son dossier
+            et depuis cette vue chronologique (§5.2, A.1). */}
+            <SectionLabel
+              collapse={{ open: conversationsOpen, onToggle: toggleConversations }}
+              unread={recentUnread}
+            >
+              Récents
+            </SectionLabel>
+
+            {/* Tranche prise dans ce qui est déjà chargé : les dossiers ont besoin
+              de toutes les conversations pour se remplir, un chargement paginé
+              ne ferait donc qu'un second appel pour les mêmes données. */}
+            {groupsUnavailable ? (
+              <Text className="px-2 py-1 text-xs text-destructive">
+                Conversations de groupe indisponibles pour le moment.
+              </Text>
+            ) : null}
+
+            {extractGroupList.error ? (
+              <Text className="px-2 py-1 text-xs text-destructive">
+                {extractGroupList.error instanceof ApiError && extractGroupList.error.status < 500
+                  ? extractGroupList.error.message
+                  : "La conversion en todoliste a échoué. Réessayez dans un instant."}
+              </Text>
+            ) : null}
+
+            {conversationsOpen
+              ? recent
+                  .slice(0, recentLimit)
+                  .map((entry) =>
+                    entry.kind === "personal" ? (
+                      renaming?.id === entry.conversation.id ? (
+                        <ConversationNameRow
+                          key={`personal-${entry.id}`}
+                          conversation={entry.conversation}
+                          onDone={() => setRenaming(null)}
+                        />
+                      ) : (
+                        <ConversationRow
+                          key={`personal-${entry.id}`}
+                          conversation={entry.conversation}
+                          pathname={pathname}
+                          onOpen={go}
+                          onMenu={setConversationMenu}
+                          draggable={false}
+                        />
+                      )
+                    ) : (
+                      <RecentGroupRow
+                        key={`group-${entry.id}`}
+                        group={entry.group}
+                        pathname={pathname}
+                        onOpen={go}
+                        onMenu={setGroupMenu}
+                      />
+                    ),
+                  )
+              : null}
+
+            {conversationsOpen && recent.length > recentLimit ? (
+              <ShowMoreRow onPress={() => setRecentLimit((limit) => limit + RECENT_PAGE_SIZE)} />
+            ) : null}
+          </ScrollView>
+
+          <Separator />
+
+          <View className="gap-0.5 p-3">
+            {/* Le profil en pied de barre ouvre le menu du compte : Claude,
+              ChatGPT et Slack le placent tous là (§4.2). Les actions rares —
+              signalement, revue des retours — y sont rangées plutôt qu'en
+              tête de barre. */}
+            <Button
+              variant="ghost"
+              onPress={(event) =>
+                setProfileMenu({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })
+              }
+              accessibilityLabel={`Menu du compte de ${displayName}`}
+              className={selected(
+                "h-auto min-w-0 justify-start gap-3 px-2 py-2",
+                pathname === "/settings",
+              )}
+            >
+              <Avatar alt={`Avatar de ${displayName}`} className="size-8">
+                <AvatarFallback className="bg-primary">
+                  <Text className="text-xs font-semibold text-primary-foreground">{initials}</Text>
+                </AvatarFallback>
+              </Avatar>
+              <Text className="flex-1 text-sm font-medium text-foreground" numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Icon as={ChevronsUpDown} size={14} className="text-muted-foreground" />
+            </Button>
+          </View>
+        </>
+      )}
 
       {/* Le menu ne fait que choisir : renommage et suppression passent par la
           fenêtre de dossier, la création par une rangée de saisie. */}
@@ -784,6 +919,44 @@ function ResizeHandle({ width, onResize }: { width: number; onResize: (width: nu
   );
 }
 
+/** Une icône de la bande repliée, avec sa pastille de non-lus. */
+function RailButton({
+  icon,
+  label,
+  onPress,
+  active = false,
+  badge = 0,
+  symbol,
+}: {
+  icon?: LucideIcon;
+  label: string;
+  onPress: () => void;
+  active?: boolean;
+  badge?: number;
+  /** Symbole composé (icône + pastille), quand une icône seule ne suffit pas. */
+  symbol?: ReactNode;
+}) {
+  return (
+    <View className="relative">
+      <Button
+        variant="ghost"
+        size="icon"
+        onPress={onPress}
+        accessibilityLabel={label}
+        accessibilityState={{ selected: active }}
+        className={selected("", active)}
+      >
+        {symbol ?? (icon ? <Icon as={icon} size={20} className="text-foreground" /> : null)}
+      </Button>
+      {badge > 0 ? (
+        <View className="pointer-events-none absolute -right-0.5 -top-0.5">
+          <UnreadBadge count={badge} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 /** Une destination de la barre hors arborescence : raccourci, lien d'espace, action. */
 function NavRow({
   icon,
@@ -966,9 +1139,7 @@ function FolderGroup({
             </Button>
           </CollapsibleTrigger>
 
-          {open || drafting ? null : (
-            <UnreadBadge count={unreadInFolder(group, pathname)} />
-          )}
+          {open || drafting ? null : <UnreadBadge count={unreadInFolder(group, pathname)} />}
           <RowMenuButton
             label={`Actions pour ${group.folder.name}`}
             onOpen={(x, y) => onMenu({ folder: group.folder, depth, x, y })}
