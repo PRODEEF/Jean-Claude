@@ -36,14 +36,16 @@ import type {
 } from "./task.repository.interface.js";
 
 /** Fuseau retenu quand le profil est illisible — celui du schéma partagé. */
-const DEFAULT_TIMEZONE: UserPreferences["timezone"] = userPreferencesSchema.shape.timezone.parse(
-  undefined,
-);
+const DEFAULT_TIMEZONE: UserPreferences["timezone"] =
+  userPreferencesSchema.shape.timezone.parse(undefined);
 
 const SCOPE = "task.service";
 
 /** La plus grande page que l'API accepte (`cursorPaginationSchema`). */
 const OCCURRENCES_PAGE_SIZE = 100;
+
+/** Une occurrence datée, avec la liste qu'elle date. */
+export type DueOccurrence = { list: TaskListWithTasks; occurrence: ListOccurrence };
 
 export class TaskService {
   constructor(
@@ -87,6 +89,34 @@ export class TaskService {
    * fenêtre entière, un chargement partiel y laisserait des trous.
    */
   async occurrences(range: CalendarRange, accessToken: string): Promise<ListOccurrence[]> {
+    return this.occurrencesOf(await this.allLists(accessToken), range, accessToken);
+  }
+
+  /**
+   * Ce que l'assistant lit de l'organisation de l'utilisateur : les listes datées
+   * de la fenêtre, avec leur liste, et les listes sans date.
+   *
+   * Un seul chargement des listes pour les deux : ce sont elles qui coûtent.
+   */
+  async overview(
+    range: CalendarRange,
+    accessToken: string,
+  ): Promise<{ due: DueOccurrence[]; undated: TaskListWithTasks[] }> {
+    const lists = await this.allLists(accessToken);
+    const byId = new Map(lists.map((list) => [list.id, list]));
+    const occurrences = await this.occurrencesOf(lists, range, accessToken);
+
+    return {
+      due: occurrences.flatMap((occurrence) => {
+        const list = byId.get(occurrence.listId);
+        return list ? [{ list, occurrence }] : [];
+      }),
+      undated: lists.filter((list) => list.dueAt === null),
+    };
+  }
+
+  /** Toutes les listes du compte, page après page. */
+  private async allLists(accessToken: string): Promise<TaskListWithTasks[]> {
     const lists: TaskListWithTasks[] = [];
     let cursor: string | undefined;
     do {
@@ -97,7 +127,14 @@ export class TaskService {
       lists.push(...page.items);
       cursor = page.nextCursor ?? undefined;
     } while (cursor);
+    return lists;
+  }
 
+  private async occurrencesOf(
+    lists: TaskListWithTasks[],
+    range: CalendarRange,
+    accessToken: string,
+  ): Promise<ListOccurrence[]> {
     const dated = lists.filter((list) => list.dueAt !== null);
     const overrides = await this.lists.findOccurrences(
       dated.filter((list) => list.rrule !== null).map((list) => list.id),

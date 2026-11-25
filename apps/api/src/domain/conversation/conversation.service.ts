@@ -15,6 +15,7 @@ import type {
   AssignFolders,
   AssistantModel,
   AssistantScope,
+  CalendarEntry,
   CalendarEvent,
   CalendarRange,
   Conversation,
@@ -73,7 +74,7 @@ import {
 import type { CalendarService } from "../calendar/calendar.service.js";
 import type { FolderService } from "../folder/folder.service.js";
 import type { SuggestionService } from "../suggestion/suggestion.service.js";
-import type { TaskService } from "../task/task.service.js";
+import type { DueOccurrence, TaskService } from "../task/task.service.js";
 import type { IMemoryRepository } from "../memory/memory.repository.interface.js";
 import type { IUserRepository } from "../user/user.repository.interface.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
@@ -245,7 +246,13 @@ type Housekeeping = {
    * ses dossiers, et son agenda proche. `null` partout ailleurs — une
    * conversation classique n'a pas à connaître les rendez-vous de son auteur.
    */
-  channel: { folders: FolderTreeNode[]; agenda: CalendarEvent[] } | null;
+  channel: { folders: FolderTreeNode[] } | null;
+  /**
+   * Ce que le modèle voit de l'organisation de l'utilisateur : agenda et listes
+   * des jours qui viennent. `null` quand l'utilisateur a coupé « Jean-Claude voit
+   * mon agenda et mes listes », ou pendant l'accueil.
+   */
+  organization: Organization | null;
   /**
    * Todolistes nées de ce fil, avec leur contenu.
    *
@@ -1284,16 +1291,23 @@ export class ConversationService {
           (tool) => !CHANNEL_REMINDER_TOOLS.includes(tool) && tool !== SUGGEST_MEMORY,
         );
         welcoming.push(FINISH_ONBOARDING);
-        return { tools: welcoming, filing: null, channel: null, lists: [], decided: [] };
+        return {
+          tools: welcoming,
+          filing: null,
+          channel: null,
+          organization: null,
+          lists: [],
+          decided: [],
+        };
       }
 
       // Les trois lectures partent ensemble : les enchaîner ajoutait deux
       // allers-retours de base au délai qui précède le premier mot de la
       // réponse, alors qu'aucune ne dépend du résultat des autres.
-      const [decided, tree, agenda] = await Promise.all([
+      const [decided, tree, organization] = await Promise.all([
         this.suggestions.listForConversation(conversation.id, accessToken),
         this.folders.getTree(accessToken),
-        this.calendar.list(agendaWindow(now), accessToken),
+        this.organizationFor(scope, now, accessToken),
       ]);
 
       // Une proposition qui attend un geste retire son outil, comme en
@@ -1311,7 +1325,14 @@ export class ConversationService {
       // sans l'outil, elle ne ferait qu'allonger la consigne.
       const folders = structuring.includes(SUGGEST_PROJECT_FOLDERS) ? tree : [];
 
-      return { tools: structuring, filing: null, channel: { folders, agenda }, lists: [], decided };
+      return {
+        tools: structuring,
+        filing: null,
+        channel: { folders },
+        organization,
+        lists: [],
+        decided,
+      };
     }
 
     // Autorisé tant que la capacité reste active — classé ou non : une
@@ -1319,12 +1340,13 @@ export class ConversationService {
     // explicite (§12.1), pas seulement lors de son premier rangement.
     const mayFile = scope.folderOrganization;
 
-    const [decided, tree, lists] = await Promise.all([
+    const [decided, tree, lists, organization] = await Promise.all([
       this.suggestions.listForConversation(conversation.id, accessToken),
       mayFile ? this.folders.getTree(accessToken) : Promise.resolve<FolderTreeNode[]>([]),
       // Les listes nées de ce fil, pour que « complète la liste » ait de quoi
       // désigner celle dont on parle plutôt qu'une seconde à créer.
       this.tasks.listForConversation(conversation.id, accessToken),
+      this.organizationFor(scope, now, accessToken),
     ]);
 
     const tools = allowed(CHAT_TOOLS, scope).filter(
@@ -1372,7 +1394,7 @@ export class ConversationService {
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
 
     if (!mayFile || isPending(decided, "assign_folders")) {
-      return { tools, filing: null, channel: null, lists, decided };
+      return { tools, filing: null, channel: null, organization, lists, decided };
     }
 
     tools.push(SUGGEST_FOLDERS);
@@ -1380,9 +1402,48 @@ export class ConversationService {
       tools,
       filing: { folders: tree, currentFolderIds: conversation.folderIds },
       channel: null,
+      organization,
       lists,
       decided,
     };
+  }
+
+  /**
+   * L'agenda et les listes de l'utilisateur, tels que le modèle les lit
+   * (demande de Yann : un cerveau qui voit ce qu'il y a à organiser).
+   *
+   * Rien n'est lu quand l'utilisateur a coupé « Jean-Claude voit mon agenda et
+   * mes listes » : le serveur ne remet pas au modèle ce qu'il n'a pas le droit
+   * de voir. Une lecture qui échoue donne un tour sans agenda, jamais un tour
+   * perdu.
+   */
+  private async organizationFor(
+    scope: AssistantScope,
+    now: Date,
+    accessToken: string,
+  ): Promise<Organization | null> {
+    if (!scope.readsAgenda) return null;
+
+    const range = agendaWindow(now);
+    // Chaque lecture échoue pour son compte : des listes illisibles ne cachent
+    // pas les rendez-vous, et inversement.
+    const lenient = async <T>(what: string, read: () => Promise<T>, fallback: T): Promise<T> => {
+      try {
+        return await read();
+      } catch (error) {
+        logger.warn(
+          SCOPE,
+          `${what} illisibles, tour sans eux : ${error instanceof Error ? error.message : "erreur inconnue"}`,
+        );
+        return fallback;
+      }
+    };
+
+    const [events, overview] = await Promise.all([
+      lenient("Rendez-vous", () => this.calendar.list(range, accessToken), []),
+      lenient("Listes", () => this.tasks.overview(range, accessToken), { due: [], undated: [] }),
+    ]);
+    return { events, due: overview.due, undated: overview.undated };
   }
 
   /**
@@ -3118,7 +3179,7 @@ function buildSystemPrompt(
       ...TOOL_ANSWER_RULE,
       "Seule exception : `open_new_conversation`, après lequel tu n'écris rien.",
       ...FORMAT_RULES,
-      ...describeAgenda(todo.channel?.agenda ?? [], context.timezone),
+      ...describeOrganization(todo.organization, context.timezone),
     ];
 
     const known = todo.channel?.folders ?? [];
@@ -3173,6 +3234,7 @@ function buildSystemPrompt(
     ...TOOL_ANSWER_RULE,
     ...FORMAT_RULES,
     ...describeMemory(context.memory),
+    ...describeOrganization(todo.organization, context.timezone),
   ];
 
   if (todo.tools.includes(SUGGEST_MEMORY)) lines.push(...MEMORY_RULES);
@@ -3401,30 +3463,89 @@ function describeUser(displayName: string | null): string[] {
   return displayName ? [`L'utilisateur s'appelle ${displayName}.`] : [];
 }
 
-/**
- * Agenda des jours qui viennent, remis au seul canal permanent (A.10).
- *
- * Les séries récurrentes ne sont pas expansées (A.11) : une ligne portant une
- * `rrule` n'apparaît qu'à la date de son premier créneau. La limite est dite au
- * modèle plutôt que laissée à deviner, sans quoi il conclurait d'une semaine
- * vide qu'il n'y a rien de prévu.
- */
-function describeAgenda(events: CalendarEvent[], timezone: string): string[] {
-  if (events.length === 0) return [];
+/** Ce que le modèle voit de l'organisation de l'utilisateur. */
+type Organization = {
+  events: CalendarEntry[];
+  due: DueOccurrence[];
+  undated: TaskListWithTasks[];
+};
 
-  return [
-    "",
-    `Agenda des ${AGENDA_WINDOW_DAYS} prochains jours. Les rendez-vous récurrents`,
-    "n'y figurent qu'à leur première occurrence : ne conclus pas d'une absence",
-    "qu'il n'y a rien de prévu.",
-    ...events.map((event) => `- ${describeSlot(event, timezone)} — ${event.title}`),
-  ];
+/** Au-delà, la consigne grossit pour rien : le modèle n'a pas besoin du mois entier. */
+const MAX_AGENDA_LINES = 40;
+const MAX_UNDATED_LISTS = 12;
+
+/**
+ * Agenda des jours qui viennent et listes en cours, remis au modèle quand
+ * l'utilisateur le permet.
+ *
+ * Rendez-vous et listes datées sont fondus dans une seule chronologie : pour
+ * l'utilisateur, un rendez-vous est une liste datée, et le modèle qui ne verrait
+ * que les premiers conclurait à tort qu'une journée est libre. Les séries sont
+ * dépliées. La limite de fenêtre est dite au modèle plutôt que laissée à
+ * deviner : une semaine vide ne veut pas dire qu'il n'y a rien au-delà.
+ */
+function describeOrganization(organization: Organization | null, timezone: string): string[] {
+  if (!organization) return [];
+
+  const entries = [
+    ...organization.events.map((event) => ({
+      at: new Date(event.startsAt).getTime(),
+      line: `- ${describeWhen(event.startsAt, event.allDay, timezone)} — ${event.title}`,
+    })),
+    ...organization.due.map(({ list, occurrence }) => ({
+      at: new Date(occurrence.startsAt).getTime(),
+      line: `- ${describeWhen(occurrence.startsAt, occurrence.allDay, timezone)} — ${list.title} (${describeListState(list, occurrence.doneAt !== null)})`,
+    })),
+  ]
+    .sort((a, b) => a.at - b.at)
+    .slice(0, MAX_AGENDA_LINES);
+
+  const open = organization.undated
+    .map((list) => ({ list, todo: list.tasks.filter((task) => !task.done).length }))
+    .filter(({ todo }) => todo > 0)
+    .slice(0, MAX_UNDATED_LISTS);
+
+  const lines: string[] = [];
+  if (entries.length > 0) {
+    lines.push(
+      "",
+      `Agenda des ${AGENDA_WINDOW_DAYS} prochains jours : rendez-vous et listes datées, séries`,
+      "dépliées. Rien n'est lu au-delà : ne conclus pas d'une semaine vide qu'il n'y a",
+      "rien de prévu plus tard.",
+      ...entries.map((entry) => entry.line),
+    );
+  }
+  if (open.length > 0) {
+    lines.push(
+      "",
+      "Listes sans date encore ouvertes : " +
+        open.map(({ list, todo }) => `« ${list.title} » (${todo} à faire)`).join(" ; ") +
+        ".",
+    );
+  }
+  if (lines.length > 0) {
+    lines.push(
+      "",
+      "Sers-toi de cet agenda et de ces listes pour répondre à « qu'est-ce que j'ai ? »,",
+      "pour éviter de proposer un créneau déjà pris, et pour proposer où caser quelque",
+      "chose. Ne les récite pas sans qu'on te le demande.",
+    );
+  }
+  return lines;
+}
+
+/** « liste de tâches, 3 à faire », « liste d'achats, faite ». */
+function describeListState(list: TaskListWithTasks, done: boolean): string {
+  const nature = list.kind === "shopping" ? "liste d'achats" : "liste de tâches";
+  if (done) return `${nature}, faite`;
+  const todo = list.tasks.filter((task) => !task.done).length;
+  return list.tasks.length === 0 ? nature : `${nature}, ${todo} à faire`;
 }
 
 /** Date seule pour une journée entière, date et heure locale sinon. */
-function describeSlot(event: CalendarEvent, timezone: string): string {
-  const start = new Date(event.startsAt);
-  return event.allDay
+function describeWhen(startsAt: string, allDay: boolean, timezone: string): string {
+  const start = new Date(startsAt);
+  return allDay
     ? `${formatInstant(start, timezone, "date")} (journée entière)`
     : formatInstant(start, timezone);
 }

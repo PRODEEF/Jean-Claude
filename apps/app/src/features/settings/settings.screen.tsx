@@ -100,6 +100,11 @@ const CAPABILITIES: {
     hint: "Proposer de poser une date sur ce qui en mérite une.",
   },
   {
+    key: "readsAgenda",
+    label: "Jean-Claude voit mon agenda et mes listes",
+    hint: "Il s'appuie sur vos rendez-vous et vos listes pour répondre et proposer juste. Coupé, il ne les voit plus.",
+  },
+  {
     key: "learnsPreferences",
     label: "Retenir mes goûts et mes habitudes",
     hint: "Proposer de retenir ce que vous laissez voir de vos routines, pour mieux vous aider.",
