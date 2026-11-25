@@ -1,12 +1,12 @@
 import Constants from "expo-constants";
 
 /**
- * « 0.0.1 » s'affiche « V0.00.1 » : le format voulu par Yann, où le numéro du
- * milieu garde deux chiffres.
+ * « 0.0.1 » s'affiche « V0.00.01 » : le format voulu par Yann, où le numéro du
+ * milieu et celui de la fin gardent au moins deux chiffres.
  */
 export function formatVersion(semver: string): string {
   const [major = "0", minor = "0", patch = "0"] = semver.split(".");
-  return `V${major}.${minor.padStart(2, "0")}.${patch}`;
+  return `V${major}.${minor.padStart(2, "0")}.${patch.padStart(2, "0")}`;
 }
 
 /**
