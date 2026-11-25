@@ -328,6 +328,7 @@ function makePreferences(
       proactiveTaskDetection: true,
       proactiveScheduling: true,
       learnsPreferences: true,
+      readsAgenda: true,
       ...scope,
     },
   };
@@ -370,7 +371,7 @@ function makeUserRepository(
  */
 function makeTaskRepository(lists: TaskListWithTasks[] = []): ITaskRepository {
   return {
-    findAll: jest.fn().mockResolvedValue(lists),
+    findAll: jest.fn().mockResolvedValue({ items: lists, nextCursor: null }),
     findById: jest.fn().mockResolvedValue(null),
     findByConversation: jest.fn().mockResolvedValue(lists),
     findByEventId: jest.fn().mockResolvedValue(null),
@@ -3506,23 +3507,142 @@ describe("ConversationService", () => {
       expect(lastRequest(llm).system ?? "").not.toContain("Agenda des");
     });
 
-    it("ne lit pas l'agenda pour une conversation classique", async () => {
-      const llm = makeLlm();
-      const calendar = makeCalendarRepository([makeEvent({ title: "Kiné" })]);
+    describe("un cerveau qui voit l'organisation de l'utilisateur", () => {
+      const dated = (overrides: Partial<TaskListWithTasks> = {}) =>
+        makeTaskList({
+          title: "FINANCE",
+          kind: "todo",
+          dueAt: "2026-09-03T08:00:00.000Z",
+          dueAllDay: false,
+          tasks: [
+            makeTaskListItem({ id: "t1", title: "Relancer", done: false }),
+            makeTaskListItem({ id: "t2", title: "Payer", done: true }),
+          ],
+          ...overrides,
+        });
+      const classic = () => makeRepository();
+      /** Les listes du compte, sans qu'aucune soit née de ce fil : seul l'agenda les montre. */
+      const accountOf = (lists: TaskListWithTasks[]): ITaskRepository => ({
+        ...makeTaskRepository(lists),
+        findByConversation: jest.fn().mockResolvedValue([]),
+      });
+      const see = (
+        repo: IConversationRepository,
+        llm: LlmProvider,
+        users: IUserRepository,
+        lists: TaskListWithTasks[],
+        calendar: ICalendarRepository = makeCalendarRepository(),
+      ) =>
+        drain(
+          makeService(
+            repo,
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            users,
+            calendar,
+            accountOf(lists),
+          ),
+        );
 
-      await drain(
-        makeService(
-          makeRepository(),
-          llm,
-          makeSuggestionRepository(),
-          makeFolderRepository(),
-          makeUserRepository(),
-          calendar,
-        ),
-      );
+      it("remet aussi l'agenda à une conversation classique (décision de Yann, 25 novembre)", async () => {
+        const llm = makeLlm();
+        const calendar = makeCalendarRepository([makeEvent({ title: "Kiné" })]);
 
-      expect(calendar.findInRange).not.toHaveBeenCalled();
-      expect(lastRequest(llm).system ?? "").not.toContain("Kiné");
+        await see(classic(), llm, makeUserRepository(), [], calendar);
+
+        expect(calendar.findInRange).toHaveBeenCalled();
+        expect(lastRequest(llm).system ?? "").toContain("Kiné");
+      });
+
+      it("range dans la même chronologie les rendez-vous et les listes datées", async () => {
+        const llm = makeLlm();
+        const calendar = makeCalendarRepository([
+          makeEvent({ title: "Kiné", startsAt: "2026-09-03T16:00:00.000Z" }),
+        ]);
+
+        await see(classic(), llm, makeUserRepository(), [dated()], calendar);
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("FINANCE (liste de tâches, 1 à faire)");
+        expect(system.indexOf("FINANCE")).toBeLessThan(system.indexOf("Kiné"));
+      });
+
+      it("ne remet pas une liste datée hors de la fenêtre de sept jours", async () => {
+        const llm = makeLlm();
+
+        await see(classic(), llm, makeUserRepository(), [
+          dated({ title: "LOINTAINE", dueAt: "2026-12-24T08:00:00.000Z" }),
+        ]);
+
+        expect(lastRequest(llm).system ?? "").not.toContain("LOINTAINE");
+      });
+
+      it("signale une liste datée déjà faite", async () => {
+        const llm = makeLlm();
+
+        await see(classic(), llm, makeUserRepository(), [
+          dated({ tasks: [makeTaskListItem({ id: "t1", done: true })] }),
+        ]);
+
+        // Le jour de la liste n'est pas « libre » pour autant : elle y est.
+        expect(lastRequest(llm).system ?? "").toContain("FINANCE");
+      });
+
+      it("liste à part les listes sans date encore ouvertes", async () => {
+        const llm = makeLlm();
+
+        await see(classic(), llm, makeUserRepository(), [
+          dated({
+            title: "Courses",
+            dueAt: null,
+            dueAllDay: null,
+            tasks: [
+              makeTaskListItem({ id: "t1", done: false }),
+              makeTaskListItem({ id: "t2", done: false }),
+            ],
+          }),
+          dated({ title: "Terminée", dueAt: null, dueAllDay: null, tasks: [] }),
+        ]);
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("« Courses » (2 à faire)");
+        expect(system).not.toContain("Terminée");
+      });
+
+      it("ne lit rien quand l'utilisateur a coupé « Jean-Claude voit mon agenda et mes listes »", async () => {
+        const llm = makeLlm();
+        const calendar = makeCalendarRepository([makeEvent({ title: "Kiné" })]);
+
+        await see(classic(), llm, makeUserRepository({ readsAgenda: false }), [dated()], calendar);
+
+        expect(calendar.findInRange).not.toHaveBeenCalled();
+        const system = lastRequest(llm).system ?? "";
+        expect(system).not.toContain("Kiné");
+        expect(system).not.toContain("FINANCE");
+      });
+
+      it("répond sans les listes quand leur lecture échoue, en gardant les rendez-vous", async () => {
+        const llm = makeLlm();
+        jest.spyOn(console, "warn").mockImplementation(() => undefined);
+        const tasks = makeTaskRepository();
+        tasks.findAll = jest.fn().mockRejectedValue(new Error("panne"));
+        const calendar = makeCalendarRepository([makeEvent({ title: "Kiné" })]);
+
+        await drain(
+          makeService(
+            classic(),
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            makeUserRepository(),
+            calendar,
+            tasks,
+          ),
+        );
+
+        expect(lastRequest(llm).system ?? "").toContain("Kiné");
+      });
     });
 
     it("donne au canal les dossiers déjà créés, pour qu'il n'en propose pas d'homonyme", async () => {

@@ -39,6 +39,12 @@ export const assistantScopeSchema = z.object({
    * qu'il accepte d'un geste (§12.1).
    */
   learnsPreferences: z.boolean().default(true),
+  /**
+   * Lire l'agenda et les listes de l'utilisateur pour répondre et proposer juste
+   * (« qu'est-ce que j'ai cette semaine ? », « où caser ça ? »). Désactivé, rien
+   * de cela n'est remis au modèle.
+   */
+  readsAgenda: z.boolean().default(true),
 });
 
 export type AssistantScope = z.infer<typeof assistantScopeSchema>;
