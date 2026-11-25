@@ -197,7 +197,9 @@ export const reminderRepository: IReminderRepository = {
 
     const { data, error } = await admin
       .from("profiles")
-      .select("id, timezone, remind_in_channel, remind_by_email")
+      .select(
+        "id, timezone, remind_in_channel, remind_by_email, display_name, assistant_name, memory",
+      )
       .in("id", userIds);
 
     if (error) throw new Error(error.message);
@@ -206,6 +208,9 @@ export const reminderRepository: IReminderRepository = {
       timezone: string;
       remind_in_channel: boolean;
       remind_by_email: boolean;
+      display_name: string | null;
+      assistant_name: string;
+      memory: string | null;
     }[];
 
     return Promise.all(
@@ -216,6 +221,9 @@ export const reminderRepository: IReminderRepository = {
         remindByEmail: row.remind_by_email,
         // L'adresse n'est lue que pour qui veut un e-mail.
         email: row.remind_by_email ? await emailOf(row.id) : null,
+        displayName: row.display_name,
+        assistantName: row.assistant_name,
+        memory: row.memory,
       })),
     );
   },

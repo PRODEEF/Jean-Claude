@@ -3,10 +3,16 @@ import { bearerMatches } from "../../core/cron.js";
 import { config } from "../../core/config.js";
 import { httpError } from "../../core/http.js";
 import { sendReminderEmail } from "../../core/mail/reminder-mail.js";
+import { llm } from "../../core/llm/providers/gateway.provider.js";
 import { reminderRepository } from "./reminder.repository.js";
+import { createReminderWriter } from "./reminder-writer.js";
 import { ReminderService } from "./reminder.service.js";
 
-const service = new ReminderService(reminderRepository, sendReminderEmail);
+const service = new ReminderService(
+  reminderRepository,
+  sendReminderEmail,
+  createReminderWriter(llm),
+);
 
 /**
  * Appelé par le planificateur toutes les quelques minutes, pas par l'application.
