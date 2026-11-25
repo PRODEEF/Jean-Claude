@@ -27,6 +27,7 @@ import { suggestionRepository } from "../suggestion/suggestion.repository.js";
 import { SuggestionService } from "../suggestion/suggestion.service.js";
 import { taskRepository } from "../task/task.repository.js";
 import { TaskService } from "../task/task.service.js";
+import { memoryRepository } from "../memory/memory.repository.js";
 import { userRepository } from "../user/user.repository.js";
 import { conversationRepository } from "./conversation.repository.js";
 import { ConversationService } from "./conversation.service.js";
@@ -46,6 +47,7 @@ const service = new ConversationService(
   ),
   new TaskService(taskRepository, calendarRepository, userRepository),
   attachmentRepository,
+  memoryRepository,
 );
 
 const idParam = validate("param", z.object({ id: uuidSchema }));

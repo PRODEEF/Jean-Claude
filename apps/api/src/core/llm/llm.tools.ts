@@ -727,6 +727,44 @@ export const REPORT_BUG: LlmTool = {
   },
 };
 
+/**
+ * Ce que Jean-Claude retiendrait de l'utilisateur : un goût, une habitude, une
+ * contrainte qui durent. Reste une proposition (§12.1) : rien n'est retenu tant
+ * que l'utilisateur ne l'a pas acceptée, et il retrouve, corrige et supprime
+ * chaque chose retenue dans « Ce que Jean-Claude sait de moi ».
+ */
+export const SUGGEST_MEMORY: LlmTool = {
+  name: "suggest_memory",
+  description:
+    "À appeler quand l'utilisateur laisse voir, dans ce qu'il vient de dire, un goût, une " +
+    "habitude, une routine ou une contrainte qui DURENT et qui t'aideront à mieux organiser sa " +
+    "vie (« je cours le mardi matin », « je déteste les réunions le lundi », « je préfère les " +
+    "rappels la veille », « je ne mange pas de viande »). Ne pas l'appeler pour une information " +
+    "ponctuelle (un rendez-vous, une tâche, une envie du jour), pour ce qui concerne une autre " +
+    "personne, ni pour un secret : mot de passe, code, numéro de carte ou de compte, identifiant. " +
+    "Une seule chose à la fois, et seulement si elle est claire.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, au tutoiement et sous forme de question — " +
+          "ex. « Je retiens que tu préfères courir le matin, c'est bon ? ». Ne jamais " +
+          "présenter la chose comme déjà retenue. 500 caractères maximum.",
+      },
+      content: {
+        type: "string",
+        description:
+          "Ce qui sera retenu, en une phrase courte à la troisième personne, sans « je » ni " +
+          "« tu » — ex. « Préfère courir le matin. », « Déteste les réunions le lundi. ». " +
+          "300 caractères maximum.",
+      },
+    },
+    required: ["message", "content"],
+  },
+};
+
 export const FINISH_ONBOARDING: LlmTool = {
   name: "finish_onboarding",
   description:
@@ -919,6 +957,7 @@ export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_RECURRING_EVENT,
   SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
+  SUGGEST_MEMORY,
   ASK_QUESTION,
 ];
 
@@ -940,6 +979,7 @@ export const ASSISTANT_TOOLS: LlmTool[] = [
   SUGGEST_PROJECT_FOLDERS,
   OPEN_NEW_CONVERSATION,
   REPORT_BUG,
+  SUGGEST_MEMORY,
   ASK_QUESTION,
 ];
 
@@ -964,6 +1004,7 @@ const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_EVENTS.name]: "proactiveScheduling",
   [SUGGEST_FOLDERS.name]: "folderOrganization",
   [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",
+  [SUGGEST_MEMORY.name]: "learnsPreferences",
 };
 
 /**

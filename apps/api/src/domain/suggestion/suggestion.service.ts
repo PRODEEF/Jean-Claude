@@ -6,6 +6,7 @@ import {
   createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
   reportBugPayloadSchema,
+  rememberPayloadSchema,
   updateTaskListDueDatePayloadSchema,
   updateTaskListItemsPayloadSchema,
   uuidSchema,
@@ -18,6 +19,7 @@ import type { LlmToolCall } from "../../core/llm/llm.port.js";
 import { logger } from "../../core/logger.js";
 import {
   REPORT_BUG,
+  SUGGEST_MEMORY,
   SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
@@ -184,6 +186,9 @@ function translate(
   } else if (toolCall.name === REPORT_BUG.name) {
     const payload = reportBugPayloadSchema.safeParse(toolCall.input);
     if (payload.success) return { kind: "report_bug", payload: payload.data };
+  } else if (toolCall.name === SUGGEST_MEMORY.name) {
+    const payload = rememberPayloadSchema.safeParse(toolCall.input);
+    if (payload.success) return { kind: "remember", payload: payload.data };
   } else {
     logger.warn(SCOPE, `Appel d'outil sans suggestion correspondante : ${toolCall.name}`);
     return null;
@@ -240,7 +245,10 @@ function withoutInvalidParentId(entry: unknown): unknown {
   const parentId = (entry as Record<string, unknown>)["parentId"];
   if (uuidSchema.safeParse(parentId).success) return entry;
 
-  logger.warn(SCOPE, "Identifiant de dossier parent inexploitable, nouveau dossier posé à la racine.");
+  logger.warn(
+    SCOPE,
+    "Identifiant de dossier parent inexploitable, nouveau dossier posé à la racine.",
+  );
   const rest: Record<string, unknown> = { ...(entry as Record<string, unknown>) };
   delete rest["parentId"];
   return rest;

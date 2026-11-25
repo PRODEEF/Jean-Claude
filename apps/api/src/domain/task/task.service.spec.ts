@@ -147,6 +147,7 @@ function makeProfile(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
         structureSuggestions: true,
         proactiveTaskDetection: true,
         proactiveScheduling: true,
+        learnsPreferences: true,
       },
     },
     ...overrides,

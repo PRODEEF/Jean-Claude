@@ -24,6 +24,8 @@ import type {
   CreateSuggestion,
   ISuggestionRepository,
 } from "../../domain/suggestion/suggestion.repository.interface.js";
+import type { IMemoryRepository } from "../../domain/memory/memory.repository.interface.js";
+import { MemoryService } from "../../domain/memory/memory.service.js";
 import { SuggestionService } from "../../domain/suggestion/suggestion.service.js";
 import type {
   ITaskRepository,
@@ -367,6 +369,7 @@ function makeService(
   events: ICalendarRepository = makeCalendarRepository(),
   users: IUserRepository = IDLE_USERS,
   feedback: IFeedbackRepository = makeFeedbackRepository(),
+  memories?: IMemoryRepository,
 ): AssistantService {
   const suggestionService = new SuggestionService(suggestions);
   const folderService = new FolderService(folders);
@@ -394,6 +397,7 @@ function makeService(
     calendarService,
     users,
     new FeedbackService(feedback, IDLE_LLM),
+    memories ? new MemoryService(memories) : undefined,
   );
 }
 
@@ -1905,6 +1909,92 @@ describe("AssistantService", () => {
     it("refuse une charge utile illisible", async () => {
       await expect(
         makeService(makeSuggestionStore(makeEventsSuggestion({ payload: { events: [] } }))).resolve(
+          USER,
+          "sug-1",
+          { action: "accept" },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+  });
+
+  describe("souvenir à retenir", () => {
+    function makeRememberSuggestion(payload: Record<string, unknown>): Suggestion {
+      return makeSuggestion({
+        kind: "remember",
+        message: "Je retiens que tu préfères courir le matin, c'est bon ?",
+        payload,
+      });
+    }
+
+    function makeMemories(overrides: Partial<IMemoryRepository> = {}): IMemoryRepository {
+      return {
+        findAll: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({}),
+        update: jest.fn(),
+        delete: jest.fn(),
+        ...overrides,
+      };
+    }
+
+    function serviceWith(suggestion: Suggestion, memories?: IMemoryRepository): AssistantService {
+      return makeService(
+        makeSuggestionRepository({ findById: jest.fn().mockResolvedValue(suggestion) }),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        makeCalendarRepository(),
+        IDLE_USERS,
+        makeFeedbackRepository(),
+        memories,
+      );
+    }
+
+    it("retient la phrase de la carte quand l'utilisateur accepte", async () => {
+      const memories = makeMemories();
+
+      await serviceWith(
+        makeRememberSuggestion({ content: "Préfère courir le matin." }),
+        memories,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(memories.create).toHaveBeenCalledWith(
+        USER,
+        "Préfère courir le matin.",
+        "assistant",
+        TOKEN,
+      );
+    });
+
+    it("ne retient rien quand la proposition est ignorée", async () => {
+      const memories = makeMemories();
+
+      await serviceWith(
+        makeRememberSuggestion({ content: "Préfère courir le matin." }),
+        memories,
+      ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+
+      expect(memories.create).not.toHaveBeenCalled();
+    });
+
+    it("refuse une charge utile illisible", async () => {
+      jest.spyOn(console, "error").mockImplementation(() => undefined);
+
+      await expect(
+        serviceWith(makeRememberSuggestion({ content: "  " }), makeMemories()).resolve(
+          USER,
+          "sug-1",
+          { action: "accept" },
+          TOKEN,
+        ),
+      ).rejects.toMatchObject({ status: 422 });
+    });
+
+    it("refuse d'accepter plutôt que de faire croire que c'est retenu, quand la mémoire est absente", async () => {
+      jest.spyOn(console, "error").mockImplementation(() => undefined);
+
+      await expect(
+        serviceWith(makeRememberSuggestion({ content: "Préfère courir le matin." })).resolve(
           USER,
           "sug-1",
           { action: "accept" },

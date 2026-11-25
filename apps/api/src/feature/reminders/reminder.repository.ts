@@ -1,3 +1,4 @@
+import { logger } from "../../core/logger.js";
 import { admin } from "../../core/supabase/supabase.js";
 import type {
   IReminderRepository,
@@ -213,6 +214,8 @@ export const reminderRepository: IReminderRepository = {
       memory: string | null;
     }[];
 
+    const memories = await memoriesOf(userIds);
+
     return Promise.all(
       rows.map(async (row): Promise<ReminderRecipient> => ({
         userId: row.id,
@@ -223,7 +226,10 @@ export const reminderRepository: IReminderRepository = {
         email: row.remind_by_email ? await emailOf(row.id) : null,
         displayName: row.display_name,
         assistantName: row.assistant_name,
-        memory: row.memory,
+        memory:
+          [row.memory, ...(memories.get(row.id) ?? [])]
+            .filter((part): part is string => part !== null && part !== "")
+            .join("\n") || null,
       })),
     );
   },
@@ -311,4 +317,33 @@ async function findChannel(userId: string): Promise<string | null> {
 
   if (error) throw new Error(error.message);
   return data ? (data as { id: string }).id : null;
+}
+
+/**
+ * Ce que chaque utilisateur a accepté de faire retenir, du plus récent au plus
+ * ancien, pour que le rappel parle à quelqu'un qu'on connaît.
+ *
+ * Une lecture qui échoue donne zéro souvenir, pas une panne : un rappel part
+ * sans les goûts de la personne plutôt que de ne pas partir.
+ */
+async function memoriesOf(userIds: string[]): Promise<Map<string, string[]>> {
+  const byUser = new Map<string, string[]>();
+
+  const { data, error } = await admin
+    .from("user_memories")
+    .select("user_id, content")
+    .in("user_id", userIds)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    logger.warn("reminders.repository", `Souvenirs illisibles pour les rappels : ${error.message}`);
+    return byUser;
+  }
+
+  for (const row of data as unknown as { user_id: string; content: string }[]) {
+    const lines = byUser.get(row.user_id) ?? [];
+    lines.push(`- ${row.content}`);
+    byUser.set(row.user_id, lines);
+  }
+  return byUser;
 }

@@ -60,6 +60,7 @@ import {
   NAME_CONVERSATION,
   OPEN_NEW_CONVERSATION,
   REPORT_BUG,
+  SUGGEST_MEMORY,
   SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
@@ -73,6 +74,7 @@ import type { CalendarService } from "../calendar/calendar.service.js";
 import type { FolderService } from "../folder/folder.service.js";
 import type { SuggestionService } from "../suggestion/suggestion.service.js";
 import type { TaskService } from "../task/task.service.js";
+import type { IMemoryRepository } from "../memory/memory.repository.interface.js";
 import type { IUserRepository } from "../user/user.repository.interface.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
 
@@ -315,6 +317,8 @@ export class ConversationService {
     private readonly calendar: CalendarService,
     private readonly tasks: TaskService,
     private readonly attachments: IAttachmentRepository,
+    /** Absent (tests), la mémoire détaillée n'entre pas dans la consigne. */
+    private readonly memories?: IMemoryRepository,
   ) {}
 
   list(
@@ -1210,10 +1214,35 @@ export class ConversationService {
       displayName: profile.displayName,
       timezone: profile.preferences.timezone,
       scope: profile.preferences.scope,
-      memory: profile.memory,
+      memory: await this.knownAbout(profile.memory, accessToken),
       onboarding: profile.onboardingCompletedAt === null,
       model: profile.preferences.llmModel,
     };
+  }
+
+  /**
+   * Ce que Jean-Claude sait de l'utilisateur : la mémoire de l'accueil, puis ce
+   * qu'il a accepté de lui faire retenir depuis.
+   *
+   * Une lecture qui échoue laisse la mémoire de l'accueil seule : retenir des
+   * goûts affine les réponses, ça ne doit jamais empêcher d'en donner une.
+   */
+  private async knownAbout(onboarding: string | null, accessToken: string): Promise<string | null> {
+    if (!this.memories) return onboarding;
+
+    try {
+      const items = await this.memories.findAll(accessToken);
+      if (items.length === 0) return onboarding;
+      return [onboarding, ...items.map((item) => `- ${item.content}`)]
+        .filter((part): part is string => part !== null && part !== "")
+        .join("\n");
+    } catch (error) {
+      logger.warn(
+        SCOPE,
+        `Souvenirs illisibles, mémoire de l'accueil seule : ${error instanceof Error ? error.message : "erreur inconnue"}`,
+      );
+      return onboarding;
+    }
   }
 
   /**
@@ -1251,7 +1280,9 @@ export class ConversationService {
       // dossiers n'y ont leur place — le compte vient d'être créé, les deux
       // sont vides, et la consigne d'accueil doit rester une conversation.
       if (context.onboarding) {
-        const welcoming = tools.filter((tool) => !CHANNEL_REMINDER_TOOLS.includes(tool));
+        const welcoming = tools.filter(
+          (tool) => !CHANNEL_REMINDER_TOOLS.includes(tool) && tool !== SUGGEST_MEMORY,
+        );
         welcoming.push(FINISH_ONBOARDING);
         return { tools: welcoming, filing: null, channel: null, lists: [], decided: [] };
       }
@@ -1272,7 +1303,8 @@ export class ConversationService {
         (tool) =>
           !(tool === SUGGEST_PROJECT_FOLDERS && isPending(decided, "create_project_folders")) &&
           !(tool === SUGGEST_RECURRING_EVENT && isPending(decided, "create_recurring_event")) &&
-          !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")),
+          !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")) &&
+          !(tool === SUGGEST_MEMORY && isPending(decided, "remember")),
       );
 
       // L'arborescence n'est remise au modèle que s'il peut en proposer une :
@@ -1331,7 +1363,10 @@ export class ConversationService {
         // deux cartes pour le même rendez-vous (§12.1).
         !(tool === SUGGEST_RECURRING_EVENT && isPending(decided, "create_recurring_event")) &&
         // Même garde-fou pour des rendez-vous ponctuels déjà proposés.
-        !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")),
+        !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")) &&
+        // Un souvenir déjà proposé attend un geste : en empiler un second
+        // noierait la question dans le fil.
+        !(tool === SUGGEST_MEMORY && isPending(decided, "remember")),
     );
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
@@ -3104,6 +3139,7 @@ function buildSystemPrompt(
       channel.push(...describeTaskListRules(todo.decided));
     if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) channel.push(...RECURRING_EVENT_RULES);
     if (todo.tools.includes(SUGGEST_EVENTS)) channel.push(...EVENTS_RULES);
+    if (todo.tools.includes(SUGGEST_MEMORY)) channel.push(...MEMORY_RULES);
 
     if (todo.tools.includes(SUGGEST_PROJECT_FOLDERS)) {
       channel.push(
@@ -3138,6 +3174,8 @@ function buildSystemPrompt(
     ...FORMAT_RULES,
     ...describeMemory(context.memory),
   ];
+
+  if (todo.tools.includes(SUGGEST_MEMORY)) lines.push(...MEMORY_RULES);
 
   // Réclamée seulement si le tour a de quoi y répondre : sans outil de
   // proposition, la consigne pousserait le modèle à annoncer en clair une
@@ -3491,6 +3529,23 @@ function describeMemory(memory: string | null): string[] {
     memory,
   ];
 }
+
+/**
+ * Quand proposer de retenir quelque chose de l'utilisateur.
+ *
+ * Réservé à ce qui dure : un goût, une routine, une contrainte. Une seule
+ * proposition à la fois, formulée en question — rien n'est retenu avant le
+ * geste de l'utilisateur (§12.1).
+ */
+const MEMORY_RULES = [
+  "",
+  "Quand l'utilisateur laisse voir un goût, une routine ou une contrainte qui durent",
+  "(« je cours le mardi matin », « je déteste les réunions le lundi »), appelle",
+  "`suggest_memory` pour proposer de le retenir. L'outil ne retient rien : il affiche",
+  "une proposition que l'utilisateur accepte ou ignore. Ne dis donc jamais que c'est",
+  "retenu, demande. Pas pour une information ponctuelle, ni pour une autre personne,",
+  "ni pour un secret (mot de passe, code, numéro de carte ou de compte). Une chose à la fois.",
+];
 
 /** Les outils du jeu dont la capacité reste active dans les réglages (A.10). */
 function allowed(tools: LlmTool[], scope: AssistantScope): LlmTool[] {

@@ -24,6 +24,7 @@ import type { ISuggestionRepository } from "../suggestion/suggestion.repository.
 import { SuggestionService } from "../suggestion/suggestion.service.js";
 import type { ITaskRepository } from "../task/task.repository.interface.js";
 import { TaskService } from "../task/task.service.js";
+import type { IMemoryRepository } from "../memory/memory.repository.interface.js";
 import type { IUserRepository, ProfileRecord } from "../user/user.repository.interface.js";
 import { ConversationService } from "./conversation.service.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
@@ -326,6 +327,7 @@ function makePreferences(
       structureSuggestions: true,
       proactiveTaskDetection: true,
       proactiveScheduling: true,
+      learnsPreferences: true,
       ...scope,
     },
   };
@@ -467,6 +469,7 @@ function makeService(
   calendar: ICalendarRepository = makeCalendarRepository(),
   tasks: ITaskRepository = makeTaskRepository(),
   attachments: IAttachmentRepository = makeAttachmentRepository(),
+  memories?: IMemoryRepository,
 ): ConversationService {
   return new ConversationService(
     repo,
@@ -477,6 +480,7 @@ function makeService(
     new CalendarService(calendar, tasks, new WorkspaceEventService(IDLE_WORKSPACE_EVENTS)),
     new TaskService(tasks, calendar, users),
     attachments,
+    memories,
   );
 }
 
@@ -3638,6 +3642,125 @@ describe("ConversationService", () => {
       expect(tools).toContain("suggest_recurring_event");
     });
 
+    describe("ce que Jean-Claude retient (second cerveau)", () => {
+      const aMemory = (content: string) => ({
+        id: "00000000-0000-4000-8000-000000000001",
+        content,
+        source: "assistant" as const,
+        createdAt: "2026-11-25T10:00:00.000Z",
+        updatedAt: "2026-11-25T10:00:00.000Z",
+      });
+      const memoriesOf = (...contents: string[]): IMemoryRepository => ({
+        findAll: jest.fn().mockResolvedValue(contents.map(aMemory)),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      });
+      const send = (service: ConversationService, _llm: LlmProvider) =>
+        drain(service, {
+          content: "Je cours le mardi matin.",
+          inputMode: "text",
+          attachmentIds: [],
+        });
+
+      it("expose suggest_memory et dit quand l'utiliser", async () => {
+        const llm = makeLlm();
+
+        await send(makeService(makeRepository(), llm), llm);
+
+        expect(lastRequest(llm).tools?.map((t) => t.name)).toContain("suggest_memory");
+        expect(lastRequest(llm).system).toContain("suggest_memory");
+      });
+
+      it("retire suggest_memory quand l'utilisateur a coupé l'apprentissage", async () => {
+        const llm = makeLlm();
+
+        await send(
+          makeService(
+            makeRepository(),
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            makeUserRepository({ learnsPreferences: false }),
+          ),
+          llm,
+        );
+
+        expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_memory");
+        expect(lastRequest(llm).system).not.toContain("suggest_memory");
+      });
+
+      it("ne repropose pas un souvenir tant que le précédent attend un geste", async () => {
+        const llm = makeLlm();
+        const pending = makeSuggestion({ kind: "remember", payload: { content: "Court." } });
+
+        await send(
+          makeService(
+            makeRepository(),
+            llm,
+            makeSuggestionRepository({
+              listForConversation: jest.fn().mockResolvedValue([pending]),
+            }),
+          ),
+          llm,
+        );
+
+        expect(lastRequest(llm).tools?.map((t) => t.name)).not.toContain("suggest_memory");
+      });
+
+      it("rappelle au modèle, avec la mémoire de l'accueil, ce qu'il a déjà retenu", async () => {
+        const llm = makeLlm();
+
+        await send(
+          makeService(
+            makeRepository(),
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            makeUserRepository({}, { memory: "Menuisier à son compte." }),
+            makeCalendarRepository(),
+            makeTaskRepository(),
+            makeAttachmentRepository(),
+            memoriesOf("Préfère courir le matin.", "Déteste les réunions le lundi."),
+          ),
+          llm,
+        );
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("Menuisier à son compte.");
+        expect(system).toContain("- Préfère courir le matin.");
+        expect(system).toContain("- Déteste les réunions le lundi.");
+      });
+
+      it("répond quand même si la lecture des souvenirs échoue", async () => {
+        const llm = makeLlm();
+        jest.spyOn(console, "warn").mockImplementation(() => undefined);
+        const broken: IMemoryRepository = {
+          findAll: jest.fn().mockRejectedValue(new Error("panne")),
+          create: jest.fn(),
+          update: jest.fn(),
+          delete: jest.fn(),
+        };
+
+        await send(
+          makeService(
+            makeRepository(),
+            llm,
+            makeSuggestionRepository(),
+            makeFolderRepository(),
+            makeUserRepository({}, { memory: "Menuisier à son compte." }),
+            makeCalendarRepository(),
+            makeTaskRepository(),
+            makeAttachmentRepository(),
+            broken,
+          ),
+          llm,
+        );
+
+        expect(lastRequest(llm).system ?? "").toContain("Menuisier à son compte.");
+      });
+    });
+
     it("retire suggest_recurring_event quand la planification proactive est coupée", async () => {
       const llm = makeLlm();
 
@@ -3730,6 +3853,7 @@ describe("ConversationService", () => {
             morningReminders: false,
             proactiveTaskDetection: false,
             proactiveScheduling: false,
+            learnsPreferences: false,
           }),
         ),
         { content: "Donne-moi une recette de tarte.", inputMode: "text", attachmentIds: [] },
