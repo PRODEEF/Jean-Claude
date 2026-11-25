@@ -60,6 +60,9 @@ function makeRepository(overrides: Partial<IReminderRepository> = {}): IReminder
         remindInChannel: true,
         remindByEmail: false,
         email: "yann@example.com",
+        displayName: "Yann",
+        assistantName: "Jean-Claude",
+        memory: null,
       },
     ]),
     claim: jest.fn().mockResolvedValue(true),
@@ -174,6 +177,9 @@ describe("ReminderService", () => {
       remindInChannel: true,
       remindByEmail: true,
       email: "yann@example.com",
+      displayName: "Yann",
+      assistantName: "Jean-Claude",
+      memory: null,
     };
 
     it("envoie aussi un e-mail à qui l'a demandé, avec la même phrase que dans le canal", async () => {
@@ -314,5 +320,79 @@ describe("ReminderService", () => {
       expect(run.failed).toBe(1);
       expect(repo.postInChannel).toHaveBeenCalledWith("user-1", expect.stringContaining("Kiné"));
     });
+  });
+});
+
+describe("rédaction des rappels", () => {
+  const withEmail = {
+    userId: "user-1",
+    timezone: "Europe/Paris",
+    remindInChannel: true,
+    remindByEmail: true,
+    email: "yann@example.com",
+    displayName: "Yann",
+    assistantName: "Jean-Claude",
+    memory: "Aime courir le matin.",
+  };
+
+  it("envoie dans le canal et par e-mail la phrase écrite par le rédacteur, une seule fois", async () => {
+    const repo = makeRepository({
+      findRemindable: jest.fn().mockResolvedValue([makeEvent()]),
+      findRecipients: jest.fn().mockResolvedValue([withEmail]),
+    });
+    const write = jest.fn().mockResolvedValue("Yann, ton kiné, c'est à 19h !");
+
+    await new ReminderService(repo, mailer, write).run(NOW);
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(repo.postInChannel).toHaveBeenCalledWith("user-1", "Yann, ton kiné, c'est à 19h !");
+    expect(mailer).toHaveBeenCalledWith({
+      to: "yann@example.com",
+      message: "Yann, ton kiné, c'est à 19h !",
+    });
+  });
+
+  it("donne au rédacteur le rendez-vous et ce qu'on sait de la personne", async () => {
+    const repo = makeRepository({
+      findRemindable: jest.fn().mockResolvedValue([makeEvent()]),
+      findRecipients: jest.fn().mockResolvedValue([withEmail]),
+    });
+    const write = jest.fn().mockResolvedValue("Ton kiné, 19h !");
+
+    await new ReminderService(repo, mailer, write).run(NOW);
+
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Kiné", reminderMinutesBefore: 30 }),
+      { displayName: "Yann", assistantName: "Jean-Claude", memory: "Aime courir le matin." },
+    );
+  });
+
+  it("envoie la phrase fixe quand le rédacteur échoue : un rappel ne se perd pas", async () => {
+    const repo = makeRepository({
+      findRemindable: jest.fn().mockResolvedValue([makeEvent()]),
+      findRecipients: jest.fn().mockResolvedValue([withEmail]),
+    });
+    const write = jest.fn().mockRejectedValue(new Error("moteur injoignable"));
+    jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const run = await new ReminderService(repo, mailer, write).run(NOW);
+
+    expect(run).toEqual({ sent: 2, failed: 0 });
+    expect(repo.postInChannel).toHaveBeenCalledWith(
+      "user-1",
+      "Rappel : Kiné, à 19h (dans 30 minutes).",
+    );
+  });
+
+  it("écrit aussi avec le rédacteur le rappel d'une liste", async () => {
+    const repo = makeRepository({
+      findRemindableLists: jest.fn().mockResolvedValue([makeRemindableList()]),
+      findRecipients: jest.fn().mockResolvedValue([withEmail]),
+    });
+    const write = jest.fn().mockResolvedValue("Ta danse, c'est à 19h !");
+
+    await new ReminderService(repo, mailer, write).run(NOW);
+
+    expect(repo.postInChannel).toHaveBeenCalledWith("user-1", "Ta danse, c'est à 19h !");
   });
 });

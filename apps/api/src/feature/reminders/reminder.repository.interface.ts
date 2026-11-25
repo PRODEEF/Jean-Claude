@@ -10,6 +10,10 @@ export type ReminderRecipient = {
   remindByEmail: boolean;
   /** Adresse de connexion, qui vit dans `auth.users` ; `null` si elle est introuvable. */
   email: string | null;
+  /** Pour parler à la personne comme on parle à quelqu'un qu'on connaît. */
+  displayName: string | null;
+  assistantName: string;
+  memory: string | null;
 };
 
 /** Là où un rappel peut partir : sert de clé à `reminders_sent`. */
