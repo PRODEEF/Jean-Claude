@@ -15,6 +15,7 @@ import type {
   AssignFolders,
   AssistantModel,
   AssistantScope,
+  CalendarEntry,
   CalendarEvent,
   CalendarRange,
   Conversation,
@@ -27,6 +28,7 @@ import type {
   MessageStreamEvent,
   Paginated,
   SendMessage,
+  UserPreferences,
   SlashCommandName,
   Suggestion,
   TaskListWithTasks,
@@ -61,6 +63,9 @@ import {
   OPEN_NEW_CONVERSATION,
   REPORT_BUG,
   SUGGEST_MEMORY,
+  SUGGEST_UPDATE_EVENT,
+  SUGGEST_DELETE_ITEM,
+  SUGGEST_UPDATE_SETTINGS,
   SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
@@ -73,7 +78,7 @@ import {
 import type { CalendarService } from "../calendar/calendar.service.js";
 import type { FolderService } from "../folder/folder.service.js";
 import type { SuggestionService } from "../suggestion/suggestion.service.js";
-import type { TaskService } from "../task/task.service.js";
+import type { DueOccurrence, TaskService } from "../task/task.service.js";
 import type { IMemoryRepository } from "../memory/memory.repository.interface.js";
 import type { IUserRepository } from "../user/user.repository.interface.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
@@ -162,6 +167,9 @@ const KNOWN_TOOL_NAMES = [
  * noter. Retirés pendant l'accueil : la consigne d'accueil n'en dit rien, et
  * l'échange doit y rester une conversation plutôt qu'une suite de cartes.
  */
+/** Déplacer ou supprimer ce que l'agenda de la consigne désigne. */
+const ORGANIZATION_TOOLS = [SUGGEST_UPDATE_EVENT, SUGGEST_DELETE_ITEM];
+
 const CHANNEL_REMINDER_TOOLS = [SUGGEST_TASK_LIST, SUGGEST_EVENTS, SUGGEST_RECURRING_EVENT];
 
 /**
@@ -245,7 +253,13 @@ type Housekeeping = {
    * ses dossiers, et son agenda proche. `null` partout ailleurs — une
    * conversation classique n'a pas à connaître les rendez-vous de son auteur.
    */
-  channel: { folders: FolderTreeNode[]; agenda: CalendarEvent[] } | null;
+  channel: { folders: FolderTreeNode[] } | null;
+  /**
+   * Ce que le modèle voit de l'organisation de l'utilisateur : agenda et listes
+   * des jours qui viennent. `null` quand l'utilisateur a coupé « Jean-Claude voit
+   * mon agenda et mes listes », ou pendant l'accueil.
+   */
+  organization: Organization | null;
   /**
    * Todolistes nées de ce fil, avec leur contenu.
    *
@@ -278,6 +292,8 @@ type AssistantContext = {
   onboarding: boolean;
   /** Modèle choisi dans les réglages, ou `null` pour celui du serveur (§5.1). */
   model: AssistantModel | null;
+  /** Réglages actuels, remis au modèle pour qu'il ne propose pas ce qui est déjà ainsi. */
+  preferences: UserPreferences | null;
 };
 
 /**
@@ -1206,6 +1222,7 @@ export class ConversationService {
         memory: null,
         onboarding: false,
         model: null,
+        preferences: null,
       };
     }
 
@@ -1217,6 +1234,7 @@ export class ConversationService {
       memory: await this.knownAbout(profile.memory, accessToken),
       onboarding: profile.onboardingCompletedAt === null,
       model: profile.preferences.llmModel,
+      preferences: profile.preferences,
     };
   }
 
@@ -1281,19 +1299,30 @@ export class ConversationService {
       // sont vides, et la consigne d'accueil doit rester une conversation.
       if (context.onboarding) {
         const welcoming = tools.filter(
-          (tool) => !CHANNEL_REMINDER_TOOLS.includes(tool) && tool !== SUGGEST_MEMORY,
+          (tool) =>
+            !CHANNEL_REMINDER_TOOLS.includes(tool) &&
+            tool !== SUGGEST_MEMORY &&
+            !ORGANIZATION_TOOLS.includes(tool) &&
+            tool !== SUGGEST_UPDATE_SETTINGS,
         );
         welcoming.push(FINISH_ONBOARDING);
-        return { tools: welcoming, filing: null, channel: null, lists: [], decided: [] };
+        return {
+          tools: welcoming,
+          filing: null,
+          channel: null,
+          organization: null,
+          lists: [],
+          decided: [],
+        };
       }
 
       // Les trois lectures partent ensemble : les enchaîner ajoutait deux
       // allers-retours de base au délai qui précède le premier mot de la
       // réponse, alors qu'aucune ne dépend du résultat des autres.
-      const [decided, tree, agenda] = await Promise.all([
+      const [decided, tree, organization] = await Promise.all([
         this.suggestions.listForConversation(conversation.id, accessToken),
         this.folders.getTree(accessToken),
-        this.calendar.list(agendaWindow(now), accessToken),
+        this.organizationFor(scope, now, accessToken),
       ]);
 
       // Une proposition qui attend un geste retire son outil, comme en
@@ -1304,14 +1333,25 @@ export class ConversationService {
           !(tool === SUGGEST_PROJECT_FOLDERS && isPending(decided, "create_project_folders")) &&
           !(tool === SUGGEST_RECURRING_EVENT && isPending(decided, "create_recurring_event")) &&
           !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")) &&
-          !(tool === SUGGEST_MEMORY && isPending(decided, "remember")),
+          !(tool === SUGGEST_MEMORY && isPending(decided, "remember")) &&
+          !(tool === SUGGEST_UPDATE_SETTINGS && isPending(decided, "update_settings")) &&
+          !(ORGANIZATION_TOOLS.includes(tool) && !canDesignate(organization)) &&
+          !(tool === SUGGEST_UPDATE_EVENT && isPending(decided, "update_event")) &&
+          !(tool === SUGGEST_DELETE_ITEM && isPending(decided, "delete_item")),
       );
 
       // L'arborescence n'est remise au modèle que s'il peut en proposer une :
       // sans l'outil, elle ne ferait qu'allonger la consigne.
       const folders = structuring.includes(SUGGEST_PROJECT_FOLDERS) ? tree : [];
 
-      return { tools: structuring, filing: null, channel: { folders, agenda }, lists: [], decided };
+      return {
+        tools: structuring,
+        filing: null,
+        channel: { folders },
+        organization,
+        lists: [],
+        decided,
+      };
     }
 
     // Autorisé tant que la capacité reste active — classé ou non : une
@@ -1319,12 +1359,13 @@ export class ConversationService {
     // explicite (§12.1), pas seulement lors de son premier rangement.
     const mayFile = scope.folderOrganization;
 
-    const [decided, tree, lists] = await Promise.all([
+    const [decided, tree, lists, organization] = await Promise.all([
       this.suggestions.listForConversation(conversation.id, accessToken),
       mayFile ? this.folders.getTree(accessToken) : Promise.resolve<FolderTreeNode[]>([]),
       // Les listes nées de ce fil, pour que « complète la liste » ait de quoi
       // désigner celle dont on parle plutôt qu'une seconde à créer.
       this.tasks.listForConversation(conversation.id, accessToken),
+      this.organizationFor(scope, now, accessToken),
     ]);
 
     const tools = allowed(CHAT_TOOLS, scope).filter(
@@ -1348,8 +1389,14 @@ export class ConversationService {
         // réponse avant d'en empiler une seconde.
         !(
           tool === SUGGEST_TASK_LIST_DUE_DATE &&
-          (lists.length === 0 || isPending(decided, "update_task_list_due_date"))
+          ((lists.length === 0 && !canDesignate(organization)) ||
+            isPending(decided, "update_task_list_due_date"))
         ) &&
+        // Rien à déplacer ni à supprimer sans élément de l'agenda à désigner, et
+        // une proposition du même geste qui attend déjà un geste n'est pas doublée.
+        !(ORGANIZATION_TOOLS.includes(tool) && !canDesignate(organization)) &&
+        !(tool === SUGGEST_UPDATE_EVENT && isPending(decided, "update_event")) &&
+        !(tool === SUGGEST_DELETE_ITEM && isPending(decided, "delete_item")) &&
         // Cocher ou renommer suppose des lignes à désigner : une liste
         // vide n'a pas d'identifiant de tâche, et le modèle en inventerait
         // un. Une modification déjà proposée attend un geste avant d'en
@@ -1366,13 +1413,14 @@ export class ConversationService {
         !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")) &&
         // Un souvenir déjà proposé attend un geste : en empiler un second
         // noierait la question dans le fil.
-        !(tool === SUGGEST_MEMORY && isPending(decided, "remember")),
+        !(tool === SUGGEST_MEMORY && isPending(decided, "remember")) &&
+        !(tool === SUGGEST_UPDATE_SETTINGS && isPending(decided, "update_settings")),
     );
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
 
     if (!mayFile || isPending(decided, "assign_folders")) {
-      return { tools, filing: null, channel: null, lists, decided };
+      return { tools, filing: null, channel: null, organization, lists, decided };
     }
 
     tools.push(SUGGEST_FOLDERS);
@@ -1380,9 +1428,48 @@ export class ConversationService {
       tools,
       filing: { folders: tree, currentFolderIds: conversation.folderIds },
       channel: null,
+      organization,
       lists,
       decided,
     };
+  }
+
+  /**
+   * L'agenda et les listes de l'utilisateur, tels que le modèle les lit
+   * (demande de Yann : un cerveau qui voit ce qu'il y a à organiser).
+   *
+   * Rien n'est lu quand l'utilisateur a coupé « Jean-Claude voit mon agenda et
+   * mes listes » : le serveur ne remet pas au modèle ce qu'il n'a pas le droit
+   * de voir. Une lecture qui échoue donne un tour sans agenda, jamais un tour
+   * perdu.
+   */
+  private async organizationFor(
+    scope: AssistantScope,
+    now: Date,
+    accessToken: string,
+  ): Promise<Organization | null> {
+    if (!scope.readsAgenda) return null;
+
+    const range = agendaWindow(now);
+    // Chaque lecture échoue pour son compte : des listes illisibles ne cachent
+    // pas les rendez-vous, et inversement.
+    const lenient = async <T>(what: string, read: () => Promise<T>, fallback: T): Promise<T> => {
+      try {
+        return await read();
+      } catch (error) {
+        logger.warn(
+          SCOPE,
+          `${what} illisibles, tour sans eux : ${error instanceof Error ? error.message : "erreur inconnue"}`,
+        );
+        return fallback;
+      }
+    };
+
+    const [events, overview] = await Promise.all([
+      lenient("Rendez-vous", () => this.calendar.list(range, accessToken), []),
+      lenient("Listes", () => this.tasks.overview(range, accessToken), { due: [], undated: [] }),
+    ]);
+    return { events, due: overview.due, undated: overview.undated };
   }
 
   /**
@@ -3118,7 +3205,7 @@ function buildSystemPrompt(
       ...TOOL_ANSWER_RULE,
       "Seule exception : `open_new_conversation`, après lequel tu n'écris rien.",
       ...FORMAT_RULES,
-      ...describeAgenda(todo.channel?.agenda ?? [], context.timezone),
+      ...describeOrganization(todo.organization, context.timezone, canEditOrganization(todo.tools)),
     ];
 
     const known = todo.channel?.folders ?? [];
@@ -3140,6 +3227,12 @@ function buildSystemPrompt(
     if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) channel.push(...RECURRING_EVENT_RULES);
     if (todo.tools.includes(SUGGEST_EVENTS)) channel.push(...EVENTS_RULES);
     if (todo.tools.includes(SUGGEST_MEMORY)) channel.push(...MEMORY_RULES);
+    if (todo.tools.includes(SUGGEST_UPDATE_SETTINGS)) {
+      channel.push(...settingsRules(context.preferences));
+    }
+    if (canEditOrganization(todo.tools) && canDesignate(todo.organization)) {
+      channel.push(...ORGANIZATION_RULES);
+    }
 
     if (todo.tools.includes(SUGGEST_PROJECT_FOLDERS)) {
       channel.push(
@@ -3173,9 +3266,15 @@ function buildSystemPrompt(
     ...TOOL_ANSWER_RULE,
     ...FORMAT_RULES,
     ...describeMemory(context.memory),
+    ...describeOrganization(todo.organization, context.timezone, canEditOrganization(todo.tools)),
   ];
 
   if (todo.tools.includes(SUGGEST_MEMORY)) lines.push(...MEMORY_RULES);
+  if (todo.tools.includes(SUGGEST_UPDATE_SETTINGS))
+    lines.push(...settingsRules(context.preferences));
+  if (canEditOrganization(todo.tools) && canDesignate(todo.organization)) {
+    lines.push(...ORGANIZATION_RULES);
+  }
 
   // Réclamée seulement si le tour a de quoi y répondre : sans outil de
   // proposition, la consigne pousserait le modèle à annoncer en clair une
@@ -3401,30 +3500,180 @@ function describeUser(displayName: string | null): string[] {
   return displayName ? [`L'utilisateur s'appelle ${displayName}.`] : [];
 }
 
+/** Ce que le modèle voit de l'organisation de l'utilisateur. */
+type Organization = {
+  events: CalendarEntry[];
+  due: DueOccurrence[];
+  undated: TaskListWithTasks[];
+};
+
+/** Au-delà, la consigne grossit pour rien : le modèle n'a pas besoin du mois entier. */
+const MAX_AGENDA_LINES = 40;
+const MAX_UNDATED_LISTS = 12;
+
 /**
- * Agenda des jours qui viennent, remis au seul canal permanent (A.10).
+ * Agenda des jours qui viennent et listes en cours, remis au modèle quand
+ * l'utilisateur le permet.
  *
- * Les séries récurrentes ne sont pas expansées (A.11) : une ligne portant une
- * `rrule` n'apparaît qu'à la date de son premier créneau. La limite est dite au
- * modèle plutôt que laissée à deviner, sans quoi il conclurait d'une semaine
- * vide qu'il n'y a rien de prévu.
+ * Rendez-vous et listes datées sont fondus dans une seule chronologie : pour
+ * l'utilisateur, un rendez-vous est une liste datée, et le modèle qui ne verrait
+ * que les premiers conclurait à tort qu'une journée est libre. Les séries sont
+ * dépliées. La limite de fenêtre est dite au modèle plutôt que laissée à
+ * deviner : une semaine vide ne veut pas dire qu'il n'y a rien au-delà.
  */
-function describeAgenda(events: CalendarEvent[], timezone: string): string[] {
-  if (events.length === 0) return [];
+function describeOrganization(
+  organization: Organization | null,
+  timezone: string,
+  withIds = false,
+): string[] {
+  if (!organization) return [];
+
+  // Les identifiants ne sont donnés que si un outil peut les consommer : ils
+  // allongent la consigne pour rien sinon. Un événement d'espace partagé n'a
+  // pas d'identifiant : il ne se modifie pas depuis ici.
+  const idOfEvent = (event: CalendarEntry): string =>
+    withIds && event.space === null
+      ? ` [rendez-vous ${event.id}${event.rrule === null ? "" : ", série"}]`
+      : "";
+  const idOfList = (list: TaskListWithTasks): string => (withIds ? ` [liste ${list.id}]` : "");
+
+  const entries = [
+    ...organization.events.map((event) => ({
+      at: new Date(event.startsAt).getTime(),
+      line: `- ${describeWhen(event.startsAt, event.allDay, timezone)} — ${event.title}${idOfEvent(event)}`,
+    })),
+    ...organization.due.map(({ list, occurrence }) => ({
+      at: new Date(occurrence.startsAt).getTime(),
+      line: `- ${describeWhen(occurrence.startsAt, occurrence.allDay, timezone)} — ${list.title} (${describeListState(list, occurrence.doneAt !== null)})${idOfList(list)}`,
+    })),
+  ]
+    .sort((a, b) => a.at - b.at)
+    .slice(0, MAX_AGENDA_LINES);
+
+  const open = organization.undated
+    .map((list) => ({ list, todo: list.tasks.filter((task) => !task.done).length }))
+    .filter(({ todo }) => todo > 0)
+    .slice(0, MAX_UNDATED_LISTS);
+
+  const lines: string[] = [];
+  if (entries.length > 0) {
+    lines.push(
+      "",
+      `Agenda des ${AGENDA_WINDOW_DAYS} prochains jours : rendez-vous et listes datées, séries`,
+      "dépliées. Rien n'est lu au-delà : ne conclus pas d'une semaine vide qu'il n'y a",
+      "rien de prévu plus tard.",
+      ...entries.map((entry) => entry.line),
+    );
+  }
+  if (open.length > 0) {
+    lines.push(
+      "",
+      "Listes sans date encore ouvertes : " +
+        open
+          .map(({ list, todo }) => `« ${list.title} » (${todo} à faire)${idOfList(list)}`)
+          .join(" ; ") +
+        ".",
+    );
+  }
+  if (lines.length > 0) {
+    lines.push(
+      "",
+      "Sers-toi de cet agenda et de ces listes pour répondre à « qu'est-ce que j'ai ? »,",
+      "pour éviter de proposer un créneau déjà pris, et pour proposer où caser quelque",
+      "chose. Ne les récite pas sans qu'on te le demande.",
+    );
+  }
+  return lines;
+}
+
+const VIEW_LABELS: Record<UserPreferences["calendarDefaultView"], string> = {
+  day: "jour",
+  week: "semaine",
+  month: "mois",
+  year: "année",
+  todo: "Todo",
+};
+
+/**
+ * Réglages actuels et règle d'usage de `suggest_update_settings`.
+ *
+ * Les réglages sont dits au modèle : sans eux il proposerait « passe en thème
+ * sombre » à quelqu'un qui y est déjà. Le périmètre est borné ici comme dans le
+ * schéma de la charge utile — le serveur écarte le reste de toute façon.
+ */
+function settingsRules(preferences: UserPreferences | null): string[] {
+  const current = preferences
+    ? [
+        "",
+        "Réglages actuels : " +
+          [
+            `thème ${preferences.theme}`,
+            `couleur de l'assistant ${preferences.assistantColor}`,
+            `calendrier ouvert sur la vue ${VIEW_LABELS[preferences.calendarDefaultView]}`,
+            `rappels dans le canal : ${preferences.remindInChannel ? "oui" : "non"}`,
+            `rappels par e-mail : ${preferences.remindByEmail ? "oui" : "non"}`,
+            `après-midi dès ${preferences.dayPartBounds.afternoonFrom} h, soir dès ${preferences.dayPartBounds.eveningFrom} h`,
+          ].join(" ; ") +
+          ".",
+      ]
+    : [];
 
   return [
+    ...current,
     "",
-    `Agenda des ${AGENDA_WINDOW_DAYS} prochains jours. Les rendez-vous récurrents`,
-    "n'y figurent qu'à leur première occurrence : ne conclus pas d'une absence",
-    "qu'il n'y a rien de prévu.",
-    ...events.map((event) => `- ${describeSlot(event, timezone)} — ${event.title}`),
+    "Quand l'utilisateur demande de changer un réglage de l'application — thème, couleur",
+    "ou nom de l'assistant, vue d'ouverture du calendrier, rappels, heures de la journée —",
+    "appelle `suggest_update_settings`. Ne l'appelle que sur demande explicite, jamais pour",
+    "un réglage déjà tel quel. Pour tout autre réglage (modèle, capacités de l'assistant,",
+    "compte), dis qu'il se règle dans les Réglages. Ne dis jamais que c'est fait : demande.",
   ];
 }
 
+/** Vrai quand l'agenda de la consigne contient de quoi désigner un élément par son identifiant. */
+function canDesignate(organization: Organization | null): boolean {
+  if (!organization) return false;
+  return (
+    organization.events.some((event) => event.space === null) ||
+    organization.due.length > 0 ||
+    organization.undated.length > 0
+  );
+}
+
+function canEditOrganization(tools: LlmTool[]): boolean {
+  return (
+    ORGANIZATION_TOOLS.some((tool) => tools.includes(tool)) ||
+    tools.includes(SUGGEST_TASK_LIST_DUE_DATE)
+  );
+}
+
+/**
+ * Consignes de modification de l'agenda : l'identifiant vient de l'agenda
+ * ci-dessus, et rien n'est jamais présenté comme fait (§12.1).
+ */
+const ORGANIZATION_RULES = [
+  "",
+  "Pour déplacer ou renommer un rendez-vous de l'agenda ci-dessus, appelle",
+  "`suggest_update_event` ; pour décaler une liste, `suggest_task_list_due_date` ;",
+  "pour supprimer un rendez-vous ou une liste, `suggest_delete_item`. Recopie",
+  "l'identifiant et le titre depuis la ligne concernée, caractère pour caractère.",
+  "Ces gestes ne se font que sur demande explicite : ne déplace et ne supprime",
+  "jamais de ta propre initiative, même pour libérer un créneau — propose alors",
+  "seulement, en phrase, et laisse l'utilisateur le demander. Une série se",
+  "modifie ou se supprime en entier. Ne dis jamais que c'est fait : demande.",
+];
+
+/** « liste de tâches, 3 à faire », « liste d'achats, faite ». */
+function describeListState(list: TaskListWithTasks, done: boolean): string {
+  const nature = list.kind === "shopping" ? "liste d'achats" : "liste de tâches";
+  if (done) return `${nature}, faite`;
+  const todo = list.tasks.filter((task) => !task.done).length;
+  return list.tasks.length === 0 ? nature : `${nature}, ${todo} à faire`;
+}
+
 /** Date seule pour une journée entière, date et heure locale sinon. */
-function describeSlot(event: CalendarEvent, timezone: string): string {
-  const start = new Date(event.startsAt);
-  return event.allDay
+function describeWhen(startsAt: string, allDay: boolean, timezone: string): string {
+  const start = new Date(startsAt);
+  return allDay
     ? `${formatInstant(start, timezone, "date")} (journée entière)`
     : formatInstant(start, timezone);
 }

@@ -949,6 +949,152 @@ export const SUGGEST_SHARED_EVENT: LlmTool = {
   },
 };
 
+/**
+ * Déplacer ou renommer un rendez-vous de l'agenda (§12.1).
+ *
+ * Le rendez-vous est désigné par l'identifiant que l'agenda de la consigne lui
+ * donne : sans lui le modèle en inventerait un. Jamais de propre initiative.
+ */
+export const SUGGEST_UPDATE_EVENT: LlmTool = {
+  name: "suggest_update_event",
+  description:
+    "À appeler quand l'utilisateur demande explicitement de déplacer, décaler ou " +
+    "renommer un rendez-vous de son agenda. Les rendez-vous sont donnés dans la " +
+    "consigne avec leur identifiant : recopie-le caractère pour caractère, jamais " +
+    "reconstitué de mémoire ni remplacé par le titre. Ne s'applique pas aux listes " +
+    "(`suggest_task_list_due_date`). Pour une série, la modification vaut pour toute " +
+    "la série. Jamais de ta propre initiative.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, à la première personne et sous forme " +
+          "de question — ex. « Je déplace Dentiste à jeudi 10h ? ». Ne jamais la " +
+          "présenter comme faite. 500 caractères maximum.",
+      },
+      eventId: {
+        type: "string",
+        description: "Identifiant du rendez-vous, recopié depuis l'agenda de la consigne.",
+      },
+      title: { type: "string", description: "Nouveau titre, uniquement s'il change." },
+      startsAt: {
+        type: "string",
+        description: "Nouveau début ISO 8601, uniquement s'il change.",
+      },
+      endsAt: {
+        type: "string",
+        description:
+          "Nouvelle fin ISO 8601, uniquement si elle change — à décaler avec le début " +
+          "pour garder la durée.",
+      },
+    },
+    required: ["message", "eventId"],
+  },
+};
+
+/**
+ * Supprimer un rendez-vous ou une todoliste (§12.1).
+ *
+ * Le geste le plus lourd : l'utilisateur voit ce qui part avant de valider, et
+ * la demande doit être explicite.
+ */
+export const SUGGEST_DELETE_ITEM: LlmTool = {
+  name: "suggest_delete_item",
+  description:
+    "À appeler uniquement quand l'utilisateur demande explicitement de supprimer, " +
+    "annuler ou retirer un rendez-vous ou une liste de son agenda. Jamais de ta propre " +
+    "initiative, jamais pour « faire de la place » ou « ranger » sans qu'on te l'ait " +
+    "demandé. Recopie l'identifiant caractère pour caractère depuis l'agenda de la " +
+    "consigne et le titre tel qu'il y figure.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, sous forme de question, nommant ce qui " +
+          "serait supprimé — ex. « Je supprime Dentiste du jeudi 3 ? ». Ne jamais la " +
+          "présenter comme faite. 500 caractères maximum.",
+      },
+      itemType: {
+        type: "string",
+        enum: ["event", "list"],
+        description: "« event » pour un rendez-vous, « list » pour une todoliste.",
+      },
+      itemId: {
+        type: "string",
+        description: "Identifiant de l'élément, recopié depuis l'agenda de la consigne.",
+      },
+      title: {
+        type: "string",
+        description: "Titre de l'élément, tel qu'indiqué dans la consigne.",
+      },
+    },
+    required: ["message", "itemType", "itemId", "title"],
+  },
+};
+
+/**
+ * Régler l'outil à la place de l'utilisateur, sur sa demande (§12.1).
+ *
+ * Liste fermée de réglages cosmétiques ou de confort. Ni le modèle de langage,
+ * ni le périmètre de l'assistant, ni le fuseau, ni le compte : l'assistant ne
+ * règle pas ce qui borne son propre pouvoir.
+ */
+export const SUGGEST_UPDATE_SETTINGS: LlmTool = {
+  name: "suggest_update_settings",
+  description:
+    "À appeler quand l'utilisateur demande explicitement de changer un réglage de " +
+    "l'application : thème clair ou sombre, couleur ou nom de l'assistant, vue sur " +
+    "laquelle le calendrier s'ouvre, rappels dans le canal ou par e-mail, heures où " +
+    "l'après-midi et le soir commencent. Les réglages actuels sont donnés dans la " +
+    "consigne : ne propose pas ce qui est déjà ainsi. Ne change jamais autre chose : " +
+    "ni le modèle, ni les capacités de l'assistant, ni le compte — dis que cela se " +
+    "règle dans les Réglages. Jamais de ta propre initiative.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description:
+          "Proposition adressée à l'utilisateur, sous forme de question, nommant ce qui " +
+          "change — ex. « Je passe l'application en thème sombre ? ». Ne jamais la " +
+          "présenter comme faite. 500 caractères maximum.",
+      },
+      theme: { type: "string", enum: ["light", "dark", "system"], description: "Thème." },
+      assistantName: { type: "string", description: "Nouveau nom de l'assistant, 40 caractères." },
+      assistantColor: {
+        type: "string",
+        description: "Couleur de l'assistant, au format hexadécimal #RRGGBB.",
+      },
+      calendarDefaultView: {
+        type: "string",
+        enum: ["day", "week", "month", "year", "todo"],
+        description: "Vue sur laquelle le calendrier s'ouvre.",
+      },
+      remindInChannel: {
+        type: "boolean",
+        description: "Rappels écrits dans le canal Jean-Claude, ou non.",
+      },
+      remindByEmail: { type: "boolean", description: "Rappels envoyés par e-mail, ou non." },
+      dayPartBounds: {
+        type: "object",
+        description:
+          "Heures de la journée : toujours les deux ensemble, en reprenant celle qui " +
+          "ne change pas depuis les réglages actuels.",
+        properties: {
+          afternoonFrom: { type: "integer", description: "Début de l'après-midi, de 10 à 15." },
+          eveningFrom: { type: "integer", description: "Début du soir, de 17 à 22." },
+        },
+        required: ["afternoonFrom", "eveningFrom"],
+      },
+    },
+    required: ["message"],
+  },
+};
+
 export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_TASK_LIST,
   SUGGEST_TASK_LIST_ITEMS,
@@ -958,6 +1104,9 @@ export const CHAT_TOOLS: LlmTool[] = [
   SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   SUGGEST_MEMORY,
+  SUGGEST_UPDATE_EVENT,
+  SUGGEST_DELETE_ITEM,
+  SUGGEST_UPDATE_SETTINGS,
   ASK_QUESTION,
 ];
 
@@ -980,6 +1129,9 @@ export const ASSISTANT_TOOLS: LlmTool[] = [
   OPEN_NEW_CONVERSATION,
   REPORT_BUG,
   SUGGEST_MEMORY,
+  SUGGEST_UPDATE_EVENT,
+  SUGGEST_DELETE_ITEM,
+  SUGGEST_UPDATE_SETTINGS,
   ASK_QUESTION,
 ];
 
@@ -1005,6 +1157,11 @@ const SCOPE_BY_TOOL_NAME: Record<string, keyof AssistantScope> = {
   [SUGGEST_FOLDERS.name]: "folderOrganization",
   [SUGGEST_PROJECT_FOLDERS.name]: "structureSuggestions",
   [SUGGEST_MEMORY.name]: "learnsPreferences",
+  // Sans la lecture de l'agenda, le modèle n'a aucun identifiant à désigner :
+  // couper « voit mon agenda » coupe aussi ces deux gestes.
+  [SUGGEST_UPDATE_EVENT.name]: "readsAgenda",
+  [SUGGEST_DELETE_ITEM.name]: "readsAgenda",
+  [SUGGEST_UPDATE_SETTINGS.name]: "adjustsSettings",
 };
 
 /**

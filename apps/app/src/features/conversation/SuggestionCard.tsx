@@ -12,6 +12,9 @@ import {
   dateOfCalendarDay,
   reportBugPayloadSchema,
   rememberPayloadSchema,
+  deleteItemPayloadSchema,
+  updateEventPayloadSchema,
+  updateSettingsPayloadSchema,
   scheduleListsPayloadSchema,
   updateTaskListDueDatePayloadSchema,
   updateTaskListItemsPayloadSchema,
@@ -22,6 +25,7 @@ import {
   type ResolveSuggestion,
   type Suggestion,
   type TaskListKind,
+  type UpdateSettingsPayload,
 } from "@jc/domain";
 import { fontSize, fontWeight, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { useFeedbackContext } from "@/features/feedback/hooks/use-feedback";
@@ -778,6 +782,12 @@ function outcomeLabel(suggestion: Suggestion): string {
       return reportLabels(suggestion).outcome;
     case "remember":
       return "C'est retenu";
+    case "update_event":
+      return "Rendez-vous modifié";
+    case "delete_item":
+      return "C'est supprimé";
+    case "update_settings":
+      return "Réglage appliqué";
     default: {
       // Exhaustivité vérifiée à la compilation : un `kind` ajouté à
       // `suggestionKindSchema` sans mise à jour de ce switch fait échouer le
@@ -974,6 +984,43 @@ function useSuggestionPreview(suggestion: Suggestion): {
     };
   }
 
+  // Ce qui change, en clair : le nouveau titre et le nouveau début. Le
+  // rendez-vous visé est déjà nommé dans la phrase de l'assistant.
+  if (suggestion.kind === "update_event") {
+    const proposed = updateEventPayloadSchema.safeParse(suggestion.payload);
+    const lines: PreviewLine[] = [];
+    if (proposed.success) {
+      if (proposed.data.title !== undefined) {
+        lines.push({ key: "title", label: proposed.data.title, nested: false });
+      }
+      if (proposed.data.startsAt !== undefined) {
+        lines.push({ key: "startsAt", label: dueLabel(proposed.data.startsAt), nested: false });
+      }
+    }
+    return { acceptLabel: "Modifier le rendez-vous", lines };
+  }
+
+  // Chaque réglage dit en clair, avec sa valeur : l'utilisateur voit ce qui
+  // changera avant d'accepter.
+  if (suggestion.kind === "update_settings") {
+    const proposed = updateSettingsPayloadSchema.safeParse(suggestion.payload);
+    return {
+      acceptLabel: "Appliquer",
+      lines: proposed.success ? settingsLines(proposed.data) : [],
+    };
+  }
+
+  // Ce qui part, nommé sur la carte : on supprime en connaissance de cause.
+  if (suggestion.kind === "delete_item") {
+    const proposed = deleteItemPayloadSchema.safeParse(suggestion.payload);
+    return {
+      acceptLabel: "Supprimer",
+      lines: proposed.success
+        ? [{ key: proposed.data.itemId, label: proposed.data.title, nested: false }]
+        : [],
+    };
+  }
+
   // Le texte rédigé par le modèle, pour relecture avant de le transmettre :
   // c'est ce que `content` deviendra dans `feedback`, tel quel.
   if (suggestion.kind === "report_bug") {
@@ -1081,6 +1128,49 @@ function dueOnLabel(dueOn: string): string {
  * conversation ne dit qu'un jour, et l'afficher ferait passer une date
  * approximative pour un horaire décidé.
  */
+const THEME_LABELS = { light: "clair", dark: "sombre", system: "celui de l'appareil" } as const;
+const VIEW_LABELS = {
+  day: "le jour",
+  week: "la semaine",
+  month: "le mois",
+  year: "l'année",
+  todo: "Todo",
+} as const;
+
+function settingsLines(settings: UpdateSettingsPayload): PreviewLine[] {
+  const lines: [string, string][] = [];
+  if (settings.theme !== undefined)
+    lines.push(["theme", `Thème : ${THEME_LABELS[settings.theme]}`]);
+  if (settings.assistantName !== undefined) {
+    lines.push(["assistantName", `Nom de l'assistant : ${settings.assistantName}`]);
+  }
+  if (settings.assistantColor !== undefined) {
+    lines.push(["assistantColor", `Couleur de l'assistant : ${settings.assistantColor}`]);
+  }
+  if (settings.calendarDefaultView !== undefined) {
+    lines.push([
+      "calendarDefaultView",
+      `Le calendrier s'ouvre sur : ${VIEW_LABELS[settings.calendarDefaultView]}`,
+    ]);
+  }
+  if (settings.remindInChannel !== undefined) {
+    lines.push([
+      "remindInChannel",
+      `Rappels dans le canal : ${settings.remindInChannel ? "oui" : "non"}`,
+    ]);
+  }
+  if (settings.remindByEmail !== undefined) {
+    lines.push(["remindByEmail", `Rappels par e-mail : ${settings.remindByEmail ? "oui" : "non"}`]);
+  }
+  if (settings.dayPartBounds !== undefined) {
+    lines.push([
+      "dayPartBounds",
+      `Après-midi dès ${settings.dayPartBounds.afternoonFrom} h, soir dès ${settings.dayPartBounds.eveningFrom} h`,
+    ]);
+  }
+  return lines.map(([key, label]) => ({ key, label, nested: false }));
+}
+
 function dueLabel(iso: string): string {
   const date = new Date(iso);
   const day = formatFullDay(date);

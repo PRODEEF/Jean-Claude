@@ -597,6 +597,119 @@ describe("SuggestionService", () => {
       jest.restoreAllMocks();
     });
 
+    it("traduit un déplacement de rendez-vous en proposition update_event", async () => {
+      const repo = makeRepository();
+      const eventId = "22222222-2222-4222-8222-222222222222";
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          {
+            message: "Je déplace Dentiste à jeudi 10h ?",
+            eventId,
+            startsAt: "2026-09-10T08:00:00.000Z",
+          },
+          "suggest_update_event",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_event",
+          payload: { eventId, startsAt: "2026-09-10T08:00:00.000Z" },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("abandonne un déplacement qui ne change rien", async () => {
+      const repo = makeRepository();
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const captured = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          { message: "Je déplace ?", eventId: "22222222-2222-4222-8222-222222222222" },
+          "suggest_update_event",
+        ),
+        TOKEN,
+      );
+
+      expect(captured).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
+    it("traduit une suppression en proposition delete_item, titre compris", async () => {
+      const repo = makeRepository();
+      const itemId = "33333333-3333-4333-8333-333333333333";
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          { message: "Je supprime Courses ?", itemType: "list", itemId, title: "Courses" },
+          "suggest_delete_item",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "delete_item",
+          payload: { itemType: "list", itemId, title: "Courses" },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("traduit une demande de réglage en proposition update_settings", async () => {
+      const repo = makeRepository();
+
+      await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          { message: "Je passe en thème sombre ?", theme: "dark", remindByEmail: false },
+          "suggest_update_settings",
+        ),
+        TOKEN,
+      );
+
+      expect(repo.create).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({
+          kind: "update_settings",
+          payload: { theme: "dark", remindByEmail: false },
+        }),
+        TOKEN,
+      );
+    });
+
+    it("abandonne un réglage hors liste : le modèle de langage ne se change pas ainsi", async () => {
+      const repo = makeRepository();
+      jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const captured = await new SuggestionService(repo).capture(
+        USER,
+        CONVERSATION,
+        makeToolCall(
+          { message: "Je change de modèle ?", llmModel: "openai/gpt-5.4-mini" },
+          "suggest_update_settings",
+        ),
+        TOKEN,
+      );
+
+      expect(captured).toBeNull();
+      expect(repo.create).not.toHaveBeenCalled();
+      jest.restoreAllMocks();
+    });
+
     it("traduit un signalement en proposition report_bug", async () => {
       const repo = makeRepository();
 

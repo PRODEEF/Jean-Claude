@@ -23,7 +23,7 @@ const RRULE_FREQ = /(?:^|;)FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(?:;|$)/i;
  * refuse de produire la suggestion correspondante.
  */
 export const assistantScopeSchema = z.object({
-  /** Rappels du matin (jour) et du lundi (semaine). */
+  /** Point du matin : la journée écrite dans le canal chaque matin. */
   morningReminders: z.boolean().default(true),
   /** Aide au rangement : proposer un dossier, corriger un classement. */
   folderOrganization: z.boolean().default(true),
@@ -39,6 +39,18 @@ export const assistantScopeSchema = z.object({
    * qu'il accepte d'un geste (§12.1).
    */
   learnsPreferences: z.boolean().default(true),
+  /**
+   * Lire l'agenda et les listes de l'utilisateur pour répondre et proposer juste
+   * (« qu'est-ce que j'ai cette semaine ? », « où caser ça ? »). Désactivé, rien
+   * de cela n'est remis au modèle.
+   */
+  readsAgenda: z.boolean().default(true),
+  /**
+   * Régler l'outil à la demande (thème, couleur, rappels…). Chaque réglage reste
+   * une proposition que l'utilisateur accepte d'un geste (§12.1) ; désactivé,
+   * le serveur n'en propose plus.
+   */
+  adjustsSettings: z.boolean().default(true),
 });
 
 export type AssistantScope = z.infer<typeof assistantScopeSchema>;
@@ -73,6 +85,12 @@ export const suggestionKindSchema = z.enum([
   "report_bug",
   /** « Je retiens que tu préfères courir le matin ? » (second cerveau) */
   "remember",
+  /** « Je déplace ton dentiste à jeudi 10h ? » (second cerveau) */
+  "update_event",
+  /** « Je supprime le rendez-vous du 3 ? » — toujours validé d'un geste (§12.1) */
+  "delete_item",
+  /** « Je passe l'application en thème sombre ? » (second cerveau) */
+  "update_settings",
 ]);
 
 export type SuggestionKind = z.infer<typeof suggestionKindSchema>;
@@ -350,6 +368,41 @@ export const updateTaskListDueDatePayloadSchema = z.object({
 });
 
 export type UpdateTaskListDueDatePayload = z.infer<typeof updateTaskListDueDatePayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `update_event` : déplacer ou renommer un
+ * rendez-vous qui existe déjà.
+ *
+ * Au moins un des champs à changer : une proposition qui ne change rien n'a
+ * rien à demander. `endsAt` accepte `null` pour retirer la fin.
+ */
+export const updateEventPayloadSchema = z
+  .object({
+    eventId: uuidSchema,
+    title: labelSchema.optional(),
+    startsAt: isoDateTimeSchema.optional(),
+    endsAt: isoDateTimeSchema.nullable().optional(),
+  })
+  .refine(
+    (payload) =>
+      payload.title !== undefined || payload.startsAt !== undefined || payload.endsAt !== undefined,
+    "Un rendez-vous à modifier doit changer de titre, de début ou de fin.",
+  );
+
+export type UpdateEventPayload = z.infer<typeof updateEventPayloadSchema>;
+
+/**
+ * Charge utile d'une suggestion `delete_item` : supprimer un rendez-vous ou
+ * une todoliste. Le titre est recopié pour que la carte nomme ce qui part sans
+ * relire la base, et pour que l'utilisateur voie ce qu'il valide.
+ */
+export const deleteItemPayloadSchema = z.object({
+  itemType: z.enum(["event", "list"]),
+  itemId: uuidSchema,
+  title: labelSchema,
+});
+
+export type DeleteItemPayload = z.infer<typeof deleteItemPayloadSchema>;
 
 /**
  * Charge utile d'une suggestion `update_task_list_items` (§12.1, A.2).

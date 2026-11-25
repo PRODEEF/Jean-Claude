@@ -4,6 +4,10 @@ import { config } from "../../core/config.js";
 import { httpError } from "../../core/http.js";
 import { sendReminderEmail } from "../../core/mail/reminder-mail.js";
 import { llm } from "../../core/llm/providers/gateway.provider.js";
+import { logger } from "../../core/logger.js";
+import { createBriefWriter } from "../morning-brief/morning-brief-writer.js";
+import { MorningBriefService } from "../morning-brief/morning-brief.service.js";
+import { morningBriefRepository } from "../morning-brief/morning-brief.repository.js";
 import { reminderRepository } from "./reminder.repository.js";
 import { createReminderWriter } from "./reminder-writer.js";
 import { ReminderService } from "./reminder.service.js";
@@ -13,6 +17,8 @@ const service = new ReminderService(
   sendReminderEmail,
   createReminderWriter(llm),
 );
+
+const morningBrief = new MorningBriefService(morningBriefRepository, createBriefWriter(llm));
 
 /**
  * Appelé par le planificateur toutes les quelques minutes, pas par l'application.
@@ -26,5 +32,17 @@ export const reminderRoutes = new Hono().post("/", async (c) => {
     throw httpError(401, "Accès refusé.");
   }
 
-  return c.json(await service.run());
+  const reminders = await service.run();
+
+  // Le point du matin voyage avec le même passage du planificateur : un échec
+  // ici ne doit jamais retenir les rappels, qui sont partis avant.
+  try {
+    return c.json({ ...reminders, morningBrief: await morningBrief.run() });
+  } catch (error) {
+    logger.warn(
+      "reminders",
+      `Point du matin interrompu : ${error instanceof Error ? error.message : "erreur inconnue"}`,
+    );
+    return c.json(reminders);
+  }
 });

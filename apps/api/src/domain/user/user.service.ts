@@ -72,6 +72,8 @@ export class UserService {
         proactiveTaskDetection: scope.proactiveTaskDetection ?? base.proactiveTaskDetection,
         proactiveScheduling: scope.proactiveScheduling ?? base.proactiveScheduling,
         learnsPreferences: scope.learnsPreferences ?? base.learnsPreferences,
+        readsAgenda: scope.readsAgenda ?? base.readsAgenda,
+        adjustsSettings: scope.adjustsSettings ?? base.adjustsSettings,
       },
     };
   }

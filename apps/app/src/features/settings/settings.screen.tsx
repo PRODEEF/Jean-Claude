@@ -75,9 +75,8 @@ const CAPABILITIES: {
 }[] = [
   {
     key: "morningReminders",
-    label: "Rappels du matin",
-    hint: "Ce qui compte aujourd'hui, et le point du lundi.",
-    soon: true,
+    label: "Point du matin",
+    hint: "Chaque matin, Jean-Claude vous écrit dans son canal ce qui est prévu aujourd'hui. Rien s'il n'y a rien de prévu.",
   },
   {
     key: "folderOrganization",
@@ -98,6 +97,16 @@ const CAPABILITIES: {
     key: "proactiveScheduling",
     label: "Échéances et rendez-vous",
     hint: "Proposer de poser une date sur ce qui en mérite une.",
+  },
+  {
+    key: "readsAgenda",
+    label: "Jean-Claude voit mon agenda et mes listes",
+    hint: "Il s'appuie sur vos rendez-vous et vos listes pour répondre et proposer juste. Coupé, il ne les voit plus.",
+  },
+  {
+    key: "adjustsSettings",
+    label: "Régler l'outil à ma demande",
+    hint: "Proposer de changer le thème, la couleur, les rappels… quand vous le demandez. Rien ne change sans votre accord.",
   },
   {
     key: "learnsPreferences",
