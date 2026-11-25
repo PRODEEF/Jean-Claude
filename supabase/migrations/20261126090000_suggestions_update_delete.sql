@@ -1,5 +1,5 @@
--- Deux nouveaux types de proposition : déplacer un rendez-vous, supprimer un
--- élément. Aucune colonne ajoutée : seule la contrainte sur `kind` s'élargit.
+-- Nouveaux types de proposition : déplacer un rendez-vous, supprimer un
+-- élément, régler l'outil. Aucune colonne ajoutée : seule la contrainte sur `kind` s'élargit.
 
 alter table public.assistant_suggestions
   drop constraint if exists assistant_suggestions_kind_check;
@@ -18,5 +18,6 @@ alter table public.assistant_suggestions
     'report_bug',
     'remember',
     'update_event',
-    'delete_item'
+    'delete_item',
+    'update_settings'
   ));

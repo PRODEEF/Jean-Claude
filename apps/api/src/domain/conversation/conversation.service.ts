@@ -28,6 +28,7 @@ import type {
   MessageStreamEvent,
   Paginated,
   SendMessage,
+  UserPreferences,
   SlashCommandName,
   Suggestion,
   TaskListWithTasks,
@@ -64,6 +65,7 @@ import {
   SUGGEST_MEMORY,
   SUGGEST_UPDATE_EVENT,
   SUGGEST_DELETE_ITEM,
+  SUGGEST_UPDATE_SETTINGS,
   SUGGEST_EVENTS,
   SUGGEST_FOLDERS,
   SUGGEST_PROJECT_FOLDERS,
@@ -290,6 +292,8 @@ type AssistantContext = {
   onboarding: boolean;
   /** Modèle choisi dans les réglages, ou `null` pour celui du serveur (§5.1). */
   model: AssistantModel | null;
+  /** Réglages actuels, remis au modèle pour qu'il ne propose pas ce qui est déjà ainsi. */
+  preferences: UserPreferences | null;
 };
 
 /**
@@ -1218,6 +1222,7 @@ export class ConversationService {
         memory: null,
         onboarding: false,
         model: null,
+        preferences: null,
       };
     }
 
@@ -1229,6 +1234,7 @@ export class ConversationService {
       memory: await this.knownAbout(profile.memory, accessToken),
       onboarding: profile.onboardingCompletedAt === null,
       model: profile.preferences.llmModel,
+      preferences: profile.preferences,
     };
   }
 
@@ -1296,7 +1302,8 @@ export class ConversationService {
           (tool) =>
             !CHANNEL_REMINDER_TOOLS.includes(tool) &&
             tool !== SUGGEST_MEMORY &&
-            !ORGANIZATION_TOOLS.includes(tool),
+            !ORGANIZATION_TOOLS.includes(tool) &&
+            tool !== SUGGEST_UPDATE_SETTINGS,
         );
         welcoming.push(FINISH_ONBOARDING);
         return {
@@ -1327,6 +1334,7 @@ export class ConversationService {
           !(tool === SUGGEST_RECURRING_EVENT && isPending(decided, "create_recurring_event")) &&
           !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")) &&
           !(tool === SUGGEST_MEMORY && isPending(decided, "remember")) &&
+          !(tool === SUGGEST_UPDATE_SETTINGS && isPending(decided, "update_settings")) &&
           !(ORGANIZATION_TOOLS.includes(tool) && !canDesignate(organization)) &&
           !(tool === SUGGEST_UPDATE_EVENT && isPending(decided, "update_event")) &&
           !(tool === SUGGEST_DELETE_ITEM && isPending(decided, "delete_item")),
@@ -1405,7 +1413,8 @@ export class ConversationService {
         !(tool === SUGGEST_EVENTS && isPending(decided, "create_events")) &&
         // Un souvenir déjà proposé attend un geste : en empiler un second
         // noierait la question dans le fil.
-        !(tool === SUGGEST_MEMORY && isPending(decided, "remember")),
+        !(tool === SUGGEST_MEMORY && isPending(decided, "remember")) &&
+        !(tool === SUGGEST_UPDATE_SETTINGS && isPending(decided, "update_settings")),
     );
 
     if (conversation.title === DEFAULT_CONVERSATION_TITLE) tools.push(NAME_CONVERSATION);
@@ -3218,6 +3227,9 @@ function buildSystemPrompt(
     if (todo.tools.includes(SUGGEST_RECURRING_EVENT)) channel.push(...RECURRING_EVENT_RULES);
     if (todo.tools.includes(SUGGEST_EVENTS)) channel.push(...EVENTS_RULES);
     if (todo.tools.includes(SUGGEST_MEMORY)) channel.push(...MEMORY_RULES);
+    if (todo.tools.includes(SUGGEST_UPDATE_SETTINGS)) {
+      channel.push(...settingsRules(context.preferences));
+    }
     if (canEditOrganization(todo.tools) && canDesignate(todo.organization)) {
       channel.push(...ORGANIZATION_RULES);
     }
@@ -3258,6 +3270,8 @@ function buildSystemPrompt(
   ];
 
   if (todo.tools.includes(SUGGEST_MEMORY)) lines.push(...MEMORY_RULES);
+  if (todo.tools.includes(SUGGEST_UPDATE_SETTINGS))
+    lines.push(...settingsRules(context.preferences));
   if (canEditOrganization(todo.tools) && canDesignate(todo.organization)) {
     lines.push(...ORGANIZATION_RULES);
   }
@@ -3570,6 +3584,49 @@ function describeOrganization(
     );
   }
   return lines;
+}
+
+const VIEW_LABELS: Record<UserPreferences["calendarDefaultView"], string> = {
+  day: "jour",
+  week: "semaine",
+  month: "mois",
+  year: "année",
+  todo: "Todo",
+};
+
+/**
+ * Réglages actuels et règle d'usage de `suggest_update_settings`.
+ *
+ * Les réglages sont dits au modèle : sans eux il proposerait « passe en thème
+ * sombre » à quelqu'un qui y est déjà. Le périmètre est borné ici comme dans le
+ * schéma de la charge utile — le serveur écarte le reste de toute façon.
+ */
+function settingsRules(preferences: UserPreferences | null): string[] {
+  const current = preferences
+    ? [
+        "",
+        "Réglages actuels : " +
+          [
+            `thème ${preferences.theme}`,
+            `couleur de l'assistant ${preferences.assistantColor}`,
+            `calendrier ouvert sur la vue ${VIEW_LABELS[preferences.calendarDefaultView]}`,
+            `rappels dans le canal : ${preferences.remindInChannel ? "oui" : "non"}`,
+            `rappels par e-mail : ${preferences.remindByEmail ? "oui" : "non"}`,
+            `après-midi dès ${preferences.dayPartBounds.afternoonFrom} h, soir dès ${preferences.dayPartBounds.eveningFrom} h`,
+          ].join(" ; ") +
+          ".",
+      ]
+    : [];
+
+  return [
+    ...current,
+    "",
+    "Quand l'utilisateur demande de changer un réglage de l'application — thème, couleur",
+    "ou nom de l'assistant, vue d'ouverture du calendrier, rappels, heures de la journée —",
+    "appelle `suggest_update_settings`. Ne l'appelle que sur demande explicite, jamais pour",
+    "un réglage déjà tel quel. Pour tout autre réglage (modèle, capacités de l'assistant,",
+    "compte), dis qu'il se règle dans les Réglages. Ne dis jamais que c'est fait : demande.",
+  ];
 }
 
 /** Vrai quand l'agenda de la consigne contient de quoi désigner un élément par son identifiant. */

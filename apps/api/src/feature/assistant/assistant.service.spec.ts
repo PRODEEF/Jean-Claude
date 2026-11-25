@@ -2149,6 +2149,81 @@ describe("AssistantService", () => {
     });
   });
 
+  describe("acceptation d'un réglage de l'outil", () => {
+    function usersRepository(): IUserRepository {
+      return { ...IDLE_USERS, update: jest.fn().mockResolvedValue({}) };
+    }
+
+    it("applique les réglages proposés, et eux seuls", async () => {
+      const users = usersRepository();
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "update_settings",
+            message: "Je passe en thème sombre ?",
+            // Un champ hors liste glissé dans une proposition stockée : écarté à l'écriture.
+            payload: { theme: "dark", remindByEmail: false, llmModel: "openai/gpt-5.4-mini" },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        makeCalendarRepository(),
+        users,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(users.update).toHaveBeenCalledWith(
+        USER,
+        { theme: "dark", remindByEmail: false },
+        TOKEN,
+      );
+    });
+
+    it("n'écrit rien quand la proposition est ignorée", async () => {
+      const users = usersRepository();
+
+      await makeService(
+        makeSuggestionStore(
+          makeSuggestion({
+            kind: "update_settings",
+            message: "Je passe en thème sombre ?",
+            payload: { theme: "dark" },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        makeTaskRepository(),
+        makeCalendarRepository(),
+        users,
+      ).resolve(USER, "sug-1", { action: "dismiss" }, TOKEN);
+
+      expect(users.update).not.toHaveBeenCalled();
+    });
+
+    it("refuse une proposition de réglage illisible", async () => {
+      const users = usersRepository();
+
+      await expect(
+        makeService(
+          makeSuggestionStore(
+            makeSuggestion({
+              kind: "update_settings",
+              message: "Je règle ?",
+              payload: { llmModel: "openai/gpt-5.4-mini" },
+            }),
+          ),
+          makeFolderRepository(),
+          makeConversationRepository(),
+          makeTaskRepository(),
+          makeCalendarRepository(),
+          users,
+        ).resolve(USER, "sug-1", { action: "accept" }, TOKEN),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(users.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe("acceptation d'un déplacement ou d'une suppression", () => {
     const EVENT_ID = "22222222-2222-4222-8222-222222222222";
     const existing = {

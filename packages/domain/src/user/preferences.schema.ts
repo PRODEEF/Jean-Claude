@@ -342,3 +342,32 @@ export const updateUserProfileSchema = z
   .partial();
 
 export type UpdateUserProfile = z.infer<typeof updateUserProfileSchema>;
+
+/**
+ * Charge utile d'une suggestion `update_settings` : les réglages que l'assistant
+ * a le droit de proposer de changer.
+ *
+ * Liste fermée, tirée de `updateUserProfileSchema` : thème, couleur et nom de
+ * l'assistant, vue d'ouverture du calendrier, rappels, heures de la journée.
+ * Le modèle de langage, le périmètre de l'assistant, le fuseau et l'identité
+ * n'y figurent jamais — l'assistant ne règle pas lui-même ce qui borne son
+ * pouvoir ni ce qui fait sortir les données d'Europe.
+ *
+ * Au moins un champ : une proposition qui ne change rien n'a rien à demander.
+ */
+export const updateSettingsPayloadSchema = updateUserProfileSchema
+  .pick({
+    assistantName: true,
+    assistantColor: true,
+    theme: true,
+    calendarDefaultView: true,
+    remindInChannel: true,
+    remindByEmail: true,
+    dayPartBounds: true,
+  })
+  .refine(
+    (payload) => Object.values(payload).some((value) => value !== undefined),
+    "Au moins un réglage à changer.",
+  );
+
+export type UpdateSettingsPayload = z.infer<typeof updateSettingsPayloadSchema>;

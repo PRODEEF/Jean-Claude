@@ -6,6 +6,7 @@ import {
   toAssistantModel,
   toCatalogueModel,
   VISION_FALLBACK_MODEL,
+  updateSettingsPayloadSchema,
   updateUserProfileSchema,
   userPreferencesSchema,
 } from "./preferences.schema";
@@ -152,5 +153,38 @@ describe("modelReadingImages", () => {
   it("se rabat sur un modèle souverain qui lit bien les images", () => {
     expect(isVisionCapableModel(VISION_FALLBACK_MODEL)).toBe(true);
     expect(isSovereignModel(VISION_FALLBACK_MODEL)).toBe(true);
+  });
+});
+
+describe("updateSettingsPayloadSchema", () => {
+  it("accepte un ou plusieurs réglages de la liste", () => {
+    expect(updateSettingsPayloadSchema.parse({ theme: "dark", remindByEmail: false })).toEqual({
+      theme: "dark",
+      remindByEmail: false,
+    });
+  });
+
+  it("refuse une proposition qui ne change rien", () => {
+    expect(updateSettingsPayloadSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("écarte le modèle, le périmètre et le fuseau : l'assistant ne les règle pas", () => {
+    const parsed = updateSettingsPayloadSchema.safeParse({
+      theme: "light",
+      llmModel: "openai/gpt-5.4-mini",
+      scope: { readsAgenda: false },
+      timezone: "Asia/Tokyo",
+    });
+
+    expect(parsed.success && parsed.data).toEqual({ theme: "light" });
+  });
+
+  it("refuse une valeur hors des choix proposés", () => {
+    expect(updateSettingsPayloadSchema.safeParse({ theme: "fluo" }).success).toBe(false);
+    expect(
+      updateSettingsPayloadSchema.safeParse({
+        dayPartBounds: { afternoonFrom: 3, eveningFrom: 19 },
+      }).success,
+    ).toBe(false);
   });
 });

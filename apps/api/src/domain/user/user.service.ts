@@ -73,6 +73,7 @@ export class UserService {
         proactiveScheduling: scope.proactiveScheduling ?? base.proactiveScheduling,
         learnsPreferences: scope.learnsPreferences ?? base.learnsPreferences,
         readsAgenda: scope.readsAgenda ?? base.readsAgenda,
+        adjustsSettings: scope.adjustsSettings ?? base.adjustsSettings,
       },
     };
   }

@@ -45,6 +45,12 @@ export const assistantScopeSchema = z.object({
    * de cela n'est remis au modèle.
    */
   readsAgenda: z.boolean().default(true),
+  /**
+   * Régler l'outil à la demande (thème, couleur, rappels…). Chaque réglage reste
+   * une proposition que l'utilisateur accepte d'un geste (§12.1) ; désactivé,
+   * le serveur n'en propose plus.
+   */
+  adjustsSettings: z.boolean().default(true),
 });
 
 export type AssistantScope = z.infer<typeof assistantScopeSchema>;
@@ -83,6 +89,8 @@ export const suggestionKindSchema = z.enum([
   "update_event",
   /** « Je supprime le rendez-vous du 3 ? » — toujours validé d'un geste (§12.1) */
   "delete_item",
+  /** « Je passe l'application en thème sombre ? » (second cerveau) */
+  "update_settings",
 ]);
 
 export type SuggestionKind = z.infer<typeof suggestionKindSchema>;

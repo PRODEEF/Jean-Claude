@@ -105,6 +105,11 @@ const CAPABILITIES: {
     hint: "Il s'appuie sur vos rendez-vous et vos listes pour répondre et proposer juste. Coupé, il ne les voit plus.",
   },
   {
+    key: "adjustsSettings",
+    label: "Régler l'outil à ma demande",
+    hint: "Proposer de changer le thème, la couleur, les rappels… quand vous le demandez. Rien ne change sans votre accord.",
+  },
+  {
     key: "learnsPreferences",
     label: "Retenir mes goûts et mes habitudes",
     hint: "Proposer de retenir ce que vous laissez voir de vos routines, pour mieux vous aider.",
