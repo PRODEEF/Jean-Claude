@@ -75,9 +75,8 @@ const CAPABILITIES: {
 }[] = [
   {
     key: "morningReminders",
-    label: "Rappels du matin",
-    hint: "Ce qui compte aujourd'hui, et le point du lundi.",
-    soon: true,
+    label: "Point du matin",
+    hint: "Chaque matin, Jean-Claude vous écrit dans son canal ce qui est prévu aujourd'hui. Rien s'il n'y a rien de prévu.",
   },
   {
     key: "folderOrganization",
