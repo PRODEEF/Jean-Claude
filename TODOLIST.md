@@ -32,6 +32,7 @@
 
 ### Calendrier
 
+- [x] `FRONT` `Calendrier` **Renommer une liste ne masque plus son heure** — Retour de Yann, 26 novembre (captures). **Fait sur `dev` (V0.00.07)** : l'heure reste affichée à gauche du champ de titre, et son appui est dégagé de la case à cocher. <!--id:y-heure-visible-renommage-->
 - [x] `FRONT` `Calendrier` **Créneau d'une heure par défaut dans la grille, sans chevauchement** — Demande de Yann, 26 novembre (capture de la vue Semaine). **Fait sur `dev` (V0.00.06)** : une liste sans heure de fin tient une heure ; si une autre commence au milieu, la première est raccourcie à l'écran jusqu'à ce début (pas de colonnes côte à côte, pas de question). À essayer sur vos vraies listes. <!--id:y-creneau-1h-->
 - [x] `FRONT` `Calendrier` **Cases à cocher plus lisibles (listes vides et remplies, thème clair et sombre)** — Demande de Yann, 26 novembre. **Fait sur `dev` (V0.00.06)** : trait plus épais, gris du texte secondaire, fond plein. <!--id:y-cases-lisibles-->
 - [x] `FRONT` `Calendrier` **Entrée au début d'une ligne : la ligne descend** — Demande de Yann, 26 novembre. **Fait sur `dev` (V0.00.06)** : une ligne vide s'insère au-dessus, le curseur reste sur la ligne d'origine. <!--id:y-entree-debut-ligne-->

@@ -349,6 +349,23 @@ export function ListCard({
                 onPress={toggleAll}
               />
 
+              {/* L'heure reste affichée pendant la modification du titre : le champ
+                  la masquait, et on ne la retrouvait qu'après (retour de Yann,
+                  26 novembre). La marge la dégage de la zone d'appui de la case. */}
+              {time ? (
+                <View className="ml-1">
+                  <InlinePicker
+                    mode="time"
+                    value={timeOf(list.dueAt, list.dueAllDay)}
+                    onChange={(next) => saveDue(dueText, next, setDueError)}
+                    onNativePress={openDuePanel}
+                    accessibilityLabel={`Heure de ${list.title} : ${time}`}
+                  >
+                    <Text className="text-sm font-semibold">{time}</Text>
+                  </InlinePicker>
+                </View>
+              ) : null}
+
               {renaming ? (
                 <TextInput
                   value={draftTitle}
@@ -373,17 +390,6 @@ export function ListCard({
                 />
               ) : (
                 <>
-                  {time ? (
-                    <InlinePicker
-                      mode="time"
-                      value={timeOf(list.dueAt, list.dueAllDay)}
-                      onChange={(next) => saveDue(dueText, next, setDueError)}
-                      onNativePress={openDuePanel}
-                      accessibilityLabel={`Heure de ${list.title} : ${time}`}
-                    >
-                      <Text className="text-sm font-semibold">{time}</Text>
-                    </InlinePicker>
-                  ) : null}
                   <Pressable
                     onPress={() => {
                       setDraftTitle(list.title);
