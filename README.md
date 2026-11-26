@@ -137,6 +137,13 @@ _Redirect URLs_, faute de quoi la connexion par code renvoie vers `localhost`.
 Vérification : `https://<projet-api>.vercel.app/api/health` doit rendre
 `{"status":"ok","llm":{…}}`.
 
+
+### Adresses de production
+
+- **Application web** : <https://jean-claude-web-lilac.vercel.app>
+- **API** : <https://jean-claude-rust.vercel.app> (appelée par le planificateur des rappels)
+- **Préproduction (`dev`)** : <https://jean-claude-web-git-dev-yann-thebodys-projects.vercel.app>
+
 ---
 
 ## Structure
