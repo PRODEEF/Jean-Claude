@@ -10,6 +10,7 @@ import {
   createRecurringEventPayloadSchema,
   createTaskListsPayloadSchema,
   dateOfCalendarDay,
+  LANGUAGE_NAMES,
   reportBugPayloadSchema,
   rememberPayloadSchema,
   deleteItemPayloadSchema,
@@ -1129,6 +1130,12 @@ function dueOnLabel(dueOn: string): string {
  * approximative pour un horaire décidé.
  */
 const THEME_LABELS = { light: "clair", dark: "sombre", system: "celui de l'appareil" } as const;
+const FONT_SCALE_LABELS = {
+  small: "petit",
+  normal: "normal",
+  large: "grand",
+  xlarge: "très grand",
+} as const;
 const VIEW_LABELS = {
   day: "le jour",
   week: "la semaine",
@@ -1152,6 +1159,12 @@ function settingsLines(settings: UpdateSettingsPayload): PreviewLine[] {
       "calendarDefaultView",
       `Le calendrier s'ouvre sur : ${VIEW_LABELS[settings.calendarDefaultView]}`,
     ]);
+  }
+  if (settings.fontScale !== undefined) {
+    lines.push(["fontScale", `Taille du texte : ${FONT_SCALE_LABELS[settings.fontScale]}`]);
+  }
+  if (settings.language !== undefined) {
+    lines.push(["language", `Langue de l'assistant : ${LANGUAGE_NAMES[settings.language]}`]);
   }
   if (settings.remindInChannel !== undefined) {
     lines.push([

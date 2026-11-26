@@ -1097,6 +1097,16 @@ export const SUGGEST_UPDATE_SETTINGS: LlmTool = {
         enum: ["day", "week", "month", "year", "todo"],
         description: "Vue sur laquelle le calendrier s'ouvre.",
       },
+      fontScale: {
+        type: "string",
+        enum: ["small", "normal", "large", "xlarge"],
+        description: "Taille du texte de l'application : petit, normal, grand, très grand.",
+      },
+      language: {
+        type: "string",
+        enum: ["fr", "en", "es", "de", "it", "pt"],
+        description: "Langue dans laquelle l'assistant répond.",
+      },
       remindInChannel: {
         type: "boolean",
         description: "Rappels écrits dans le canal Jean-Claude, ou non.",

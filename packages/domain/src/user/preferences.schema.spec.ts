@@ -187,4 +187,22 @@ describe("updateSettingsPayloadSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("accepte la taille du texte et la langue, et refuse une valeur hors liste", () => {
+    expect(updateSettingsPayloadSchema.parse({ fontScale: "large", language: "en" })).toEqual({
+      fontScale: "large",
+      language: "en",
+    });
+    expect(updateSettingsPayloadSchema.safeParse({ fontScale: "énorme" }).success).toBe(false);
+    expect(updateSettingsPayloadSchema.safeParse({ language: "klingon" }).success).toBe(false);
+  });
+});
+
+describe("userPreferencesSchema — apparence et langue", () => {
+  it("prend « normal » et « fr » quand rien n'est enregistré", () => {
+    const parsed = userPreferencesSchema.parse({ scope: {} });
+
+    expect(parsed.fontScale).toBe("normal");
+    expect(parsed.language).toBe("fr");
+  });
 });

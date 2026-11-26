@@ -318,6 +318,8 @@ function makePreferences(
     remindInChannel: true,
     remindByEmail: true,
     calendarDefaultView: "todo",
+    fontScale: "normal",
+    language: "fr",
     timezone: "Europe/Paris",
     llmModel: null,
     ...overrides,
@@ -3659,6 +3661,25 @@ describe("ConversationService", () => {
         expect(tools).not.toContain("suggest_update_event");
         expect(tools).not.toContain("suggest_delete_item");
         expect(lastRequest(llm).system ?? "").not.toContain("[rendez-vous");
+      });
+
+      it("répond en français par défaut", async () => {
+        const llm = makeLlm();
+
+        await see(classic(), llm, makeUserRepository(), []);
+
+        expect(lastRequest(llm).system ?? "").toContain("en français");
+      });
+
+      it("répond dans la langue choisie dans les réglages", async () => {
+        const llm = makeLlm();
+        const users = makeUserRepository({}, { preferences: makePreferences({ language: "en" }) });
+
+        await see(classic(), llm, users, []);
+
+        const system = lastRequest(llm).system ?? "";
+        expect(system).toContain("en anglais");
+        expect(system).not.toContain("en français");
       });
 
       it("propose de régler l'outil en disant au modèle les réglages actuels", async () => {

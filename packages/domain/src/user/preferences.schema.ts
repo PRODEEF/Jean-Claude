@@ -228,6 +228,41 @@ function isKnownTimezone(value: string): boolean {
 export const calendarViewSchema = z.enum(["day", "week", "month", "year", "todo"]);
 export type CalendarViewChoice = z.infer<typeof calendarViewSchema>;
 
+/**
+ * Taille du texte de l'application. Quatre crans plutôt qu'un curseur libre :
+ * on choisit « plus grand », pas un pourcentage (§13.4.4).
+ */
+export const FONT_SCALES = ["small", "normal", "large", "xlarge"] as const;
+export const fontScaleSchema = z.enum(FONT_SCALES);
+export type FontScale = z.infer<typeof fontScaleSchema>;
+
+/** Facteur appliqué à l'interface pour chaque cran. */
+export const FONT_SCALE_FACTORS: Record<FontScale, number> = {
+  small: 0.9,
+  normal: 1,
+  large: 1.15,
+  xlarge: 1.3,
+};
+
+/**
+ * Langues proposées pour l'assistant. Le français reste la langue de
+ * l'interface tant qu'elle n'est pas traduite : aujourd'hui le réglage porte
+ * sur ce que l'assistant répond.
+ */
+export const LANGUAGES = ["fr", "en", "es", "de", "it", "pt"] as const;
+export const languageSchema = z.enum(LANGUAGES);
+export type Language = z.infer<typeof languageSchema>;
+
+/** Nom de la langue, écrit dans la langue elle-même — celui que l'utilisateur reconnaît. */
+export const LANGUAGE_NAMES: Record<Language, string> = {
+  fr: "Français",
+  en: "English",
+  es: "Español",
+  de: "Deutsch",
+  it: "Italiano",
+  pt: "Português",
+};
+
 export const userPreferencesSchema = z.object({
   /** L'assistant est renommable — « Jean-Claude » n'est que la valeur par défaut. */
   assistantName: z.string().trim().min(1).max(40).default(DEFAULT_ASSISTANT_NAME),
@@ -262,6 +297,10 @@ export const userPreferencesSchema = z.object({
   remindByEmail: z.boolean().default(true),
   /** Vue sur laquelle le calendrier s'ouvre à chaque arrivée. */
   calendarDefaultView: calendarViewSchema.default("todo"),
+  /** Taille du texte de l'application. */
+  fontScale: fontScaleSchema.default("normal"),
+  /** Langue dans laquelle l'assistant répond. */
+  language: languageSchema.default("fr"),
 });
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
@@ -338,6 +377,10 @@ export const updateUserProfileSchema = z
     remindByEmail: z.boolean(),
     /** Vue sur laquelle le calendrier s'ouvre à chaque arrivée. */
     calendarDefaultView: calendarViewSchema,
+    /** Taille du texte de l'application. */
+    fontScale: fontScaleSchema,
+    /** Langue dans laquelle l'assistant répond. */
+    language: languageSchema,
   })
   .partial();
 
@@ -361,6 +404,8 @@ export const updateSettingsPayloadSchema = updateUserProfileSchema
     assistantColor: true,
     theme: true,
     calendarDefaultView: true,
+    fontScale: true,
+    language: true,
     remindInChannel: true,
     remindByEmail: true,
     dayPartBounds: true,

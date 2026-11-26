@@ -3191,6 +3191,7 @@ function buildSystemPrompt(
 
     const channel = [
       `Tu es ${context.name}, l'assistant d'organisation personnelle de l'utilisateur.`,
+      ...languageRuleForChannel(context.preferences),
       ...preamble,
       "",
       "Ce canal est réservé à quatre sujets : les rappels (ce qui est important",
@@ -3273,7 +3274,7 @@ function buildSystemPrompt(
     `Tu es ${context.name}, un assistant conversationnel personnel.`,
     ...preamble,
     "",
-    "Réponds de façon utile, directe et naturelle, en français.",
+    answerLanguageLine(context.preferences),
     "",
     "Quand tu poses une question dont quelques réponses couvrent l'essentiel des cas,",
     "pose-la avec `ask_question` : l'utilisateur répond d'un appui plutôt que d'écrire.",
@@ -3603,6 +3604,36 @@ function describeOrganization(
   return lines;
 }
 
+/** Nom de la langue choisie, tel qu'on le dit en français dans la consigne. */
+const LANGUAGE_NAMES_IN_FRENCH: Record<UserPreferences["language"], string> = {
+  fr: "français",
+  en: "anglais",
+  es: "espagnol",
+  de: "allemand",
+  it: "italien",
+  pt: "portugais",
+};
+
+/**
+ * Langue des réponses : celle que l'utilisateur a choisie dans ses réglages.
+ * Le français reste la valeur par défaut et la consigne d'origine.
+ */
+function answerLanguageLine(preferences: UserPreferences | null): string {
+  const language = preferences?.language ?? "fr";
+  if (language === "fr") return "Réponds de façon utile, directe et naturelle, en français.";
+
+  return (
+    `Réponds de façon utile, directe et naturelle, en ${LANGUAGE_NAMES_IN_FRENCH[language]} : ` +
+    "c'est la langue choisie par l'utilisateur dans ses réglages, même si ses messages sont " +
+    "écrits dans une autre — sauf s'il te demande explicitement d'en changer."
+  );
+}
+
+/** Le canal parle aussi la langue choisie ; en français, rien à ajouter. */
+function languageRuleForChannel(preferences: UserPreferences | null): string[] {
+  return (preferences?.language ?? "fr") === "fr" ? [] : [answerLanguageLine(preferences)];
+}
+
 const VIEW_LABELS: Record<UserPreferences["calendarDefaultView"], string> = {
   day: "jour",
   week: "semaine",
@@ -3626,6 +3657,8 @@ function settingsRules(preferences: UserPreferences | null): string[] {
           [
             `thème ${preferences.theme}`,
             `couleur de l'assistant ${preferences.assistantColor}`,
+            `taille du texte ${preferences.fontScale}`,
+            `langue de l'assistant ${LANGUAGE_NAMES_IN_FRENCH[preferences.language]}`,
             `calendrier ouvert sur la vue ${VIEW_LABELS[preferences.calendarDefaultView]}`,
             `rappels dans le canal : ${preferences.remindInChannel ? "oui" : "non"}`,
             `rappels par e-mail : ${preferences.remindByEmail ? "oui" : "non"}`,

@@ -2,6 +2,8 @@ import {
   toAssistantModel,
   type AssistantScope,
   type CalendarViewChoice,
+  type FontScale,
+  type Language,
   type Theme,
 } from "@jc/domain";
 import { httpError } from "../../core/http.js";
@@ -26,6 +28,8 @@ type ProfileRow = {
   remind_in_channel: boolean;
   remind_by_email: boolean;
   calendar_default_view: CalendarViewChoice;
+  font_scale: FontScale;
+  language: Language;
   created_at: string;
   /**
    * Ligne de `admins` embarquée par PostgREST : un objet quand elle existe,
@@ -61,6 +65,8 @@ function toEntity(row: ProfileRow): ProfileRecord {
       remindInChannel: row.remind_in_channel,
       remindByEmail: row.remind_by_email,
       calendarDefaultView: row.calendar_default_view,
+      fontScale: row.font_scale,
+      language: row.language,
       dayPartBounds: {
         afternoonFrom: row.day_part_afternoon_from,
         eveningFrom: row.day_part_evening_from,
@@ -73,7 +79,7 @@ function toEntity(row: ProfileRow): ProfileRecord {
 }
 
 const COLUMNS =
-  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, day_part_afternoon_from, day_part_evening_from, remind_in_channel, remind_by_email, calendar_default_view, created_at, admins(user_id)";
+  "id, display_name, memory, onboarding_completed_at, assistant_name, assistant_color, theme, timezone, llm_model, assistant_scope, flat_banner, day_part_afternoon_from, day_part_evening_from, remind_in_channel, remind_by_email, calendar_default_view, font_scale, language, created_at, admins(user_id)";
 
 export const userRepository: IUserRepository = {
   async findById(userId, accessToken) {
@@ -107,6 +113,8 @@ export const userRepository: IUserRepository = {
     if (patch.remindByEmail !== undefined) payload["remind_by_email"] = patch.remindByEmail;
     if (patch.calendarDefaultView !== undefined)
       payload["calendar_default_view"] = patch.calendarDefaultView;
+    if (patch.fontScale !== undefined) payload["font_scale"] = patch.fontScale;
+    if (patch.language !== undefined) payload["language"] = patch.language;
     if (patch.dayPartBounds !== undefined) {
       payload["day_part_afternoon_from"] = patch.dayPartBounds.afternoonFrom;
       payload["day_part_evening_from"] = patch.dayPartBounds.eveningFrom;
