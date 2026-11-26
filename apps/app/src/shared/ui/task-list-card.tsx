@@ -313,12 +313,15 @@ export function TaskRowCheckbox({
       <View
         style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
         className={cn(
-          "items-center justify-center rounded border",
-          done ? "border-primary bg-primary" : "border-border",
-          pending ? "opacity-40" : "",
+          // Trait de 1,5 pt dans le gris du texte secondaire : le gris de
+          // bordure du thème disparaissait sur fond sombre comme sur fond clair
+          // (retour de Yann, 26 novembre).
+          "items-center justify-center rounded border-[1.5px]",
+          done ? "border-primary bg-primary" : "border-muted-foreground bg-background",
+          pending ? "opacity-60" : "",
         )}
       >
-        {done ? <Icon as={Check} size={11} className="text-primary-foreground" /> : null}
+        {done ? <Icon as={Check} size={13} className="text-primary-foreground" /> : null}
       </View>
     </Pressable>
   );
@@ -333,7 +336,7 @@ export function TaskRowBlankCheckbox() {
     >
       <View
         style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
-        className="rounded border border-border opacity-40"
+        className="rounded border-[1.5px] border-muted-foreground bg-background opacity-60"
       />
     </View>
   );

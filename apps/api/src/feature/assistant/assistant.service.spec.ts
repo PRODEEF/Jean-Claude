@@ -1852,6 +1852,68 @@ describe("AssistantService", () => {
       });
     });
 
+    it("donne au rendez-vous la durée estimée par le modèle, au quart d'heure", async () => {
+      const tasks = makeTaskRepository();
+
+      await makeService(
+        makeSuggestionStore(
+          makeEventsSuggestion({
+            payload: {
+              events: [{ title: "Call rapide", startsAt: DESHERBAGE, durationMinutes: 30 }],
+            },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(createdLists(tasks)[0]).toMatchObject({
+        dueAt: DESHERBAGE,
+        endsAt: "2026-09-12T09:30:00.000Z",
+      });
+    });
+
+    it("applique une heure par défaut quand le modèle ne donne aucune durée", async () => {
+      const tasks = makeTaskRepository();
+
+      await makeService(
+        makeSuggestionStore(
+          makeEventsSuggestion({
+            payload: { events: [{ title: "Dentiste", startsAt: DESHERBAGE }] },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(createdLists(tasks)[0]).toMatchObject({ endsAt: "2026-09-12T10:00:00.000Z" });
+    });
+
+    it("arrondit une durée au quart d'heure et la borne à 12 h", async () => {
+      const tasks = makeTaskRepository();
+
+      await makeService(
+        makeSuggestionStore(
+          makeEventsSuggestion({
+            payload: {
+              events: [
+                { title: "Atelier", startsAt: DESHERBAGE, durationMinutes: 50 },
+                { title: "Journée", startsAt: DESHERBAGE, durationMinutes: 5000 },
+              ],
+            },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(createdLists(tasks)[0]).toMatchObject({ endsAt: "2026-09-12T09:45:00.000Z" });
+      expect(createdLists(tasks)[1]).toMatchObject({ endsAt: "2026-09-12T21:00:00.000Z" });
+    });
+
     it("range les rendez-vous dans le sous-dossier PRENDRE RDV du projet, quand il existe (A.4)", async () => {
       const jardin = uuid(401);
       const rdv = uuid(402);
