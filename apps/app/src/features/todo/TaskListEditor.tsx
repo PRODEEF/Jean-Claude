@@ -101,6 +101,8 @@ export const TaskListEditor = memo(function TaskListEditor({
   const nextKey = useRef(0);
   /** Ligne à laquelle rendre le focus une fois l'état appliqué. */
   const pendingFocus = useRef<string | null>(null);
+  /** Dernière sélection connue du champ actif : sert à savoir si le curseur est en début de ligne. */
+  const selection = useRef<{ key: string; start: number; end: number } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Sortie d'édition différée : le focus passe souvent d'une ligne à sa voisine. */
   const leaving = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -246,6 +248,24 @@ export const TaskListEditor = memo(function TaskListEditor({
   };
 
   /**
+   * Entrée avec le curseur au tout début d'une ligne qui a du texte : la ligne
+   * descend, une ligne vide prend sa place au-dessus (comme Notion et Apple
+   * Notes). Sans cela, la nouvelle ligne s'ouvrait en dessous et la ligne
+   * visée ne bougeait pas (retour de Yann, 26 novembre).
+   *
+   * Le curseur reste au début de la ligne d'origine, devenue la suivante.
+   */
+  const insertAbove = (index: number) => {
+    const row = rows[index];
+    if (!row) return;
+
+    const created: Row = { key: makeKey(), title: "", depth: row.depth, done: false };
+    const next = [...rows.slice(0, index), created, ...rows.slice(index)];
+    pendingFocus.current = row.key;
+    setRows(next);
+  };
+
+  /**
    * Retour arrière sur une ligne vide.
    *
    * Une ligne indentée remonte d'abord d'un niveau, comme dans Notion : c'est
@@ -356,7 +376,16 @@ export const TaskListEditor = memo(function TaskListEditor({
     // `onSubmitEditing`. La traiter des deux côtés créerait deux lignes.
     if (pressed === "Enter" && Platform.OS === "web") {
       event.preventDefault();
-      insertBelow(index);
+      const row = rows[index];
+      const caret = selection.current;
+      const atStart =
+        row !== undefined &&
+        row.title.length > 0 &&
+        caret?.key === row.key &&
+        caret.start === 0 &&
+        caret.end === 0;
+      if (atStart) insertAbove(index);
+      else insertBelow(index);
     }
   };
 
@@ -381,6 +410,9 @@ export const TaskListEditor = memo(function TaskListEditor({
           onToggle={() => toggle(index)}
           onEdit={(title) => edit(index, title)}
           onKeyPress={(event) => key(event, index)}
+          onSelection={(start, end) => {
+            selection.current = { key: row.key, start, end };
+          }}
           onSubmit={() => {
             if (Platform.OS !== "web") insertBelow(index);
           }}
@@ -508,6 +540,7 @@ function EditorRow({
   onToggle,
   onEdit,
   onKeyPress,
+  onSelection,
   onSubmit,
   onFocus,
   onBlur,
@@ -535,6 +568,7 @@ function EditorRow({
   onToggle: () => void;
   onEdit: (title: string) => void;
   onKeyPress: (event: KeyPressEvent) => void;
+  onSelection: (start: number, end: number) => void;
   onSubmit: () => void;
   onFocus: () => void;
   onBlur: () => void;
@@ -608,6 +642,9 @@ function EditorRow({
         value={row.title}
         onChangeText={onEdit}
         onKeyPress={onKeyPress}
+        onSelectionChange={(event) =>
+          onSelection(event.nativeEvent.selection.start, event.nativeEvent.selection.end)
+        }
         onSubmitEditing={onSubmit}
         submitBehavior="submit"
         onFocus={onFocus}

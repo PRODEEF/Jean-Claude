@@ -698,7 +698,7 @@ describe("placement un jour de changement d'heure", () => {
       new Date(2026, 9, 25),
     );
 
-    expect(timed[0]).toMatchObject({ startMinute: 840, endMinute: 840 + LIST_CHIP_MINUTES });
+    expect(timed[0]).toMatchObject({ startMinute: 840, endMinute: 900 });
   });
 });
 
@@ -710,7 +710,8 @@ describe("layoutDayLists", () => {
     );
 
     expect(untimed).toEqual([]);
-    expect(timed[0]).toMatchObject({ startMinute: 600, endMinute: 600 + LIST_CHIP_MINUTES });
+    // Une liste sans heure de fin tient une heure, comme dans un calendrier classique.
+    expect(timed[0]).toMatchObject({ startMinute: 600, endMinute: 660 });
   });
 
   it("empile l'une sous l'autre des listes à la même heure, sans partager la largeur", () => {
@@ -729,6 +730,48 @@ describe("layoutDayLists", () => {
       1140 + 2 * LIST_CHIP_MINUTES,
     ]);
     expect(timed.every((box) => box.lane === 0 && box.laneCount === 1)).toBe(true);
+  });
+
+  it("respecte l'heure de fin d'une liste quand elle en a une", () => {
+    const { timed } = layoutDayLists(
+      [
+        makeList({
+          dueAt: localIso(2026, 9, 12, 10),
+          endsAt: localIso(2026, 9, 12, 11, 30),
+          dueAllDay: false,
+        }),
+      ],
+      DAY,
+    );
+
+    expect(timed[0]).toMatchObject({ startMinute: 600, endMinute: 690 });
+  });
+
+  it("raccourcit à l'écran la liste d'avant quand la suivante commence au milieu", () => {
+    // 14 h (une heure par défaut) puis 14 h 30 : la première s'arrête à 14 h 30.
+    const { timed } = layoutDayLists(
+      [
+        makeList({ id: "a", dueAt: localIso(2026, 9, 12, 14), dueAllDay: false }),
+        makeList({ id: "b", dueAt: localIso(2026, 9, 12, 14, 30), dueAllDay: false }),
+      ],
+      DAY,
+    );
+
+    expect(timed[0]).toMatchObject({ startMinute: 840, endMinute: 870 });
+    expect(timed[1]).toMatchObject({ startMinute: 870, endMinute: 930 });
+  });
+
+  it("ne descend jamais sous la hauteur d'une pastille quand la suivante est toute proche", () => {
+    const { timed } = layoutDayLists(
+      [
+        makeList({ id: "a", dueAt: localIso(2026, 9, 12, 14), dueAllDay: false }),
+        makeList({ id: "b", dueAt: localIso(2026, 9, 12, 14, 10), dueAllDay: false }),
+      ],
+      DAY,
+    );
+
+    expect(timed[0]).toMatchObject({ startMinute: 840, endMinute: 840 + LIST_CHIP_MINUTES });
+    expect(timed[1]?.startMinute).toBe(840 + LIST_CHIP_MINUTES);
   });
 
   it("ne décale pas une liste qui ne chevauche pas la précédente", () => {

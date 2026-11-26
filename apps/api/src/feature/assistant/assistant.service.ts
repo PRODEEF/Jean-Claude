@@ -250,6 +250,8 @@ export class AssistantService {
     const tree = conversation.folderIds.length > 0 ? await this.folders.getTree(accessToken) : [];
 
     const taskLists: TaskList[] = [];
+    const profile = await this.users.findById(userId, accessToken);
+    const timezone = profile?.preferences.timezone ?? DEFAULT_TIMEZONE;
 
     for (const proposed of payload.data.lists) {
       const subjectFolderId = folderNamedIn(proposed.title, tree, conversation.folderIds);
@@ -271,6 +273,13 @@ export class AssistantService {
               ? proposed.folderId
               : (typedFolderId ?? subjectFolderId ?? fallbackFolderId),
           dueAt: proposed.dueAt,
+          // La durée n'a de sens que pour une liste à heure précise ; sans elle,
+          // la liste garde l'heure de fin vide et le calendrier lui prête une heure.
+          ...(proposed.dueAt !== null &&
+          proposed.durationMinutes !== undefined &&
+          hasWallTime(proposed.dueAt, timezone)
+            ? { endsAt: endAfter(proposed.dueAt, proposed.durationMinutes) }
+            : {}),
           conversationId,
           createdByAssistant: true,
         },
@@ -629,7 +638,12 @@ export class AssistantService {
         folderId,
         dueAt: payload.data.startsAt,
         dueAllDay: !timed,
-        endsAt: timed ? oneHourAfter(payload.data.startsAt) : null,
+        endsAt: timed
+          ? endAfter(
+              payload.data.startsAt,
+              payload.data.durationMinutes ?? DEFAULT_DURATION_MINUTES,
+            )
+          : null,
         rrule: payload.data.rrule,
         reminderMinutesBefore:
           payload.data.reminderMinutesBefore ?? DEFAULT_RECURRING_REMINDER_MINUTES,
@@ -683,7 +697,9 @@ export class AssistantService {
             folderId,
             dueAt: proposed.startsAt,
             dueAllDay: !timed,
-            endsAt: timed ? oneHourAfter(proposed.startsAt) : null,
+            endsAt: timed
+              ? endAfter(proposed.startsAt, proposed.durationMinutes ?? DEFAULT_DURATION_MINUTES)
+              : null,
             ...(suggestion.conversationId ? { conversationId: suggestion.conversationId } : {}),
             createdByAssistant: true,
           },
@@ -993,6 +1009,9 @@ function words(label: string): string[] {
  * convention que celle déjà simulée à l'affichage pour un événement sans fin
  * (calendrier, A.3).
  */
-function oneHourAfter(iso: string): string {
-  return new Date(new Date(iso).getTime() + 60 * 60 * 1000).toISOString();
+/** Durée d'un rendez-vous dont le modèle n'a pas donné la longueur : une heure, comme dans un calendrier classique. */
+const DEFAULT_DURATION_MINUTES = 60;
+
+function endAfter(iso: string, minutes: number): string {
+  return new Date(new Date(iso).getTime() + minutes * 60 * 1000).toISOString();
 }

@@ -65,6 +65,15 @@ export const SUGGEST_TASK_LIST: LlmTool = {
                 "Viser minuit pour l'heure, qu'une heure précise ait été donnée ou non — " +
                 "elle se règle séparément avec `dueTime`, jamais ici.",
             },
+            durationMinutes: {
+              type: "number",
+              description:
+                "Durée du créneau en minutes, au quart d'heure (15, 30, 45, 60, 90…), " +
+                "estimée d'après la nature de la chose — appel ou rendez-vous court 30, " +
+                "rendez-vous ordinaire 60, séance de sport 60 à 90, courses 45 à 60, " +
+                "tâche rapide 15 — ou donnée par l'utilisateur. Omettre si la liste n'a " +
+                "pas d'heure précise.",
+            },
             dueAtText: {
               type: "string",
               description:
@@ -507,6 +516,13 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
           "fuseau ni « Z » — ex. 2026-09-15T18:00 pour « à 18h ». La prochaine date " +
           "qui correspond à la récurrence, pas une date passée.",
       },
+      durationMinutes: {
+        type: "number",
+        description:
+          "Durée en minutes, au quart d'heure (15, 30, 45, 60, 90…), estimée d'après la " +
+          "nature du rendez-vous — appel court 30, rendez-vous ordinaire 60, séance de " +
+          "sport 60 à 90 — ou donnée par l'utilisateur. Omettre si l'heure n'est pas précise.",
+      },
       rrule: {
         type: "string",
         description:
@@ -571,6 +587,13 @@ export const SUGGEST_EVENTS: LlmTool = {
               description:
                 "Date et heure du rendez-vous en heure locale de l'utilisateur, ISO 8601 " +
                 "sans fuseau ni « Z » — ex. 2026-09-30T14:00 pour « à 14h ».",
+            },
+            durationMinutes: {
+              type: "number",
+              description:
+                "Durée en minutes, au quart d'heure (15, 30, 45, 60, 90…), estimée d'après la " +
+                "nature du rendez-vous — appel court 30, rendez-vous ordinaire 60, séance de " +
+                "sport 60 à 90 — ou donnée par l'utilisateur. Omettre si l'heure n'est pas précise.",
             },
           },
           required: ["title", "startsAt"],

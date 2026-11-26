@@ -52,7 +52,7 @@ export function TaskRow({ task, meta }: TaskRowProps) {
       >
         <View
           style={{ width: TASK_CHECKBOX_SIZE, height: TASK_CHECKBOX_SIZE }}
-          className={`items-center justify-center rounded border ${checkboxBorder(
+          className={`items-center justify-center rounded border-[1.5px] ${checkboxBorder(
             task.done,
             updateTask.isError,
           )}`}
@@ -85,5 +85,5 @@ export function TaskRow({ task, meta }: TaskRowProps) {
 /** Bordure de la case : cochée, en échec, ou au repos. */
 function checkboxBorder(done: boolean, failed: boolean): string {
   if (failed) return "border-destructive";
-  return done ? "border-primary bg-primary" : "border-border";
+  return done ? "border-primary bg-primary" : "border-muted-foreground bg-background";
 }

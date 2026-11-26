@@ -3042,6 +3042,7 @@ const COMMAND_NOTES: Record<
  */
 function describeTaskListRules(decided: Suggestion[]): string[] {
   const rules = [
+    ...DURATION_RULES,
     ...CARD_IS_THE_CONFIRMATION,
     "",
     "Si l'utilisateur demande explicitement de transformer l'échange en",
@@ -3116,6 +3117,20 @@ const CARD_IS_THE_CONFIRMATION = [
   "dans ce même tour : sans carte, rien n'est noté.",
 ];
 
+/**
+ * Durée des créneaux : le modèle l'estime au quart d'heure plutôt que de laisser
+ * toute chose tenir une heure par défaut (Yann, 26 novembre). L'utilisateur
+ * peut la corriger ensuite depuis le calendrier.
+ */
+const DURATION_RULES = [
+  "",
+  "Quand la chose a une heure précise, donne aussi `durationMinutes`, au quart",
+  "d'heure : celle que l'utilisateur annonce (« une demi-heure », « 2 h »), sinon",
+  "ton estimation selon la nature — appel ou rendez-vous court 30, rendez-vous",
+  "ordinaire 60, séance de sport 60 à 90, courses 45 à 60, tâche rapide 15.",
+  "Sans heure précise, omets-la.",
+];
+
 const RECURRING_EVENT_RULES = [
   ...CARD_IS_THE_CONFIRMATION,
   "",
@@ -3134,6 +3149,7 @@ const RECURRING_EVENT_RULES = [
   "un créneau récurrent. Un rendez-vous daté sans mention de répétition",
   "relève de `suggest_events`, pas de celui-ci. Ne présente jamais le",
   "rendez-vous comme déjà posé.",
+  ...DURATION_RULES,
 ];
 
 const EVENTS_RULES = [
@@ -3153,6 +3169,7 @@ const EVENTS_RULES = [
   "§12.1. Utilise `suggest_recurring_event` à la place dès que la demande",
   "porte sur une répétition. Ne présente jamais les rendez-vous comme déjà",
   "posés.",
+  ...DURATION_RULES,
 ];
 
 function buildSystemPrompt(
