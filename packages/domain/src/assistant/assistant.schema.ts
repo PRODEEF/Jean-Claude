@@ -203,6 +203,28 @@ export type AssignFoldersPayload = z.infer<typeof assignFoldersPayloadSchema>;
  * cher que de la proposer sans échéance. `dueOn` absent — une proposition
  * enregistrée avant qu'il existe — vaut une ligne sans date.
  */
+/**
+ * Durée d'un créneau proposée par le modèle, en minutes, ramenée au quart
+ * d'heure le plus proche et bornée à 15 min – 12 h : le calendrier se lit par
+ * quarts d'heure. Une valeur illisible est ignorée (la durée par défaut,
+ * une heure, s'applique) plutôt que d'écarter toute la proposition.
+ */
+export const DURATION_STEP_MINUTES = 15;
+export const durationMinutesSchema = z
+  .number()
+  .finite()
+  .transform((value) =>
+    Math.min(
+      720,
+      Math.max(
+        DURATION_STEP_MINUTES,
+        Math.round(value / DURATION_STEP_MINUTES) * DURATION_STEP_MINUTES,
+      ),
+    ),
+  )
+  .optional()
+  .catch(undefined);
+
 export const createTaskListsPayloadSchema = z.object({
   lists: z
     .array(
@@ -210,6 +232,8 @@ export const createTaskListsPayloadSchema = z.object({
         title: labelSchema,
         kind: taskListKindSchema,
         dueAt: isoDateTimeSchema.nullable().catch(null).default(null),
+        /** Durée du créneau, quand la liste a une heure précise. */
+        durationMinutes: durationMinutesSchema,
         // Absent : le serveur range la liste selon la conversation. Un dossier
         // choisi dans la carte avant validation l'emporte ; `null` y dit « aucun ».
         folderId: uuidSchema.nullable().optional(),
@@ -325,6 +349,7 @@ export const createRecurringEventPayloadSchema = z.object({
     "La récurrence doit porter une fréquence FREQ (DAILY, WEEKLY, MONTHLY ou YEARLY).",
   ),
   reminderMinutesBefore: z.number().int().min(0).max(10_080).optional(),
+  durationMinutes: durationMinutesSchema,
 });
 
 export type CreateRecurringEventPayload = z.infer<typeof createRecurringEventPayloadSchema>;
@@ -346,6 +371,7 @@ export const createEventsPayloadSchema = z.object({
       z.object({
         title: labelSchema,
         startsAt: isoDateTimeSchema,
+        durationMinutes: durationMinutesSchema,
       }),
     )
     .min(1)

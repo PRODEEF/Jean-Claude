@@ -687,26 +687,41 @@ export function layoutDayLists(
   bounds: DayPartBounds = DEFAULT_DAY_PART_BOUNDS,
 ): { timed: PositionedList[]; untimed: TaskListWithTasks[] } {
   const untimed: TaskListWithTasks[] = [];
-  const starts: { list: TaskListWithTasks; startMinute: number }[] = [];
+  const starts: { list: TaskListWithTasks; startMinute: number; durationMinutes: number }[] = [];
 
   for (const list of lists) {
     if (list.dueAt === null || momentOf(list, bounds) === "anytime") {
       untimed.push(list);
       continue;
     }
-    starts.push({ list, startMinute: minuteInDay(new Date(list.dueAt).getTime(), day) });
+    const startMinute = minuteInDay(new Date(list.dueAt).getTime(), day);
+    const endMinute =
+      list.endsAt === null ? startMinute : minuteInDay(new Date(list.endsAt).getTime(), day);
+    // Une fin absente ou incohérente (avant le début) vaut l'heure par défaut.
+    const durationMinutes =
+      endMinute > startMinute ? endMinute - startMinute : IMPLICIT_DURATION_MINUTES;
+    starts.push({ list, startMinute, durationMinutes });
   }
 
   // Les listes à la même heure s'empilent, l'une sous l'autre, au lieu de se
   // partager la largeur : côte à côte, chaque titre était réduit à quelques
   // lettres (Yann, 16 novembre). Une pastille descend juste sous la précédente
   // quand elle la chevaucherait ; l'heure lue sur la pastille reste la vraie.
+  //
+  // Une liste tient une heure par défaut, comme dans un calendrier classique,
+  // ou jusqu'à sa fin quand elle en a une (Yann, 26 novembre). Quand la suivante
+  // commence avant, la pastille est raccourcie À L'ÉCRAN jusqu'à ce début, sans
+  // jamais passer sous la hauteur d'une pastille : la durée enregistrée, elle,
+  // ne change pas.
   starts.sort((a, b) => a.startMinute - b.startMinute);
   let nextFree = 0;
-  const timed = starts.map(({ list, startMinute }) => {
+  const timed = starts.map(({ list, startMinute, durationMinutes }, index) => {
     const top = clamp(Math.max(startMinute, nextFree), 0, MINUTES_PER_DAY - LIST_CHIP_MINUTES);
-    nextFree = top + LIST_CHIP_MINUTES;
-    return { list, startMinute: top, endMinute: top + LIST_CHIP_MINUTES, lane: 0, laneCount: 1 };
+    const natural = Math.min(startMinute + durationMinutes, MINUTES_PER_DAY);
+    const next = starts[index + 1]?.startMinute ?? MINUTES_PER_DAY;
+    const bottom = Math.max(top + LIST_CHIP_MINUTES, Math.min(natural, next));
+    nextFree = bottom;
+    return { list, startMinute: top, endMinute: bottom, lane: 0, laneCount: 1 };
   });
 
   return { timed, untimed };
