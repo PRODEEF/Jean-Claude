@@ -9,6 +9,7 @@ import { Button } from "@/shared/ui/button";
 import { Icon } from "@/shared/ui/icon";
 import { useGroupMessageFeed } from "@/features/group/hooks/use-group-realtime";
 import { useBreakpoint } from "@/shared/hooks/use-breakpoint";
+import { useApplyFontScale } from "@/shared/hooks/use-font-scale";
 import { useSyncDeviceTimezone } from "@/shared/hooks/use-profile";
 import { DetailPane } from "@/features/detail-pane/DetailPane";
 import { DetailPaneProvider, useDetailPane } from "@/shared/providers/detail-pane";
@@ -37,6 +38,9 @@ export default function AppLayout() {
   // Posé ici plutôt que dans un écran : le fuseau sert à dater côté serveur,
   // bien avant qu'on ouvre les réglages ou le calendrier.
   useSyncDeviceTimezone();
+
+  // La taille du texte suit le compte, sur tous les écrans de l'application.
+  useApplyFontScale();
 
   // Ici et non dans la barre latérale : sur téléphone, le tiroir fermé est
   // démonté, et les non-lus des groupes cesseraient d'avancer.

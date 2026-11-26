@@ -15,9 +15,12 @@ import {
   ASSISTANT_MODELS,
   DEFAULT_DAY_PART_BOUNDS,
   EVENING_FROM_CHOICES,
+  LANGUAGE_NAMES,
+  LANGUAGES,
   toCatalogueModel,
   type AssistantScope,
   type CalendarViewChoice,
+  type FontScale,
   type Theme,
 } from "@jc/domain";
 import { FeedbackDialog } from "@/features/feedback/FeedbackDialog";
@@ -48,6 +51,13 @@ const CALENDAR_VIEWS: { value: CalendarViewChoice; label: string }[] = [
   { value: "week", label: "Semaine" },
   { value: "month", label: "Mois" },
   { value: "year", label: "Année" },
+];
+
+const FONT_SCALE_OPTIONS: { value: FontScale; label: string }[] = [
+  { value: "small", label: "Petit" },
+  { value: "normal", label: "Normal" },
+  { value: "large", label: "Grand" },
+  { value: "xlarge", label: "Très grand" },
 ];
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -260,11 +270,39 @@ export function SettingsScreen() {
             />
           </SettingRow>
 
+          <SettingRow
+            label="Langue"
+            hint="La langue dans laquelle il vous répond et vous parle. L'application elle-même reste en français pour l'instant."
+            wide
+          >
+            <Select
+              value={profile?.preferences.language ?? "fr"}
+              options={LANGUAGES.map((code) => ({ value: code, label: LANGUAGE_NAMES[code] }))}
+              onChange={(code) => updateProfile.mutate({ language: code })}
+              placeholder="Choisir une langue"
+              disabled={updateProfile.isPending}
+              accessibilityLabel="Langue de l'assistant"
+            />
+          </SettingRow>
+        </Section>
+
+        <Section title="Apparence">
           <SettingRow label="Thème">
             <SegmentedControl
               options={THEMES}
               value={theme}
               onChange={(value) => updateProfile.mutate({ theme: value })}
+            />
+          </SettingRow>
+
+          <SettingRow
+            label="Taille du texte"
+            hint="Agrandit ou réduit tout le texte et les boutons de l'application. Sur téléphone, ce réglage arrive bientôt."
+          >
+            <SegmentedControl
+              options={FONT_SCALE_OPTIONS}
+              value={profile?.preferences.fontScale ?? "normal"}
+              onChange={(value) => updateProfile.mutate({ fontScale: value })}
             />
           </SettingRow>
 

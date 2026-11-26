@@ -26,6 +26,8 @@ function makeRecord(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       remindInChannel: true,
       remindByEmail: true,
       calendarDefaultView: "todo",
+      fontScale: "normal",
+      language: "fr",
       scope: {
         morningReminders: true,
         folderOrganization: true,
