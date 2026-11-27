@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 
 export type InlinePickerProps = {
   mode: "date" | "time";
@@ -28,31 +28,21 @@ export function InlinePicker({
   accessibilityLabel,
   children,
 }: InlinePickerProps) {
+  const input = useRef<HTMLInputElement>(null);
+
   return (
     <div style={{ position: "relative", display: "inline-flex", cursor: "pointer" }}>
-      {/* Le champ natif impose sa propre flèche à ses chiffres : sans cela, le pointeur
-          devient une main seulement à côté de l'heure, jamais dessus (photos de Yann,
-          27 novembre). Chaque partie interne reprend donc le curseur du champ. */}
-      <style>{`
-        .jc-inline-picker::-webkit-calendar-picker-indicator{display:none}
-        .jc-inline-picker,
-        .jc-inline-picker::-webkit-datetime-edit,
-        .jc-inline-picker::-webkit-datetime-edit-fields-wrapper,
-        .jc-inline-picker::-webkit-datetime-edit-hour-field,
-        .jc-inline-picker::-webkit-datetime-edit-minute-field,
-        .jc-inline-picker::-webkit-datetime-edit-ampm-field,
-        .jc-inline-picker::-webkit-datetime-edit-day-field,
-        .jc-inline-picker::-webkit-datetime-edit-month-field,
-        .jc-inline-picker::-webkit-datetime-edit-year-field,
-        .jc-inline-picker::-webkit-datetime-edit-text{cursor:pointer}
-      `}</style>
+      <style>{`.jc-inline-picker::-webkit-calendar-picker-indicator{display:none}`}</style>
       {children}
+      {/* Le champ natif porte le clavier et le sélecteur, mais ne reçoit plus la souris :
+          ses chiffres imposaient leur propre flèche, et la main ne se voyait que sur une
+          partie de l'heure (photos et vidéos de Yann, 27 novembre). */}
       <input
+        ref={input}
         className="jc-inline-picker"
         type={mode}
         value={mode === "date" ? toIsoDate(value) : value}
         aria-label={accessibilityLabel}
-        onClick={openPicker}
         onChange={(event) => {
           const next = event.currentTarget.value;
           // Un champ vidé ne dit pas « enlève la date » : on n'écrit que ce qui est choisi.
@@ -65,20 +55,29 @@ export function InlinePicker({
           width: "100%",
           height: "100%",
           opacity: 0,
-          cursor: "pointer",
+          pointerEvents: "none",
           border: 0,
           padding: 0,
         }}
+      />
+      {/* Une couche, et une seule, reçoit la souris : la main sur toute la surface, quel
+          que soit le moteur du navigateur. */}
+      <div
+        aria-hidden="true"
+        onClick={() => openPicker(input.current)}
+        style={{ position: "absolute", inset: 0, cursor: "pointer" }}
       />
     </div>
   );
 }
 
-function openPicker(event: MouseEvent<HTMLInputElement>) {
+function openPicker(field: HTMLInputElement | null) {
+  if (!field) return;
   try {
-    event.currentTarget.showPicker();
+    field.showPicker();
   } catch {
-    // Saisie au clavier toujours possible.
+    // Pas de sélecteur dans ce navigateur : le champ prend le focus, la saisie au clavier reste possible.
+    field.focus();
   }
 }
 
