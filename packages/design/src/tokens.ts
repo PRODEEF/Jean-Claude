@@ -85,6 +85,13 @@ export type Palette = {
   sharedSoft: string;
   danger: string;
   success: string;
+  /**
+   * Fond d'un interrupteur activé (vert) ou coupé (rouge) : deux aplats francs
+   * pour qu'on lise « ON » ou « OFF » sans hésiter (Yann, 27 novembre). Fixes :
+   * la couleur d'assistant ne les change pas.
+   */
+  switchOn: string;
+  switchOff: string;
 };
 
 export const lightPalette: Palette = {
@@ -103,6 +110,8 @@ export const lightPalette: Palette = {
   sharedSoft: "#FCEBD0",
   danger: "#DC2626",
   success: "#16A34A",
+  switchOn: "#00FF88",
+  switchOff: "#FF0033",
 };
 
 export const darkPalette: Palette = {
@@ -121,6 +130,8 @@ export const darkPalette: Palette = {
   sharedSoft: "#47381A",
   danger: "#F87171",
   success: "#4ADE80",
+  switchOn: "#00FF88",
+  switchOff: "#FF0033",
 };
 
 /** Couleur d'assistant par défaut, avant tout choix de l'utilisateur. */
