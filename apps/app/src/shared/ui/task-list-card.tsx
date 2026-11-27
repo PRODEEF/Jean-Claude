@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Platform, Pressable, View, type GestureResponderEvent } from "react-native";
 import {
   Check,
@@ -94,7 +94,15 @@ export function TaskListCardHeader({
   location,
   repeat,
   compact = false,
+  revealOnHover = false,
 }: {
+  /**
+   * Type, dossier, heure et date n'apparaissent qu'au survol de l'en-tête (demande de
+   * Yann, 27 novembre : épurer la Todo du calendrier). Ils restent là, invisibles :
+   * la mise en page ne bouge pas quand ils se montrent, et un appui les atteint.
+   * Au doigt il n'y a pas de survol : sur téléphone ils restent affichés.
+   */
+  revealOnHover?: boolean;
   /** Réduit les boutons et les marges : la ligne repliée prend moins de hauteur. */
   compact?: boolean;
   /** Pour les libellés d'accessibilité. */
@@ -118,6 +126,27 @@ export function TaskListCardHeader({
   /** Libellé de la répétition (« Toutes les semaines »), quand la liste se répète. */
   repeat?: string | undefined;
 }) {
+  const root = useRef<View>(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!revealOnHover || Platform.OS !== "web") return;
+    // Sur le web, le ref d'une View est le nœud DOM.
+    const node = root.current as unknown as HTMLElement | null;
+    if (!node) return;
+    const show = () => setShown(true);
+    const hideAgain = () => setShown(false);
+    node.addEventListener("mouseenter", show);
+    node.addEventListener("mouseleave", hideAgain);
+    node.addEventListener("focusin", show);
+    node.addEventListener("focusout", hideAgain);
+    return () => {
+      node.removeEventListener("mouseenter", show);
+      node.removeEventListener("mouseleave", hideAgain);
+      node.removeEventListener("focusin", show);
+      node.removeEventListener("focusout", hideAgain);
+    };
+  }, [revealOnHover]);
+
   const typeContent = (
     <>
       <Icon
@@ -198,8 +227,12 @@ export function TaskListCardHeader({
     </Button>
   );
 
+  const hide = revealOnHover && Platform.OS === "web" && !shown;
+  // `group-hover` ne passe pas par react-native-web : le survol est écouté sur le nœud DOM.
+  const hidden = hide ? "opacity-0" : undefined;
+
   return (
-    <View className="relative">
+    <View ref={root} className="relative">
       {/* Réserve à droite la place du menu, qui est posé par-dessus. */}
       <View
         className={cn(
@@ -208,13 +241,15 @@ export function TaskListCardHeader({
         )}
       >
         <View className="min-w-0 max-w-full shrink flex-row items-center gap-1">{leading}</View>
-        {type}
-        {folder}
-        {timeSlot}
+        <View className={cn("min-w-0 shrink flex-row items-center gap-x-2", hidden)}>
+          {type}
+          {folder}
+          {timeSlot}
+        </View>
         {/* Pousse l'échéance à droite quand tout tient sur la ligne ; elle
             descend à gauche quand elle n'y tient plus. */}
         <View style={{ flexGrow: 1, flexBasis: 8 }} />
-        {dueSlot ?? dueButton}
+        <View className={cn(hidden)}>{dueSlot ?? dueButton}</View>
       </View>
       <View className="absolute right-0 top-0">{menu}</View>
       {location || repeat ? (
