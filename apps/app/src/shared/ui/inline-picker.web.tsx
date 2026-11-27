@@ -30,7 +30,22 @@ export function InlinePicker({
 }: InlinePickerProps) {
   return (
     <div style={{ position: "relative", display: "inline-flex", cursor: "pointer" }}>
-      <style>{`.jc-inline-picker::-webkit-calendar-picker-indicator{display:none}`}</style>
+      {/* Le champ natif impose sa propre flèche à ses chiffres : sans cela, le pointeur
+          devient une main seulement à côté de l'heure, jamais dessus (photos de Yann,
+          27 novembre). Chaque partie interne reprend donc le curseur du champ. */}
+      <style>{`
+        .jc-inline-picker::-webkit-calendar-picker-indicator{display:none}
+        .jc-inline-picker,
+        .jc-inline-picker::-webkit-datetime-edit,
+        .jc-inline-picker::-webkit-datetime-edit-fields-wrapper,
+        .jc-inline-picker::-webkit-datetime-edit-hour-field,
+        .jc-inline-picker::-webkit-datetime-edit-minute-field,
+        .jc-inline-picker::-webkit-datetime-edit-ampm-field,
+        .jc-inline-picker::-webkit-datetime-edit-day-field,
+        .jc-inline-picker::-webkit-datetime-edit-month-field,
+        .jc-inline-picker::-webkit-datetime-edit-year-field,
+        .jc-inline-picker::-webkit-datetime-edit-text{cursor:pointer}
+      `}</style>
       {children}
       <input
         className="jc-inline-picker"
