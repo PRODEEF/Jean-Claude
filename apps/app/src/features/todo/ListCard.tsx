@@ -270,6 +270,7 @@ export function ListCard({
       <Collapsible open={open} onOpenChange={setOpen}>
         <TaskListCardHeader
           compact={flat}
+          revealOnHover={flat}
           title={list.title}
           shopping={shopping}
           folderName={folderName}
