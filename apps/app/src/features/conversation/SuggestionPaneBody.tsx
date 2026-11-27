@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text as NativeText, View } from "react-native";
-import { createTaskListsPayloadSchema, type Suggestion } from "@jc/domain";
+import {
+  createEventsPayloadSchema,
+  createRecurringEventPayloadSchema,
+  createTaskListsPayloadSchema,
+  type Suggestion,
+} from "@jc/domain";
 import { fontSize, MIN_TOUCH_TARGET, radius, spacing } from "@jc/design";
 import { FONT_FAMILY } from "@/shared/lib/fonts";
 import { useTheme } from "@/shared/providers/theme-provider";
@@ -21,6 +26,7 @@ export function SuggestionPaneBody({
   conversationId,
   suggestionId,
   placeInLists,
+  placeInTodo,
 }: {
   conversationId: string;
   suggestionId: string;
@@ -29,6 +35,11 @@ export function SuggestionPaneBody({
    * l'ordre du temps. Sans cela, la carte s'affiche seule (autres propositions).
    */
   placeInLists?: (card: ReactNode, dueAt: string | null) => ReactNode;
+  /**
+   * Place la carte d'une proposition datée (liste, rendez-vous récurrent,
+   * rendez-vous) dans « Calendrier – Todo », à partir de sa date.
+   */
+  placeInTodo?: (card: ReactNode, startsAt: string) => ReactNode;
 }) {
   const { pending, resolved, resolve } = useSuggestions(conversationId);
   const pane = useDetailPane();
@@ -56,13 +67,17 @@ export function SuggestionPaneBody({
           resolve.mutate(
             { id: suggestion.id, action: "accept", ...input },
             {
-              // Valider une liste ouvre « Mes listes » sur celle qui vient d'être
-              // créée : on voit tout de suite ce qu'on retrouvera ensuite.
+              // Valider ouvre le volet sur ce qui vient d'être créé : on voit tout de
+              // suite ce qu'on retrouvera ensuite. Datée, dans « Calendrier – Todo » ;
+              // sans date, dans « Mes listes ».
               onSuccess: (result) => {
                 const created = result.taskLists[0];
-                if (suggestion.kind === "create_task_list" && created) {
-                  pane.open({ kind: "list", listId: created.id });
-                }
+                if (!created || !OPENS_CREATED.has(suggestion.kind)) return;
+                pane.open({
+                  kind: "list",
+                  listId: created.id,
+                  ...(created.dueAt ? { view: "todo" as const } : {}),
+                });
               },
             },
           )
@@ -72,16 +87,39 @@ export function SuggestionPaneBody({
     </View>
   );
 
+  const startsAt = proposedDueAt(suggestion);
+  if (startsAt !== null && placeInTodo) return <>{placeInTodo(card, startsAt)}</>;
   if (suggestion.kind === "create_task_list" && placeInLists) {
-    return <>{placeInLists(card, proposedDueAt(suggestion))}</>;
+    return <>{placeInLists(card, startsAt)}</>;
   }
   return card;
 }
 
-/** La date de la première liste proposée : c'est elle qui place la carte dans le temps. */
+/** Les propositions dont la validation ouvre le volet sur ce qu'elles ont créé. */
+const OPENS_CREATED = new Set<Suggestion["kind"]>([
+  "create_task_list",
+  "create_recurring_event",
+  "create_events",
+]);
+
+/**
+ * La date de la proposition : c'est elle qui la place dans le temps. `null` pour
+ * une liste sans date, ou une proposition qui n'en porte pas.
+ */
 function proposedDueAt(suggestion: Suggestion): string | null {
-  const proposed = createTaskListsPayloadSchema.safeParse(suggestion.payload);
-  return proposed.success ? (proposed.data.lists[0]?.dueAt ?? null) : null;
+  if (suggestion.kind === "create_task_list") {
+    const proposed = createTaskListsPayloadSchema.safeParse(suggestion.payload);
+    return proposed.success ? (proposed.data.lists[0]?.dueAt ?? null) : null;
+  }
+  if (suggestion.kind === "create_recurring_event") {
+    const proposed = createRecurringEventPayloadSchema.safeParse(suggestion.payload);
+    return proposed.success ? proposed.data.startsAt : null;
+  }
+  if (suggestion.kind === "create_events") {
+    const proposed = createEventsPayloadSchema.safeParse(suggestion.payload);
+    return proposed.success ? (proposed.data.events[0]?.startsAt ?? null) : null;
+  }
+  return null;
 }
 
 /**

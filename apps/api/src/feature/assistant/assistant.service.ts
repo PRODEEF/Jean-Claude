@@ -628,7 +628,7 @@ export class AssistantService {
     const timed = hasWallTime(payload.data.startsAt, timezone);
     const folderId = await this.folderForEvents(suggestion, accessToken);
 
-    // Un rendez-vous est un todo daté, sans tâche : il garde sa fin, sa règle de
+    // Un rendez-vous est un todo daté : il garde sa fin, sa règle de
     // répétition et son rappel (fusion rendez-vous / todo, étape 5).
     const list = await this.tasks.createList(
       userId,
@@ -652,6 +652,12 @@ export class AssistantService {
       },
       accessToken,
     );
+
+    // Une à une : la position de chaque tâche se calcule depuis celles déjà
+    // posées, deux insertions concurrentes prendraient la même.
+    for (const title of payload.data.items ?? []) {
+      await this.tasks.addTask(userId, list.id, { title, dueOn: null }, accessToken);
+    }
 
     return [list];
   }

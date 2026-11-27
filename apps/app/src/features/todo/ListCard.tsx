@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight } from "lucide-react-native";
 import {
   duplicateOfList,
   isListDone,
+  describeRrule,
   presetOfRrule,
   RECURRENCE_CHOICES,
   type Task,
@@ -477,7 +478,10 @@ export function ListCard({
 function repeatLabel(list: Pick<TaskList, "rrule" | "dueAt">): string | undefined {
   const preset = presetOfRrule(list.rrule, list.dueAt ? new Date(list.dueAt) : new Date());
   if (preset === "none") return undefined;
-  if (preset === "custom") return "Répétition";
+  if (preset === "custom") {
+    const said = list.rrule === null ? undefined : describeRrule(list.rrule);
+    return said === undefined ? "Répétition" : `${said.charAt(0).toUpperCase()}${said.slice(1)}`;
+  }
   return RECURRENCE_CHOICES.find((choice) => choice.preset === preset)?.label;
 }
 

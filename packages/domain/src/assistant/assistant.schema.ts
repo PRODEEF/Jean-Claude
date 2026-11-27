@@ -341,8 +341,27 @@ export type ScheduleListsPayload = z.infer<typeof scheduleListsPayloadSchema>;
  * 30 min par défaut si le modèle l'omet (A.11). Réservée aux séries : un
  * rendez-vous ponctuel relève de `create_events` (A.3).
  */
+/**
+ * Textes que le modèle peut choisir pour le bouton qui valide une série : celui
+ * qui dit le mieux ce que la carte fait (un rendez-vous, une tâche…). Une liste
+ * fermée plutôt qu'un texte libre : le bouton est de l'interface, pas de la
+ * conversation.
+ */
+export const RECURRING_ACCEPT_LABELS = [
+  "Poser le rendez-vous",
+  "Enregistrer la tâche",
+  "Planifier la tâche",
+  "Ajouter à mon calendrier",
+] as const;
+
 export const createRecurringEventPayloadSchema = z.object({
   title: labelSchema,
+  /**
+   * Sous-tâches de la série : une tâche répétée porte ses tâches, au lieu d'une
+   * seconde proposition de liste sans date qui ne rejoindrait jamais le calendrier.
+   */
+  items: z.array(labelSchema).max(30).optional().catch(undefined),
+  acceptLabel: z.enum(RECURRING_ACCEPT_LABELS).optional().catch(undefined),
   startsAt: isoDateTimeSchema,
   rrule: rruleSchema.refine(
     (value) => RRULE_FREQ.test(value),

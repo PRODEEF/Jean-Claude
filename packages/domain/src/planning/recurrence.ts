@@ -77,3 +77,60 @@ export function presetOfRrule(rrule: string | null, start: Date): RecurrencePres
   }
   return "custom";
 }
+
+const WEEKDAY_NAMES: Record<string, string> = {
+  MO: "lundi",
+  TU: "mardi",
+  WE: "mercredi",
+  TH: "jeudi",
+  FR: "vendredi",
+  SA: "samedi",
+  SU: "dimanche",
+};
+
+const WORKING_WEEK = ["MO", "TU", "WE", "TH", "FR"];
+
+/**
+ * Une règle dite en français — « du lundi au vendredi » plutôt que le mot
+ * générique « Répétition » ou `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR`.
+ *
+ * Ne lit que `FREQ` et `BYDAY` : une règle qui porte autre chose (« sauf en
+ * février », « dix fois ») rend `undefined` plutôt qu'une phrase qui en
+ * omettrait la moitié.
+ */
+export function describeRrule(rrule: string): string | undefined {
+  const parts = new Map<string, string>();
+  for (const part of rrule
+    .trim()
+    .replace(/^RRULE:/i, "")
+    .split(";")) {
+    const [key, value] = part.split("=");
+    if (key === undefined || value === undefined) return undefined;
+    parts.set(key.toUpperCase(), value.toUpperCase());
+  }
+
+  const freq = parts.get("FREQ");
+  const byday = parts.get("BYDAY");
+  const known = parts.size === (byday === undefined ? 1 : 2);
+  if (!known) return undefined;
+
+  if (byday === undefined) {
+    if (freq === "DAILY") return "tous les jours";
+    if (freq === "MONTHLY") return "tous les mois";
+    if (freq === "YEARLY") return "tous les ans";
+    return undefined;
+  }
+  if (freq !== "WEEKLY") return undefined;
+
+  const days = byday.split(",");
+  if (days.some((code) => WEEKDAY_NAMES[code] === undefined)) return undefined;
+
+  const same = (expected: string[]) =>
+    days.length === expected.length && expected.every((code) => days.includes(code));
+  if (same(WORKING_WEEK)) return "du lundi au vendredi";
+  if (same(["SA", "SU"])) return "le week-end";
+  if (days.length === 7) return "tous les jours";
+
+  const names = days.map((code) => WEEKDAY_NAMES[code]);
+  return days.length === 1 ? `tous les ${names[0]}s` : `chaque ${names.join(", ")}`;
+}
