@@ -3,15 +3,21 @@ import { isoDateTimeSchema, uuidSchema } from "../shared/primitives";
 
 /**
  * Fournisseurs de courrier reliables, avec le serveur qu'on propose par défaut.
- * OVH : MX Plan et Email Pro. Infomaniak : serveur de courrier unique.
+ * OVH : MX Plan et Email Pro. Infomaniak : serveur de courrier unique. Hotmail /
+ * Outlook : boîtes personnelles ; Microsoft y refuse en général le mot de passe
+ * habituel et demande un mot de passe d'application (`needsAppPassword`).
  */
 export const MAIL_PROVIDERS = [
   { id: "ovh", label: "OVH", host: "ssl0.ovh.net" },
   { id: "infomaniak", label: "Infomaniak", host: "mail.infomaniak.com" },
+  { id: "outlook", label: "Hotmail / Outlook", host: "outlook.office365.com" },
 ] as const;
 export type MailProviderId = (typeof MAIL_PROVIDERS)[number]["id"];
 
 export const DEFAULT_MAIL_HOST = MAIL_PROVIDERS[0].host;
+
+/** Les fournisseurs qui demandent un mot de passe d'application plutôt que celui de la boîte. */
+export const APP_PASSWORD_PROVIDERS: readonly MailProviderId[] = ["outlook"];
 
 /**
  * Le serveur d'un fournisseur connu, et lui seul : le serveur de Jean-Claude
@@ -23,8 +29,8 @@ export const mailHostSchema = z
   .trim()
   .toLowerCase()
   .regex(
-    /^([a-z0-9-]+(\.[a-z0-9-]+)*\.ovh\.net|mail\.infomaniak\.com)$/,
-    "Serveur OVH (ex. ssl0.ovh.net) ou Infomaniak (mail.infomaniak.com) attendu.",
+    /^([a-z0-9-]+(\.[a-z0-9-]+)*\.ovh\.net|mail\.infomaniak\.com|outlook\.office365\.com)$/,
+    "Serveur OVH (ex. ssl0.ovh.net), Infomaniak (mail.infomaniak.com) ou Hotmail / Outlook (outlook.office365.com) attendu.",
   );
 
 /** Boîte reliée : jamais le mot de passe, il ne quitte pas le serveur. */

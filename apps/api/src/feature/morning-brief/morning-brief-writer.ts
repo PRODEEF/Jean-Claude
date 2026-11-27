@@ -1,4 +1,5 @@
 import type { LlmProvider } from "../../core/llm/llm.port.js";
+import type { BriefKind } from "./morning-brief.js";
 
 /** Ce que l'écrivain sait de la personne : de quoi lui parler comme à quelqu'un qu'on connaît. */
 export type BriefAudience = {
@@ -7,8 +8,18 @@ export type BriefAudience = {
   memory: string | null;
 };
 
-/** Écrit l'introduction du point du matin ; lève une erreur quand il n'a rien de sûr. */
-export type BriefWriter = (audience: BriefAudience, itemCount: number) => Promise<string>;
+/** Écrit l'introduction d'un point ; lève une erreur quand il n'a rien de sûr. */
+export type BriefWriter = (
+  audience: BriefAudience,
+  itemCount: number,
+  kind?: BriefKind,
+) => Promise<string>;
+
+const MOMENT: Record<BriefKind, { name: string; list: string }> = {
+  morning: { name: "du point du matin", list: "la liste de sa journée" },
+  afternoon: { name: "du point de l'après-midi", list: "ce qu'il lui reste à faire" },
+  evening: { name: "du point du soir", list: "le bilan de sa journée et son programme" },
+};
 
 const MAX_LENGTH = 200;
 const MAX_MEMORY_CHARS = 1_500;
@@ -19,19 +30,21 @@ const DEFAULT_TIMEOUT_MS = 12_000;
  * la journée elle-même — elle est ajoutée telle quelle sous sa phrase, pour
  * qu'aucune heure ni aucun rendez-vous ne puisse être inventé.
  */
-function systemPrompt(audience: BriefAudience): string {
+function systemPrompt(audience: BriefAudience, kind: BriefKind): string {
   const who = audience.displayName ? `de ${audience.displayName}` : "de la personne";
+  const moment = MOMENT[kind];
   return [
     `Tu es ${audience.assistantName}, l'assistant personnel ${who}. Tu écris la phrase`,
-    "d'accueil du point du matin, juste avant la liste de sa journée.",
+    `d'accueil ${moment.name}, juste avant ${moment.list}.`,
     "",
     "Règles :",
     "- Tu tutoies. UNE phrase courte, 150 caractères au plus, sans retour à la ligne.",
     "- Chaleureux et naturel, comme un ami organisé. Termine par « : » ou « … »",
     "  puisque la liste suit.",
     "- Ne cite AUCUNE heure ni aucun rendez-vous : la liste vient juste après.",
-    "- N'invente rien. Si ce que tu sais de la personne éclaire directement sa",
-    "  matinée (sport, routine), tu peux y faire un clin d'œil discret ; sinon non.",
+    "- N'invente rien. Si ce que tu sais de la personne éclaire directement ce",
+    "  moment de la journée (sport, routine), tu peux y faire un clin d'œil discret ;",
+    "  sinon non.",
     "- Pas de Markdown, pas de guillemets autour de la phrase, un émoji au plus.",
     "",
     "Réponds uniquement par la phrase.",
@@ -70,11 +83,11 @@ export function createBriefWriter(
   llm: LlmProvider,
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): BriefWriter {
-  return async (audience, itemCount) => {
+  return async (audience, itemCount, kind = "morning") => {
     const ask = async (): Promise<string> => {
       let text = "";
       const stream = llm.stream({
-        system: systemPrompt(audience),
+        system: systemPrompt(audience, kind),
         messages: [{ role: "user", content: userPrompt(audience, itemCount) }],
       });
       for await (const chunk of stream) {

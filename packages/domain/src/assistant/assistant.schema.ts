@@ -11,6 +11,30 @@ import { calendarDateSchema } from "../shared/search.schema";
 import { isoDateTimeSchema, labelSchema, uuidSchema } from "../shared/primitives";
 import { taskListKindSchema } from "../task/task.schema";
 
+/**
+ * Un titre écrit par le modèle, ramené à la borne des titres plutôt que refusé.
+ *
+ * Une sous-tâche de 137 caractères faisait échouer la validation de la charge
+ * entière : aucune carte, juste un texte qui demandait « Cela te convient ? »
+ * (retour de Yann, 27 novembre). Perdre la fin d'un titre coûte moins que perdre
+ * la proposition ; la coupe se fait à un mot quand c'est possible.
+ */
+const modelTitleSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .transform((value) => shortenTitle(value))
+  .pipe(labelSchema);
+
+const TITLE_MAX_LENGTH = 120;
+
+function shortenTitle(value: string): string {
+  if (value.length <= TITLE_MAX_LENGTH) return value;
+  const cut = value.slice(0, TITLE_MAX_LENGTH - 1);
+  const atWord = cut.replace(/\s+\S*$/, "");
+  return `${atWord.length >= TITLE_MAX_LENGTH / 2 ? atWord : cut}…`;
+}
+
 /** Fréquences RRULE acceptées — le reste est inventé ou hors périmètre V1. */
 const RRULE_FREQ = /(?:^|;)FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(?:;|$)/i;
 
@@ -25,6 +49,13 @@ const RRULE_FREQ = /(?:^|;)FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(?:;|$)/i;
 export const assistantScopeSchema = z.object({
   /** Point du matin : la journée écrite dans le canal chaque matin. */
   morningReminders: z.boolean().default(true),
+  /**
+   * Point de l'après-midi (ce qu'il reste à faire) et point du soir (bilan,
+   * programme du soir, aperçu de demain). Désactivés d'office, contrairement au
+   * matin : on ne les écrit qu'à qui les a demandés.
+   */
+  afternoonBrief: z.boolean().default(false),
+  eveningBrief: z.boolean().default(false),
   /** Aide au rangement : proposer un dossier, corriger un classement. */
   folderOrganization: z.boolean().default(true),
   /** Suggestions d'évolution de la structure du projet. */
@@ -229,7 +260,7 @@ export const createTaskListsPayloadSchema = z.object({
   lists: z
     .array(
       z.object({
-        title: labelSchema,
+        title: modelTitleSchema,
         kind: taskListKindSchema,
         dueAt: isoDateTimeSchema.nullable().catch(null).default(null),
         /** Durée du créneau, quand la liste a une heure précise. */
@@ -240,7 +271,7 @@ export const createTaskListsPayloadSchema = z.object({
         items: z
           .array(
             z.object({
-              title: labelSchema,
+              title: modelTitleSchema,
               dueOn: calendarDateSchema.nullable().catch(null).default(null),
             }),
           )
@@ -303,7 +334,7 @@ export type ResolveSuggestion = z.infer<typeof resolveSuggestionSchema>;
 export const addTaskListItemsPayloadSchema = z.object({
   listId: uuidSchema,
   items: z
-    .array(z.object({ title: labelSchema }))
+    .array(z.object({ title: modelTitleSchema }))
     .min(1)
     .max(30),
 });
@@ -355,12 +386,12 @@ export const RECURRING_ACCEPT_LABELS = [
 ] as const;
 
 export const createRecurringEventPayloadSchema = z.object({
-  title: labelSchema,
+  title: modelTitleSchema,
   /**
    * Sous-tâches de la série : une tâche répétée porte ses tâches, au lieu d'une
    * seconde proposition de liste sans date qui ne rejoindrait jamais le calendrier.
    */
-  items: z.array(labelSchema).max(30).optional().catch(undefined),
+  items: z.array(modelTitleSchema).max(30).optional().catch(undefined),
   acceptLabel: z.enum(RECURRING_ACCEPT_LABELS).optional().catch(undefined),
   startsAt: isoDateTimeSchema,
   rrule: rruleSchema.refine(
@@ -388,7 +419,7 @@ export const createEventsPayloadSchema = z.object({
   events: z
     .array(
       z.object({
-        title: labelSchema,
+        title: modelTitleSchema,
         startsAt: isoDateTimeSchema,
         durationMinutes: durationMinutesSchema,
       }),
@@ -424,7 +455,7 @@ export type UpdateTaskListDueDatePayload = z.infer<typeof updateTaskListDueDateP
 export const updateEventPayloadSchema = z
   .object({
     eventId: uuidSchema,
-    title: labelSchema.optional(),
+    title: modelTitleSchema.optional(),
     startsAt: isoDateTimeSchema.optional(),
     endsAt: isoDateTimeSchema.nullable().optional(),
   })
@@ -475,7 +506,7 @@ export const updateTaskListItemsPayloadSchema = z
         z
           .object({
             taskId: uuidSchema,
-            title: labelSchema.optional(),
+            title: modelTitleSchema.optional(),
             done: z.boolean().optional(),
             remove: z.boolean().optional(),
           })
@@ -487,7 +518,7 @@ export const updateTaskListItemsPayloadSchema = z
       .max(30)
       .default([]),
     added: z
-      .array(z.object({ title: labelSchema }))
+      .array(z.object({ title: modelTitleSchema }))
       .max(30)
       .default([]),
   })

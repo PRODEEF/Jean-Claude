@@ -1,4 +1,5 @@
 import {
+  assistantScopeSchema,
   toAssistantModel,
   type AssistantScope,
   type CalendarViewChoice,
@@ -60,7 +61,10 @@ function toEntity(row: ProfileRow): ProfileRecord {
       // Un modèle retiré du catalogue depuis le choix de l'utilisateur est relu
       // comme « celui du serveur », plutôt que de rendre le profil illisible.
       llmModel: toAssistantModel(row.llm_model),
-      scope: row.assistant_scope,
+      // Relu avec ses valeurs par défaut : un réglage ajouté depuis l'enregistrement
+      // du compte (le point de l'après-midi) est absent de la colonne, et l'écran
+      // l'afficherait activé alors qu'il est coupé d'office.
+      scope: toScope(row.assistant_scope),
       flatBanner: row.flat_banner,
       remindInChannel: row.remind_in_channel,
       remindByEmail: row.remind_by_email,
@@ -170,4 +174,10 @@ async function write(
   if (error) throw new Error(error.message);
   if (!data) throw httpError(404, "Profil introuvable.");
   return toEntity(data as unknown as ProfileRow);
+}
+
+/** Le périmètre enregistré, complété de ses défauts ; illisible, il retombe sur les défauts. */
+function toScope(stored: unknown): AssistantScope {
+  const parsed = assistantScopeSchema.safeParse(stored ?? {});
+  return parsed.success ? parsed.data : assistantScopeSchema.parse({});
 }

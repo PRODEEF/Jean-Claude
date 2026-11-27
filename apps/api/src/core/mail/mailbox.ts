@@ -13,6 +13,7 @@ import {
 } from "./folders.js";
 import { inlineCidImages, sanitizeMailHtml } from "./html.js";
 import { previewOf } from "./preview.js";
+import { smtpSettingsFor } from "./smtp.js";
 import { hasAttachments, type BodyNode } from "./structure.js";
 
 const SCOPE = "core.mail";
@@ -419,10 +420,13 @@ export const mailbox: IMailbox = {
     if (!Buffer.isBuffer(composed.message)) throw new Error("Message non composé.");
     const raw = composed.message;
 
+    const smtp = smtpSettingsFor(credentials.host);
     const transport = nodemailer.createTransport({
-      host: credentials.host,
-      port: 465,
-      secure: true,
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      // Sur 587 la connexion démarre en clair : le mot de passe ne doit jamais partir avant le chiffrement.
+      requireTLS: !smtp.secure,
       auth: { user: credentials.address, pass: credentials.password },
       socketTimeout: TIMEOUT_MS,
       greetingTimeout: TIMEOUT_MS,
@@ -433,6 +437,9 @@ export const mailbox: IMailbox = {
       envelope: { from: credentials.address, to: [...mail.to, ...mail.cc, ...mail.bcc] },
       raw,
     });
+
+    // Le fournisseur a déjà rangé sa copie : en ajouter une la doublerait.
+    if (smtp.savesSentCopy) return;
 
     try {
       const client = connect(credentials);
