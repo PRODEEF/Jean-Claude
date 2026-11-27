@@ -105,7 +105,8 @@ export const SUGGEST_TASK_LIST: LlmTool = {
                   title: {
                     type: "string",
                     description:
-                      "Un article à acheter ou une tâche, sans sa date — elle va dans `dueOn`.",
+                      "Un article à acheter ou une tâche, sans sa date — elle va dans `dueOn`. " +
+                      "120 caractères au plus : le détail va dans le texte du message.",
                   },
                   dueOn: {
                     type: "string",
@@ -513,7 +514,7 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
         type: "array",
         items: { type: "string" },
         description:
-          "Sous-tâches de la série, quand l'utilisateur en donne (« je fais deux " +
+          "Sous-tâches de la série (120 caractères au plus chacune), quand l'utilisateur en donne (« je fais deux " +
           "tâches : … ») — elles se posent dans cette proposition, jamais dans un " +
           "second appel `suggest_task_list`. Omettre sinon.",
       },
