@@ -50,6 +50,19 @@ describe("createBriefWriter", () => {
     expect(seen[0]?.system).toContain("Ne cite AUCUNE heure");
   });
 
+  it("dit au modèle de quel point il s'agit : matin, après-midi ou soir", async () => {
+    const seen: LlmCompletionRequest[] = [];
+    const write = createBriefWriter(makeLlm("Bonsoir Yann :", seen));
+
+    await write(AUDIENCE, 2, "afternoon");
+    await write(AUDIENCE, 2, "evening");
+    await write(AUDIENCE, 2);
+
+    expect(seen[0]?.system).toContain("du point de l'après-midi");
+    expect(seen[1]?.system).toContain("du point du soir");
+    expect(seen[2]?.system).toContain("du point du matin");
+  });
+
   it("lève une erreur quand le modèle est en panne", async () => {
     const write = createBriefWriter(makeLlm(new Error("panne")));
 

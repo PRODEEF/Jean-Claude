@@ -89,6 +89,16 @@ const CAPABILITIES: {
     hint: "Chaque matin, Jean-Claude vous écrit dans son canal ce qui est prévu aujourd'hui. Rien s'il n'y a rien de prévu.",
   },
   {
+    key: "afternoonBrief",
+    label: "Point de l'après-midi",
+    hint: "Quand votre après-midi commence, Jean-Claude vous écrit ce qu'il reste à faire aujourd'hui, ou vous dit que l'après-midi est calme. L'heure suit vos horaires, plus bas.",
+  },
+  {
+    key: "eveningBrief",
+    label: "Point du soir",
+    hint: "Quand votre soir commence, un bilan de la journée : ce qui est fait, ce qui reste, le programme du soir et un aperçu de demain. L'heure suit vos horaires, plus bas.",
+  },
+  {
     key: "folderOrganization",
     label: "Aide au rangement",
     hint: "Proposer dans quels dossiers ranger une conversation.",

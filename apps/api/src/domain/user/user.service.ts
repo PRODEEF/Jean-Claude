@@ -67,6 +67,8 @@ export class UserService {
       ...rest,
       scope: {
         morningReminders: scope.morningReminders ?? base.morningReminders,
+        afternoonBrief: scope.afternoonBrief ?? base.afternoonBrief,
+        eveningBrief: scope.eveningBrief ?? base.eveningBrief,
         folderOrganization: scope.folderOrganization ?? base.folderOrganization,
         structureSuggestions: scope.structureSuggestions ?? base.structureSuggestions,
         proactiveTaskDetection: scope.proactiveTaskDetection ?? base.proactiveTaskDetection,
