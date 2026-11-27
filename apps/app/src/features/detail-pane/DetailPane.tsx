@@ -19,6 +19,7 @@ import { isTaskSubset } from "@/features/calendar/DueListsBoard";
 import { useListDragHandle, useMomentDropZone } from "@/features/calendar/lib/list-drag";
 import { useTaskActions } from "@/shared/hooks/use-task-lists";
 import { SuggestionPaneBody } from "@/features/conversation/SuggestionPaneBody";
+import { TodoPaneBody } from "./TodoPaneBody";
 
 /** En deçà, l'en-tête d'une liste se tronque ; au-delà, le milieu n'est plus lisible. */
 const PANE_MIN_WIDTH = 360;
@@ -240,6 +241,7 @@ function ResizeHandle({
 function PaneTitle({ content }: { content: PaneContent }) {
   if (content.kind === "day") return <>{formatFullDay(content.day)}</>;
   if (content.kind === "suggestion") return <>Proposition de Jean-Claude</>;
+  if (content.kind === "list" && content.view === "todo") return <>Calendrier – Todo</>;
   // Le titre de la liste est déjà celui de la carte : le volet dit où l'on est,
   // et ce qu'il ouvre, c'est bien « Mes listes » (Yann, 12 novembre).
   return <>Mes listes</>;
@@ -266,10 +268,48 @@ function PaneBody({
             proposal={{ card, dueAt }}
           />
         )}
+        // Une proposition datée se lit dans « Calendrier – Todo », à sa date : c'est
+        // là qu'on la retrouvera (Yann, 26 novembre).
+        placeInTodo={(card, startsAt) => <TodoPaneBody from={new Date(startsAt)} above={card} />}
+      />
+    );
+  }
+  if (content.kind === "list" && content.view === "todo") {
+    return (
+      <TodoListPaneBody
+        listId={content.listId}
+        occurrenceAt={content.occurrenceAt}
+        content={content}
+        anchorRef={anchorRef}
       />
     );
   }
   return <ListPaneBody content={content} anchorRef={anchorRef} />;
+}
+
+/**
+ * Une liste datée dans « Calendrier – Todo », à partir de son jour. Une liste qui
+ * n'a plus de date (ou qui n'existe plus) retombe sur « Mes listes » : le
+ * calendrier n'a rien à en montrer.
+ */
+function TodoListPaneBody({
+  listId,
+  occurrenceAt,
+  content,
+  anchorRef,
+}: {
+  listId: string;
+  occurrenceAt: string | undefined;
+  content: ListsContent;
+  anchorRef: RefObject<View | null>;
+}) {
+  const { data: lists } = useTaskLists();
+  if (!lists) return null;
+
+  const start = occurrenceAt ?? lists.find((list) => list.id === listId)?.dueAt ?? null;
+  if (start === null) return <ListPaneBody content={content} anchorRef={anchorRef} />;
+
+  return <TodoPaneBody from={new Date(start)} />;
 }
 
 /** Ce que le corps du volet sait montrer : une liste visée, un jour, ou toutes les listes. */

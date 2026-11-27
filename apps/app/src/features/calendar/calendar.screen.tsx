@@ -76,11 +76,15 @@ function listPaneContent(list: TaskListWithTasks): {
   kind: "list";
   listId: string;
   occurrenceAt?: string;
+  view?: "todo";
 } {
   return {
     kind: "list",
     listId: list.id,
     ...(list.occurrenceAt ? { occurrenceAt: list.occurrenceAt } : {}),
+    // Cliquée dans le calendrier, une liste datée s'ouvre dans « Calendrier – Todo »
+    // (Yann, 26 novembre).
+    ...(list.dueAt ? { view: "todo" as const } : {}),
   };
 }
 
