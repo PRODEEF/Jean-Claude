@@ -1001,7 +1001,7 @@ export class ConversationService {
       // l'appelant à consommer cet événement, et le code qui le suivrait ne
       // s'exécuterait alors jamais. Une proposition perdue ici le serait
       // définitivement — le modèle ne sera pas rejoué.
-      for (const toolCall of toolCalls) {
+      for (const toolCall of foldTaskListIntoRecurringEvent(toolCalls)) {
         if (APPLIED_DIRECTLY.has(toolCall.name)) continue;
         // Retirer l'outil du jeu remis au modèle suffit en pratique, mais rien
         // ne garantit qu'il n'en nommera pas un autre. Une capacité coupée dans
@@ -2322,6 +2322,67 @@ function mergeTaskListCalls(toolCalls: LlmToolCall[]): LlmToolCall | null {
 }
 
 /**
+ * Rattache à la série la liste de même titre proposée dans le même tour.
+ *
+ * Pour « PRODEEF tous les jours à midi, avec deux tâches », le modèle appelait
+ * `suggest_recurring_event` (la série, sans tâches) et `suggest_task_list` (les
+ * tâches, sans date) : deux cartes, deux listes, et celle qui porte les tâches
+ * n'apparaissait jamais au calendrier. Les tâches passent dans la série et la
+ * liste en double est écartée — une seule proposition à valider.
+ */
+export function foldTaskListIntoRecurringEvent(toolCalls: LlmToolCall[]): LlmToolCall[] {
+  const result = [...toolCalls];
+
+  for (const [index, call] of toolCalls.entries()) {
+    if (call.name !== SUGGEST_RECURRING_EVENT.name) continue;
+
+    const title = call.input["title"];
+    if (typeof title !== "string") continue;
+
+    for (const [listCallIndex, listCall] of toolCalls.entries()) {
+      if (listCall.name !== SUGGEST_TASK_LIST.name) continue;
+
+      const lists = listCall.input["lists"];
+      if (!Array.isArray(lists)) continue;
+
+      const twin = lists.find(
+        (entry: unknown) =>
+          typeof entry === "object" &&
+          entry !== null &&
+          sameName(String((entry as Record<string, unknown>)["title"] ?? ""), title),
+      ) as Record<string, unknown> | undefined;
+      if (!twin) continue;
+
+      const titles = Array.isArray(twin["items"])
+        ? twin["items"].flatMap((item: unknown) => {
+            const itemTitle =
+              typeof item === "object" && item !== null
+                ? (item as Record<string, unknown>)["title"]
+                : undefined;
+            return typeof itemTitle === "string" ? [itemTitle] : [];
+          })
+        : [];
+
+      const current = result[index] ?? call;
+      if (current.input["items"] === undefined && titles.length > 0) {
+        result[index] = { ...current, input: { ...current.input, items: titles } };
+      }
+
+      const rest = lists.filter((entry: unknown) => entry !== twin);
+      result[listCallIndex] = { ...listCall, input: { ...listCall.input, lists: rest } };
+      logger.warn(SCOPE, "Liste de même titre qu'une série : rattachée à la série, pas proposée.");
+    }
+  }
+
+  return result.filter(
+    (call) =>
+      call.name !== SUGGEST_TASK_LIST.name ||
+      !Array.isArray(call.input["lists"]) ||
+      call.input["lists"].length > 0,
+  );
+}
+
+/**
  * Retire d'un `suggest_task_list` les listes que ce fil a déjà créées.
  *
  * « Tout recommencer » faisait reproposer les deux listes à l'identique, et
@@ -3142,6 +3203,12 @@ const RECURRING_EVENT_RULES = [
   "BYMONTH avec tous les autres mois (1,3,4,5,6,7,8,9,10,11,12), « jusqu'à",
   "fin juin » donne UNTIL, « dix fois » donne COUNT. Une exception à une date",
   "précise ne s'exprime pas : dis-le à l'utilisateur plutôt que de l'ignorer.",
+  "S'il donne aussi des tâches à faire à chaque fois (« je fais deux tâches :",
+  "… »), mets-les dans `items` de ce même appel : n'appelle JAMAIS en plus",
+  "`suggest_task_list` pour elles, ce serait une seconde liste sans date qui",
+  "n'apparaîtrait pas au calendrier. Choisis `acceptLabel` selon la demande :",
+  "« Poser le rendez-vous » pour un rendez-vous ou une réunion, « Enregistrer",
+  "la tâche » pour une tâche avec ses sous-tâches.",
   "Si en plus il demande de le noter, de s'en rappeler ou de le retenir,",
   "appelle l'outil tout de suite : un « C'est noté » ou « Je note » en texte",
   "ne crée rien et viole la règle du §12.1. Ne laisse pas `suggest_folders`",

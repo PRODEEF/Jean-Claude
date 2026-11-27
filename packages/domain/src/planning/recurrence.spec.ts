@@ -1,4 +1,4 @@
-import { presetOfRrule, rruleForPreset } from "./recurrence";
+import { describeRrule, presetOfRrule, rruleForPreset } from "./recurrence";
 
 // Un jeudi : le 19 novembre 2026.
 const THURSDAY = new Date(2026, 10, 19, 18, 0, 0);
@@ -56,5 +56,31 @@ describe("presetOfRrule", () => {
   it("garde « personnalisée » une règle illisible plutôt que de la remplacer", () => {
     expect(presetOfRrule("n'importe quoi", THURSDAY)).toBe("custom");
     expect(presetOfRrule("INTERVAL=2", THURSDAY)).toBe("custom");
+  });
+});
+
+describe("describeRrule", () => {
+  it("dit « du lundi au vendredi » pour les jours ouvrés, dans n'importe quel ordre", () => {
+    expect(describeRrule("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR")).toBe("du lundi au vendredi");
+    expect(describeRrule("FREQ=WEEKLY;BYDAY=FR,MO,WE,TU,TH")).toBe("du lundi au vendredi");
+  });
+
+  it("dit un jour seul, plusieurs jours et le week-end", () => {
+    expect(describeRrule("FREQ=WEEKLY;BYDAY=TU")).toBe("tous les mardis");
+    expect(describeRrule("FREQ=WEEKLY;BYDAY=MO,WE")).toBe("chaque lundi, mercredi");
+    expect(describeRrule("FREQ=WEEKLY;BYDAY=SA,SU")).toBe("le week-end");
+  });
+
+  it("dit les fréquences simples", () => {
+    expect(describeRrule("FREQ=DAILY")).toBe("tous les jours");
+    expect(describeRrule("FREQ=MONTHLY")).toBe("tous les mois");
+    expect(describeRrule("FREQ=YEARLY")).toBe("tous les ans");
+    expect(describeRrule("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU")).toBe("tous les jours");
+  });
+
+  it("ne dit rien d'une règle qu'une phrase simple trahirait", () => {
+    expect(describeRrule("FREQ=WEEKLY;BYDAY=TH;BYMONTH=1,3")).toBeUndefined();
+    expect(describeRrule("FREQ=DAILY;COUNT=10")).toBeUndefined();
+    expect(describeRrule("n'importe quoi")).toBeUndefined();
   });
 });

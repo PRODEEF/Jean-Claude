@@ -1,4 +1,4 @@
-import type { AssistantScope } from "@jc/domain";
+import { RECURRING_ACCEPT_LABELS, type AssistantScope } from "@jc/domain";
 import type { LlmTool } from "./llm.port.js";
 
 /**
@@ -509,6 +509,24 @@ export const SUGGEST_RECURRING_EVENT: LlmTool = {
           "Ne jamais présenter le rendez-vous comme déjà créé. 500 caractères maximum.",
       },
       title: { type: "string", description: "Titre court du rendez-vous" },
+      items: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Sous-tâches de la série, quand l'utilisateur en donne (« je fais deux " +
+          "tâches : … ») — elles se posent dans cette proposition, jamais dans un " +
+          "second appel `suggest_task_list`. Omettre sinon.",
+      },
+      acceptLabel: {
+        type: "string",
+        enum: [...RECURRING_ACCEPT_LABELS],
+        description:
+          "Texte du bouton de validation, celui qui dit le mieux ce que la carte " +
+          "fait : « Poser le rendez-vous » pour une réunion ou un rendez-vous, " +
+          "« Enregistrer la tâche » pour une tâche avec ses sous-tâches, " +
+          "« Planifier la tâche » pour une tâche à répéter, « Ajouter à mon " +
+          "calendrier » pour une activité.",
+      },
       startsAt: {
         type: "string",
         description:
