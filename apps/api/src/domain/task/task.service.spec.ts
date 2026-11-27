@@ -145,6 +145,8 @@ function makeProfile(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       llmModel: null,
       scope: {
         morningReminders: true,
+        afternoonBrief: false,
+        eveningBrief: false,
         folderOrganization: true,
         structureSuggestions: true,
         proactiveTaskDetection: true,

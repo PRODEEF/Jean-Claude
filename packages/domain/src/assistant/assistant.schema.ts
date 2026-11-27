@@ -49,6 +49,13 @@ const RRULE_FREQ = /(?:^|;)FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(?:;|$)/i;
 export const assistantScopeSchema = z.object({
   /** Point du matin : la journée écrite dans le canal chaque matin. */
   morningReminders: z.boolean().default(true),
+  /**
+   * Point de l'après-midi (ce qu'il reste à faire) et point du soir (bilan,
+   * programme du soir, aperçu de demain). Désactivés d'office, contrairement au
+   * matin : on ne les écrit qu'à qui les a demandés.
+   */
+  afternoonBrief: z.boolean().default(false),
+  eveningBrief: z.boolean().default(false),
   /** Aide au rangement : proposer un dossier, corriger un classement. */
   folderOrganization: z.boolean().default(true),
   /** Suggestions d'évolution de la structure du projet. */

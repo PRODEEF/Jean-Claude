@@ -30,6 +30,8 @@ function makeRecord(overrides: Partial<ProfileRecord> = {}): ProfileRecord {
       language: "fr",
       scope: {
         morningReminders: true,
+        afternoonBrief: false,
+        eveningBrief: false,
         folderOrganization: true,
         structureSuggestions: true,
         proactiveTaskDetection: true,
@@ -119,7 +121,9 @@ describe("UserService", () => {
       const update = jest.fn().mockResolvedValue(makeRecord());
       const service = new UserService(makeRepository({ update }));
 
-      await service.updateProfile(OWNER, { scope: { morningReminders: false } });
+      await service.updateProfile(OWNER, {
+        scope: { morningReminders: false },
+      });
 
       // Les capacités tiennent dans une seule colonne : écrire le patch tel
       // quel effacerait les quatre autres.
@@ -128,6 +132,8 @@ describe("UserService", () => {
         {
           scope: {
             morningReminders: false,
+            afternoonBrief: false,
+            eveningBrief: false,
             folderOrganization: true,
             structureSuggestions: true,
             proactiveTaskDetection: true,

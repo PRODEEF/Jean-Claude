@@ -325,6 +325,8 @@ function makePreferences(
     ...overrides,
     scope: {
       morningReminders: true,
+      afternoonBrief: false,
+      eveningBrief: false,
       folderOrganization: true,
       structureSuggestions: true,
       proactiveTaskDetection: true,

@@ -1,4 +1,4 @@
-import type { CalendarEvent, TaskList } from "@jc/domain";
+import { DEFAULT_DAY_PART_BOUNDS, type CalendarEvent, type TaskList } from "@jc/domain";
 import { logger } from "../../core/logger.js";
 import { admin } from "../../core/supabase/supabase.js";
 import { occurrencesInRange } from "../../domain/calendar/occurrences.js";
@@ -7,11 +7,19 @@ import {
   type OccurrenceOverride,
 } from "../../domain/task/list-occurrences.js";
 import { reminderRepository } from "../reminders/reminder.repository.js";
-import type { BriefItem } from "./morning-brief.js";
+import type { BriefItem, BriefKind } from "./morning-brief.js";
 import type {
   BriefRecipient,
   IMorningBriefRepository,
 } from "./morning-brief.repository.interface.js";
+
+/** Le réglage du périmètre de l'assistant qui commande chaque point. */
+type ScopeKey = "morningReminders" | "afternoonBrief" | "eveningBrief";
+const SCOPE_KEY: Record<BriefKind, ScopeKey> = {
+  morning: "morningReminders",
+  afternoon: "afternoonBrief",
+  evening: "eveningBrief",
+};
 
 /** Code Postgres d'une violation de contrainte d'unicité. */
 const UNIQUE_VIOLATION = "23505";
@@ -61,19 +69,37 @@ const LIST_COLUMNS =
  * d'utilisateur derrière. Aucune route d'utilisateur ne l'appelle.
  */
 export const morningBriefRepository: IMorningBriefRepository = {
-  async findRecipients() {
+  async findRecipients(kind) {
     const { data, error } = await admin
       .from("profiles")
-      .select("id, assistant_scope, remind_in_channel")
+      .select(
+        "id, assistant_scope, remind_in_channel, day_part_afternoon_from, day_part_evening_from",
+      )
       .eq("remind_in_channel", true);
     if (error) throw new Error(error.message);
 
-    // Absent du jsonb, le réglage vaut son défaut : activé.
-    const ids = (
-      data as unknown as { id: string; assistant_scope: { morningReminders?: boolean } | null }[]
-    )
-      .filter((row) => row.assistant_scope?.morningReminders !== false)
-      .map((row) => row.id);
+    const rows = data as unknown as {
+      id: string;
+      assistant_scope: Partial<Record<ScopeKey, boolean>> | null;
+      day_part_afternoon_from: number;
+      day_part_evening_from: number;
+    }[];
+    // Le matin est activé d'office, absent du jsonb ; l'après-midi et le soir
+    // n'arrivent que chez qui les a demandés — on n'écrit pas d'office de deux
+    // messages de plus par jour à tout le monde (Yann, 27 novembre).
+    const key = SCOPE_KEY[kind];
+    const wanted = rows.filter((row) =>
+      kind === "morning"
+        ? row.assistant_scope?.[key] !== false
+        : row.assistant_scope?.[key] === true,
+    );
+    const bounds = new Map(
+      wanted.map((row) => [
+        row.id,
+        { afternoonFrom: row.day_part_afternoon_from, eveningFrom: row.day_part_evening_from },
+      ]),
+    );
+    const ids = wanted.map((row) => row.id);
     if (ids.length === 0) return [];
 
     const recipients = await reminderRepository.findRecipients(ids);
@@ -83,23 +109,27 @@ export const morningBriefRepository: IMorningBriefRepository = {
       displayName: recipient.displayName,
       assistantName: recipient.assistantName,
       memory: recipient.memory,
+      bounds: bounds.get(recipient.userId) ?? DEFAULT_DAY_PART_BOUNDS,
     }));
   },
 
-  async claim(userId, day) {
-    const { error } = await admin.from("morning_briefs_sent").insert({ user_id: userId, day });
+  async claim(userId, day, kind) {
+    const { error } = await admin
+      .from("morning_briefs_sent")
+      .insert({ user_id: userId, day, kind });
 
     if (!error) return true;
     if (error.code === UNIQUE_VIOLATION) return false;
     throw new Error(error.message);
   },
 
-  async release(userId, day) {
+  async release(userId, day, kind) {
     const { error } = await admin
       .from("morning_briefs_sent")
       .delete()
       .eq("user_id", userId)
-      .eq("day", day);
+      .eq("day", day)
+      .eq("kind", kind);
     if (error) throw new Error(error.message);
   },
 
@@ -139,6 +169,7 @@ export const morningBriefRepository: IMorningBriefRepository = {
           allDay: occurrence.allDay,
           title: row.title,
           list: false,
+          done: false,
         });
       }
     }
@@ -148,14 +179,14 @@ export const morningBriefRepository: IMorningBriefRepository = {
         overrides.get(row.id) ?? [],
         range,
       )) {
-        // Ce qui est déjà fait n'est plus « à faire aujourd'hui ».
-        if (occurrence.doneAt !== null) continue;
         if (occurrence.startsAt < range.from || occurrence.startsAt >= range.to) continue;
         items.push({
           startsAt: occurrence.startsAt,
           allDay: occurrence.allDay,
           title: row.title,
           list: true,
+          // Le fait compte dans le bilan du soir ; le matin et l'après-midi l'écartent.
+          done: occurrence.doneAt !== null,
         });
       }
     }
