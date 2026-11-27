@@ -26,7 +26,7 @@ import type { ITaskRepository } from "../task/task.repository.interface.js";
 import { TaskService } from "../task/task.service.js";
 import type { IMemoryRepository } from "../memory/memory.repository.interface.js";
 import type { IUserRepository, ProfileRecord } from "../user/user.repository.interface.js";
-import { ConversationService } from "./conversation.service.js";
+import { ConversationService, foldTaskListIntoRecurringEvent } from "./conversation.service.js";
 import type { IConversationRepository } from "./conversation.repository.interface.js";
 import type { IWorkspaceEventRepository } from "../workspace-event/workspace-event.repository.interface.js";
 import { WorkspaceEventService } from "../workspace-event/workspace-event.service.js";
@@ -5714,5 +5714,71 @@ describe("ConversationService", () => {
       expect(suggestions.create).not.toHaveBeenCalled();
       jest.restoreAllMocks();
     });
+  });
+});
+
+describe("foldTaskListIntoRecurringEvent", () => {
+  const SERIE: LlmToolCall = {
+    id: "call-1",
+    name: "suggest_recurring_event",
+    input: {
+      message: "Je te pose PRODEEF tous les jours à midi ?",
+      title: "PRODEEF",
+      startsAt: "2026-11-27T12:00",
+      rrule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+    },
+  };
+
+  const LISTE = (title: string): LlmToolCall => ({
+    id: "call-2",
+    name: "suggest_task_list",
+    input: {
+      message: "Je te pose les deux tâches ?",
+      lists: [{ title, kind: "todo", items: [{ title: "SCRAPP" }, { title: "SCRAPPING" }] }],
+    },
+  });
+
+  beforeEach(() => {
+    jest.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it("passe les tâches de la liste de même titre dans la série et n'en propose qu'une", () => {
+    const result = foldTaskListIntoRecurringEvent([SERIE, LISTE("PRODEEF")]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.name).toBe("suggest_recurring_event");
+    expect(result[0]?.input["items"]).toEqual(["SCRAPP", "SCRAPPING"]);
+  });
+
+  it("reconnaît le même titre malgré la casse", () => {
+    const result = foldTaskListIntoRecurringEvent([SERIE, LISTE("prodeef")]);
+
+    expect(result.map((call) => call.name)).toEqual(["suggest_recurring_event"]);
+  });
+
+  it("garde la liste quand son titre n'est pas celui de la série", () => {
+    const result = foldTaskListIntoRecurringEvent([SERIE, LISTE("Courses")]);
+
+    expect(result.map((call) => call.name)).toEqual([
+      "suggest_recurring_event",
+      "suggest_task_list",
+    ]);
+    expect(result[0]?.input["items"]).toBeUndefined();
+  });
+
+  it("ne touche pas aux appels quand il n'y a pas de série", () => {
+    const calls = [LISTE("PRODEEF")];
+
+    expect(foldTaskListIntoRecurringEvent(calls)).toEqual(calls);
+  });
+
+  it("laisse les sous-tâches que le modèle a déjà mises dans la série", () => {
+    const withItems: LlmToolCall = { ...SERIE, input: { ...SERIE.input, items: ["Déjà là"] } };
+
+    const result = foldTaskListIntoRecurringEvent([withItems, LISTE("PRODEEF")]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.input["items"]).toEqual(["Déjà là"]);
   });
 });

@@ -1782,6 +1782,32 @@ describe("AssistantService", () => {
       expect(createdLists(tasks)[0]).toMatchObject({ reminderMinutesBefore: 60 });
     });
 
+    it("pose les sous-tâches de la série dans la liste datée", async () => {
+      const tasks = makeTaskRepository();
+
+      await makeService(
+        makeSuggestionStore(
+          makeKineSuggestion({
+            payload: {
+              title: "PRODEEF",
+              startsAt: KINE,
+              rrule: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+              items: ["SCRAPP", "SCRAPPING"],
+            },
+          }),
+        ),
+        makeFolderRepository(),
+        makeConversationRepository(),
+        tasks,
+      ).resolve(USER, "sug-1", { action: "accept" }, TOKEN);
+
+      expect(createdLists(tasks)).toHaveLength(1);
+      const titles = (tasks.createTask as jest.Mock).mock.calls.map(
+        (call) => (call[2] as CreateTask).title,
+      );
+      expect(titles).toEqual(["SCRAPP", "SCRAPPING"]);
+    });
+
     it("ne crée rien quand la proposition est ignorée", async () => {
       const tasks = makeTaskRepository();
 
