@@ -1,4 +1,5 @@
-import type { MouseEvent, ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { TimeWheel } from "./time-wheel.web";
 
 export type InlinePickerProps = {
   mode: "date" | "time";
@@ -28,42 +29,93 @@ export function InlinePicker({
   accessibilityLabel,
   children,
 }: InlinePickerProps) {
+  const input = useRef<HTMLInputElement>(null);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const [wheelAt, setWheelAt] = useState<{ x: number; y: number } | null>(null);
+
+  const open = () => {
+    // L'heure a son propre sélecteur (qui boucle, de 5 en 5) ; la date garde celui du navigateur.
+    if (mode === "time") {
+      const box = wrapper.current?.getBoundingClientRect();
+      if (box) setWheelAt({ x: box.left, y: box.bottom + 4 });
+      return;
+    }
+    openPicker(input.current);
+  };
+
   return (
-    <div style={{ position: "relative", display: "inline-flex", cursor: "pointer" }}>
+    <div ref={wrapper} style={{ position: "relative", display: "inline-flex", cursor: "pointer" }}>
       <style>{`.jc-inline-picker::-webkit-calendar-picker-indicator{display:none}`}</style>
       {children}
-      <input
-        className="jc-inline-picker"
-        type={mode}
-        value={mode === "date" ? toIsoDate(value) : value}
-        aria-label={accessibilityLabel}
-        onClick={openPicker}
-        onChange={(event) => {
-          const next = event.currentTarget.value;
-          // Un champ vidé ne dit pas « enlève la date » : on n'écrit que ce qui est choisi.
-          if (next === "") return;
-          onChange(mode === "date" ? fromIsoDate(next) : next);
-        }}
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          opacity: 0,
-          cursor: "pointer",
-          border: 0,
-          padding: 0,
-        }}
+      {/* Le champ natif porte le clavier et, pour la date, le sélecteur, mais ne reçoit plus
+          la souris : ses chiffres imposaient leur propre flèche, et la main ne se voyait que
+          sur une partie de l'heure (photos et vidéos de Yann, 27 novembre). */}
+      {mode === "date" ? (
+        <input
+          ref={input}
+          className="jc-inline-picker"
+          type="date"
+          value={toIsoDate(value)}
+          aria-label={accessibilityLabel}
+          onChange={(event) => {
+            const next = event.currentTarget.value;
+            // Un champ vidé ne dit pas « enlève la date » : on n'écrit que ce qui est choisi.
+            if (next === "") return;
+            onChange(fromIsoDate(next));
+          }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            opacity: 0,
+            pointerEvents: "none",
+            border: 0,
+            padding: 0,
+          }}
+        />
+      ) : null}
+      {/* Une couche, et une seule, reçoit la souris : la main sur toute la surface, quel
+          que soit le moteur du navigateur. */}
+      <div
+        onClick={open}
+        {...(mode === "time"
+          ? {
+              role: "button",
+              tabIndex: 0,
+              "aria-label": accessibilityLabel,
+              onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  open();
+                }
+              },
+            }
+          : { "aria-hidden": true })}
+        style={{ position: "absolute", inset: 0, cursor: "pointer" }}
       />
+      {wheelAt ? (
+        <TimeWheel
+          x={wheelAt.x}
+          y={wheelAt.y}
+          value={value}
+          onClose={(picked) => {
+            setWheelAt(null);
+            if (picked !== null && picked !== value) onChange(picked);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
-function openPicker(event: MouseEvent<HTMLInputElement>) {
+function openPicker(field: HTMLInputElement | null) {
+  if (!field) return;
   try {
-    event.currentTarget.showPicker();
+    field.showPicker();
   } catch {
-    // Saisie au clavier toujours possible.
+    // Pas de sélecteur dans ce navigateur : le champ prend le focus, la saisie au clavier reste possible.
+    field.focus();
   }
 }
 
