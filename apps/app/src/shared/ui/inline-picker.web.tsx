@@ -1,4 +1,5 @@
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { TimeWheel } from "./time-wheel.web";
 
 export type InlinePickerProps = {
   mode: "date" | "time";
@@ -29,44 +30,81 @@ export function InlinePicker({
   children,
 }: InlinePickerProps) {
   const input = useRef<HTMLInputElement>(null);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const [wheelAt, setWheelAt] = useState<{ x: number; y: number } | null>(null);
+
+  const open = () => {
+    // L'heure a son propre sélecteur (qui boucle, de 5 en 5) ; la date garde celui du navigateur.
+    if (mode === "time") {
+      const box = wrapper.current?.getBoundingClientRect();
+      if (box) setWheelAt({ x: box.left, y: box.bottom + 4 });
+      return;
+    }
+    openPicker(input.current);
+  };
 
   return (
-    <div style={{ position: "relative", display: "inline-flex", cursor: "pointer" }}>
+    <div ref={wrapper} style={{ position: "relative", display: "inline-flex", cursor: "pointer" }}>
       <style>{`.jc-inline-picker::-webkit-calendar-picker-indicator{display:none}`}</style>
       {children}
-      {/* Le champ natif porte le clavier et le sélecteur, mais ne reçoit plus la souris :
-          ses chiffres imposaient leur propre flèche, et la main ne se voyait que sur une
-          partie de l'heure (photos et vidéos de Yann, 27 novembre). */}
-      <input
-        ref={input}
-        className="jc-inline-picker"
-        type={mode}
-        value={mode === "date" ? toIsoDate(value) : value}
-        aria-label={accessibilityLabel}
-        onChange={(event) => {
-          const next = event.currentTarget.value;
-          // Un champ vidé ne dit pas « enlève la date » : on n'écrit que ce qui est choisi.
-          if (next === "") return;
-          onChange(mode === "date" ? fromIsoDate(next) : next);
-        }}
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          opacity: 0,
-          pointerEvents: "none",
-          border: 0,
-          padding: 0,
-        }}
-      />
+      {/* Le champ natif porte le clavier et, pour la date, le sélecteur, mais ne reçoit plus
+          la souris : ses chiffres imposaient leur propre flèche, et la main ne se voyait que
+          sur une partie de l'heure (photos et vidéos de Yann, 27 novembre). */}
+      {mode === "date" ? (
+        <input
+          ref={input}
+          className="jc-inline-picker"
+          type="date"
+          value={toIsoDate(value)}
+          aria-label={accessibilityLabel}
+          onChange={(event) => {
+            const next = event.currentTarget.value;
+            // Un champ vidé ne dit pas « enlève la date » : on n'écrit que ce qui est choisi.
+            if (next === "") return;
+            onChange(fromIsoDate(next));
+          }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            opacity: 0,
+            pointerEvents: "none",
+            border: 0,
+            padding: 0,
+          }}
+        />
+      ) : null}
       {/* Une couche, et une seule, reçoit la souris : la main sur toute la surface, quel
           que soit le moteur du navigateur. */}
       <div
-        aria-hidden="true"
-        onClick={() => openPicker(input.current)}
+        onClick={open}
+        {...(mode === "time"
+          ? {
+              role: "button",
+              tabIndex: 0,
+              "aria-label": accessibilityLabel,
+              onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  open();
+                }
+              },
+            }
+          : { "aria-hidden": true })}
         style={{ position: "absolute", inset: 0, cursor: "pointer" }}
       />
+      {wheelAt ? (
+        <TimeWheel
+          x={wheelAt.x}
+          y={wheelAt.y}
+          value={value}
+          onClose={(picked) => {
+            setWheelAt(null);
+            if (picked !== null && picked !== value) onChange(picked);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

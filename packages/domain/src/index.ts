@@ -25,6 +25,7 @@ export * from "./calendar/calendar.schema";
 export * from "./calendar/list-slot";
 export * from "./planning/planning";
 export * from "./planning/recurrence";
+export * from "./planning/time-of-day";
 export * from "./assistant/assistant.schema";
 export * from "./user/preferences.schema";
 export * from "./feedback/feedback.schema";

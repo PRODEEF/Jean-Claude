@@ -107,6 +107,8 @@ export function DateTimeField({
             value={current}
             mode={mode}
             display={mode === "date" ? "inline" : "spinner"}
+            // Minutes de 5 en 5 (iOS seulement : la boîte Android ne propose pas de pas).
+            minuteInterval={5}
             locale="fr-FR"
             themeVariant={scheme}
             accentColor={palette.accent}
