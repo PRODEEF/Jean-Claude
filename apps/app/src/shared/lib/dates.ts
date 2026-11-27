@@ -125,7 +125,8 @@ export function monthName(anchor: Date): string {
 
 export function yearLabel(anchor: Date): string {
   const [start = anchor, end = anchor] = yearBounds(anchor);
-  const short = (date: Date) => `${(MONTH_NAMES[date.getMonth()] ?? "").slice(0, 3)} ${date.getFullYear()}`;
+  const short = (date: Date) =>
+    `${(MONTH_NAMES[date.getMonth()] ?? "").slice(0, 3)} ${date.getFullYear()}`;
   return `${short(start)} – ${short(end)}`;
 }
 
@@ -148,13 +149,14 @@ export function dayLabel(date: Date): string {
   return `${formatFullDay(date)} ${date.getFullYear()}`;
 }
 
-/** Ex. « 14h30 », « 9h ». Format parlé plutôt que « 14:30 », comme la maquette. */
+/**
+ * Ex. « 15h00 », « 15h30 » : format parlé plutôt que « 15:30 », comme la maquette. Les minutes sont toujours écrites, même à l'heure pleine
+ * (Yann, 27 novembre : « 15h » se lisait comme une heure approximative, et le
+ * libellé gagne en largeur — donc en zone d'appui).
+ */
 export function formatTime(iso: string): string {
   const date = new Date(iso);
-  const minutes = date.getMinutes();
-  return minutes === 0
-    ? `${date.getHours()}h`
-    : `${date.getHours()}h${String(minutes).padStart(2, "0")}`;
+  return `${date.getHours()}h${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 export function formatDayLabel(date: Date): string {
