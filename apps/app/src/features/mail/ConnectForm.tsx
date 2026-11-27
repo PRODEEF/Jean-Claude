@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { View } from "react-native";
-import { MAIL_PROVIDERS, type MailProviderId } from "@jc/domain";
+import { APP_PASSWORD_PROVIDERS, MAIL_PROVIDERS, type MailProviderId } from "@jc/domain";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { SegmentedControl } from "@/shared/ui/segmented-control";
@@ -16,6 +16,7 @@ export function ConnectForm({ onDone }: { onDone?: () => void }) {
 
   const canSubmit = address.trim().length > 0 && password.length > 0 && !connect.isPending;
   const providerName = MAIL_PROVIDERS.find((entry) => entry.id === provider)?.label ?? "";
+  const needsAppPassword = APP_PASSWORD_PROVIDERS.includes(provider);
 
   return (
     <View className="gap-3">
@@ -62,6 +63,15 @@ export function ConnectForm({ onDone }: { onDone?: () => void }) {
           textContentType="password"
           accessibilityLabel="Mot de passe de la boîte"
         />
+        {/* Microsoft refuse en général le mot de passe habituel d'une boîte personnelle :
+            on le dit avant l'échec, pas après. */}
+        {needsAppPassword ? (
+          <Text className="text-muted-foreground text-xs">
+            Hotmail / Outlook demande un « mot de passe d'application », à créer dans la sécurité de
+            votre compte Microsoft (la double vérification doit être activée). Le mot de passe
+            habituel est en général refusé.
+          </Text>
+        ) : null}
       </View>
 
       <View className="gap-1">
